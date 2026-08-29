@@ -32,12 +32,30 @@ import org.springframework.test.context.DynamicPropertySource;
  * OAuth, the saga engine, the audit chain -- is the real implementation.
  *
  * <p>Needs a PostgreSQL: {@code JIZZA_TEST_DB_URL}, or a Docker daemon for the pgvector image.
+ * Each concrete suite repeats the {@code @EnabledIf} guard below, because JUnit evaluates
+ * conditions on the class being run and does not pick this one up from a superclass -- without it
+ * the suites would fail to start a context rather than reporting as skipped.
  */
 @SpringBootTest(classes = {JizzaApplication.class, E2eSupport.ScriptedModel.class},
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @EnabledIf(value = "com.jizza.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 public abstract class E2eSupport {
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+  /**
+   * Releases the scheduler's dispatch lock.
+   *
+   * <p>ShedLock holds it for a few seconds after every tick so two workers with skewed clocks
+   * cannot both claim the same tick. The suite drives ticks back to back and would otherwise have
+   * dispatches silently skipped, so it clears the hold first -- the same state the next real tick
+   * would find, twenty seconds later.
+   */
+  protected void releaseDispatchLock() {
+    jdbc.update("update shedlock set lock_until = now() where name = 'jizza-task-dispatch'");
+  }
 
   @DynamicPropertySource
   static void configure(DynamicPropertyRegistry registry) {
@@ -174,6 +192,18 @@ public abstract class E2eSupport {
     @Primary
     public ScriptedLlmClient scriptedLlmClient() {
       return new ScriptedLlmClient();
+    }
+
+    /**
+     * Runs {@code @Async} work on the calling thread. Procedure learning is the only asynchronous
+     * listener in the system, and left on its own thread it can still be talking to the scripted
+     * model after the test that triggered it has finished -- which shows up as another test's
+     * script being consumed. Inline, each test sees exactly the turns it caused.
+     */
+    @Bean(name = "taskExecutor")
+    @Primary
+    public org.springframework.core.task.TaskExecutor inlineTaskExecutor() {
+      return new org.springframework.core.task.SyncTaskExecutor();
     }
   }
 }

@@ -21,6 +21,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * Acceptance: hardened login, MFA, sessions, step-up, lockout, and the secrets invariants
  * (build prompt Acceptance Criteria 1, 2 and 4).
  */
+@org.junit.jupiter.api.condition.EnabledIf(
+    value = "com.jizza.persistence.support.TestDatabase#available",
+    disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class AuthAndSecurityE2eTest extends E2eSupport {
 
   private static final String PASSWORD = "Correct-Horse-92";

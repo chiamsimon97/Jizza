@@ -104,7 +104,7 @@ public final class ApiClient {
     }
   }
 
-  private String cookieHeader() {
+  public String cookieHeader() {
     StringBuilder sb = new StringBuilder();
     cookies.forEach((name, value) -> {
       if (sb.length() > 0) sb.append("; ");

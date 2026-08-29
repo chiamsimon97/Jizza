@@ -41,6 +41,7 @@ import com.jizza.persistence.repository.SkillRepository;
 import com.jizza.persistence.repository.WorkflowRepository;
 import com.jizza.persistence.repository.WorkflowVersionRepository;
 import com.jizza.procedures.binding.DefaultBindingEnforcer;
+import com.jizza.procedures.binding.DeviationRecorder;
 import com.jizza.procedures.service.DefaultProcedureService;
 import com.jizza.workflow.engine.WorkflowValidator;
 import com.jizza.workflow.registry.DefaultWorkflowRegistry;
@@ -187,7 +188,8 @@ class ProcedureLifecycleTest {
     registry = new DefaultWorkflowRegistry(workflows, versions, skills, validator, audit);
     procedures = new DefaultProcedureService(workflows, versions, tasks, agents, registry,
         validator, scheduler, busProvider, audit);
-    enforcer = new DefaultBindingEnforcer(tasks, workflows, versions, busProvider, audit);
+    enforcer = new DefaultBindingEnforcer(tasks, workflows, versions,
+        new DeviationRecorder(busProvider, audit));
   }
 
   private com.jizza.common.dto.WorkflowDto propose() {

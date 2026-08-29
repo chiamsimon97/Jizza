@@ -43,6 +43,8 @@ public class TaskDispatcher {
   }
 
   @Scheduled(fixedDelayString = "${jizza.scheduler.poll-interval:PT20S}")
+  // lockAtLeastFor keeps the lock held briefly after each tick, so two nodes with skewed clocks
+  // cannot both decide the same tick is theirs.
   @SchedulerLock(name = "jizza-task-dispatch", lockAtMostFor = "PT5M", lockAtLeastFor = "PT5S")
   public void dispatchDue() {
     if (!props.isEnabled()) return;

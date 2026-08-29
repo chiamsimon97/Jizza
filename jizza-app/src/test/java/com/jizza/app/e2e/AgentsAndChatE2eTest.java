@@ -24,6 +24,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * Acceptance: Jizza is the single point of contact, specialists are reachable only through it, and
  * knowledge namespaces are isolated (build prompt Acceptance Criteria 5 and 6).
  */
+@org.junit.jupiter.api.condition.EnabledIf(
+    value = "com.jizza.persistence.support.TestDatabase#available",
+    disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class AgentsAndChatE2eTest extends E2eSupport {
 
   private static final String PASSWORD = "Correct-Horse-92";

@@ -76,8 +76,15 @@ public class DefaultNotificationBus implements NotificationBus {
     this.props = props;
   }
 
+  /**
+   * Joins the caller's transaction. A notification points at the run, task or workflow it is about,
+   * so it cannot be committed before that row exists -- and a run that rolls back should not leave
+   * the user an item asking about work that never happened. The realtime push is fired here rather
+   * than after commit; a client that acts on it re-reads through the API, which is the same thing
+   * it does on reconnect.
+   */
   @Override
-  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  @Transactional(propagation = Propagation.REQUIRED)
   public NotificationDto raise(NotificationKind kind, UUID sourceAgentId, NotificationContext ctx) {
     NotificationEntity entity = new NotificationEntity();
     entity.setUserId(ctx.userId());

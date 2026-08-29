@@ -34,6 +34,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * step-up, size and type -- are asserted separately, and going straight to the service keeps these
  * tests about what the generated tools then do.
  */
+@org.junit.jupiter.api.condition.EnabledIf(
+    value = "com.jizza.persistence.support.TestDatabase#available",
+    disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class ConnectorsE2eTest extends E2eSupport {
 
   private static final String PASSWORD = "Correct-Horse-92";

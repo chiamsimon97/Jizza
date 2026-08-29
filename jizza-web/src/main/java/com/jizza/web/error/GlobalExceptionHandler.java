@@ -59,6 +59,22 @@ public class GlobalExceptionHandler {
     return problem;
   }
 
+  /**
+   * A path nobody serves is a client mistake, not a server failure. Without this it falls through
+   * to the catch-all below and a mistyped URL is reported -- and logged at ERROR -- as if the
+   * service had broken.
+   */
+  @ExceptionHandler({org.springframework.web.servlet.resource.NoResourceFoundException.class,
+      org.springframework.web.servlet.NoHandlerFoundException.class})
+  public ProblemDetail handleNoRoute(Exception e, HttpServletRequest request) {
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+        "There is nothing at " + request.getRequestURI());
+    problem.setType(java.net.URI.create(JizzaException.TYPE_BASE + "not-found"));
+    problem.setTitle("Not found");
+    problem.setInstance(java.net.URI.create(request.getRequestURI()));
+    return problem;
+  }
+
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception e, HttpServletRequest request) {
     String requestId = org.slf4j.MDC.get("requestId");
