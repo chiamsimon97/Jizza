@@ -1,12 +1,12 @@
 package com.jizza.engine.api.workflow;
 
-import com.jizza.engine.api.dto.SkillDto;
 import com.jizza.engine.api.dto.WorkflowDto;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Read/write model over workflows, versions and skills, shared with procedures and the scheduler. */
+/** Read/write model over workflows and their version snapshots, shared with procedures and the
+ * scheduler. Skills live behind {@link SkillStore}. */
 public interface WorkflowRegistry {
 
   Optional<WorkflowDto> find(UUID workflowId);
@@ -18,9 +18,4 @@ public interface WorkflowRegistry {
   List<WorkflowDto> list(UUID userId);
 
   WorkflowDto save(WorkflowDto workflow);
-
-  SkillDto saveAsSkill(UUID workflowId, String name, String description,
-                       com.fasterxml.jackson.databind.JsonNode parameterSchema);
-
-  List<SkillDto> skills(UUID userId);
 }

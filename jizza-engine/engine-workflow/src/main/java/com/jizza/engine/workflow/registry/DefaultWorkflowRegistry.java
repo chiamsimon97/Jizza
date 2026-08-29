@@ -2,7 +2,6 @@ package com.jizza.engine.workflow.registry;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
-import com.jizza.engine.api.dto.SkillDto;
 import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.WorkflowStatus;
@@ -11,10 +10,8 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
-import com.jizza.engine.persistence.entity.SkillEntity;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
 import com.jizza.engine.persistence.entity.WorkflowVersionEntity;
-import com.jizza.engine.persistence.repository.SkillRepository;
 import com.jizza.engine.persistence.repository.WorkflowRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.engine.WorkflowValidator;
@@ -25,27 +22,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Workflows, their immutable version snapshots, and the skills that expose them (R31/R32).
- *
- * <p>A skill is invocable only while its workflow version is approved, which is checked on read
- * rather than frozen at save time -- so rejecting or rolling back a procedure takes its skill out
- * of circulation immediately.
+ * Workflows and their immutable version snapshots (R31). The skills that expose a workflow to an
+ * agent live in {@link DefaultSkillStore}.
  */
 @Service
 public class DefaultWorkflowRegistry implements WorkflowRegistry {
 
   private final WorkflowRepository workflows;
   private final WorkflowVersionRepository versions;
-  private final SkillRepository skills;
   private final WorkflowValidator validator;
   private final AuditLog audit;
 
   public DefaultWorkflowRegistry(WorkflowRepository workflows, WorkflowVersionRepository versions,
-                                 SkillRepository skills, WorkflowValidator validator,
-                                 AuditLog audit) {
+                                 WorkflowValidator validator, AuditLog audit) {
     this.workflows = workflows;
     this.versions = versions;
-    this.skills = skills;
     this.validator = validator;
     this.audit = audit;
   }
@@ -127,50 +118,6 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     versions.save(snapshot);
   }
 
-  @Override
-  @Transactional
-  public SkillDto saveAsSkill(UUID workflowId, String name, String description,
-                              JsonNode parameterSchema) {
-    WorkflowEntity workflow = require(workflowId);
-    if (name == null || name.isBlank()) throw new ValidationException("A skill needs a name");
-
-    SkillEntity entity = skills.findByWorkflowIdAndVersion(workflowId, workflow.getVersion())
-        .orElseGet(SkillEntity::new);
-    entity.setUserId(workflow.getUserId());
-    entity.setWorkflowId(workflowId);
-    entity.setVersion(workflow.getVersion());
-    entity.setName(name.trim());
-    entity.setDescription(description);
-    entity.setParameterSchema(parameterSchema);
-    entity.setInvocable(workflow.getStatus() == WorkflowStatus.APPROVED && !workflow.isDisabled());
-    skills.save(entity);
-
-    audit.record(workflow.getUserId(), ActorType.USER, workflow.getOwningAgentId(),
-        "workflow.saved_as_skill", name,
-        Json.obj().put("workflowId", workflowId.toString())
-            .put("invocable", entity.isInvocable()));
-    return toDto(entity);
-  }
-
-  @Override
-  @Transactional(readOnly = true)
-  public List<SkillDto> skills(UUID userId) {
-    return skills.findByUserId(userId).stream().map(DefaultWorkflowRegistry::toDto).toList();
-  }
-
-  /** Re-evaluates every skill's invocability after a status change (approve, reject, rollback). */
-  @Transactional
-  public void refreshSkillInvocability(UUID workflowId) {
-    WorkflowEntity workflow = require(workflowId);
-    for (SkillEntity skill : skills.findByWorkflowId(workflowId)) {
-      boolean invocable = workflow.getStatus() == WorkflowStatus.APPROVED
-          && !workflow.isDisabled()
-          && skill.getVersion() == workflow.getVersion();
-      skill.setInvocable(invocable);
-      skills.save(skill);
-    }
-  }
-
   public WorkflowEntity require(UUID workflowId) {
     return workflows.findById(workflowId)
         .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
@@ -190,8 +137,4 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
         snapshot.getCreatedAt());
   }
 
-  public static SkillDto toDto(SkillEntity s) {
-    return new SkillDto(s.getId(), s.getUserId(), s.getWorkflowId(), s.getVersion(), s.getName(),
-        s.getDescription(), s.getParameterSchema(), s.isInvocable());
-  }
 }

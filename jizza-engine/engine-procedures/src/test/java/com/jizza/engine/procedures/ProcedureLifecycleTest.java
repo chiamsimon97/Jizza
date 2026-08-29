@@ -185,9 +185,10 @@ class ProcedureLifecycleTest {
 
     AuditLog audit = mock(AuditLog.class);
     WorkflowValidator validator = new WorkflowValidator();
-    registry = new DefaultWorkflowRegistry(workflows, versions, skills, validator, audit);
+    registry = new DefaultWorkflowRegistry(workflows, versions, validator, audit);
+    var skillStore = new com.jizza.engine.workflow.registry.DefaultSkillStore(skills, workflows);
     procedures = new DefaultProcedureService(workflows, versions, tasks, agents, registry,
-        validator, scheduler, busProvider, audit);
+        skillStore, validator, scheduler, busProvider, audit);
     enforcer = new DefaultBindingEnforcer(tasks, workflows, versions,
         new DeviationRecorder(busProvider, audit));
   }

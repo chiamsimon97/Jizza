@@ -97,7 +97,7 @@ class DefaultOAuthServiceTest {
     props.setCallbackBaseUrl("https://jizza.example.ngrok.app");
 
     ConnectionService connectionService =
-        new ConnectionService(connections, REVERSIBLE, audit);
+        new ConnectionService(connections, REVERSIBLE);
     oauth = new DefaultOAuthService(connections, states, connectionService, REVERSIBLE, http,
         props, audit);
   }

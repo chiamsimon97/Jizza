@@ -1,15 +1,15 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.connector.ConnectionSettings;
 import com.jizza.engine.api.connector.OAuthService;
 import com.jizza.engine.api.dto.ConnectionDto;
 import com.jizza.engine.api.dto.GeneratedToolDto;
 import com.jizza.engine.api.enums.DocFormat;
-import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
-import com.jizza.engine.connectors.service.ConnectionService;
 import com.jizza.engine.connectors.tools.generate.ApiDocIngestService;
 import com.jizza.engine.infra.config.PlatformProperties;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.connection.ConnectionUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -39,12 +39,12 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/connections")
 public class ConnectionController {
 
-  private final ConnectionService connections;
+  private final ConnectionUseCase connections;
   private final OAuthService oauth;
   private final ApiDocIngestService apiDocs;
   private final PlatformProperties platform;
 
-  public ConnectionController(ConnectionService connections, OAuthService oauth,
+  public ConnectionController(ConnectionUseCase connections, OAuthService oauth,
                               ApiDocIngestService apiDocs, PlatformProperties platform) {
     this.connections = connections;
     this.oauth = oauth;
@@ -65,7 +65,7 @@ public class ConnectionController {
   @PostMapping
   @com.jizza.engine.api.util.StepUpRequired
   public ConnectionDto create(@Valid @RequestBody Requests.Connection request) {
-    return connections.create(CurrentUser.userId(), new ConnectionService.ConnectionRequest(
+    return connections.create(CurrentUser.userId(), new ConnectionSettings(
         request.serviceName(), request.authScheme(), request.clientId(), request.clientSecret(),
         request.authorizationUrl(), request.accessTokenUrl(), request.refreshTokenUrl(),
         request.scopes(), request.scopeSeparator(), request.pkce(), request.unifiedCallback(),
@@ -78,8 +78,7 @@ public class ConnectionController {
   @com.jizza.engine.api.util.StepUpRequired
   public ConnectionDto update(@PathVariable UUID id,
                               @Valid @RequestBody Requests.ConnectionPatch request) {
-    owned(id);
-    return connections.update(id, new ConnectionService.ConnectionRequest(request.serviceName(),
+    return connections.update(CurrentUser.userId(), id, new ConnectionSettings(request.serviceName(),
         request.authScheme(), request.clientId(), request.clientSecret(), request.authorizationUrl(),
         request.accessTokenUrl(), request.refreshTokenUrl(), request.scopes(),
         request.scopeSeparator(), request.pkce(), request.unifiedCallback(),
@@ -91,8 +90,7 @@ public class ConnectionController {
   @DeleteMapping("/{id}")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message delete(@PathVariable UUID id) {
-    owned(id);
-    connections.delete(id);
+    connections.delete(CurrentUser.userId(), id);
     return new Responses.Message("Connection removed.");
   }
 
@@ -168,10 +166,6 @@ public class ConnectionController {
   }
 
   private ConnectionDto owned(UUID connectionId) {
-    ConnectionDto connection = connections.get(connectionId);
-    if (!connection.userId().equals(CurrentUser.userId())) {
-      throw new NotFoundException("Connection", connectionId);
-    }
-    return connection;
+    return connections.get(CurrentUser.userId(), connectionId);
   }
 }

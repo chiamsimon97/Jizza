@@ -24,6 +24,7 @@ import com.jizza.engine.persistence.repository.ScheduledTaskRepository;
 import com.jizza.engine.persistence.repository.WorkflowRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.engine.WorkflowValidator;
+import com.jizza.engine.workflow.registry.DefaultSkillStore;
 import com.jizza.engine.workflow.registry.DefaultWorkflowRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,7 @@ public class DefaultProcedureService implements ProcedureService {
   private final ScheduledTaskRepository tasks;
   private final AgentRepository agents;
   private final DefaultWorkflowRegistry registry;
+  private final DefaultSkillStore skills;
   private final WorkflowValidator validator;
   private final SchedulerService scheduler;
   private final ObjectProvider<NotificationBus> notifications;
@@ -62,7 +64,8 @@ public class DefaultProcedureService implements ProcedureService {
 
   public DefaultProcedureService(WorkflowRepository workflows, WorkflowVersionRepository versions,
                                  ScheduledTaskRepository tasks, AgentRepository agents,
-                                 DefaultWorkflowRegistry registry, WorkflowValidator validator,
+                                 DefaultWorkflowRegistry registry, DefaultSkillStore skills,
+                                 WorkflowValidator validator,
                                  SchedulerService scheduler,
                                  ObjectProvider<NotificationBus> notifications, AuditLog audit) {
     this.workflows = workflows;
@@ -70,6 +73,7 @@ public class DefaultProcedureService implements ProcedureService {
     this.tasks = tasks;
     this.agents = agents;
     this.registry = registry;
+    this.skills = skills;
     this.validator = validator;
     this.scheduler = scheduler;
     this.notifications = notifications;
@@ -131,7 +135,7 @@ public class DefaultProcedureService implements ProcedureService {
     workflow.setDisabled(false);
     workflows.save(workflow);
     registry.snapshot(workflow);
-    registry.refreshSkillInvocability(workflowId);
+    skills.refreshInvocability(workflowId);
 
     // Approval is also what binds the procedure to the job that produced it, so the next run
     // follows the reviewed graph rather than free-forming again (R35).
@@ -153,7 +157,7 @@ public class DefaultProcedureService implements ProcedureService {
     workflow.setReviewFeedback(feedback);
     workflows.save(workflow);
     registry.snapshot(workflow);
-    registry.refreshSkillInvocability(workflowId);
+    skills.refreshInvocability(workflowId);
 
     // A rejected procedure must not stay bound to a job, or the job would keep running it.
     if (workflow.getSourceTaskId() != null) {
@@ -192,7 +196,7 @@ public class DefaultProcedureService implements ProcedureService {
     workflow.setReviewFeedback(null);
     workflows.save(workflow);
     registry.snapshot(workflow);
-    registry.refreshSkillInvocability(workflow.getId());
+    skills.refreshInvocability(workflow.getId());
 
     if (workflow.getSourceTaskId() != null) {
       tasks.findById(workflow.getSourceTaskId())
@@ -228,7 +232,7 @@ public class DefaultProcedureService implements ProcedureService {
     workflow.setDisabled(false);
     workflows.save(workflow);
     registry.snapshot(workflow);
-    registry.refreshSkillInvocability(workflowId);
+    skills.refreshInvocability(workflowId);
 
     if (workflow.getSourceTaskId() != null) {
       tasks.findById(workflow.getSourceTaskId()).ifPresent(task ->
@@ -245,7 +249,7 @@ public class DefaultProcedureService implements ProcedureService {
     WorkflowEntity workflow = require(workflowId);
     workflow.setDisabled(true);
     workflows.save(workflow);
-    registry.refreshSkillInvocability(workflowId);
+    skills.refreshInvocability(workflowId);
 
     if (workflow.getSourceTaskId() != null) {
       tasks.findById(workflow.getSourceTaskId())

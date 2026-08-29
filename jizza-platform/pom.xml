@@ -9,6 +9,7 @@
   <name>Jizza :: platform</name>
   <description>The entry point: every client call arrives here and the business logic lives here. Depends on engine-api only, so a use-case can ask the engine to act but can never reach inside it.</description>
   <modules>
+    <module>platform-usecases</module>
     <module>platform-api</module>
   </modules>
 </project>

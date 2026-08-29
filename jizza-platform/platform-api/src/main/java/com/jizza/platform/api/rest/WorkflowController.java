@@ -8,6 +8,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.skill.SkillUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -27,10 +28,12 @@ public class WorkflowController {
 
   private final WorkflowRegistry registry;
   private final WorkflowEngine engine;
+  private final SkillUseCase skills;
 
-  public WorkflowController(WorkflowRegistry registry, WorkflowEngine engine) {
+  public WorkflowController(WorkflowRegistry registry, WorkflowEngine engine, SkillUseCase skills) {
     this.registry = registry;
     this.engine = engine;
+    this.skills = skills;
   }
 
   @GetMapping("/workflows")
@@ -61,14 +64,13 @@ public class WorkflowController {
   @PostMapping("/workflows/{id}/save-skill")
   public SkillDto saveAsSkill(@PathVariable UUID id,
                               @Valid @RequestBody Requests.SaveAsSkill request) {
-    owned(id);
-    return registry.saveAsSkill(id, request.name(), request.description(),
-        request.parameterSchema());
+    return skills.createFromWorkflow(CurrentUser.userId(), id, request.name(),
+        request.description(), request.parameterSchema());
   }
 
   @GetMapping("/skills")
   public List<SkillDto> skills() {
-    return registry.skills(CurrentUser.userId());
+    return skills.list(CurrentUser.userId());
   }
 
   /**
