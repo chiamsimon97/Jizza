@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,13 +55,14 @@ public class AuthService {
   private final EncryptionService encryption;
   private final AuditLog audit;
   private final SecurityProperties props;
+  private final ApplicationEventPublisher events;
   private final SecureRandom random = new SecureRandom();
 
   public AuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
                      PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
                      TotpService totp, SessionService sessions, PendingMfaStore pendingMfa,
                      LoginThrottle throttle, EncryptionService encryption, AuditLog audit,
-                     SecurityProperties props) {
+                     SecurityProperties props, ApplicationEventPublisher events) {
     this.users = users;
     this.resetTokens = resetTokens;
     this.passwordEncoder = passwordEncoder;
@@ -72,6 +74,7 @@ public class AuthService {
     this.encryption = encryption;
     this.audit = audit;
     this.props = props;
+    this.events = events;
   }
 
   /** @param mfaToken non-null only when a second factor is still outstanding. */
@@ -93,6 +96,8 @@ public class AuthService {
     user.setMfaEnabled(false);
     users.save(user);
     audit.record(user.getId(), ActorType.USER, user.getId(), "auth.register", email, null);
+    // Agent seeding, the kill-switch row and the default autonomy policies hang off this.
+    events.publishEvent(new com.jizza.common.event.UserRegistered(user.getId(), email));
     return user.getId();
   }
 

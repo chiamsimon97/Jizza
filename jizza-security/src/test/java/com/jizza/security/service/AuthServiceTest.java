@@ -50,6 +50,7 @@ class AuthServiceTest {
   @Mock private PasswordResetTokenRepository resetTokens;
   @Mock private SessionService sessions;
   @Mock private AuditLog audit;
+  @Mock private org.springframework.context.ApplicationEventPublisher events;
 
   private AuthService auth;
   private SecurityProperties props;
@@ -78,7 +79,8 @@ class AuthServiceTest {
     totp = new TotpService(props);
 
     auth = new AuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
-        totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props);
+        totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
+        events);
 
     user = new UserEntity();
     user.setId(UUID.randomUUID());
@@ -103,6 +105,21 @@ class AuthServiceTest {
     assertThatThrownBy(() -> auth.register("new@jizza.local", "short"))
         .isInstanceOf(ValidationException.class);
     verify(users, never()).save(any());
+  }
+
+  @Test
+  void registrationAnnouncesTheNewUserSoOtherModulesCanProvisionIt() {
+    when(users.existsByEmailIgnoreCase(any())).thenReturn(false);
+    when(users.save(any(UserEntity.class))).thenAnswer(inv -> {
+      UserEntity saved = inv.getArgument(0);
+      saved.setId(UUID.randomUUID());
+      return saved;
+    });
+
+    auth.register("new@jizza.local", "Correct-Horse-92");
+
+    verify(events).publishEvent(org.mockito.ArgumentMatchers
+        .any(com.jizza.common.event.UserRegistered.class));
   }
 
   @Test
