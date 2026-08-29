@@ -2,8 +2,6 @@ package com.jizza.knowledge.embedding;
 
 import com.jizza.persistence.support.Vectors;
 import java.util.Locale;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.stereotype.Component;
 
 /**
  * A deterministic, offline embedding: hashed character n-grams projected into the column width and
@@ -13,8 +11,6 @@ import org.springframework.stereotype.Component;
  * local-first promise -- knowledge about health and finances never leaves the machine just to be
  * indexed. Swap in a hosted model by contributing another {@link EmbeddingProvider} bean.
  */
-@Component
-@ConditionalOnMissingBean(EmbeddingProvider.class)
 public class LocalHashingEmbeddingProvider implements EmbeddingProvider {
 
   private static final int NGRAM = 3;

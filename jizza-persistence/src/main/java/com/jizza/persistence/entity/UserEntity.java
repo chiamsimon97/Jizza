@@ -20,7 +20,9 @@ public class UserEntity {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @Column(nullable = false, unique = true)
+  // citext, so email comparison is case-insensitive in the database rather than only in
+  // the queries that remember to lower-case.
+  @Column(nullable = false, unique = true, columnDefinition = "citext")
   private String email;
 
   @Column(nullable = false, columnDefinition = "text")

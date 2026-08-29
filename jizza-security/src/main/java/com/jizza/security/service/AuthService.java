@@ -56,13 +56,15 @@ public class AuthService {
   private final AuditLog audit;
   private final SecurityProperties props;
   private final ApplicationEventPublisher events;
+  private final LoginAttempts attempts;
   private final SecureRandom random = new SecureRandom();
 
   public AuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
                      PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
                      TotpService totp, SessionService sessions, PendingMfaStore pendingMfa,
                      LoginThrottle throttle, EncryptionService encryption, AuditLog audit,
-                     SecurityProperties props, ApplicationEventPublisher events) {
+                     SecurityProperties props, ApplicationEventPublisher events,
+                     LoginAttempts attempts) {
     this.users = users;
     this.resetTokens = resetTokens;
     this.passwordEncoder = passwordEncoder;
@@ -75,6 +77,7 @@ public class AuthService {
     this.audit = audit;
     this.props = props;
     this.events = events;
+    this.attempts = attempts;
   }
 
   /** @param mfaToken non-null only when a second factor is still outstanding. */
@@ -116,17 +119,17 @@ public class AuthService {
     UserEntity user = maybeUser.get();
 
     if (user.getStatus() == UserStatus.DISABLED) {
-      audit.record(user.getId(), ActorType.SYSTEM, null, "auth.login.disabled", email, null);
+      attempts.recordRefusal(user.getId(), "auth.login.disabled", email);
       throw new AuthException("This account is disabled");
     }
     if (isLockedOut(user)) {
-      audit.record(user.getId(), ActorType.SYSTEM, null, "auth.login.locked_out", email, null);
+      attempts.recordRefusal(user.getId(), "auth.login.locked_out", email);
       throw new AuthException("account-locked",
           "Too many failed attempts. Try again after " + user.getLockedUntil());
     }
 
     if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
-      registerFailure(user);
+      attempts.recordFailure(user.getId());
       throw new AuthException("Invalid email or password");
     }
 
@@ -157,8 +160,8 @@ public class AuthService {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
 
     if (!totp.verify(secretOf(user), code, Instant.now().getEpochSecond())) {
-      registerFailure(user);
-      audit.record(userId, ActorType.SYSTEM, null, "auth.mfa.failed", user.getEmail(), null);
+      attempts.recordFailure(userId);
+      attempts.recordRefusal(userId, "auth.mfa.failed", user.getEmail());
       throw new AuthException("That verification code is not valid");
     }
     var session = sessions.create(userId, device, ip);
@@ -202,11 +205,11 @@ public class AuthService {
   public void stepUp(UUID userId, UUID sessionId, String password, String code) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
-      audit.record(userId, ActorType.SYSTEM, null, "auth.step_up.failed", user.getEmail(), null);
+      attempts.recordRefusal(userId, "auth.step_up.failed", user.getEmail());
       throw new AuthException("Password is not correct");
     }
     if (user.isMfaEnabled() && !totp.verify(secretOf(user), code, Instant.now().getEpochSecond())) {
-      audit.record(userId, ActorType.SYSTEM, null, "auth.step_up.failed", user.getEmail(), null);
+      attempts.recordRefusal(userId, "auth.step_up.failed", user.getEmail());
       throw new AuthException("That verification code is not valid");
     }
     sessions.markStepUp(sessionId);
@@ -312,22 +315,6 @@ public class AuthService {
       return false;
     }
     return true;
-  }
-
-  private void registerFailure(UserEntity user) {
-    int failures = user.getFailedLogins() + 1;
-    user.setFailedLogins(failures);
-    if (failures >= props.getLockout().getMaxFailedAttempts()) {
-      user.setStatus(UserStatus.LOCKED);
-      user.setLockedUntil(Instant.now().plus(props.getLockout().getLockoutDuration()));
-      users.save(user);
-      audit.record(user.getId(), ActorType.SYSTEM, null, "auth.lockout", user.getEmail(),
-          Json.obj().put("failedLogins", failures));
-      return;
-    }
-    users.save(user);
-    audit.record(user.getId(), ActorType.SYSTEM, null, "auth.login.failure", user.getEmail(),
-        Json.obj().put("failedLogins", failures));
   }
 
   private String secretOf(UserEntity user) {

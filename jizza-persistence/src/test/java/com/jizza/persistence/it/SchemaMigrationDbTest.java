@@ -9,7 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** Accept: {@code flyway migrate} builds the schema clean and every Contract table is present. */
-@org.junit.jupiter.api.condition.EnabledIf(value = "com.jizza.persistence.support.Docker#available", disabledReason = "no Docker daemon")
+@org.junit.jupiter.api.condition.EnabledIf(value = "com.jizza.persistence.support.TestDatabase#available", disabledReason = "no PostgreSQL available")
 class SchemaMigrationDbTest extends PostgresIntegrationTest {
 
   @PersistenceContext

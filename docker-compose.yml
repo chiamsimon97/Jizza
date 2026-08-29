@@ -1,0 +1,40 @@
+# Local-first infrastructure for Jizza: PostgreSQL with pgvector, and a mail catcher so escalation
+# emails are visible without sending anything real.
+#
+#   docker compose up -d
+#   mvn -pl jizza-app -am spring-boot:run
+#
+# Nothing here is production configuration. The passwords are local-only; the master encryption key
+# is never in this file or anywhere else in the repository.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: jizza-postgres
+    environment:
+      POSTGRES_DB: jizza
+      POSTGRES_USER: jizza
+      POSTGRES_PASSWORD: jizza
+      # Flyway creates the pgcrypto, citext and vector extensions; this image ships all three.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      - jizza-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jizza -d jizza"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: jizza-mailhog
+    ports:
+      - "1025:1025"   # SMTP, where Jizza sends escalation nudges
+      - "8025:8025"   # web UI, where you read them
+    logging:
+      driver: none
+
+volumes:
+  jizza-postgres:

@@ -80,7 +80,7 @@ class AuthServiceTest {
 
     auth = new AuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
         totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
-        events);
+        events, new LoginAttempts(users, audit, props));
 
     user = new UserEntity();
     user.setId(UUID.randomUUID());

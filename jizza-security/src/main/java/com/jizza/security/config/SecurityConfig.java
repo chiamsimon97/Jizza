@@ -53,6 +53,11 @@ public class SecurityConfig {
   public SecurityFilterChain filterChain(HttpSecurity http, SessionAuthenticationFilter sessionFilter,
                                          SecurityProperties props) throws Exception {
     var csrfHandler = new CsrfTokenRequestAttributeHandler();
+    // Opt out of deferred CSRF token loading. Deferred loading means the token is only resolved if
+    // something reads it during the request, which leaves a single-page client with no token to
+    // echo back -- and, worse, lets a request that clears the cookie finish without issuing a
+    // replacement. Eager loading plus CsrfCookieFilter is Spring's documented SPA arrangement.
+    csrfHandler.setCsrfRequestAttributeName(null);
 
     http
         .cors(cors -> cors.configurationSource(corsSource(props)))
@@ -87,7 +92,8 @@ public class SecurityConfig {
             .authenticationEntryPoint(problemEntryPoint())
             .accessDeniedHandler((request, response, denied) ->
                 writeProblem(response, 403, "forbidden", "Forbidden", denied.getMessage())))
-        .addFilterBefore(sessionFilter, UsernamePasswordAuthenticationFilter.class);
+        .addFilterBefore(sessionFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class);
 
     return http.build();
   }

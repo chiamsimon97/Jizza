@@ -1,0 +1,211 @@
+# Jizza — application configuration.
+#
+# Nothing secret lives in this file. Every credential is an environment variable with no default,
+# so a missing one fails loudly at startup rather than silently running with a placeholder.
+
+spring:
+  application:
+    name: jizza
+  profiles:
+    default: local
+  datasource:
+    url: ${JIZZA_DB_URL:jdbc:postgresql://localhost:5432/jizza}
+    username: ${JIZZA_DB_USER:jizza}
+    password: ${JIZZA_DB_PASSWORD:jizza}
+    hikari:
+      maximum-pool-size: 12
+      pool-name: jizza-pool
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema; Hibernate only checks it matches
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  mail:
+    host: ${JIZZA_SMTP_HOST:localhost}
+    port: ${JIZZA_SMTP_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: ${JIZZA_SMTP_AUTH:false}
+          starttls:
+            enable: ${JIZZA_SMTP_STARTTLS:false}
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 8MB
+
+server:
+  port: ${JIZZA_PORT:8080}
+  forward-headers-strategy: framework   # correct scheme and host behind a tunnel
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: jizza
+
+logging:
+  level:
+    root: INFO
+    com.jizza: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
+  structured:
+    format:
+      file: ecs                       # structured JSON on disk, readable text on the console
+  file:
+    name: ${JIZZA_LOG_FILE:./data/logs/jizza.log}
+
+jizza:
+  security:
+    # Key resolution order: keystore, then key file, then (development only) an environment key.
+    keystore-path: ${JIZZA_KEYSTORE_PATH:}
+    keystore-password: ${JIZZA_KEYSTORE_PASSWORD:}
+    keystore-alias: jizza-master
+    master-key-file: ${JIZZA_MASTER_KEY_FILE:${user.home}/.jizza/master.key}
+    master-key: ${JIZZA_MASTER_KEY:}
+    allow-env-master-key: true
+    session:
+      idle-timeout: 30m
+      absolute-timeout: 12h
+      cookie-name: JIZZA_SESSION
+      cookie-secure: ${JIZZA_COOKIE_SECURE:false}   # true wherever TLS terminates in front
+      same-site: Lax
+    step-up:
+      freshness: 5m
+    lockout:
+      max-failed-attempts: 5
+      lockout-duration: 15m
+      auth-requests-per-minute: 20
+    totp:
+      issuer: Jizza
+      digits: 6
+      period-seconds: 30
+      skew-steps: 1
+    cors:
+      allowed-origins: ${JIZZA_CORS_ORIGINS:http://localhost:5173}
+
+  agents:
+    anthropic:
+      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+      api-key: ${ANTHROPIC_API_KEY:}
+      version: "2023-06-01"
+      timeout: 120s
+      max-output-tokens: 4096
+    # Model tiering: a cheap model routes, a stronger one does the hard work. Configuration, never
+    # a literal, because model names change.
+    models:
+      routing: ${JIZZA_MODEL_ROUTING:claude-haiku-4-5-20251001}
+      standard: ${JIZZA_MODEL_STANDARD:claude-sonnet-5}
+      deep: ${JIZZA_MODEL_DEEP:claude-opus-5}
+    pricing:
+      claude-haiku-4-5-20251001:
+        input-per-million: 1.0
+        output-per-million: 5.0
+      claude-sonnet-5:
+        input-per-million: 3.0
+        output-per-million: 15.0
+      claude-opus-5:
+        input-per-million: 15.0
+        output-per-million: 75.0
+    loop:
+      max-tool-iterations: 8
+      max-tokens-per-run: 120000
+      max-tool-result-chars: 20000
+    budget:
+      per-window-units: ${JIZZA_LLM_BUDGET:5.0}
+      window: 24h
+
+  connectors:
+    # Providers redirect here, so it must be reachable from the internet. In local development that
+    # means a tunnel (ngrok / cloudflared) or a provider that permits http://localhost.
+    callback-base-url: ${JIZZA_CALLBACK_BASE_URL:http://localhost:8080}
+    callback-path: /api/oauth/callback
+    state-ttl: 10m
+    refresh-skew: 2m
+    http:
+      connect-timeout: 10s
+      read-timeout: 30s
+      max-response-bytes: 2097152
+    egress:
+      allow-private-networks: false
+      allow-plain-http: false
+      allow-hosts: ${JIZZA_EGRESS_ALLOW_HOSTS:}
+
+  scheduler:
+    enabled: true
+    default-timezone: ${JIZZA_TIMEZONE:Asia/Kolkata}
+    default-catch-up-policy: run_once
+    poll-interval: 20s
+    stale-run-after: 30m
+
+  notifications:
+    permission-expiry: 24h
+    review-expiry: 7d
+    instruction-expiry: 48h
+    remind-when-within: 4h
+    reminder-cooldown: 2h
+    max-reminders: 3
+    email-escalation: true
+    sweep-interval: 5m
+
+  platform:
+    queue:
+      enabled: true
+      batch-size: 10
+      max-attempts: 5
+      lease-duration: 5m
+      poll-interval: 2s
+    storage:
+      root: ${JIZZA_STORAGE_ROOT:./data/storage}
+    mail:
+      from: ${JIZZA_MAIL_FROM:jizza@localhost}
+      enabled: true
+    files:
+      max-bytes: 8388608
+    retention:
+      conversation-history: 365d
+
+---
+# The default profile: one process serving the API and running the worker.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+---
+# Worker-only: no HTTP surface, everything else identical. For adding worker processes later.
+spring:
+  config:
+    activate:
+      on-profile: worker
+  main:
+    web-application-type: none
+
+jizza:
+  scheduler:
+    enabled: true
+  platform:
+    queue:
+      enabled: true

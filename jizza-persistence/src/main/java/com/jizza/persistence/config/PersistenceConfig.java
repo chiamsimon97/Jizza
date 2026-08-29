@@ -11,6 +11,9 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
  */
 @Configuration
 @EnableTransactionManagement
-@EntityScan(basePackages = "com.jizza.persistence.entity")
+// The converter package is scanned alongside the entities: an autoApply converter is only
+// registered with the persistence unit if entity scanning finds it, and without that Hibernate
+// would silently fall back to storing enums as ordinals rather than the Contract's CHECK vocabulary.
+@EntityScan(basePackages = {"com.jizza.persistence.entity", "com.jizza.persistence.converter"})
 @EnableJpaRepositories(basePackages = "com.jizza.persistence.repository")
 public class PersistenceConfig {}

@@ -21,8 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
  * Append-only, hash-chained audit log. Writes take a per-user advisory lock so two concurrent
  * appends cannot both read the same chain head and fork it.
  *
- * <p>Runs in its own transaction: an action that fails afterwards still leaves the record that it
- * was attempted.
+ * <p>Joins the caller's transaction rather than opening its own. That matters for correctness in
+ * both directions: an audit row references {@code users}, so it cannot be committed before the user
+ * it describes exists, and an action whose transaction rolls back did not happen, so recording it
+ * as though it had would make the trail lie. Where a refusal must be recorded even though the
+ * surrounding call throws -- a failed sign-in, for instance -- the caller commits that in its own
+ * transaction; see {@code LoginAttempts}.
  */
 @Service
 public class HashChainAuditLog implements AuditLog {
@@ -37,7 +41,7 @@ public class HashChainAuditLog implements AuditLog {
   }
 
   @Override
-  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  @Transactional(propagation = Propagation.REQUIRED)
   public void record(UUID userId, ActorType actorType, UUID actorId, String action, String target,
                      JsonNode detail) {
     lockChain(userId);
