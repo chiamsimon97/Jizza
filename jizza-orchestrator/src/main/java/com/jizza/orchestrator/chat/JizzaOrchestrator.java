@@ -73,8 +73,13 @@ public class JizzaOrchestrator implements Orchestrator {
     return handle(userId, null, message);
   }
 
+  /**
+   * Deliberately not transactional. A turn spans model calls and, on a cross-domain request, work
+   * fanned out across threads; holding a transaction open across that would pin a connection for
+   * the whole turn and let the fan-out wait on locks its own caller is holding. Each persistence
+   * step is short and atomic instead.
+   */
   @Override
-  @Transactional
   public AssistantReply handle(UUID userId, UUID conversationId, String message) {
     AgentEntity jizza = agents.findByUserIdAndIsOrchestratorTrue(userId)
         .orElseThrow(() -> new NotFoundException("Orchestrator agent for user", userId));

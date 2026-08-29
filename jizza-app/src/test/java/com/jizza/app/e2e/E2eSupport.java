@@ -82,20 +82,34 @@ public abstract class E2eSupport {
   public static final class ScriptedLlmClient implements LlmClient {
 
     private final Deque<LlmResponse> script = new ArrayDeque<>();
-    public final List<List<Msg>> requests = new ArrayList<>();
-    public final List<List<ToolSpec>> offeredTools = new ArrayList<>();
+    private final java.util.Map<String, Deque<LlmResponse>> byAgent =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    public final List<List<Msg>> requests =
+        java.util.Collections.synchronizedList(new ArrayList<>());
+    public final List<List<ToolSpec>> offeredTools =
+        java.util.Collections.synchronizedList(new ArrayList<>());
 
     /** Consulted when the script is empty; the default simply ends the turn. */
     public Function<List<Msg>, LlmResponse> fallback =
         messages -> LlmResponse.text("Nothing further.");
 
+    /** Replies for whichever agent asks next. */
     public void script(LlmResponse... responses) {
       script.clear();
       script.addAll(List.of(responses));
     }
 
+    /**
+     * Replies for one named agent's turns only. A cross-domain request runs several agents
+     * concurrently, so scripting by name is the only way to say who is meant to say what.
+     */
+    public void scriptFor(String agentName, LlmResponse... responses) {
+      byAgent.put(agentName, new java.util.concurrent.ConcurrentLinkedDeque<>(List.of(responses)));
+    }
+
     public void reset() {
       script.clear();
+      byAgent.clear();
       requests.clear();
       offeredTools.clear();
       fallback = messages -> LlmResponse.text("Nothing further.");
@@ -128,10 +142,28 @@ public abstract class E2eSupport {
     }
 
     @Override
-    public LlmResponse complete(String model, List<Msg> messages, List<ToolSpec> tools) {
+    public synchronized LlmResponse complete(String model, List<Msg> messages, List<ToolSpec> tools) {
       requests.add(List.copyOf(messages));
       offeredTools.add(tools == null ? List.of() : List.copyOf(tools));
-      return script.isEmpty() ? fallback.apply(messages) : script.poll();
+
+      String agent = agentNameOf(messages);
+      Deque<LlmResponse> forAgent = agent == null ? null : byAgent.get(agent);
+      if (forAgent != null && !forAgent.isEmpty()) return forAgent.poll();
+      if (!script.isEmpty()) return script.poll();
+      return fallback.apply(messages);
+    }
+
+    /** Every system prompt opens with the agent's name, which is what routes a scripted reply. */
+    private String agentNameOf(List<Msg> messages) {
+      for (Msg message : messages) {
+        if (message.role() == Msg.Role.SYSTEM && message.text() != null
+            && message.text().startsWith("Your name is ")) {
+          String rest = message.text().substring("Your name is ".length());
+          int stop = rest.indexOf('.');
+          return stop < 0 ? rest.trim() : rest.substring(0, stop).trim();
+        }
+      }
+      return null;
     }
   }
 

@@ -30,6 +30,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Registration, login, MFA, step-up, session lifecycle, recovery and lockout (R3 to R6).
@@ -57,6 +58,7 @@ public class AuthService {
   private final SecurityProperties props;
   private final ApplicationEventPublisher events;
   private final LoginAttempts attempts;
+  private final TransactionTemplate transactions;
   private final SecureRandom random = new SecureRandom();
 
   public AuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
@@ -64,7 +66,8 @@ public class AuthService {
                      TotpService totp, SessionService sessions, PendingMfaStore pendingMfa,
                      LoginThrottle throttle, EncryptionService encryption, AuditLog audit,
                      SecurityProperties props, ApplicationEventPublisher events,
-                     LoginAttempts attempts) {
+                     LoginAttempts attempts,
+                     org.springframework.transaction.PlatformTransactionManager txManager) {
     this.users = users;
     this.resetTokens = resetTokens;
     this.passwordEncoder = passwordEncoder;
@@ -78,6 +81,7 @@ public class AuthService {
     this.props = props;
     this.events = events;
     this.attempts = attempts;
+    this.transactions = new TransactionTemplate(txManager);
   }
 
   /** @param mfaToken non-null only when a second factor is still outstanding. */
@@ -85,23 +89,31 @@ public class AuthService {
 
   public record MfaSetup(String secret, String provisioningUri) {}
 
-  @Transactional
+  /**
+   * Deliberately not annotated: the user row has to be committed before anything can reference it.
+   * The audit log and the provisioning listeners both write rows with a foreign key to
+   * {@code users}, so they run after the transaction that creates it, not inside it.
+   */
   public UUID register(String email, String password) {
     if (email == null || !email.contains("@")) throw new ValidationException("A valid email is required");
     passwordPolicy.validate(password);
     if (users.existsByEmailIgnoreCase(email)) {
       throw new com.jizza.common.error.ConflictException("That email is already registered");
     }
-    UserEntity user = new UserEntity();
-    user.setEmail(email);
-    user.setPasswordHash(passwordEncoder.encode(password));
-    user.setStatus(UserStatus.ACTIVE);
-    user.setMfaEnabled(false);
-    users.save(user);
-    audit.record(user.getId(), ActorType.USER, user.getId(), "auth.register", email, null);
+
+    UUID userId = transactions.execute(status -> {
+      UserEntity user = new UserEntity();
+      user.setEmail(email);
+      user.setPasswordHash(passwordEncoder.encode(password));
+      user.setStatus(UserStatus.ACTIVE);
+      user.setMfaEnabled(false);
+      return users.save(user).getId();
+    });
+
+    audit.record(userId, ActorType.USER, userId, "auth.register", email, null);
     // Agent seeding, the kill-switch row and the default autonomy policies hang off this.
-    events.publishEvent(new com.jizza.common.event.UserRegistered(user.getId(), email));
-    return user.getId();
+    events.publishEvent(new com.jizza.common.event.UserRegistered(userId, email));
+    return userId;
   }
 
   @Transactional

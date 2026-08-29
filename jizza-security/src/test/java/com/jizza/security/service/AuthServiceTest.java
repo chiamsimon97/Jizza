@@ -57,6 +57,19 @@ class AuthServiceTest {
   private TotpService totp;
   private UserEntity user;
 
+  /** Runs the callback inline: the unit test has no real transaction to manage. */
+  private static org.springframework.transaction.PlatformTransactionManager transactionManager() {
+    return new org.springframework.transaction.support.AbstractPlatformTransactionManager() {
+      @Override protected Object doGetTransaction() { return new Object(); }
+      @Override protected void doBegin(Object transaction,
+          org.springframework.transaction.TransactionDefinition definition) { }
+      @Override protected void doCommit(
+          org.springframework.transaction.support.DefaultTransactionStatus status) { }
+      @Override protected void doRollback(
+          org.springframework.transaction.support.DefaultTransactionStatus status) { }
+    };
+  }
+
   /** Reversible stand-in for Argon2; the real encoder is verified separately and is slow by design. */
   private static final PasswordEncoder ENCODER = new PasswordEncoder() {
     @Override public String encode(CharSequence raw) { return "enc:" + raw; }
@@ -80,7 +93,7 @@ class AuthServiceTest {
 
     auth = new AuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
         totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
-        events, new LoginAttempts(users, audit, props));
+        events, new LoginAttempts(users, audit, props), transactionManager());
 
     user = new UserEntity();
     user.setId(UUID.randomUUID());
