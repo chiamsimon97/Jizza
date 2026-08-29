@@ -29,71 +29,65 @@
     <swagger-parser.version>2.1.22</swagger-parser.version>
   </properties>
 
+  <!--
+    Two aggregates and the deployable that assembles them.
+
+    jizza-engine is the brain: generic mechanism, no HTTP surface, no knowledge of any particular
+    user journey. jizza-platform is the entry point: every client call lands there and the business
+    logic lives there, reaching the engine only through engine-api.
+  -->
   <modules>
-    <module>jizza-common</module>
-    <module>jizza-persistence</module>
-    <module>jizza-security</module>
-    <module>jizza-agents</module>
-    <module>jizza-knowledge</module>
-    <module>jizza-orchestrator</module>
-    <module>jizza-connectors</module>
-    <module>jizza-connectors-tools</module>
-    <module>jizza-scheduler</module>
-    <module>jizza-workflow</module>
-    <module>jizza-procedures</module>
-    <module>jizza-notifications</module>
-    <module>jizza-autonomy</module>
+    <module>jizza-engine</module>
     <module>jizza-platform</module>
-    <module>jizza-web</module>
     <module>jizza-app</module>
   </modules>
 
   <dependencyManagement>
     <dependencies>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-common</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-api</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-persistence</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-security</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-security</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-agents</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-agents</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-knowledge</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-knowledge</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-orchestrator</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-orchestrator</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-connectors</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-connectors</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-connectors-tools</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-scheduler</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-workflow</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-procedures</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-notifications</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-notifications</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-autonomy</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-platform</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>engine-infra</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.jizza</groupId><artifactId>jizza-web</artifactId><version>${project.version}</version>
+        <groupId>com.jizza</groupId><artifactId>platform-api</artifactId><version>${project.version}</version>
       </dependency>
 
       <dependency>

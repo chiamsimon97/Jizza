@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-parent</artifactId><version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath></parent>
+  <artifactId>jizza-engine</artifactId>
+  <packaging>pom</packaging>
+  <name>Jizza :: engine</name>
+  <description>The brain: generic capability and execution runtime. No HTTP surface, no user journeys, nothing specific to one product decision. engine-api is the published contract; everything else here implements it.</description>
+  <modules>
+    <module>engine-api</module>
+    <module>engine-persistence</module>
+    <module>engine-security</module>
+    <module>engine-agents</module>
+    <module>engine-knowledge</module>
+    <module>engine-orchestrator</module>
+    <module>engine-connectors</module>
+    <module>engine-connectors-tools</module>
+    <module>engine-scheduler</module>
+    <module>engine-workflow</module>
+    <module>engine-procedures</module>
+    <module>engine-notifications</module>
+    <module>engine-autonomy</module>
+    <module>engine-infra</module>
+  </modules>
+</project>

@@ -2,19 +2,13 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <parent><groupId>com.jizza</groupId><artifactId>jizza-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-parent</artifactId><version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath></parent>
   <artifactId>jizza-platform</artifactId>
-  <name>Jizza :: platform (queue, realtime, webhooks, observability, storage)</name>
-  <dependencies>
-    <dependency><groupId>com.jizza</groupId><artifactId>jizza-common</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>jizza-persistence</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>jizza-security</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-websocket</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-cache</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-mail</artifactId></dependency>
-    <dependency><groupId>com.github.ben-manes.caffeine</groupId><artifactId>caffeine</artifactId></dependency>
-    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-core</artifactId></dependency>
-  </dependencies>
+  <packaging>pom</packaging>
+  <name>Jizza :: platform</name>
+  <description>The entry point: every client call arrives here and the business logic lives here. Depends on engine-api only, so a use-case can ask the engine to act but can never reach inside it.</description>
+  <modules>
+    <module>platform-api</module>
+  </modules>
 </project>
