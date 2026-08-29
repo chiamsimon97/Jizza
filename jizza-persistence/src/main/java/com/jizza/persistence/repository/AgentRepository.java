@@ -1,0 +1,14 @@
+package com.jizza.persistence.repository;
+
+import com.jizza.persistence.entity.AgentEntity;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface AgentRepository extends JpaRepository<AgentEntity, UUID> {
+  List<AgentEntity> findByUserIdOrderByIsOrchestratorDescNameAsc(UUID userId);
+  Optional<AgentEntity> findByUserIdAndKey(UUID userId, String key);
+  Optional<AgentEntity> findByUserIdAndIsOrchestratorTrue(UUID userId);
+  List<AgentEntity> findByUserIdAndIsOrchestratorFalseAndEnabledTrue(UUID userId);
+}
