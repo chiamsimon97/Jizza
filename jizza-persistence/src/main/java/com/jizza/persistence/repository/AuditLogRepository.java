@@ -9,9 +9,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AuditLogRepository extends JpaRepository<AuditLogEntity, UUID> {
 
-  List<AuditLogEntity> findByUserIdOrderByCreatedAtAsc(UUID userId);
+  List<AuditLogEntity> findByUserIdOrderBySeqAsc(UUID userId);
 
   List<AuditLogEntity> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
-  Optional<AuditLogEntity> findFirstByUserIdOrderByCreatedAtDescIdDesc(UUID userId);
+  Optional<AuditLogEntity> findFirstByUserIdOrderBySeqDesc(UUID userId);
+
+  List<AuditLogEntity> findByUserIdAndActionOrderBySeqDesc(UUID userId, String action, Pageable pageable);
 }

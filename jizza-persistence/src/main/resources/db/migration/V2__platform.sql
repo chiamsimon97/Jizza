@@ -116,3 +116,7 @@ alter table idempotency_keys add column status varchar not null default 'in_flig
   check (status in ('in_flight','completed','failed'));
 
 alter table files add column sha256 varchar;
+
+-- R14 the audit chain needs a total order that survives identical timestamps.
+alter table audit_log add column seq bigserial;
+create unique index audit_log_user_seq_uk on audit_log (user_id, seq);

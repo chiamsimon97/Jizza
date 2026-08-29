@@ -58,7 +58,7 @@ public class UserEntity {
   public byte[] getMfaSecret() { return mfaSecret; }
   public void setMfaSecret(byte[] mfaSecret) { this.mfaSecret = mfaSecret; }
 
-  public boolean getMfaEnabled() { return mfaEnabled; }
+  public boolean isMfaEnabled() { return mfaEnabled; }
   public void setMfaEnabled(boolean mfaEnabled) { this.mfaEnabled = mfaEnabled; }
 
   public String getRecoveryHash() { return recoveryHash; }

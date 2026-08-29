@@ -59,7 +59,7 @@ public class OutboxEntity {
   public JsonNode getPayload() { return payload; }
   public void setPayload(JsonNode payload) { this.payload = payload; }
 
-  public boolean getPublished() { return published; }
+  public boolean isPublished() { return published; }
   public void setPublished(boolean published) { this.published = published; }
 
   public Instant getCreatedAt() { return createdAt; }

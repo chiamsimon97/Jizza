@@ -43,7 +43,7 @@ public class PasswordResetTokenEntity {
   public Instant getExpiresAt() { return expiresAt; }
   public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
 
-  public boolean getUsed() { return used; }
+  public boolean isUsed() { return used; }
   public void setUsed(boolean used) { this.used = used; }
 
   public Instant getCreatedAt() { return createdAt; }

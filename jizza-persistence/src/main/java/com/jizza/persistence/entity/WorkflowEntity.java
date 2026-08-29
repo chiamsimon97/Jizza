@@ -107,7 +107,7 @@ public class WorkflowEntity {
   public UUID getSourceTaskId() { return sourceTaskId; }
   public void setSourceTaskId(UUID sourceTaskId) { this.sourceTaskId = sourceTaskId; }
 
-  public boolean getDisabled() { return disabled; }
+  public boolean isDisabled() { return disabled; }
   public void setDisabled(boolean disabled) { this.disabled = disabled; }
 
   public String getReviewFeedback() { return reviewFeedback; }

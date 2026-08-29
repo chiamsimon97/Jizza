@@ -9,6 +9,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -24,6 +26,11 @@ public class AuditLogEntity {
 
   @Column(nullable = false)
   private UUID userId;
+
+  /** Database-assigned total order; the hash chain is verified in this order. */
+  @Generated(event = EventType.INSERT)
+  @Column(insertable = false, updatable = false)
+  private Long seq;
 
   @Column(nullable = false)
   private ActorType actorType;
@@ -49,6 +56,8 @@ public class AuditLogEntity {
   private String requestId;
 
   private Instant createdAt;
+
+  public Long getSeq() { return seq; }
 
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }

@@ -61,7 +61,7 @@ public class SkillEntity {
   public JsonNode getParameterSchema() { return parameterSchema; }
   public void setParameterSchema(JsonNode parameterSchema) { this.parameterSchema = parameterSchema; }
 
-  public boolean getInvocable() { return invocable; }
+  public boolean isInvocable() { return invocable; }
   public void setInvocable(boolean invocable) { this.invocable = invocable; }
 
 }

@@ -132,10 +132,10 @@ public class ConnectionEntity {
   public String getScopeSeparator() { return scopeSeparator; }
   public void setScopeSeparator(String scopeSeparator) { this.scopeSeparator = scopeSeparator; }
 
-  public boolean getPkce() { return pkce; }
+  public boolean isPkce() { return pkce; }
   public void setPkce(boolean pkce) { this.pkce = pkce; }
 
-  public boolean getUnifiedCallback() { return unifiedCallback; }
+  public boolean isUnifiedCallback() { return unifiedCallback; }
   public void setUnifiedCallback(boolean unifiedCallback) { this.unifiedCallback = unifiedCallback; }
 
   public TokenPlacement getTokenPlacement() { return tokenPlacement; }
@@ -153,7 +153,7 @@ public class ConnectionEntity {
   public Instant getTokenExpiresAt() { return tokenExpiresAt; }
   public void setTokenExpiresAt(Instant tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
 
-  public boolean getAutoRefresh() { return autoRefresh; }
+  public boolean isAutoRefresh() { return autoRefresh; }
   public void setAutoRefresh(boolean autoRefresh) { this.autoRefresh = autoRefresh; }
 
   public JsonNode getTestApi() { return testApi; }

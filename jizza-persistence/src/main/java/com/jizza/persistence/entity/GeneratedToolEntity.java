@@ -77,10 +77,10 @@ public class GeneratedToolEntity {
   public JsonNode getAuthMapping() { return authMapping; }
   public void setAuthMapping(JsonNode authMapping) { this.authMapping = authMapping; }
 
-  public boolean getSideEffecting() { return sideEffecting; }
+  public boolean isSideEffecting() { return sideEffecting; }
   public void setSideEffecting(boolean sideEffecting) { this.sideEffecting = sideEffecting; }
 
-  public boolean getEnabled() { return enabled; }
+  public boolean isEnabled() { return enabled; }
   public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
 }

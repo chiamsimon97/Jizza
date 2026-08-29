@@ -52,10 +52,10 @@ public class AgentEntity {
   public String getSystemPrompt() { return systemPrompt; }
   public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }
 
-  public boolean getIsOrchestrator() { return isOrchestrator; }
-  public void setIsOrchestrator(boolean isOrchestrator) { this.isOrchestrator = isOrchestrator; }
+  public boolean isOrchestrator() { return isOrchestrator; }
+  public void setOrchestrator(boolean isOrchestrator) { this.isOrchestrator = isOrchestrator; }
 
-  public boolean getEnabled() { return enabled; }
+  public boolean isEnabled() { return enabled; }
   public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
 }

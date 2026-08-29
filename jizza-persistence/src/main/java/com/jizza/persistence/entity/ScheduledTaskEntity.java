@@ -116,7 +116,7 @@ public class ScheduledTaskEntity {
   public String getLastResult() { return lastResult; }
   public void setLastResult(String lastResult) { this.lastResult = lastResult; }
 
-  public boolean getRepetitive() { return repetitive; }
+  public boolean isRepetitive() { return repetitive; }
   public void setRepetitive(boolean repetitive) { this.repetitive = repetitive; }
 
   public CatchUpPolicy getCatchUpPolicy() { return catchUpPolicy; }

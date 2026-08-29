@@ -88,7 +88,7 @@ public class WorkflowRunEntity {
   public String getError() { return error; }
   public void setError(String error) { this.error = error; }
 
-  public boolean getDeadLettered() { return deadLettered; }
+  public boolean isDeadLettered() { return deadLettered; }
   public void setDeadLettered(boolean deadLettered) { this.deadLettered = deadLettered; }
 
   public Instant getCreatedAt() { return createdAt; }
