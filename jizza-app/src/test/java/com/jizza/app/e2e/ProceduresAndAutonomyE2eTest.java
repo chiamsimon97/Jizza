@@ -3,26 +3,26 @@ package com.jizza.app.e2e;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.jizza.common.agent.CapabilityRegistry;
-import com.jizza.common.autonomy.AutonomyGate;
-import com.jizza.common.dto.AgentDto;
-import com.jizza.common.enums.NodeType;
-import com.jizza.common.enums.NotificationKind;
-import com.jizza.common.enums.TaskStatus;
-import com.jizza.common.enums.WorkflowStatus;
-import com.jizza.common.llm.LlmResponse;
-import com.jizza.common.orchestrator.AgentDirectory;
-import com.jizza.common.tool.ToolCall;
-import com.jizza.common.util.Json;
-import com.jizza.common.workflow.WorkflowEngine;
-import com.jizza.common.workflow.graph.WorkflowEdge;
-import com.jizza.common.workflow.graph.WorkflowGraph;
-import com.jizza.common.workflow.graph.WorkflowNode;
-import com.jizza.persistence.repository.ScheduledTaskRepository;
-import com.jizza.persistence.repository.WorkflowRepository;
-import com.jizza.persistence.repository.WorkflowRunRepository;
-import com.jizza.scheduler.config.SchedulerProperties;
-import com.jizza.scheduler.run.TaskDispatcher;
+import com.jizza.engine.api.agent.CapabilityRegistry;
+import com.jizza.engine.api.autonomy.AutonomyGate;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.NodeType;
+import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.TaskStatus;
+import com.jizza.engine.api.enums.WorkflowStatus;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
+import com.jizza.engine.api.tool.ToolCall;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workflow.WorkflowEngine;
+import com.jizza.engine.api.workflow.graph.WorkflowEdge;
+import com.jizza.engine.api.workflow.graph.WorkflowGraph;
+import com.jizza.engine.api.workflow.graph.WorkflowNode;
+import com.jizza.engine.persistence.repository.ScheduledTaskRepository;
+import com.jizza.engine.persistence.repository.WorkflowRepository;
+import com.jizza.engine.persistence.repository.WorkflowRunRepository;
+import com.jizza.engine.scheduler.config.SchedulerProperties;
+import com.jizza.engine.scheduler.run.TaskDispatcher;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +43,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * the policy the user set.
  */
 @org.junit.jupiter.api.condition.EnabledIf(
-    value = "com.jizza.persistence.support.TestDatabase#available",
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class ProceduresAndAutonomyE2eTest extends E2eSupport {
 

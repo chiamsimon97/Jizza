@@ -1,12 +1,12 @@
 package com.jizza.app.e2e;
 
 import com.jizza.app.JizzaApplication;
-import com.jizza.common.enums.ModelTier;
-import com.jizza.common.llm.LlmClient;
-import com.jizza.common.llm.LlmResponse;
-import com.jizza.common.llm.Msg;
-import com.jizza.common.tool.ToolSpec;
-import com.jizza.persistence.support.TestDatabase;
+import com.jizza.engine.api.enums.ModelTier;
+import com.jizza.engine.api.llm.LlmClient;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.llm.Msg;
+import com.jizza.engine.api.tool.ToolSpec;
+import com.jizza.engine.persistence.support.TestDatabase;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -38,7 +38,7 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @SpringBootTest(classes = {JizzaApplication.class, E2eSupport.ScriptedModel.class},
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@EnabledIf(value = "com.jizza.persistence.support.TestDatabase#available",
+@EnabledIf(value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 public abstract class E2eSupport {
 

@@ -3,15 +3,15 @@ package com.jizza.app.e2e;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.jizza.common.dto.AgentDto;
-import com.jizza.common.enums.DataClassification;
-import com.jizza.common.error.IsolationViolationException;
-import com.jizza.common.knowledge.KnowledgeEntry;
-import com.jizza.common.knowledge.KnowledgeStore;
-import com.jizza.common.llm.LlmResponse;
-import com.jizza.common.orchestrator.AgentDirectory;
-import com.jizza.common.tool.ToolCall;
-import com.jizza.common.util.Json;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.DataClassification;
+import com.jizza.engine.api.error.IsolationViolationException;
+import com.jizza.engine.api.knowledge.KnowledgeEntry;
+import com.jizza.engine.api.knowledge.KnowledgeStore;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
+import com.jizza.engine.api.tool.ToolCall;
+import com.jizza.engine.api.util.Json;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,7 +25,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * knowledge namespaces are isolated (build prompt Acceptance Criteria 5 and 6).
  */
 @org.junit.jupiter.api.condition.EnabledIf(
-    value = "com.jizza.persistence.support.TestDatabase#available",
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class AgentsAndChatE2eTest extends E2eSupport {
 
@@ -115,7 +115,7 @@ class AgentsAndChatE2eTest extends E2eSupport {
     model.scriptFor("Jizza", LlmResponse.text("ok"));
     api.post("/api/chat", Map.of("message", "hello"));
 
-    assertThat(model.offeredTools.get(0)).extracting(com.jizza.common.tool.ToolSpec::name)
+    assertThat(model.offeredTools.get(0)).extracting(com.jizza.engine.api.tool.ToolSpec::name)
         .contains("delegate_to_specialist", "delegate_to_specialists");
 
     var vitaTools = api.get("/api/agents/" + agentId("health") + "/tools");

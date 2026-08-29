@@ -2,16 +2,16 @@ package com.jizza.app.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jizza.common.dto.AgentDto;
-import com.jizza.common.enums.CapabilityType;
-import com.jizza.common.enums.ConnectionStatus;
-import com.jizza.common.llm.LlmResponse;
-import com.jizza.common.orchestrator.AgentDirectory;
-import com.jizza.common.tool.ToolCall;
-import com.jizza.common.util.Json;
-import com.jizza.connectors.oauth.Pkce;
-import com.jizza.persistence.repository.ConnectionRepository;
-import com.jizza.persistence.repository.OAuthStateRepository;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.CapabilityType;
+import com.jizza.engine.api.enums.ConnectionStatus;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
+import com.jizza.engine.api.tool.ToolCall;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.connectors.oauth.Pkce;
+import com.jizza.engine.persistence.repository.ConnectionRepository;
+import com.jizza.engine.persistence.repository.OAuthStateRepository;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -35,7 +35,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * tests about what the generated tools then do.
  */
 @org.junit.jupiter.api.condition.EnabledIf(
-    value = "com.jizza.persistence.support.TestDatabase#available",
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class ConnectorsE2eTest extends E2eSupport {
 
@@ -235,17 +235,17 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void anAttachedOpenApiDocumentGeneratesOneToolPerOperation(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs) {
     var tools = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON);
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON);
 
-    assertThat(tools).extracting(com.jizza.common.dto.GeneratedToolDto::name)
+    assertThat(tools).extracting(com.jizza.engine.api.dto.GeneratedToolDto::name)
         .containsExactlyInAnyOrder("listpets", "createpet", "showpetbyid");
     assertThat(tools).filteredOn(t -> t.name().equals("createpet"))
-        .allMatch(com.jizza.common.dto.GeneratedToolDto::sideEffecting);
+        .allMatch(com.jizza.engine.api.dto.GeneratedToolDto::sideEffecting);
     assertThat(tools).filteredOn(t -> t.name().equals("listpets"))
-        .noneMatch(com.jizza.common.dto.GeneratedToolDto::sideEffecting);
+        .noneMatch(com.jizza.engine.api.dto.GeneratedToolDto::sideEffecting);
 
     // The document declared an Authorization parameter; the model must never be asked for it.
     var listPets = tools.stream().filter(t -> t.name().equals("listpets")).findFirst().orElseThrow();
@@ -256,12 +256,12 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void anAssignedToolMakesARealAuthenticatedCallThroughTheAgent(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs,
-      @Autowired com.jizza.common.agent.CapabilityRegistry capabilities) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs,
+      @Autowired com.jizza.engine.api.agent.CapabilityRegistry capabilities) {
     connect();
     var tools = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON);
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON);
     UUID listPets = tools.stream().filter(t -> t.name().equals("listpets"))
         .findFirst().orElseThrow().id();
 
@@ -282,16 +282,16 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void aSideEffectingCallIsNotSentTwiceForTheSameIdempotencyKey(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs,
-      @Autowired com.jizza.common.connector.ToolExecutor executor) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs,
+      @Autowired com.jizza.engine.api.connector.ToolExecutor executor) {
     connect();
     var createPet = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON).stream()
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON).stream()
         .filter(t -> t.name().equals("createpet")).findFirst().orElseThrow();
 
     var args = Json.obj().set("body", Json.obj().put("name", "Rex"));
-    var key = com.jizza.common.connector.IdempotencyKey.of(userId, "e2e-" + UUID.randomUUID());
+    var key = com.jizza.engine.api.connector.IdempotencyKey.of(userId, "e2e-" + UUID.randomUUID());
 
     var first = executor.execute(createPet, args, key);
     var second = executor.execute(createPet, args, key);
@@ -304,20 +304,20 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void theToolIsOfferedToTheAgentThatHoldsItAndToNoOther(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs,
-      @Autowired com.jizza.common.agent.CapabilityRegistry capabilities) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs,
+      @Autowired com.jizza.engine.api.agent.CapabilityRegistry capabilities) {
     var listPets = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON).stream()
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON).stream()
         .filter(t -> t.name().equals("listpets")).findFirst().orElseThrow();
 
     UUID kai = agentId("finance");
     UUID vita = agentId("health");
     capabilities.grant(kai, CapabilityType.GENERATED_TOOL, listPets.id());
 
-    assertThat(capabilities.toolsFor(kai)).extracting(com.jizza.common.tool.ToolSpec::name)
+    assertThat(capabilities.toolsFor(kai)).extracting(com.jizza.engine.api.tool.ToolSpec::name)
         .contains("listpets");
-    assertThat(capabilities.toolsFor(vita)).extracting(com.jizza.common.tool.ToolSpec::name)
+    assertThat(capabilities.toolsFor(vita)).extracting(com.jizza.engine.api.tool.ToolSpec::name)
         .doesNotContain("listpets");
     assertThat(capabilities.invoke(vita, new ToolCall("c1", "listpets", Json.obj())).error())
         .contains("not assigned to this agent");
@@ -325,7 +325,7 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void theEgressGuardBlocksAToolPointedAtAnInternalAddress(
-      @Autowired com.jizza.common.connector.ToolExecutor executor) {
+      @Autowired com.jizza.engine.api.connector.ToolExecutor executor) {
     connect();
     // A connection whose base URL is the cloud metadata address: the classic SSRF target.
     var metadata = api.post("/api/connections", Map.of(
@@ -333,7 +333,7 @@ class ConnectorsE2eTest extends E2eSupport {
         "baseUrl", "http://169.254.169.254"));
     UUID metadataConnection = UUID.fromString(metadata.json().path("id").asText());
 
-    var tool = new com.jizza.common.dto.GeneratedToolDto(UUID.randomUUID(), metadataConnection,
+    var tool = new com.jizza.engine.api.dto.GeneratedToolDto(UUID.randomUUID(), metadataConnection,
         "read_metadata", "d", Json.obj(), "GET", "/latest/meta-data/", Json.obj(), null,
         false, true);
 
@@ -345,9 +345,9 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void theEgressGuardKeepsAToolOnTheHostItsConnectionDeclared(
-      @Autowired com.jizza.common.connector.ToolExecutor executor) {
+      @Autowired com.jizza.engine.api.connector.ToolExecutor executor) {
     connect();
-    var tool = new com.jizza.common.dto.GeneratedToolDto(UUID.randomUUID(), connectionId,
+    var tool = new com.jizza.engine.api.dto.GeneratedToolDto(UUID.randomUUID(), connectionId,
         "escape", "d", Json.obj(), "GET", "/v1/pets", Json.obj(), null, false, true);
 
     // Point the connection somewhere else and the same tool stops working: the host comes from
@@ -361,12 +361,12 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void anUpstreamErrorIsReportedWithoutEchoingCredentials(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs,
-      @Autowired com.jizza.common.connector.ToolExecutor executor) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs,
+      @Autowired com.jizza.engine.api.connector.ToolExecutor executor) {
     connect();
     var listPets = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON).stream()
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON).stream()
         .filter(t -> t.name().equals("listpets")).findFirst().orElseThrow();
     service.nextStatus = 500;
 
@@ -378,12 +378,12 @@ class ConnectorsE2eTest extends E2eSupport {
 
   @Test
   void aGeneratedToolNeverPutsACredentialInModelContext(
-      @Autowired com.jizza.connectors.tools.generate.ApiDocIngestService apiDocs,
-      @Autowired com.jizza.common.agent.CapabilityRegistry capabilities) {
+      @Autowired com.jizza.engine.connectors.tools.generate.ApiDocIngestService apiDocs,
+      @Autowired com.jizza.engine.api.agent.CapabilityRegistry capabilities) {
     connect();
     var listPets = apiDocs.fromApiDoc(connectionId,
         service.openApiDocument().getBytes(StandardCharsets.UTF_8),
-        com.jizza.common.enums.DocFormat.OPENAPI_JSON).stream()
+        com.jizza.engine.api.enums.DocFormat.OPENAPI_JSON).stream()
         .filter(t -> t.name().equals("listpets")).findFirst().orElseThrow();
     UUID kai = agentId("finance");
     capabilities.grant(kai, CapabilityType.GENERATED_TOOL, listPets.id());

@@ -2,12 +2,12 @@ package com.jizza.app.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jizza.common.enums.AuthScheme;
-import com.jizza.common.util.Json;
-import com.jizza.persistence.entity.ConnectionEntity;
-import com.jizza.persistence.repository.ConnectionRepository;
-import com.jizza.persistence.repository.UserRepository;
-import com.jizza.security.mfa.TotpService;
+import com.jizza.engine.api.enums.AuthScheme;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.persistence.entity.ConnectionEntity;
+import com.jizza.engine.persistence.repository.ConnectionRepository;
+import com.jizza.engine.persistence.repository.UserRepository;
+import com.jizza.engine.security.mfa.TotpService;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -22,7 +22,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * (build prompt Acceptance Criteria 1, 2 and 4).
  */
 @org.junit.jupiter.api.condition.EnabledIf(
-    value = "com.jizza.persistence.support.TestDatabase#available",
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class AuthAndSecurityE2eTest extends E2eSupport {
 
@@ -205,7 +205,7 @@ class AuthAndSecurityE2eTest extends E2eSupport {
     assertThat(locked.status()).isEqualTo(401);
     assertThat(locked.json().path("detail").asText()).contains("Too many failed attempts");
     assertThat(users.findByEmailIgnoreCase(email).orElseThrow().getStatus())
-        .isEqualTo(com.jizza.common.enums.UserStatus.LOCKED);
+        .isEqualTo(com.jizza.engine.api.enums.UserStatus.LOCKED);
   }
 
   @Test
@@ -272,7 +272,7 @@ class AuthAndSecurityE2eTest extends E2eSupport {
         "authorizationUrl", "https://auth.example.test/authorize",
         "accessTokenUrl", "https://auth.example.test/token"));
 
-    model.script(com.jizza.common.llm.LlmResponse.text("I have no access to your credentials."));
+    model.script(com.jizza.engine.api.llm.LlmResponse.text("I have no access to your credentials."));
     var reply = api.post("/api/chat", Map.of("message", "What is my Example client secret?"));
 
     assertThat(reply.ok()).isTrue();

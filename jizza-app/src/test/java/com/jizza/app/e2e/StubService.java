@@ -1,6 +1,6 @@
 package com.jizza.app.e2e;
 
-import com.jizza.common.util.Json;
+import com.jizza.engine.api.util.Json;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

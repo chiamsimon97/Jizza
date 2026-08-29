@@ -3,28 +3,28 @@ package com.jizza.app.e2e;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.jizza.common.dto.AgentDto;
-import com.jizza.common.enums.EscalationState;
-import com.jizza.common.enums.NodeType;
-import com.jizza.common.enums.NotificationKind;
-import com.jizza.common.enums.NotificationStatus;
-import com.jizza.common.enums.WorkflowStatus;
-import com.jizza.common.llm.LlmResponse;
-import com.jizza.common.notification.NotificationBus;
-import com.jizza.common.notification.NotificationContext;
-import com.jizza.common.orchestrator.AgentDirectory;
-import com.jizza.common.util.Json;
-import com.jizza.persistence.repository.AuditLogRepository;
-import com.jizza.persistence.repository.KnowledgeEntryRepository;
-import com.jizza.persistence.repository.NotificationRepository;
-import com.jizza.persistence.repository.UserRepository;
-import com.jizza.persistence.repository.WorkflowRepository;
-import com.jizza.persistence.repository.WorkflowRunRepository;
-import com.jizza.common.workflow.graph.WorkflowEdge;
-import com.jizza.common.workflow.graph.WorkflowGraph;
-import com.jizza.common.workflow.graph.WorkflowNode;
-import com.jizza.notifications.config.NotificationProperties;
-import com.jizza.notifications.escalation.EscalationSweeper;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.EscalationState;
+import com.jizza.engine.api.enums.NodeType;
+import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.NotificationStatus;
+import com.jizza.engine.api.enums.WorkflowStatus;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.notification.NotificationBus;
+import com.jizza.engine.api.notification.NotificationContext;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.persistence.repository.AuditLogRepository;
+import com.jizza.engine.persistence.repository.KnowledgeEntryRepository;
+import com.jizza.engine.persistence.repository.NotificationRepository;
+import com.jizza.engine.persistence.repository.UserRepository;
+import com.jizza.engine.persistence.repository.WorkflowRepository;
+import com.jizza.engine.persistence.repository.WorkflowRunRepository;
+import com.jizza.engine.api.workflow.graph.WorkflowEdge;
+import com.jizza.engine.api.workflow.graph.WorkflowGraph;
+import com.jizza.engine.api.workflow.graph.WorkflowNode;
+import com.jizza.engine.notifications.config.NotificationProperties;
+import com.jizza.engine.notifications.escalation.EscalationSweeper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,7 +55,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
  * the record of it (build prompt Acceptance Criteria 14, 15 and 16).
  */
 @org.junit.jupiter.api.condition.EnabledIf(
-    value = "com.jizza.persistence.support.TestDatabase#available",
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
     disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class PlatformE2eTest extends E2eSupport {
 

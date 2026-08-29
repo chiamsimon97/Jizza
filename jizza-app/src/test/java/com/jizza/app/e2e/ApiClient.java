@@ -1,7 +1,7 @@
 package com.jizza.app.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.jizza.common.util.Json;
+import com.jizza.engine.api.util.Json;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
