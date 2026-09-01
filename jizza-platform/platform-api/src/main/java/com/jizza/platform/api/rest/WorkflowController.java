@@ -6,9 +6,9 @@ import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
-import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.skill.SkillUseCase;
+import com.jizza.platform.usecase.workflow.WorkflowUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -26,19 +26,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class WorkflowController {
 
-  private final WorkflowRegistry registry;
   private final WorkflowEngine engine;
+  private final WorkflowUseCase workflows;
   private final SkillUseCase skills;
 
-  public WorkflowController(WorkflowRegistry registry, WorkflowEngine engine, SkillUseCase skills) {
-    this.registry = registry;
+  public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills) {
     this.engine = engine;
+    this.workflows = workflows;
     this.skills = skills;
   }
 
   @GetMapping("/workflows")
   public List<WorkflowDto> list() {
-    return registry.list(CurrentUser.userId());
+    return workflows.list(CurrentUser.userId());
   }
 
   @GetMapping("/workflows/{id}")
@@ -48,17 +48,14 @@ public class WorkflowController {
 
   @PostMapping("/workflows")
   public WorkflowDto save(@Valid @RequestBody Requests.WorkflowSave request) {
-    if (request.id() != null) owned(request.id());
-    return registry.save(new WorkflowDto(request.id(), CurrentUser.userId(), request.name(),
+    return workflows.save(CurrentUser.userId(), request.id(), request.name(),
         request.description(), request.graph(), request.inputSchema(), request.triggerConfig(),
-        com.jizza.engine.api.enums.WorkflowOrigin.USER_BUILT, null, request.owningAgentId(), 1, null,
-        null));
+        request.owningAgentId());
   }
 
   @GetMapping("/workflows/{id}/versions")
   public List<WorkflowDto> versions(@PathVariable UUID id) {
-    owned(id);
-    return registry.versions(id);
+    return workflows.versions(CurrentUser.userId(), id);
   }
 
   @PostMapping("/workflows/{id}/save-skill")
@@ -113,9 +110,7 @@ public class WorkflowController {
   }
 
   private WorkflowDto owned(UUID workflowId) {
-    return registry.find(workflowId)
-        .filter(workflow -> workflow.userId().equals(CurrentUser.userId()))
-        .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
+    return workflows.get(CurrentUser.userId(), workflowId);
   }
 
   private RunDto ownedRun(UUID runId) {

@@ -1,13 +1,8 @@
 package com.jizza.engine.workflow.registry;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.dto.WorkflowDto;
-import com.jizza.engine.api.enums.ActorType;
-import com.jizza.engine.api.enums.WorkflowStatus;
 import com.jizza.engine.api.error.NotFoundException;
-import com.jizza.engine.api.error.ValidationException;
-import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
@@ -22,8 +17,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Workflows and their immutable version snapshots (R31). The skills that expose a workflow to an
- * agent live in {@link DefaultSkillStore}.
+ * Workflows and their immutable version snapshots (R31).
+ *
+ * <p>Policy-free: {@code save} persists whatever identity, origin and status it is handed and
+ * defaults nothing. Which values a fresh workflow gets -- USER_BUILT/DRAFT for the builder,
+ * AGENT_AUTHORED/PENDING_REVIEW for a proposed procedure -- is a decision each caller makes for
+ * itself; this class has no opinion. The skills that expose a workflow to an agent live in
+ * {@link DefaultSkillStore}.
  */
 @Service
 public class DefaultWorkflowRegistry implements WorkflowRegistry {
@@ -31,14 +31,12 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
   private final WorkflowRepository workflows;
   private final WorkflowVersionRepository versions;
   private final WorkflowValidator validator;
-  private final AuditLog audit;
 
   public DefaultWorkflowRegistry(WorkflowRepository workflows, WorkflowVersionRepository versions,
-                                 WorkflowValidator validator, AuditLog audit) {
+                                 WorkflowValidator validator) {
     this.workflows = workflows;
     this.versions = versions;
     this.validator = validator;
-    this.audit = audit;
   }
 
   @Override
@@ -78,13 +76,12 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     WorkflowGraph graph = WorkflowGraph.from(dto.graph());
     validator.validate(graph);
 
-    WorkflowEntity entity = dto.id() == null ? new WorkflowEntity() : require(dto.id());
     boolean creating = dto.id() == null;
+    WorkflowEntity entity = creating ? new WorkflowEntity() : require(dto.id());
     if (creating) {
       entity.setUserId(dto.userId());
-      entity.setOrigin(dto.origin() == null
-          ? com.jizza.engine.api.enums.WorkflowOrigin.USER_BUILT : dto.origin());
-      entity.setStatus(dto.status() == null ? WorkflowStatus.DRAFT : dto.status());
+      entity.setOrigin(dto.origin());
+      entity.setStatus(dto.status());
       entity.setVersion(1);
       entity.setOwningAgentId(dto.owningAgentId());
       entity.setSourceTaskId(dto.sourceTaskId());
@@ -97,10 +94,6 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     entity.setTriggerConfig(dto.triggerConfig());
     workflows.save(entity);
     snapshot(entity);
-
-    audit.record(entity.getUserId(), ActorType.USER, entity.getOwningAgentId(),
-        creating ? "workflow.created" : "workflow.saved", entity.getName(),
-        Json.obj().put("workflowId", entity.getId().toString()).put("version", entity.getVersion()));
     return toDto(entity);
   }
 
