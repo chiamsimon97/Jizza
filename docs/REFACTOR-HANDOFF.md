@@ -1,7 +1,7 @@
 # Engine / Platform split — handoff
 
-Status at commit `ccaabd7` on `claude/jizza-backend-assembly-bk9fwz`.
-**Full build green: 491 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+Status at commit `06d9ed8` on `claude/jizza-backend-assembly-bk9fwz`.
+**Full build green: 494 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
 
 ## The goal
 
@@ -56,6 +56,10 @@ jizza-parent
    below) — `ProcedureReviewUseCase`.
 7. **Task cancel/mark-repetitive** (`ccaabd7`, narrowed the same way — `schedule` and
    `bindProcedure`/`unbindProcedure` have the same engine-internal callers as A2) — `TaskUseCase`.
+8. **Notification ownership** (`06d9ed8`) — `NotificationUseCase`. `DefaultNotificationBus` is
+   unchanged: every method on it manipulates `NotificationEntity` directly or reaches synchronously
+   into `WorkflowEngine`/`ProcedureService`, so there was no DTO-only seam to extract a use-case
+   through. Only the controller's inline ownership check moved, for consistency with A1-A3.
 
 ### The established pattern — follow this exactly for each remaining domain
 
@@ -83,7 +87,7 @@ In rough order of value. Each is one commit.
 | A1 | Workflows | `DefaultWorkflowRegistry` | extend `WorkflowRegistry` | `WorkflowUseCase` (save, ownership, `USER_BUILT` origin) |
 | A2 | Procedures | **done, narrowed** -- see below | -- | `ProcedureReviewUseCase` (rollback/disable audit only) |
 | A3 | Tasks | **done, narrowed** -- same coupling as A2 | -- | `TaskUseCase` (cancel/mark-repetitive audit only) |
-| A4 | Notifications | `DefaultNotificationBus` | split read/answer from raise | `NotificationUseCase` (list/read/answer, ownership) |
+| A4 | Notifications | **done, thin** -- see below | -- | `NotificationUseCase` (ownership only; no real policy to extract) |
 | A5 | Auth | `AuthService` | `IdentityStore` / keep `SessionService` | `AuthUseCase` (register/login/step-up journeys, lockout policy) |
 | A6 | Webhooks | `WebhookService` | `WebhookRegistry` | `WebhookUseCase` (subscribe/unsubscribe only; verification + dispatch stay in engine) |
 | A7 | Data lifecycle | `DataLifecycleService` | `UserDataStore` | `DataExportUseCase` / `ForgetMeUseCase` (export shape, `DELETE EVERYTHING` confirmation) |
@@ -138,6 +142,16 @@ needs the new structure, and the gap list needs entries for the decisions record
   reason; only `.rollback`/`.disable`, which truly have no caller but the controller, moved. Check
   **every** caller of a class before assuming its policy is extractable — `grep -rn` for every method
   you plan to touch, not just the controller you started from.
+- **The extractable seam is defaults-on-input and audit-on-output, not "policy" in general.** A1-A3
+  worked because the caller could build a complete DTO (with defaults filled in) before calling the
+  engine, and read a complete DTO back to audit from, without the use-case ever touching a
+  persistence entity. A4 doesn't have that seam: `DefaultNotificationBus`'s methods manipulate
+  `NotificationEntity` throughout and `answer()` reaches into `WorkflowEngine`/`ProcedureService`
+  synchronously, so there's no DTO-only boundary to lift a use-case through. Before assuming a
+  domain will extract like A1-A3, check whether its engine methods take/return complete DTOs or
+  reach into entities/other engine services mid-method — if the latter, expect an A4-shaped result
+  (thin or nothing), not an A1-shaped one. This will bite A5 (`AuthService`) and probably A7
+  (`DataLifecycleService`) too, given how entity-heavy both look already.
 - **`find(UUID)` / `list(UUID)` erase identically across ports.** One class cannot implement two
   ports with those signatures — this is why `DefaultSkillStore` was split out of
   `DefaultWorkflowRegistry`. Expect the same when adding `TaskStore`/`ProcedureStore`.
