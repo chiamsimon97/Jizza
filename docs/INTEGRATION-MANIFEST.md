@@ -17,24 +17,41 @@ tests use the real image rather than a divergent H2 schema.
 
 ## Modules
 
+Two aggregates and the deployable that assembles them (see `docs/REFACTOR-HANDOFF.md` for the
+history of the split, if it is still present). **`jizza-engine`** (`com.jizza.engine.*`) is generic
+mechanism: no HTTP surface, no knowledge of any particular user journey, policy stripped out where
+a use-case exists to hold it. **`jizza-platform`** (`com.jizza.platform.*`) is the entry point:
+every client call arrives there, and that is where the product's decisions live — validation,
+defaults, ownership checks, audit calls, and everything a controller does beyond HTTP mapping.
+`platform-usecases` reaches the engine only through `engine-api`, never through a concrete engine
+module.
+
+### `jizza-engine`
+
 | # | Module | Exposes | Consumes | Status |
 |---|---|---|---|---|
-| 1 | `jizza-common` | every Contract §3 interface, Contract §2 enums/DTOs/tool contract/bus events, RFC 9457 error model, `WorkflowGraph`, `Redaction`, `ToolSchemaValidator`, `RunBudget` | — | complete |
-| 2 | `jizza-persistence` | 30 JPA entities + 29 Spring Data repositories for every Contract §1 table, Flyway `V1__init.sql` (Contract schema) + `V2__platform.sql`, pgvector search (`KnowledgeVectorSearch`), `PersistenceConfig` | `jizza-common` | complete |
-| 3 | `jizza-security` | `KeyProvider` (keystore/file/env with rotation), `EncryptionService` (AES-GCM envelope), `AuditLog` (hash-chained), `AuthService`, `SessionService`, `TotpService`, `StepUpInterceptor`, `SecurityConfig` | common, persistence | complete |
-| 4 | `jizza-agents` | `LlmClient` (Anthropic, tiered models), `Agent` (Base Agent), `CapabilityRegistry`, `CostAccountant`, permissive autonomy fallbacks | common, persistence, security | complete |
-| 5 | `jizza-knowledge` | `KnowledgeStore` (namespace-enforced), `EmbeddingProvider`, knowledge tool provider | common, persistence, agents | complete |
-| 6 | `jizza-orchestrator` | `Orchestrator` (Jizza), `AgentDirectory`, `AgentAdminService`, `AgentSeeder`, delegation tools (`delegate_to_specialist`, `delegate_to_specialists`) | common, persistence, security, agents, knowledge | complete |
-| 7 | `jizza-connectors` | `OAuthService` (state+PKCE, rotation, revoke, test), `ConnectionService`, `EgressGuard`, `GuardedHttpClient` | common, persistence, security | complete |
-| 8 | `jizza-connectors-tools` | `ToolGenerator` (OpenAPI + LLM fallback), `ToolExecutor` (auth injection, SSRF guard, idempotency), `GeneratedToolProvider`, `IdempotencyService` | common, persistence, connectors, agents | complete |
-| 9 | `jizza-scheduler` | `SchedulerService`, `TaskDispatcher` (ShedLock + committed row claim), `RecurrenceCalculator` (cron + RRULE, DST-safe, catch-up policies), `schedule_task` tool | common, persistence, security, agents, workflow | complete |
-| 10 | `jizza-workflow` | `WorkflowEngine` (Postgres saga: per-node checkpoints, resume-from-last-node, retry/backoff, dead-letter, intervention), `WorkflowRegistry`, `WorkflowValidator`, JEXL sandbox, node executors, `RunRecovery`, skill tools | common, persistence, security, agents, connectors-tools, autonomy (by interface) | complete |
-| 11 | `jizza-procedures` | `ProcedureService` (propose → review → approve/bind → revise → rollback → disable), `BindingEnforcer` + `DeviationRecorder`, `ProcedureLearner`, `propose_workflow` tool | common, persistence, agents, workflow, scheduler, notifications | complete |
-| 12 | `jizza-notifications` | `NotificationBus` (single voice, attributed by agent name), `EscalationSweeper` (remind → escalate → expire), `notify_user` / `request_permission` tools | common, persistence, security, platform (realtime, mail) | complete |
-| 13 | `jizza-autonomy` | `AutonomyGate` (per-agent/per-tool rules, category tokens, globs, value caps, conservative default in code), `KillSwitch`, `AutonomyPolicyService`, `AutonomyDefaults` seeding | common, persistence, security | complete |
-| 14 | `jizza-platform` | `JobQueue` (`for update skip locked`), `RealtimeGateway` (STOMP), `StorageProvider`, `MailSender`, `WebhookService` (token + HMAC), `DataLifecycleService` (export / hard delete / pruning), `RequestIdFilter`, Caffeine cache, outbox | common, persistence, security, workflow | complete |
-| 15 | `jizza-web` | Contract §4 HTTP surface (13 controllers), STOMP `/ws`, RFC 9457 `GlobalExceptionHandler`, `ActivityService` over the audit chain | all feature modules | complete |
-| 16 | `jizza-app` | Spring Boot main, `local` + `worker` profiles, `docker-compose.yml`, README, the end-to-end acceptance suite (93 tests across 6 classes) | everything | complete |
+| 1 | `engine-api` | Every published port interface (`WorkflowRegistry`, `SchedulerService`, `ProcedureService`, `NotificationBus`, `WebhookRegistry`, `ToolCatalog`, `ToolGenerator`, `AuthService`, `DataLifecycleService`, `AuditLog`, …), every DTO/enum, the tool contract, RFC 9457 error model, `WorkflowGraph`, `Redaction`, `ToolSchemaValidator`, `RunBudget` | — | complete |
+| 2 | `engine-persistence` | 30 JPA entities + Spring Data repositories for every table, Flyway `V1__init.sql` + `V2__platform.sql`, pgvector search (`KnowledgeVectorSearch`), `PersistenceConfig` | `engine-api` | complete |
+| 3 | `engine-security` | `KeyProvider`, `EncryptionService` (AES-GCM envelope), `HashChainAuditLog` (implements `AuditLog`), `DefaultAuthService` (implements `AuthService`), `SessionService`, `TotpService`, `StepUpInterceptor`, `CurrentUser`/`SessionCookies` (session infra used directly by `platform-api`), `SecurityConfig` | `engine-api`, `engine-persistence` | complete |
+| 4 | `engine-agents` | `LlmClient` (Anthropic, tiered models), `Agent` (Base Agent), `CapabilityRegistry`, `CostAccountant`, permissive autonomy fallbacks | `engine-api`, `engine-persistence`, `engine-security` | complete |
+| 5 | `engine-knowledge` | `KnowledgeStore` (namespace-enforced), `EmbeddingProvider`, knowledge tool provider | `engine-api`, `engine-persistence`, `engine-agents` | complete |
+| 6 | `engine-orchestrator` | `Orchestrator` (Jizza), `AgentDirectory`, `AgentSeeder`, delegation tools (`delegate_to_specialist`, `delegate_to_specialists`) | `engine-api`, `engine-persistence`, `engine-security`, `engine-agents`, `engine-knowledge` | complete |
+| 7 | `engine-connectors` | `OAuthService` (state+PKCE, rotation, revoke, test), `ConnectionService` (implements `ConnectionStore`), `EgressGuard`, `GuardedHttpClient`, `ConnectorProperties` (infra config, used directly by `platform-api`) | `engine-api`, `engine-persistence`, `engine-security` | complete |
+| 8 | `engine-connectors-tools` | `ApiDocIngestService` (implements `ToolGenerator` + `ToolCatalog`: OpenAPI/LLM generation, size/type limits, `find`/`list`/`setEnabled`), `ToolExecutor` (auth injection, SSRF guard, idempotency), `GeneratedToolProvider`, `IdempotencyService` | `engine-api`, `engine-persistence`, `engine-connectors`, `engine-agents` | complete |
+| 9 | `engine-scheduler` | `DefaultSchedulerService` (implements `SchedulerService`, policy-free: no audit on cancel/mark-repetitive), `TaskDispatcher` (ShedLock + committed row claim), `RecurrenceCalculator` (cron + RRULE, DST-safe, catch-up policies), `schedule_task` tool | `engine-api`, `engine-persistence`, `engine-security`, `engine-agents`, `engine-workflow` | complete |
+| 10 | `engine-workflow` | `SagaWorkflowEngine` (implements `WorkflowEngine`: per-node checkpoints, resume-from-last-node, retry/backoff, dead-letter, intervention), `DefaultWorkflowRegistry` (implements `WorkflowRegistry`, policy-free: no origin/ownership defaulting), `WorkflowValidator`, JEXL sandbox, node executors, `RunRecovery`, skill tools | `engine-api`, `engine-persistence`, `engine-security`, `engine-agents`, `engine-connectors-tools`, `engine-autonomy` (by interface) | complete |
+| 11 | `engine-procedures` | `DefaultProcedureService` (implements `ProcedureService`: `propose`/`approve`/`reject`/`revise` stay here because they are called by `ProposeWorkflowToolProvider`/`DefaultNotificationBus` from inside the engine; only `rollback`/`disable`'s audit moved out), `BindingEnforcer` + `DeviationRecorder`, `propose_workflow` tool. `ProcedureLearner` moved to `platform-usecases` (`ProcedureLearningUseCase`) | `engine-api`, `engine-persistence`, `engine-agents`, `engine-workflow`, `engine-scheduler`, `engine-notifications` | complete |
+| 12 | `engine-notifications` | `DefaultNotificationBus` (single voice, attributed by agent name; kept business-shaped because `answer()` reaches synchronously into `WorkflowEngine`/`ProcedureService` with no DTO-only seam to lift a use-case through), `EscalationSweeper` (remind → escalate → expire), `notify_user` / `request_permission` tools | `engine-api`, `engine-persistence`, `engine-security`, `engine-infra` (realtime, mail) | complete |
+| 13 | `engine-autonomy` | `PolicyAutonomyGate` (implements `AutonomyGate`: per-agent/per-tool rules, category tokens, globs, value caps, conservative default in code deliberately, not in a deletable row), `DefaultKillSwitch`, `AutonomyPolicyService` (implements `AutonomyPolicyStore`) | `engine-api`, `engine-persistence`, `engine-security` | complete |
+| 14 | `engine-infra` | `JobQueue` (`for update skip locked`), `RealtimeGateway` (STOMP), `StorageProvider`, `MailSender`, `WebhookService` (implements `WebhookRegistry`: token + HMAC dispatch, policy-free — ownership on `unsubscribe` moved to `WebhookUseCase`), `DefaultDataLifecycleService` (implements `DataLifecycleService`: export / hard delete / pruning), `PlatformProperties` (infra config, used directly by `platform-api`), `RequestIdFilter`, Caffeine cache, outbox | `engine-api`, `engine-persistence`, `engine-security`, `engine-workflow` | complete |
+
+### `jizza-platform`
+
+| # | Module | Exposes | Consumes | Status |
+|---|---|---|---|---|
+| 15 | `platform-usecases` | The business logic: `WorkflowUseCase`, `ProcedureReviewUseCase`, `ProcedureLearningUseCase`, `TaskUseCase`, `NotificationUseCase`, `WebhookUseCase`, `GeneratedToolUseCase`, `ActivityUseCase`, `ConnectionUseCase`, `SkillUseCase`, `AgentTeamUseCase`, `AgentAdminUseCase`, `AutonomyDefaultsUseCase`, `AutonomyUseCase` — validation, defaults, ownership checks and audit calls that used to live in the engine services above | `engine-api` only (enforced by a `maven-enforcer` `bannedDependencies` rule) | complete |
+| 16 | `platform-api` | Contract §4 HTTP surface (13 controllers), STOMP `/ws`, RFC 9457 `GlobalExceptionHandler`. Reaches `engine-security`/`engine-infra`/`engine-connectors` directly only for cross-cutting infrastructure (`CurrentUser`, `SessionCookies`, `StepUpInterceptor`, `PlatformProperties`, `ConnectorProperties`) — everything else goes through `platform-usecases` or an `engine-api` port | `platform-usecases`, `engine-api`, `engine-security`, `engine-infra`, `engine-connectors`; every other `engine-*` module at runtime scope only, for Spring to wire | complete |
+| 17 | `jizza-app` | Spring Boot main, `local` + `worker` profiles, `docker-compose.yml`, README, the end-to-end acceptance suite (93 tests across 6 classes) | `platform-api` | complete |
 
 ## Contract gaps and deliberate resolutions
 
@@ -53,17 +70,21 @@ tests use the real image rather than a divergent H2 schema.
    `workflow_run_steps` unique `(run_id, node_id)` for exactly-once (R31), `@Version` optimistic-lock
    columns on workflows/runs/tasks/knowledge (R50).
 4. **`AgentDirectory`, `WorkflowRegistry`, `BindingEnforcer`, `CostAccountant`, `EgressGuard`,
-   `JobQueue`, `RealtimeGateway`, `MailSender`, `ToolProvider`** are additional `jizza-common`
+   `JobQueue`, `RealtimeGateway`, `MailSender`, `ToolProvider`** are additional `engine-api`
    interfaces not sketched in §3. They exist so modules can read each other's data without reaching
    into internals, which the Charter forbids. `ToolProvider` in particular is what lets knowledge,
    connector tools, skills, delegation, scheduling, notifications and procedure proposal all
    contribute tools while `CapabilityRegistry.invoke` stays the single gated execution path.
-5. **Controllers live in `jizza-web`, not in their feature modules.** Blueprint module 14 says web
-   "owns REST controllers + WS endpoints for all modules", so the endpoint lists in modules 2, 5-13
-   are implemented there over each module's service. Feature modules stay free of web dependencies.
-6. **The egress guard lives in `jizza-connectors` (module 7), one module earlier than the Blueprint
-   places it.** The OAuth token exchange needs the same SSRF protection as a generated tool call, and
-   module 8 depends on module 7, so both share one implementation rather than two.
+5. **Controllers live in `platform-api`, not alongside the engine mechanism they call.** This
+   started as the Blueprint's "web owns REST controllers + WS endpoints for all modules" and was
+   later formalized into the full engine/platform split recorded in `docs/REFACTOR-HANDOFF.md`:
+   every controller reaches the engine only through an `engine-api` port or a `platform-usecases`
+   use-case that holds the validation, defaults, ownership checks and audit calls a controller used
+   to have inline. Engine modules stay free of HTTP and business-decision dependencies.
+6. **The egress guard lives in `engine-connectors`, alongside the OAuth handshake rather than in a
+   separate module.** The OAuth token exchange needs the same SSRF protection as a generated tool
+   call, and `engine-connectors-tools` depends on `engine-connectors`, so both share one
+   implementation rather than two.
 7. **MFA between password and TOTP uses a short-lived in-memory token**, not a database row: the
    Contract has no table for a half-completed login, and no session cookie is issued until the second
    factor succeeds.

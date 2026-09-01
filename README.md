@@ -94,23 +94,32 @@ The callback base URL is configuration precisely so this swaps cleanly when you 
 
 ## What is in here
 
+Two Maven aggregates plus the deployable that assembles them:
+
+* **`jizza-engine`** (`com.jizza.engine.*`) — generic mechanism. No HTTP surface, no knowledge of
+  any particular user journey.
+* **`jizza-platform`** (`com.jizza.platform.*`) — the entry point. Every client call arrives here,
+  and this is where the product's decisions live (validation, defaults, ownership, audit), reaching
+  the engine only through `engine-api`.
+
 | Module | What it owns |
 |---|---|
-| `jizza-common` | Every shared contract: interfaces, enums, DTOs, the tool contract, RFC 9457 errors, the workflow graph model |
-| `jizza-persistence` | JPA entities, repositories, Flyway migrations, pgvector search |
-| `jizza-security` | Argon2id + TOTP, sessions, step-up, lockout, envelope encryption, hash-chained audit log |
-| `jizza-agents` | The Base Agent loop, the Anthropic client, the Capability Registry choke point |
-| `jizza-knowledge` | Per-agent knowledge with isolation enforced in code |
-| `jizza-orchestrator` | Jizza, delegation, agent seeding and renaming |
-| `jizza-connectors` | OAuth2 handshake, connection config, the SSRF/egress guard |
-| `jizza-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
-| `jizza-scheduler` | Durable one-time and recurring tasks, DST-safe, no double-fire |
-| `jizza-workflow` | The Postgres saga engine, the JEXL sandbox, interventions |
-| `jizza-procedures` | Learned procedures: propose, review, bind, version, roll back |
-| `jizza-notifications` | The bus, expiry and escalation |
-| `jizza-autonomy` | Kill switch and autonomy policy |
-| `jizza-platform` | Job queue, realtime, webhooks, storage, observability, export/delete |
-| `jizza-web` | The HTTP + WebSocket surface and the activity view |
+| `jizza-engine/engine-api` | Every shared contract: port interfaces, enums, DTOs, the tool contract, RFC 9457 errors, the workflow graph model |
+| `jizza-engine/engine-persistence` | JPA entities, repositories, Flyway migrations, pgvector search |
+| `jizza-engine/engine-security` | Argon2id + TOTP, sessions, step-up, lockout, envelope encryption, hash-chained audit log |
+| `jizza-engine/engine-agents` | The Base Agent loop, the Anthropic client, the Capability Registry choke point |
+| `jizza-engine/engine-knowledge` | Per-agent knowledge with isolation enforced in code |
+| `jizza-engine/engine-orchestrator` | Jizza, delegation, agent seeding and renaming |
+| `jizza-engine/engine-connectors` | OAuth2 handshake, connection config, the SSRF/egress guard |
+| `jizza-engine/engine-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
+| `jizza-engine/engine-scheduler` | Durable one-time and recurring tasks, DST-safe, no double-fire |
+| `jizza-engine/engine-workflow` | The Postgres saga engine, the JEXL sandbox, interventions |
+| `jizza-engine/engine-procedures` | Learned-procedure mechanism: binding enforcement, deviation recording |
+| `jizza-engine/engine-notifications` | The bus, expiry and escalation |
+| `jizza-engine/engine-autonomy` | Kill switch and autonomy gate evaluation |
+| `jizza-engine/engine-infra` | Job queue, realtime, webhooks, storage, observability, export/delete mechanism |
+| `jizza-platform/platform-usecases` | The business logic: ownership checks, defaults, audit calls, and the "learn a procedure" / activity-view decisions, all behind `engine-api` |
+| `jizza-platform/platform-api` | The HTTP + WebSocket surface, controllers, the activity view's ownership check |
 | `jizza-app` | Assembly, configuration, profiles |
 
 `docs/INTEGRATION-MANIFEST.md` records what each module exposes and consumes, and every place the
