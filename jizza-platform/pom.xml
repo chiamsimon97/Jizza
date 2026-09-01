@@ -12,4 +12,39 @@
     <module>platform-usecases</module>
     <module>platform-api</module>
   </modules>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>enforce-engine-api-boundary</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>com.jizza:engine-*</exclude>
+                  </excludes>
+                  <includes>
+                    <include>com.jizza:engine-api</include>
+                  </includes>
+                  <message>jizza-platform may depend only on engine-api -- reach the engine
+through its published ports, not a concrete engine module. See docs/REFACTOR-HANDOFF.md, Task
+B.</message>
+                </bannedDependencies>
+              </rules>
+              <!-- TODO(Task B): flip to true once the remaining leaks below are resolved. -->
+              <fail>false</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
