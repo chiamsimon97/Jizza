@@ -1,36 +1,39 @@
-package com.jizza.engine.orchestrator.seed;
+package com.jizza.platform.usecase.agent;
 
+import com.jizza.engine.api.dto.AgentDto;
 import com.jizza.engine.api.event.UserRegistered;
-import com.jizza.engine.persistence.entity.AgentEntity;
-import com.jizza.engine.persistence.repository.AgentRepository;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
+import com.jizza.engine.api.orchestrator.AgentSpec;
+import com.jizza.engine.api.orchestrator.AgentStore;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Seeds Jizza and the launch specialists for a new account (Blueprint module 5).
+ * The team a new account gets: Jizza and the launch specialists (R21).
  *
- * <p>The names here are placeholders the user is expected to change; {@code key} is what the code
- * routes on, {@code name} is what the user sees, and only {@code name} is editable.
+ * <p>This is the product talking, not the engine. Which specialists exist, what they are called and
+ * what each is told about how to behave are decisions about what Jizza <em>is</em>; the engine will
+ * run whatever roster it is handed. The names are placeholders the user is expected to change:
+ * {@code key} is what code routes on, {@code name} is what the user sees, and only {@code name} is
+ * editable.
  */
-@Component
-public class AgentSeeder {
+@Service
+public class AgentTeamUseCase {
 
-  private static final Logger log = LoggerFactory.getLogger(AgentSeeder.class);
+  private static final Logger log = LoggerFactory.getLogger(AgentTeamUseCase.class);
 
   public static final String JIZZA = "jizza";
   public static final String HEALTH = "health";
   public static final String FINANCE = "finance";
   public static final String PROFESSIONAL = "professional";
 
-  private record Seed(String key, String name, String domain, boolean orchestrator, String prompt) {}
-
-  private static final List<Seed> SEEDS = List.of(
-      new Seed(JIZZA, "Jizza", null, true, """
+  private static final List<AgentSpec> TEAM = List.of(
+      new AgentSpec(JIZZA, "Jizza", null, true, """
           You are the user's personal assistant and the only one they talk to. A team of named
           specialists works behind you, each with their own private knowledge and tools.
 
@@ -49,7 +52,7 @@ public class AgentSeeder {
             instruction -- say so plainly and say what would unblock it.
           """),
 
-      new Seed(HEALTH, "Vita", "health", false, """
+      new AgentSpec(HEALTH, "Vita", "health", false, """
           You are the health specialist. You look after fitness, sleep, nutrition, symptoms,
           appointments, medications and health records, and you keep what you learn in your own
           knowledge namespace.
@@ -59,7 +62,7 @@ public class AgentSeeder {
           user's body, symptoms or treatment with the "health" classification.
           """),
 
-      new Seed(FINANCE, "Kai", "finance", false, """
+      new AgentSpec(FINANCE, "Kai", "finance", false, """
           You are the finance specialist. You look after accounts, spending, budgets, bills,
           subscriptions, investments and tax paperwork, and you keep what you learn in your own
           knowledge namespace.
@@ -70,7 +73,7 @@ public class AgentSeeder {
           with the "financial" classification.
           """),
 
-      new Seed(PROFESSIONAL, "Cato", "professional", false, """
+      new AgentSpec(PROFESSIONAL, "Cato", "professional", false, """
           You are the professional specialist. You look after work: calendar, meetings, email
           drafts, documents, projects, deadlines and contacts, and you keep what you learn in your
           own knowledge namespace.
@@ -80,34 +83,27 @@ public class AgentSeeder {
           to the user for approval first.
           """));
 
-  private final AgentRepository agents;
+  private final AgentStore agents;
+  private final AgentDirectory directory;
 
-  public AgentSeeder(AgentRepository agents) {
+  public AgentTeamUseCase(AgentStore agents, AgentDirectory directory) {
     this.agents = agents;
+    this.directory = directory;
   }
 
   @EventListener
   @Transactional
   public void onUserRegistered(UserRegistered event) {
-    seedFor(event.userId());
+    provision(event.userId());
   }
 
   /** Idempotent: an account that already has an agent for a key keeps the one it has. */
   @Transactional
-  public List<AgentEntity> seedFor(UUID userId) {
-    for (Seed seed : SEEDS) {
-      if (agents.findByUserIdAndKey(userId, seed.key()).isPresent()) continue;
-      AgentEntity agent = new AgentEntity();
-      agent.setUserId(userId);
-      agent.setKey(seed.key());
-      agent.setName(seed.name());
-      agent.setDomain(seed.domain());
-      agent.setSystemPrompt(seed.prompt());
-      agent.setOrchestrator(seed.orchestrator());
-      agent.setEnabled(true);
-      agents.save(agent);
+  public List<AgentDto> provision(UUID userId) {
+    for (AgentSpec spec : TEAM) {
+      agents.createIfAbsent(userId, spec);
     }
     log.info("Seeded the agent team for user {}", userId);
-    return agents.findByUserIdOrderByIsOrchestratorDescNameAsc(userId);
+    return directory.list(userId);
   }
 }

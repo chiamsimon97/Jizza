@@ -5,7 +5,7 @@ import com.jizza.engine.api.enums.CapabilityType;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.error.NotFoundException;
-import com.jizza.engine.orchestrator.directory.AgentAdminService;
+import com.jizza.platform.usecase.agent.AgentAdminUseCase;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
@@ -27,10 +27,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentController {
 
   private final AgentDirectory directory;
-  private final AgentAdminService admin;
+  private final AgentAdminUseCase admin;
   private final CapabilityRegistry capabilities;
 
-  public AgentController(AgentDirectory directory, AgentAdminService admin,
+  public AgentController(AgentDirectory directory, AgentAdminUseCase admin,
                          CapabilityRegistry capabilities) {
     this.directory = directory;
     this.admin = admin;
@@ -51,8 +51,10 @@ public class AgentController {
   public AgentDto patch(@PathVariable UUID id, @Valid @RequestBody Requests.AgentPatch patch) {
     owned(id);
     AgentDto result = null;
-    if (patch.name() != null) result = admin.rename(id, patch.name());
-    if (patch.enabled() != null) result = admin.setEnabled(id, patch.enabled());
+    if (patch.name() != null) result = admin.rename(CurrentUser.userId(), id, patch.name());
+    if (patch.enabled() != null) {
+      result = admin.setEnabled(CurrentUser.userId(), id, patch.enabled());
+    }
     return result == null ? owned(id) : result;
   }
 

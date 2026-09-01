@@ -10,12 +10,10 @@ import static org.mockito.Mockito.when;
 
 import com.jizza.engine.autonomy.killswitch.DefaultKillSwitch;
 import com.jizza.engine.autonomy.policy.PolicyAutonomyGate;
-import com.jizza.engine.autonomy.seed.AutonomyDefaults;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.AutonomyRule;
 import com.jizza.engine.api.error.AutonomyDeniedException;
-import com.jizza.engine.api.event.UserRegistered;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.AutonomyPolicyEntity;
@@ -46,7 +44,6 @@ class AutonomyTest {
   private AuditLog audit;
   private PolicyAutonomyGate gate;
   private DefaultKillSwitch killSwitch;
-  private AutonomyDefaults defaults;
 
   private AgentEntity agent(String key, String name) {
     AgentEntity a = new AgentEntity();
@@ -112,7 +109,6 @@ class AutonomyTest {
     audit = mock(AuditLog.class);
     gate = new PolicyAutonomyGate(policies, agents, tools);
     killSwitch = new DefaultKillSwitch(killSwitchRepo, audit);
-    defaults = new AutonomyDefaults(policies, killSwitchRepo, agents);
   }
 
   private void policy(UUID agentId, String toolRef, AutonomyRule rule, int precedence,
@@ -290,23 +286,22 @@ class AutonomyTest {
 
   // ── seeded defaults ──────────────────────────────────────────────────────
 
-  @Test
-  void anewAccountGetsTheCharterDefaultsAndAnActiveSwitch() {
-    defaults.onUserRegistered(new UserRegistered(userId, "owner@jizza.local"));
-
-    assertThat(killRows).hasSize(1);
-    assertThat(killRows.get(0).isAutonomyPaused()).isFalse();
-
-    assertThat(policyRows).extracting(AutonomyPolicyEntity::getToolRef)
-        .contains(PolicyAutonomyGate.ANY_READ, PolicyAutonomyGate.ANY_SIDE_EFFECTING);
-    assertThat(policyRows.stream()
-        .filter(p -> PolicyAutonomyGate.ANY_SIDE_EFFECTING.equals(p.getToolRef()))
-        .allMatch(p -> p.getRule() == AutonomyRule.ASK)).isTrue();
+  /**
+   * The rule set a new account is given. Which rules those are is the platform's decision and is
+   * asserted there; what matters here is that the gate turns them into the Charter's behaviour.
+   */
+  private void seedTheConservativeDefaults() {
+    policy(null, PolicyAutonomyGate.ANY_READ, AutonomyRule.ALLOW, 0, null);
+    policy(null, PolicyAutonomyGate.ANY_SIDE_EFFECTING, AutonomyRule.ASK, 0, null);
+    for (AgentEntity agent : List.of(kai, vita)) {
+      policy(agent.getId(), PolicyAutonomyGate.ANY_READ, AutonomyRule.ALLOW, 10, null);
+      policy(agent.getId(), PolicyAutonomyGate.ANY_SIDE_EFFECTING, AutonomyRule.ASK, 10, null);
+    }
   }
 
   @Test
   void theSeededDefaultsProduceTheCharterBehaviour() {
-    defaults.onUserRegistered(new UserRegistered(userId, "owner@jizza.local"));
+    seedTheConservativeDefaults();
 
     // Finance reads freely, but money movement asks.
     assertThat(gate.evaluate(kai.getId(), "bank_list_transactions", null).allowed()).isTrue();
@@ -314,14 +309,5 @@ class AutonomyTest {
     // Health may read and draft, but an external send asks.
     assertThat(gate.evaluate(vita.getId(), "gmail_list_messages", null).allowed()).isTrue();
     assertThat(gate.evaluate(vita.getId(), "gmail_send_message", null).needsPermission()).isTrue();
-  }
-
-  @Test
-  void seedingIsIdempotent() {
-    defaults.seedFor(userId);
-    int seeded = policyRows.size();
-    defaults.seedFor(userId);
-    assertThat(policyRows).hasSize(seeded);
-    assertThat(killRows).hasSize(1);
   }
 }

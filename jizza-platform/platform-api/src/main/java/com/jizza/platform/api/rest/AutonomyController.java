@@ -1,7 +1,6 @@
 package com.jizza.platform.api.rest;
 
-import com.jizza.engine.autonomy.policy.AutonomyPolicyService;
-import com.jizza.engine.api.autonomy.KillSwitch;
+import com.jizza.platform.usecase.autonomy.AutonomyUseCase;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.api.rest.dto.Requests;
@@ -26,38 +25,36 @@ import org.springframework.web.bind.annotation.RestController;
 @com.jizza.engine.api.util.StepUpRequired
 public class AutonomyController {
 
-  private final AutonomyPolicyService policies;
-  private final KillSwitch killSwitch;
+  private final AutonomyUseCase autonomy;
 
-  public AutonomyController(AutonomyPolicyService policies, KillSwitch killSwitch) {
-    this.policies = policies;
-    this.killSwitch = killSwitch;
+  public AutonomyController(AutonomyUseCase autonomy) {
+    this.autonomy = autonomy;
   }
 
   /** Returns the explicit rules and the default that applies when none of them match. */
   @GetMapping("/policies")
   public Responses.AutonomySettings policies() {
     UUID userId = CurrentUser.userId();
-    return new Responses.AutonomySettings(policies.list(userId),
-        AutonomyPolicyService.defaultRuleDescription(), killSwitch.paused(userId));
+    return new Responses.AutonomySettings(autonomy.list(userId),
+        autonomy.defaultRuleDescription(), autonomy.paused(userId));
   }
 
   @PutMapping("/policies")
   public AutonomyRuleDto upsert(@Valid @RequestBody Requests.AutonomyPolicy request) {
-    return policies.upsert(CurrentUser.userId(), new AutonomyRuleDto(request.id(),
+    return autonomy.upsert(CurrentUser.userId(), new AutonomyRuleDto(request.id(),
         CurrentUser.userId(), request.agentId(), request.toolRef(), request.rule(),
         request.limits(), request.precedence()));
   }
 
   @DeleteMapping("/policies/{id}")
   public Responses.Message delete(@PathVariable UUID id) {
-    policies.delete(CurrentUser.userId(), id);
+    autonomy.delete(CurrentUser.userId(), id);
     return new Responses.Message("Rule removed. The conservative default applies again.");
   }
 
   @PostMapping("/kill-switch")
   public Responses.Message killSwitch(@Valid @RequestBody Requests.KillSwitch request) {
-    killSwitch.setPaused(CurrentUser.userId(), request.paused());
+    autonomy.setPaused(CurrentUser.userId(), request.paused());
     return new Responses.Message(request.paused()
         ? "Autonomy paused. Running work halts at its next checkpoint and nothing new starts."
         : "Autonomy resumed. Paused runs pick up from where they stopped.");

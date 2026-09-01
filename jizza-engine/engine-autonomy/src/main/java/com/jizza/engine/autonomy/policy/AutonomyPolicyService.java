@@ -1,12 +1,9 @@
 package com.jizza.engine.autonomy.policy;
 
-import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.autonomy.AutonomyPolicyStore;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
-import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.AutonomyRule;
 import com.jizza.engine.api.error.NotFoundException;
-import com.jizza.engine.api.error.ValidationException;
-import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.AutonomyPolicyEntity;
 import com.jizza.engine.persistence.repository.AutonomyPolicyRepository;
 import java.util.List;
@@ -14,28 +11,32 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** CRUD over the policy rows. Every change is audited: this is a security setting (R14). */
+/**
+ * Storage for the policy rows the gate reads (R41).
+ *
+ * <p>Policy-free in the product sense: it stores whatever rules it is given. What a sensible
+ * default policy looks like, and what is worth recording in the activity log, are the platform's
+ * decisions.
+ */
 @Service
-public class AutonomyPolicyService {
+public class AutonomyPolicyService implements AutonomyPolicyStore {
 
   private final AutonomyPolicyRepository policies;
-  private final AuditLog audit;
 
-  public AutonomyPolicyService(AutonomyPolicyRepository policies, AuditLog audit) {
+  public AutonomyPolicyService(AutonomyPolicyRepository policies) {
     this.policies = policies;
-    this.audit = audit;
   }
 
+  @Override
   @Transactional(readOnly = true)
   public List<AutonomyRuleDto> list(UUID userId) {
     return policies.findByUserIdOrderByPrecedenceDesc(userId).stream()
         .map(AutonomyPolicyService::toDto).toList();
   }
 
+  @Override
   @Transactional
   public AutonomyRuleDto upsert(UUID userId, AutonomyRuleDto rule) {
-    if (rule.rule() == null) throw new ValidationException("A policy needs a rule");
-
     AutonomyPolicyEntity entity = rule.id() == null
         ? new AutonomyPolicyEntity()
         : policies.findById(rule.id())
@@ -48,23 +49,15 @@ public class AutonomyPolicyService {
     entity.setLimits(rule.limits());
     entity.setPrecedence(rule.precedence());
     policies.save(entity);
-
-    audit.record(userId, ActorType.USER, null, "autonomy.policy_changed", entity.getToolRef(),
-        Json.obj().put("agentId", String.valueOf(entity.getAgentId()))
-            .put("rule", entity.getRule().name().toLowerCase(java.util.Locale.ROOT))
-            .put("precedence", entity.getPrecedence()));
     return toDto(entity);
   }
 
+  @Override
   @Transactional
   public void delete(UUID userId, UUID policyId) {
     policies.findById(policyId)
         .filter(policy -> policy.getUserId().equals(userId))
-        .ifPresent(policy -> {
-          policies.delete(policy);
-          audit.record(userId, ActorType.USER, null, "autonomy.policy_removed",
-              policy.getToolRef(), null);
-        });
+        .ifPresent(policies::delete);
   }
 
   public static AutonomyRuleDto toDto(AutonomyPolicyEntity p) {

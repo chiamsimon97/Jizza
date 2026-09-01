@@ -34,9 +34,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PolicyAutonomyGate implements AutonomyGate {
 
-  public static final String ANY = "*";
-  public static final String ANY_READ = "*:read";
-  public static final String ANY_SIDE_EFFECTING = "*:side-effecting";
+  // Re-exported from the interface so the matching code below reads without a qualifier; the
+  // strings themselves are part of the published contract, not this implementation.
+  public static final String ANY = AutonomyGate.ANY;
+  public static final String ANY_READ = AutonomyGate.ANY_READ;
+  public static final String ANY_SIDE_EFFECTING = AutonomyGate.ANY_SIDE_EFFECTING;
 
   /** Built-in tools that only read or only speak to the user, and so are safe unattended. */
   private static final List<String> READ_ONLY_BUILTINS = List.of(
