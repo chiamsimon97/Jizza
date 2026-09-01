@@ -9,19 +9,28 @@
   <dependencies>
     <dependency><groupId>com.jizza</groupId><artifactId>platform-usecases</artifactId></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId></dependency>
+    <!--
+      engine-security, engine-infra and engine-connectors are compile-scope: platform-api's
+      controllers reach directly into a handful of their classes (CurrentUser, SessionCookies,
+      StepUpInterceptor, PlatformProperties, ConnectorProperties) as cross-cutting infrastructure,
+      the exception the boundary rule in ../pom.xml allows alongside engine-api. Everything else
+      below is runtime-scope on purpose: platform-api's own code depends only on engine-api types
+      for them, but Spring still needs the concrete beans on the classpath to wire the app, since
+      jizza-app depends on nothing but platform-api.
+    -->
     <dependency><groupId>com.jizza</groupId><artifactId>engine-security</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-agents</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-knowledge</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-orchestrator</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-notifications</artifactId></dependency>
-    <dependency><groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-infra</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-agents</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-knowledge</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-orchestrator</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-notifications</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-websocket</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>

@@ -1,7 +1,7 @@
 package com.jizza.platform.api.rest;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.jizza.engine.infra.lifecycle.DataLifecycleService;
+import com.jizza.engine.api.lifecycle.DataLifecycleService;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.api.rest.dto.Responses;
 import org.springframework.http.HttpHeaders;

@@ -42,7 +42,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class AuthServiceTest {
+class DefaultAuthServiceTest {
 
   private static final String PASSWORD = "Correct-Horse-92";
 
@@ -52,7 +52,7 @@ class AuthServiceTest {
   @Mock private AuditLog audit;
   @Mock private org.springframework.context.ApplicationEventPublisher events;
 
-  private AuthService auth;
+  private DefaultAuthService auth;
   private SecurityProperties props;
   private TotpService totp;
   private UserEntity user;
@@ -91,7 +91,7 @@ class AuthServiceTest {
     props.getLockout().setLockoutDuration(Duration.ofMinutes(15));
     totp = new TotpService(props);
 
-    auth = new AuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
+    auth = new DefaultAuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
         totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
         events, new LoginAttempts(users, audit, props), transactionManager());
 

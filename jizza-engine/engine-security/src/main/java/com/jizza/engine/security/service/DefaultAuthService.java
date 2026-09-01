@@ -2,6 +2,8 @@ package com.jizza.engine.security.service;
 
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.crypto.EncryptionService;
+import com.jizza.engine.api.dto.LoginResult;
+import com.jizza.engine.api.dto.MfaSetup;
 import com.jizza.engine.api.dto.SessionDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.UserStatus;
@@ -39,7 +41,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * the trail useful for spotting abuse rather than only successful actions.
  */
 @Service
-public class AuthService {
+public class DefaultAuthService implements com.jizza.engine.api.security.AuthService {
 
   /** Constant-time dummy hash so a missing account costs the same as a wrong password. */
   private static final String DUMMY_HASH =
@@ -61,7 +63,7 @@ public class AuthService {
   private final TransactionTemplate transactions;
   private final SecureRandom random = new SecureRandom();
 
-  public AuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
+  public DefaultAuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
                      PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
                      TotpService totp, SessionService sessions, PendingMfaStore pendingMfa,
                      LoginThrottle throttle, EncryptionService encryption, AuditLog audit,
@@ -84,16 +86,12 @@ public class AuthService {
     this.transactions = new TransactionTemplate(txManager);
   }
 
-  /** @param mfaToken non-null only when a second factor is still outstanding. */
-  public record LoginResult(boolean mfaRequired, String mfaToken, UUID sessionId, UUID userId) {}
-
-  public record MfaSetup(String secret, String provisioningUri) {}
-
   /**
    * Deliberately not annotated: the user row has to be committed before anything can reference it.
    * The audit log and the provisioning listeners both write rows with a foreign key to
    * {@code users}, so they run after the transaction that creates it, not inside it.
    */
+  @Override
   public UUID register(String email, String password) {
     if (email == null || !email.contains("@")) throw new ValidationException("A valid email is required");
     passwordPolicy.validate(password);
@@ -116,6 +114,7 @@ public class AuthService {
     return userId;
   }
 
+  @Override
   @Transactional
   public LoginResult login(String email, String password, String device, InetAddress ip,
                            String clientKey) {
@@ -163,6 +162,7 @@ public class AuthService {
     return new LoginResult(false, null, session.getId(), user.getId());
   }
 
+  @Override
   @Transactional
   public LoginResult verifyMfa(String mfaToken, String code, String device, InetAddress ip,
                                String clientKey) {
@@ -186,6 +186,7 @@ public class AuthService {
    * Begin TOTP enrolment. The seed is returned once for the authenticator app and stored encrypted;
    * MFA only switches on once the user proves a code from it.
    */
+  @Override
   @Transactional
   public MfaSetup setupMfa(UUID userId) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
@@ -197,6 +198,7 @@ public class AuthService {
     return new MfaSetup(secret, totp.provisioningUri(secret, user.getEmail()));
   }
 
+  @Override
   @Transactional
   public List<String> confirmMfa(UUID userId, String code) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
@@ -213,6 +215,7 @@ public class AuthService {
   }
 
   /** Re-authenticate inside an existing session to unlock a high-risk route (R4). */
+  @Override
   @Transactional
   public void stepUp(UUID userId, UUID sessionId, String password, String code) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
@@ -228,12 +231,14 @@ public class AuthService {
     audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(), null);
   }
 
+  @Override
   @Transactional
   public void logout(UUID userId, UUID sessionId) {
     sessions.revoke(sessionId);
     audit.record(userId, ActorType.USER, userId, "auth.logout", sessionId.toString(), null);
   }
 
+  @Override
   @Transactional
   public void logoutEverywhere(UUID userId) {
     int revoked = sessions.revokeAll(userId);
@@ -241,12 +246,14 @@ public class AuthService {
         Json.obj().put("sessionsRevoked", revoked));
   }
 
+  @Override
   @Transactional
   public void revokeSession(UUID userId, UUID sessionId) {
     sessions.revoke(sessionId);
     audit.record(userId, ActorType.USER, userId, "auth.session.revoked", sessionId.toString(), null);
   }
 
+  @Override
   @Transactional(readOnly = true)
   public List<SessionDto> sessions(UUID userId, UUID currentSessionId) {
     return sessions.list(userId, currentSessionId);
@@ -256,6 +263,7 @@ public class AuthService {
    * Issue a single-use reset token. Returns empty for an unknown address so the endpoint cannot be
    * used to enumerate accounts; the caller responds identically either way.
    */
+  @Override
   @Transactional
   public java.util.Optional<String> requestPasswordReset(String email, String clientKey) {
     throttle.check("reset:" + clientKey);
@@ -278,6 +286,7 @@ public class AuthService {
     return java.util.Optional.of(token);
   }
 
+  @Override
   @Transactional
   public void resetPassword(String token, String newPassword) {
     passwordPolicy.validate(newPassword);
@@ -303,6 +312,7 @@ public class AuthService {
         user.getEmail(), null);
   }
 
+  @Override
   @Transactional
   public void changePassword(UUID userId, String currentPassword, String newPassword) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));

@@ -37,9 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
  * filesystem has no foreign keys to cascade through.
  */
 @Service
-public class DataLifecycleService {
+public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecycle.DataLifecycleService {
 
-  private static final Logger log = LoggerFactory.getLogger(DataLifecycleService.class);
+  private static final Logger log = LoggerFactory.getLogger(DefaultDataLifecycleService.class);
 
   private final UserRepository users;
   private final AgentRepository agents;
@@ -57,7 +57,7 @@ public class DataLifecycleService {
   private final AuditLog audit;
   private final PlatformProperties props;
 
-  public DataLifecycleService(UserRepository users, AgentRepository agents,
+  public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
                               ConversationRepository conversations, MessageRepository messages,
                               ConnectionRepository connections, WorkflowRepository workflows,
@@ -88,6 +88,7 @@ public class DataLifecycleService {
    * <p>Credentials are reported as present rather than included: an export is a file that leaves
    * the machine, and a live third-party token has no business in one.
    */
+  @Override
   @Transactional(readOnly = true)
   public ObjectNode export(UUID userId) {
     ObjectNode root = Json.obj();
@@ -189,6 +190,7 @@ public class DataLifecycleService {
   }
 
   /** "Forget everything": irreversible, and audited immediately before the row disappears. */
+  @Override
   @Transactional
   public void hardDelete(UUID userId) {
     audit.record(userId, ActorType.USER, userId, "data.hard_delete_requested", null, null);

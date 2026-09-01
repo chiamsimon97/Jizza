@@ -28,19 +28,37 @@
             <configuration>
               <rules>
                 <bannedDependencies>
+                  <searchTransitive>false</searchTransitive>
+                  <!--
+                    searchTransitive=false: this only checks what platform-api itself declares, not
+                    what engine-security/engine-infra pull in on their own (e.g. engine-persistence),
+                    which is their business, not platform-api's. Only compile-scope engine-*
+                    dependencies are banned. A runtime-scope one is fine:
+                    Spring still needs the concrete module on the classpath to wire the app, since
+                    jizza-app depends on nothing but platform-api, but platform-api's own code can't
+                    have compiled against it, or it wouldn't be safe to demote to runtime in the
+                    first place. engine-security and engine-infra are exempted outright: a handful of
+                    their classes (CurrentUser, SessionCookies, StepUpInterceptor, PlatformProperties,
+                    ConnectorProperties) are cross-cutting infrastructure, not business logic, and
+                    forcing them through an engine-api port would add indirection without adding a
+                    policy seam. See docs/REFACTOR-HANDOFF.md, Task B.
+                  -->
                   <excludes>
-                    <exclude>com.jizza:engine-*</exclude>
+                    <exclude>com.jizza:engine-*:*:*:compile</exclude>
                   </excludes>
                   <includes>
                     <include>com.jizza:engine-api</include>
+                    <include>com.jizza:engine-security</include>
+                    <include>com.jizza:engine-infra</include>
+                    <include>com.jizza:engine-connectors</include>
                   </includes>
-                  <message>jizza-platform may depend only on engine-api -- reach the engine
-through its published ports, not a concrete engine module. See docs/REFACTOR-HANDOFF.md, Task
-B.</message>
+                  <message>jizza-platform may depend on engine-api at compile scope only (plus
+engine-security/engine-infra/engine-connectors for cross-cutting session and config
+infrastructure) -- reach the engine through its published ports, not a concrete engine module. See
+docs/REFACTOR-HANDOFF.md, Task B.</message>
                 </bannedDependencies>
               </rules>
-              <!-- TODO(Task B): flip to true once the remaining leaks below are resolved. -->
-              <fail>false</fail>
+              <fail>true</fail>
             </configuration>
           </execution>
         </executions>

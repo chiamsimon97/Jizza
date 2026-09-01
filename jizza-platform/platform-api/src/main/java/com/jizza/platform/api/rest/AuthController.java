@@ -1,7 +1,8 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.dto.LoginResult;
 import com.jizza.engine.api.dto.SessionDto;
-import com.jizza.engine.security.service.AuthService;
+import com.jizza.engine.api.security.AuthService;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.engine.security.session.SessionCookies;
 import com.jizza.platform.api.rest.dto.Requests;
@@ -71,7 +72,7 @@ public class AuthController {
     return withSession(result);
   }
 
-  private ResponseEntity<Responses.LoginResult> withSession(AuthService.LoginResult result) {
+  private ResponseEntity<Responses.LoginResult> withSession(LoginResult result) {
     var body = new Responses.LoginResult(result.mfaRequired(), result.mfaToken(), result.userId());
     if (result.sessionId() == null) return ResponseEntity.ok(body);
     return ResponseEntity.ok()
