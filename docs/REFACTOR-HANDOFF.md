@@ -1,9 +1,8 @@
 # Engine / Platform split — handoff
 
-Status at commit `c25d6fe` on `claude/jizza-backend-assembly-bk9fwz`.
-**Full build green: 513 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
-**Task A is now closed** — all nine domains either extracted or investigated-and-left-alone with a
-recorded reason. Only Task B (enforce the boundary) and Task C (docs) remain.
+Status at commit `ca6e039` on `claude/jizza-backend-assembly-bk9fwz`.
+**Full clean build green: 512 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+**Task A and Task B are both closed.** Only Task C (docs) remains.
 
 ## The goal
 
@@ -89,6 +88,11 @@ jizza-parent
     no-seam shape as A5/A9's `DefaultNotificationBus`. `DataController`'s `DELETE EVERYTHING`
     confirmation-phrase check is already correctly located in the platform controller, not the
     engine, so there was nothing to move there either.
+14. **Activity view** (`51abde9`) — `ActivityUseCase`. Not one of the original nine domains; found
+    only because turning on Task B's enforcer rule in warn-only mode flagged `ActivityService`
+    (`platform-api`) querying `AuditLogRepository`/`AuditLogEntity` directly. `AuditLog` gained
+    `recent()`/`countForUser()`; the use-case resolves the actor name from the raw rows.
+15. **Task B** (`aac6a4d`, `ca6e039`) — the boundary rule is live at `<fail>true</fail>`. See below.
 
 ### The established pattern — follow this exactly for each remaining domain
 
@@ -127,35 +131,45 @@ items 10-11 above.
 | A8 | API-doc ingestion | `ApiDocIngestService` | done -- `GeneratedToolUseCase` + `ToolCatalog` port; fixed missing ownership check on `setEnabled` |
 | A9 | Procedure learning | `ProcedureLearner` | done -- moved verbatim to `ProcedureLearningUseCase` |
 
-### Task B — enforce the boundary at build time
+### Task B — done
 
-Add to `jizza-platform/pom.xml` (inherited by both children) a `maven-enforcer-plugin`
-`bannedDependencies` rule permitting `com.jizza:engine-api` and banning `com.jizza:engine-*`
-otherwise. **This will fail the build until Task A is finished** — `platform-api` currently declares
-a dependency on every engine module. Two options:
+`jizza-platform/pom.xml` now carries a `maven-enforcer-plugin` `bannedDependencies` rule with
+`<fail>true</fail>`. It bans compile-scope `com.jizza:engine-*` dependencies, with
+`com.jizza:engine-api`/`engine-security`/`engine-infra`/`engine-connectors` whitelisted, and
+`searchTransitive=false` so it only judges what `platform-api` itself declares, not what those
+whitelisted modules pull in for their own compilation.
 
-- Do Task A first, then add the rule and delete the now-unused dependencies from
-  `platform-api/pom.xml`; or
-- Add the rule now with `<fail>false</fail>` so it prints warnings, and let the shrinking warning
-  list drive A1–A9. Flip to `<fail>true</fail>` at the end.
+Getting there in warn-only mode first (as this section originally suggested) paid off immediately:
+the warning surfaced `ActivityService` (in `platform-api`) querying `AuditLogRepository`/
+`AuditLogEntity` directly — a real boundary violation nobody had flagged. Fixed by adding
+`recent()`/`countForUser()` to the `AuditLog` port and moving the actor-name-resolution logic (a
+presentation decision: "You"/"Jizza"/an agent's name) into a new `ActivityUseCase`.
 
-The second is probably the better way to work — the warnings enumerate exactly what is left.
+The two known leaks this section used to list are also closed:
 
-Known concrete-class leaks the warning list will surface (found during the Task A survey, not yet
-fixed):
+- `AuthController` now depends on a new `com.jizza.engine.api.security.AuthService` interface.
+  The concrete class was renamed `DefaultAuthService`; its nested `LoginResult`/`MfaSetup` records
+  moved to `engine-api/dto` since an interface can't carry another class's nested types. No
+  behavior changed — this only closes the compile-time leak, it does not reopen the A5 question of
+  whether there's a policy seam (there isn't).
+- `DataController` now depends on `com.jizza.engine.api.lifecycle.DataLifecycleService`; the
+  concrete class was renamed `DefaultDataLifecycleService`, same shape as above.
 
-- `AuthController` depends on the concrete `AuthService`, not an interface — there is no
-  `engine-api` port for auth at all yet. A5 concluded there's no *policy* seam to extract, but that's
-  orthogonal to whether `AuthController` should depend on an interface rather than the class; a thin
-  `AuthService`-shaped port in `engine-api` (no behavior change, just the interface split) would
-  close this without re-opening the A5 question.
-- `DataController` depends on the concrete `DataLifecycleService`, same shape as above.
-- `CurrentUser` (`engine-security`) and other session/security infra are used directly from
-  `platform-api` controllers everywhere. Decide whether these count as legitimate cross-cutting
-  infrastructure (like a logging framework) that the `bannedDependencies` rule should allow, or
-  whether they need an `engine-api` port too — recommend treating them as infrastructure and
-  excluding `engine-security`'s session package from the ban, since forcing every controller through
-  a port for "who is the current user" adds indirection without adding a policy seam.
+`CurrentUser`, `SessionCookies`, `StepUpInterceptor` (`engine-security`) and `PlatformProperties`,
+`ConnectorProperties` (`engine-infra`/`engine-connectors`) turned out to be the only other classes
+`platform-api` reaches into directly. Per the recommendation this section used to make, they're
+treated as legitimate cross-cutting infrastructure: the three modules they live in are whitelisted
+outright rather than forced through a port, since `bannedDependencies` can only exempt at the
+module level, not the package level, and adding a port for "who is the current user" would add
+indirection without adding a policy seam.
+
+Every other `engine-*` dependency `platform-api/pom.xml` declared (persistence, agents, knowledge,
+orchestrator, connectors-tools, scheduler, workflow, procedures, notifications, autonomy) is
+`<scope>runtime</scope>` now: `platform-api`'s own code never imported anything from them directly
+(confirmed with `grep -rhoE "^import com\.jizza\.engine\." .` across its `src/main/java`), but
+Spring still needs the concrete beans on the classpath to wire the app, since `jizza-app` depends
+on nothing but `platform-api`. Runtime scope is on Maven's test classpath too, so this didn't touch
+`jizza-app`'s e2e tests.
 
 ### Task C — documentation
 
@@ -213,6 +227,20 @@ needs the new structure, and the gap list needs entries for the decisions record
   `GeneratedToolUseCase` reusing `ConnectionUseCase#ownedBy`), closed a real security hole. Don't
   stop at "is there a DTO seam" — also check "does this id-taking method verify the caller owns the
   id" and "does this method return an entity instead of a DTO".
+- **`grep -rhoE "^import ..."` misses fully-qualified references.** The first pass at auditing
+  `platform-api`'s actual `engine-*` imports (for Task B) only matched `^import` lines and missed
+  `WebhookController`'s field `private final com.jizza.engine.connectors.config.ConnectorProperties`
+  -- a fully-qualified type with no import statement at all. Drop the `^import` anchor (just
+  `grep -rhoE "com\.jizza\.engine\.(...)\.[A-Za-z0-9_.]+"`) to catch both forms before trusting the
+  result as complete.
+- **`bannedDependencies` bans artifacts, not packages, and `searchTransitive` defaults to true.**
+  You cannot tell Maven "ban most of `engine-security` but allow `CurrentUser`" -- the rule only
+  sees module coordinates, so a class-level exception means whitelisting the whole module. And
+  without `searchTransitive=false`, the rule walks the *resolved* dependency tree: whitelisting
+  `engine-security` still fails on `engine-persistence` showing up underneath it (as a transitive
+  compile dependency `engine-security` needs for itself), even though `platform-api` never declares
+  that edge directly. Set `searchTransitive=false` so the rule judges only what the current
+  module's own `pom.xml` declares.
 - **`find(UUID)` / `list(UUID)` erase identically across ports.** One class cannot implement two
   ports with those signatures — this is why `DefaultSkillStore` was split out of
   `DefaultWorkflowRegistry`. Expect the same when adding `TaskStore`/`ProcedureStore`.
@@ -232,7 +260,7 @@ needs the new structure, and the gap list needs entries for the decisions record
 # database (this sandbox; docker-compose.yml is the documented path)
 su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/jizza start"
 
-JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install   # 513 tests
+JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install   # 512 tests
 mvn test                                                               # DB-backed tests skip
 mvn -pl jizza-app spring-boot:run
 ```
