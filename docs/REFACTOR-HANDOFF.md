@@ -1,7 +1,9 @@
 # Engine / Platform split — handoff
 
-Status at commit `06d9ed8` on `claude/jizza-backend-assembly-bk9fwz`.
-**Full build green: 494 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+Status at commit `c25d6fe` on `claude/jizza-backend-assembly-bk9fwz`.
+**Full build green: 513 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+**Task A is now closed** — all nine domains either extracted or investigated-and-left-alone with a
+recorded reason. Only Task B (enforce the boundary) and Task C (docs) remain.
 
 ## The goal
 
@@ -60,6 +62,33 @@ jizza-parent
    unchanged: every method on it manipulates `NotificationEntity` directly or reaches synchronously
    into `WorkflowEngine`/`ProcedureService`, so there was no DTO-only seam to extract a use-case
    through. Only the controller's inline ownership check moved, for consistency with A1-A3.
+9. **Procedure learning** (`0d31e63`) — `ProcedureLearningUseCase`. The entire `ProcedureLearner`
+   class (the "write down what you did" prompt and the `@EventListener`/`@Async` handler) moved
+   verbatim into `platform-usecases`; it depended only on `Agent` and `ProcedureService` already, so
+   this was a pure move, not a split. `ProcedureService` gained one new port method,
+   `hasProposalFor(UUID sourceTaskId)`, so the use-case never touches `WorkflowRepository` directly.
+10. **Webhook subscription management** (`81860c7`) — `WebhookUseCase`, `WebhookRegistry` port,
+    `WebhookSubscriptionDto`. `WebhookService.unsubscribe(UUID)` took a bare subscription id with
+    **no ownership check at all** — any authenticated user could disable another user's webhook
+    endpoint by guessing/enumerating a UUID. Fixed by adding `find()` to the port and routing
+    `unsubscribe` through the use-case, which checks ownership before calling through.
+    `receive()`/signature verification/dispatch stayed in the engine untouched.
+11. **Generated-tool ownership** (`c25d6fe`) — `GeneratedToolUseCase`, `ToolCatalog` port.
+    `ApiDocIngestService.setEnabled(UUID toolId, boolean)` had the same missing-ownership-check bug
+    as A6's `unsubscribe` — fixed the same way, reusing `ConnectionUseCase#ownedBy` rather than
+    duplicating the check. `fromApiDoc()` (ingestion, size/type limits) stayed in the engine; it
+    reaches into `ApiDocParser` and persistence mid-method, so there was no seam to lift it through.
+12. **Auth — investigated, left unchanged.** `AuthService` (register/login/verifyMfa/setupMfa/
+    stepUp/resetPassword/changePassword) manipulates `UserEntity`/`PasswordResetTokenEntity` directly
+    and mixes crypto (hashing, TOTP, encryption) and throttle/lockout state inseparably in one
+    atomic operation per call. Its only caller is `AuthController` (no engine-internal-caller issue
+    like A2/A3), but there is no DTO-only boundary to lift a use-case through — see the DTO-seam
+    gotcha below. No engine-api interface exists for it either, which Task B will need to address.
+13. **Data lifecycle — investigated, left unchanged.** `DataLifecycleService.export()` reaches into
+    13+ repositories directly, building a raw `ObjectNode` by hand entity-by-entity — the same
+    no-seam shape as A5/A9's `DefaultNotificationBus`. `DataController`'s `DELETE EVERYTHING`
+    confirmation-phrase check is already correctly located in the platform controller, not the
+    engine, so there was nothing to move there either.
 
 ### The established pattern — follow this exactly for each remaining domain
 
@@ -78,21 +107,25 @@ jizza-parent
 
 ## Remaining work
 
-### Task A — nine domains still to extract
+### Task A — done
 
-In rough order of value. Each is one commit.
+All nine domains resolved. Five extracted real logic into `platform-usecases` (A1, A2/A3 narrowed,
+A6, A8, A9); two (A4) were thin ownership-only moves; two (A5, A7) were investigated and left
+unchanged because no DTO-only seam exists. A6 and A8 additionally closed genuine authorization bugs
+(missing ownership checks on `unsubscribe`/`setEnabled`) found while doing the extraction — see
+items 10-11 above.
 
-| # | Domain | Engine class to reduce | New port | New use-case |
-|---|---|---|---|---|
-| A1 | Workflows | `DefaultWorkflowRegistry` | extend `WorkflowRegistry` | `WorkflowUseCase` (save, ownership, `USER_BUILT` origin) |
-| A2 | Procedures | **done, narrowed** -- see below | -- | `ProcedureReviewUseCase` (rollback/disable audit only) |
-| A3 | Tasks | **done, narrowed** -- same coupling as A2 | -- | `TaskUseCase` (cancel/mark-repetitive audit only) |
-| A4 | Notifications | **done, thin** -- see below | -- | `NotificationUseCase` (ownership only; no real policy to extract) |
-| A5 | Auth | `AuthService` | `IdentityStore` / keep `SessionService` | `AuthUseCase` (register/login/step-up journeys, lockout policy) |
-| A6 | Webhooks | `WebhookService` | `WebhookRegistry` | `WebhookUseCase` (subscribe/unsubscribe only; verification + dispatch stay in engine) |
-| A7 | Data lifecycle | `DataLifecycleService` | `UserDataStore` | `DataExportUseCase` / `ForgetMeUseCase` (export shape, `DELETE EVERYTHING` confirmation) |
-| A8 | API-doc ingestion | `ApiDocIngestService` | `ToolCatalog` | `AttachApiDocUseCase` (size/type limits, which agent gets the tool) |
-| A9 | Procedure learning | `ProcedureLearner` | — (uses `Agent` already) | `ProcedureLearningUseCase` (the "write down what you did" prompt is product copy) |
+| # | Domain | Engine class | Outcome |
+|---|---|---|---|
+| A1 | Workflows | `DefaultWorkflowRegistry` | done -- `WorkflowUseCase` |
+| A2 | Procedures | `DefaultProcedureService` | done, narrowed -- `ProcedureReviewUseCase` (rollback/disable audit only) |
+| A3 | Tasks | `DefaultSchedulerService` | done, narrowed -- `TaskUseCase` (cancel/mark-repetitive audit only) |
+| A4 | Notifications | `DefaultNotificationBus` | done, thin -- `NotificationUseCase` (ownership only) |
+| A5 | Auth | `AuthService` | investigated, no seam -- left unchanged, see gotchas |
+| A6 | Webhooks | `WebhookService` | done -- `WebhookUseCase` + `WebhookRegistry` port; fixed missing ownership check on `unsubscribe` |
+| A7 | Data lifecycle | `DataLifecycleService` | investigated, no seam -- left unchanged, see gotchas |
+| A8 | API-doc ingestion | `ApiDocIngestService` | done -- `GeneratedToolUseCase` + `ToolCatalog` port; fixed missing ownership check on `setEnabled` |
+| A9 | Procedure learning | `ProcedureLearner` | done -- moved verbatim to `ProcedureLearningUseCase` |
 
 ### Task B — enforce the boundary at build time
 
@@ -107,6 +140,22 @@ a dependency on every engine module. Two options:
   list drive A1–A9. Flip to `<fail>true</fail>` at the end.
 
 The second is probably the better way to work — the warnings enumerate exactly what is left.
+
+Known concrete-class leaks the warning list will surface (found during the Task A survey, not yet
+fixed):
+
+- `AuthController` depends on the concrete `AuthService`, not an interface — there is no
+  `engine-api` port for auth at all yet. A5 concluded there's no *policy* seam to extract, but that's
+  orthogonal to whether `AuthController` should depend on an interface rather than the class; a thin
+  `AuthService`-shaped port in `engine-api` (no behavior change, just the interface split) would
+  close this without re-opening the A5 question.
+- `DataController` depends on the concrete `DataLifecycleService`, same shape as above.
+- `CurrentUser` (`engine-security`) and other session/security infra are used directly from
+  `platform-api` controllers everywhere. Decide whether these count as legitimate cross-cutting
+  infrastructure (like a logging framework) that the `bannedDependencies` rule should allow, or
+  whether they need an `engine-api` port too — recommend treating them as infrastructure and
+  excluding `engine-security`'s session package from the ban, since forcing every controller through
+  a port for "who is the current user" adds indirection without adding a policy seam.
 
 ### Task C — documentation
 
@@ -150,8 +199,20 @@ needs the new structure, and the gap list needs entries for the decisions record
   synchronously, so there's no DTO-only boundary to lift a use-case through. Before assuming a
   domain will extract like A1-A3, check whether its engine methods take/return complete DTOs or
   reach into entities/other engine services mid-method — if the latter, expect an A4-shaped result
-  (thin or nothing), not an A1-shaped one. This will bite A5 (`AuthService`) and probably A7
-  (`DataLifecycleService`) too, given how entity-heavy both look already.
+  (thin or nothing), not an A1-shaped one. This bit A5 (`AuthService`) and A7
+  (`DataLifecycleService`) exactly as predicted — both confirmed no-seam and left unchanged.
+- **A third, distinct class of real extraction: missing ownership checks and raw-entity leakage.**
+  Some engine methods take a bare resource id with **no ownership check at all** — a genuine
+  authorization bug, since any authenticated user can act on any other user's row by
+  guessing/enumerating the id — and/or return raw persistence entities straight to the platform
+  layer instead of DTOs. Neither A6's `WebhookService.unsubscribe(UUID)` nor A8's
+  `ApiDocIngestService.setEnabled(UUID, boolean)` had *any* policy to strip (no audit call, no
+  defaulting), so by the defaults/audit test above they'd look like nothing to extract — but adding
+  a `find()`-style read method plus an `engine-api` port, then routing the ownership check through a
+  platform use-case (reusing a sibling use-case's `ownedBy` where one exists, e.g.
+  `GeneratedToolUseCase` reusing `ConnectionUseCase#ownedBy`), closed a real security hole. Don't
+  stop at "is there a DTO seam" — also check "does this id-taking method verify the caller owns the
+  id" and "does this method return an entity instead of a DTO".
 - **`find(UUID)` / `list(UUID)` erase identically across ports.** One class cannot implement two
   ports with those signatures — this is why `DefaultSkillStore` was split out of
   `DefaultWorkflowRegistry`. Expect the same when adding `TaskStore`/`ProcedureStore`.
@@ -171,7 +232,7 @@ needs the new structure, and the gap list needs entries for the decisions record
 # database (this sandbox; docker-compose.yml is the documented path)
 su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/jizza start"
 
-JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install   # 481 tests
+JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install   # 513 tests
 mvn test                                                               # DB-backed tests skip
 mvn -pl jizza-app spring-boot:run
 ```
