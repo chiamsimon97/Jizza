@@ -2,6 +2,7 @@ package com.jizza.engine.security.audit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.dto.AuditEntryDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.util.Redaction;
@@ -10,9 +11,11 @@ import com.jizza.engine.persistence.repository.AuditLogRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.MDC;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,6 +83,27 @@ public class HashChainAuditLog implements AuditLog {
       prevHash = e.getHash();
     }
     return Optional.empty();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<AuditEntryDto> recent(UUID userId, int limit, String action) {
+    var page = PageRequest.of(0, Math.max(1, Math.min(limit, 500)));
+    List<AuditLogEntity> rows = action == null || action.isBlank()
+        ? repository.findByUserIdOrderByCreatedAtDesc(userId, page)
+        : repository.findByUserIdAndActionOrderBySeqDesc(userId, action, page);
+    return rows.stream().map(this::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public long countForUser(UUID userId) {
+    return repository.countByUserId(userId);
+  }
+
+  private AuditEntryDto toDto(AuditLogEntity e) {
+    return new AuditEntryDto(e.getId(), e.getActorType(), e.getActorId(), null, e.getAction(),
+        e.getTarget(), e.getDetail(), e.getRequestId(), e.getHash(), e.getCreatedAt());
   }
 
   /**

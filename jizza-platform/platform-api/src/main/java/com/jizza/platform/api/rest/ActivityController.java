@@ -2,8 +2,8 @@ package com.jizza.platform.api.rest;
 
 import com.jizza.engine.api.dto.AuditEntryDto;
 import com.jizza.engine.security.session.CurrentUser;
-import com.jizza.platform.api.activity.ActivityService;
 import com.jizza.platform.api.rest.dto.Responses;
+import com.jizza.platform.usecase.activity.ActivityUseCase;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/activity")
 public class ActivityController {
 
-  private final ActivityService activity;
+  private final ActivityUseCase activity;
 
-  public ActivityController(ActivityService activity) {
+  public ActivityController(ActivityUseCase activity) {
     this.activity = activity;
   }
 
@@ -29,6 +29,8 @@ public class ActivityController {
 
   @GetMapping("/verify")
   public Responses.ChainVerification verify() {
-    return activity.verify(CurrentUser.userId());
+    var result = activity.verify(CurrentUser.userId());
+    return new Responses.ChainVerification(result.intact(), result.firstBrokenEntryId(),
+        result.entries());
   }
 }

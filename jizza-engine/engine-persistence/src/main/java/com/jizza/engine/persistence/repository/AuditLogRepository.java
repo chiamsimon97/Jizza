@@ -16,4 +16,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLogEntity, UUID> 
   Optional<AuditLogEntity> findFirstByUserIdOrderBySeqDesc(UUID userId);
 
   List<AuditLogEntity> findByUserIdAndActionOrderBySeqDesc(UUID userId, String action, Pageable pageable);
+
+  long countByUserId(UUID userId);
 }
