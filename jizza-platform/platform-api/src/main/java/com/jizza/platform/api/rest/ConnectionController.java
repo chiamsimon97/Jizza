@@ -6,10 +6,12 @@ import com.jizza.engine.api.dto.ConnectionDto;
 import com.jizza.engine.api.dto.GeneratedToolDto;
 import com.jizza.engine.api.enums.DocFormat;
 import com.jizza.engine.api.error.ValidationException;
-import com.jizza.engine.connectors.tools.generate.ApiDocIngestService;
+import com.jizza.engine.api.connector.ToolCatalog;
+import com.jizza.engine.api.connector.ToolGenerator;
 import com.jizza.engine.infra.config.PlatformProperties;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.connection.ConnectionUseCase;
+import com.jizza.platform.usecase.connection.GeneratedToolUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -41,14 +43,19 @@ public class ConnectionController {
 
   private final ConnectionUseCase connections;
   private final OAuthService oauth;
-  private final ApiDocIngestService apiDocs;
+  private final ToolGenerator toolGenerator;
+  private final ToolCatalog toolCatalog;
+  private final GeneratedToolUseCase toolAdmin;
   private final PlatformProperties platform;
 
   public ConnectionController(ConnectionUseCase connections, OAuthService oauth,
-                              ApiDocIngestService apiDocs, PlatformProperties platform) {
+                              ToolGenerator toolGenerator, ToolCatalog toolCatalog,
+                              GeneratedToolUseCase toolAdmin, PlatformProperties platform) {
     this.connections = connections;
     this.oauth = oauth;
-    this.apiDocs = apiDocs;
+    this.toolGenerator = toolGenerator;
+    this.toolCatalog = toolCatalog;
+    this.toolAdmin = toolAdmin;
     this.platform = platform;
   }
 
@@ -121,7 +128,7 @@ public class ConnectionController {
   @GetMapping("/{id}/tools")
   public List<GeneratedToolDto> tools(@PathVariable UUID id) {
     owned(id);
-    return apiDocs.list(id);
+    return toolCatalog.list(id);
   }
 
   /**
@@ -140,14 +147,14 @@ public class ConnectionController {
       throw new ValidationException("API documents are limited to "
           + (platform.getFiles().getMaxBytes() / 1024 / 1024) + " MB");
     }
-    return apiDocs.fromApiDoc(id, file.getBytes(), resolveFormat(format, file));
+    return toolGenerator.fromApiDoc(id, file.getBytes(), resolveFormat(format, file));
   }
 
   @PostMapping("/tools/{toolId}/enabled")
   @com.jizza.engine.api.util.StepUpRequired
   public GeneratedToolDto setToolEnabled(@PathVariable UUID toolId,
                                          @RequestParam boolean enabled) {
-    return apiDocs.setEnabled(toolId, enabled);
+    return toolAdmin.setEnabled(CurrentUser.userId(), toolId, enabled);
   }
 
   private DocFormat resolveFormat(String requested, MultipartFile file) {

@@ -1,6 +1,7 @@
 package com.jizza.engine.connectors.tools.generate;
 
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.connector.ToolCatalog;
 import com.jizza.engine.api.connector.ToolGenerator;
 import com.jizza.engine.api.dto.GeneratedToolDto;
 import com.jizza.engine.api.enums.ActorType;
@@ -15,6 +16,7 @@ import com.jizza.engine.persistence.repository.ConnectionRepository;
 import com.jizza.engine.persistence.repository.GeneratedToolRepository;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Re-ingesting a document replaces that connection's tools rather than accumulating duplicates,
  * and existing agent assignments to a tool whose name survives are preserved.
+ *
+ * <p>{@code setEnabled} takes a bare tool id with nothing to say which connection, and so which
+ * user, it belongs to -- that ownership check is {@code AttachApiDocUseCase}'s job, using
+ * {@code find} to resolve the owning connection first.
  */
 @Service
-public class ApiDocIngestService implements ToolGenerator {
+public class ApiDocIngestService implements ToolGenerator, ToolCatalog {
 
   private static final Logger log = LoggerFactory.getLogger(ApiDocIngestService.class);
 
@@ -111,12 +117,20 @@ public class ApiDocIngestService implements ToolGenerator {
     return saved;
   }
 
+  @Override
   @Transactional(readOnly = true)
   public List<GeneratedToolDto> list(UUID connectionId) {
     return tools.findByConnectionId(connectionId).stream()
         .map(GeneratedToolProvider::toDto).toList();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<GeneratedToolDto> find(UUID toolId) {
+    return tools.findById(toolId).map(GeneratedToolProvider::toDto);
+  }
+
+  @Override
   @Transactional
   public GeneratedToolDto setEnabled(UUID toolId, boolean enabled) {
     GeneratedToolEntity entity = tools.findById(toolId)
