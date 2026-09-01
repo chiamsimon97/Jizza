@@ -1,11 +1,11 @@
-package com.jizza.engine.procedures.learning;
+package com.jizza.platform.usecase.procedure;
 
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.event.RepetitiveTaskCompleted;
+import com.jizza.engine.api.procedure.ProcedureService;
 import com.jizza.engine.api.util.Json;
-import com.jizza.engine.persistence.repository.WorkflowRepository;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,11 +20,16 @@ import org.springframework.stereotype.Component;
  * does the agent get asked to write down what it did. It runs once per job -- once a proposal
  * exists for the task, the agent is not asked again -- and it submits a draft for review rather
  * than changing anything.
+ *
+ * <p>The prompt below is product copy about how Jizza asks its agents to work, not engine
+ * mechanism, so it lives here rather than in {@code engine-procedures}; running the agent and
+ * submitting the proposal it writes are ordinary uses of {@link Agent} and
+ * {@link ProcedureService}, the same published capabilities any other caller has.
  */
 @Component
-public class ProcedureLearner {
+public class ProcedureLearningUseCase {
 
-  private static final Logger log = LoggerFactory.getLogger(ProcedureLearner.class);
+  private static final Logger log = LoggerFactory.getLogger(ProcedureLearningUseCase.class);
 
   private static final String INSTRUCTION = """
       You have just finished a job the user marked as repetitive:
@@ -42,17 +47,17 @@ public class ProcedureLearner {
       """;
 
   private final Agent baseAgent;
-  private final WorkflowRepository workflows;
+  private final ProcedureService procedures;
 
-  public ProcedureLearner(Agent baseAgent, WorkflowRepository workflows) {
+  public ProcedureLearningUseCase(Agent baseAgent, ProcedureService procedures) {
     this.baseAgent = baseAgent;
-    this.workflows = workflows;
+    this.procedures = procedures;
   }
 
   @EventListener
   @Async
   public void onRepetitiveTaskCompleted(RepetitiveTaskCompleted event) {
-    if (!workflows.findBySourceTaskId(event.taskId()).isEmpty()) {
+    if (procedures.hasProposalFor(event.taskId())) {
       // A proposal already exists for this job; revising it is the user's call, not a background one.
       return;
     }

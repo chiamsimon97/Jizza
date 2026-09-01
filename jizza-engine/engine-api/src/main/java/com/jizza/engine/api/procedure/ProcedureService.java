@@ -25,6 +25,9 @@ public interface ProcedureService {
 
   ProcedureDiff diff(UUID workflowId, int fromVersion, int toVersion);
 
+  /** Whether a procedure has already been proposed for this job, agent-authored or not. */
+  boolean hasProposalFor(UUID sourceTaskId);
+
   record ProcedureDiff(int fromVersion, int toVersion, List<String> addedNodes,
                        List<String> removedNodes, List<String> changedNodes) {}
 }

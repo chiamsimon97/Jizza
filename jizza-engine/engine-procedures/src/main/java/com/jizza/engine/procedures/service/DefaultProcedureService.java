@@ -328,6 +328,12 @@ public class DefaultProcedureService implements ProcedureService {
             workflow.getId(), workflow.getSourceTaskId()));
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public boolean hasProposalFor(UUID sourceTaskId) {
+    return !workflows.findBySourceTaskId(sourceTaskId).isEmpty();
+  }
+
   private WorkflowEntity require(UUID workflowId) {
     return workflows.findById(workflowId)
         .orElseThrow(() -> new NotFoundException("Procedure", workflowId));
