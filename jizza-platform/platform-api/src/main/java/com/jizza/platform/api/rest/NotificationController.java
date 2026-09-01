@@ -1,10 +1,9 @@
 package com.jizza.platform.api.rest;
 
 import com.jizza.engine.api.dto.NotificationDto;
-import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.notification.Answer;
-import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.notification.NotificationUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -23,15 +22,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/notifications")
 public class NotificationController {
 
-  private final NotificationBus bus;
+  private final NotificationUseCase notifications;
 
-  public NotificationController(NotificationBus bus) {
-    this.bus = bus;
+  public NotificationController(NotificationUseCase notifications) {
+    this.notifications = notifications;
   }
 
   @GetMapping
   public List<NotificationDto> list(@RequestParam(defaultValue = "false") boolean unreadOnly) {
-    return bus.list(CurrentUser.userId(), unreadOnly);
+    return notifications.list(CurrentUser.userId(), unreadOnly);
   }
 
   @GetMapping("/{id}")
@@ -41,8 +40,7 @@ public class NotificationController {
 
   @PostMapping("/{id}/read")
   public Responses.Message markRead(@PathVariable UUID id) {
-    owned(id);
-    bus.markRead(id);
+    notifications.markRead(CurrentUser.userId(), id);
     return new Responses.Message("Marked as read.");
   }
 
@@ -54,15 +52,11 @@ public class NotificationController {
   @com.jizza.engine.api.util.StepUpRequired
   public NotificationDto answer(@PathVariable UUID id,
                                 @Valid @RequestBody Requests.AnswerNotification request) {
-    owned(id);
-    return bus.answer(id, new Answer(request.kind(), request.instruction(), request.feedback()));
+    return notifications.answer(CurrentUser.userId(), id,
+        new Answer(request.kind(), request.instruction(), request.feedback()));
   }
 
   private NotificationDto owned(UUID notificationId) {
-    NotificationDto notification = bus.get(notificationId);
-    if (!notification.userId().equals(CurrentUser.userId())) {
-      throw new NotFoundException("Notification", notificationId);
-    }
-    return notification;
+    return notifications.get(CurrentUser.userId(), notificationId);
   }
 }
