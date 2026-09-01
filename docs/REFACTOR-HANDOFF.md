@@ -1,7 +1,7 @@
 # Engine / Platform split — handoff
 
-Status at commit `554a396` on `claude/jizza-backend-assembly-bk9fwz`.
-**Full build green: 488 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+Status at commit `ccaabd7` on `claude/jizza-backend-assembly-bk9fwz`.
+**Full build green: 491 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
 
 ## The goal
 
@@ -54,6 +54,8 @@ jizza-parent
 5. **Workflow builder save** (`91da172`) — `WorkflowUseCase`.
 6. **Procedure rollback/disable** (`554a396`, narrowed from the original A2 scope — see the gotcha
    below) — `ProcedureReviewUseCase`.
+7. **Task cancel/mark-repetitive** (`ccaabd7`, narrowed the same way — `schedule` and
+   `bindProcedure`/`unbindProcedure` have the same engine-internal callers as A2) — `TaskUseCase`.
 
 ### The established pattern — follow this exactly for each remaining domain
 
@@ -80,7 +82,7 @@ In rough order of value. Each is one commit.
 |---|---|---|---|---|
 | A1 | Workflows | `DefaultWorkflowRegistry` | extend `WorkflowRegistry` | `WorkflowUseCase` (save, ownership, `USER_BUILT` origin) |
 | A2 | Procedures | **done, narrowed** -- see below | -- | `ProcedureReviewUseCase` (rollback/disable audit only) |
-| A3 | Tasks | `DefaultSchedulerService` | `TaskStore` | `TaskUseCase` (create/cancel/mark-repetitive/bind, validation, audit) |
+| A3 | Tasks | **done, narrowed** -- same coupling as A2 | -- | `TaskUseCase` (cancel/mark-repetitive audit only) |
 | A4 | Notifications | `DefaultNotificationBus` | split read/answer from raise | `NotificationUseCase` (list/read/answer, ownership) |
 | A5 | Auth | `AuthService` | `IdentityStore` / keep `SessionService` | `AuthUseCase` (register/login/step-up journeys, lockout policy) |
 | A6 | Webhooks | `WebhookService` | `WebhookRegistry` | `WebhookUseCase` (subscribe/unsubscribe only; verification + dispatch stay in engine) |
