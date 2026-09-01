@@ -5,6 +5,7 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.procedure.ProcedureService;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.procedure.ProcedureReviewUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -30,10 +31,13 @@ public class ProcedureController {
 
   private final ProcedureService procedures;
   private final WorkflowRegistry registry;
+  private final ProcedureReviewUseCase review;
 
-  public ProcedureController(ProcedureService procedures, WorkflowRegistry registry) {
+  public ProcedureController(ProcedureService procedures, WorkflowRegistry registry,
+                             ProcedureReviewUseCase review) {
     this.procedures = procedures;
     this.registry = registry;
+    this.review = review;
   }
 
   @GetMapping("/{id}/history")
@@ -76,16 +80,14 @@ public class ProcedureController {
   @PostMapping("/{id}/rollback")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message rollback(@PathVariable UUID id, @RequestParam int toVersion) {
-    owned(id);
-    procedures.rollback(id, toVersion);
+    review.rollback(CurrentUser.userId(), id, toVersion);
     return new Responses.Message("Rolled back to version " + toVersion + ".");
   }
 
   @PostMapping("/{id}/disable")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message disable(@PathVariable UUID id) {
-    owned(id);
-    procedures.disable(id);
+    review.disable(CurrentUser.userId(), id);
     return new Responses.Message("Disabled and unbound from its job.");
   }
 

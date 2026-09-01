@@ -45,6 +45,16 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The rule that gives the feature its point: an agent-authored workflow is inert until a human
  * approves it, and any subsequent edit drops it back to {@code pending_review} as a new version.
  * There is no path here that makes a graph runnable without someone having looked at it.
+ *
+ * <p>Most of this stays engine-side rather than moving to a platform use-case, unlike the other
+ * domains split out so far, because {@code propose} is called from {@code ProposeWorkflowToolProvider}
+ * mid agent-turn and {@code approve}/{@code reject} are called from
+ * {@code DefaultNotificationBus#answerReview} when a review notification is answered -- both
+ * purely engine-internal callers that cannot reach across to platform code. {@code revise} shares
+ * its notifying, auditing {@code submitForReview} helper with {@code propose} for the same reason.
+ * Only {@code rollback} and {@code disable} have no caller but the platform's
+ * {@code ProcedureController}, so only their audit logging moved out, to
+ * {@code ProcedureReviewUseCase}.
  */
 @Service
 public class DefaultProcedureService implements ProcedureService {
@@ -238,9 +248,6 @@ public class DefaultProcedureService implements ProcedureService {
       tasks.findById(workflow.getSourceTaskId()).ifPresent(task ->
           scheduler.bindProcedure(task.getId(), workflowId, workflow.getVersion()));
     }
-    audit.record(workflow.getUserId(), ActorType.USER, null, "procedure.rolled_back",
-        workflow.getName(), Json.obj().put("workflowId", workflowId.toString())
-            .put("toVersion", toVersion).put("newVersion", workflow.getVersion()));
   }
 
   @Override
@@ -256,8 +263,6 @@ public class DefaultProcedureService implements ProcedureService {
           .filter(task -> workflowId.equals(task.getBoundWorkflowId()))
           .ifPresent(task -> scheduler.unbindProcedure(task.getId()));
     }
-    audit.record(workflow.getUserId(), ActorType.USER, null, "procedure.disabled",
-        workflow.getName(), null);
   }
 
   @Override
