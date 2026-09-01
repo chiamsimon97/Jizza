@@ -1,10 +1,10 @@
 package com.jizza.platform.api.rest;
 
 import com.jizza.engine.api.dto.TaskDto;
-import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.scheduler.SchedulerService;
 import com.jizza.engine.api.scheduler.TaskSpec;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.task.TaskUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
@@ -24,14 +24,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
   private final SchedulerService scheduler;
+  private final TaskUseCase tasks;
 
-  public TaskController(SchedulerService scheduler) {
+  public TaskController(SchedulerService scheduler, TaskUseCase tasks) {
     this.scheduler = scheduler;
+    this.tasks = tasks;
   }
 
   @GetMapping
   public List<TaskDto> list() {
-    return scheduler.list(CurrentUser.userId());
+    return tasks.list(CurrentUser.userId());
   }
 
   @GetMapping("/{id}")
@@ -48,8 +50,7 @@ public class TaskController {
 
   @DeleteMapping("/{id}")
   public Responses.Message cancel(@PathVariable UUID id) {
-    owned(id);
-    scheduler.cancel(id);
+    tasks.cancel(CurrentUser.userId(), id);
     return new Responses.Message("Task cancelled.");
   }
 
@@ -60,9 +61,7 @@ public class TaskController {
   @PostMapping("/{id}/repetitive")
   public TaskDto markRepetitive(@PathVariable UUID id,
                                 @Valid @RequestBody Requests.TaskRepetitive request) {
-    owned(id);
-    scheduler.markRepetitive(id, request.repetitive());
-    return scheduler.get(id);
+    return tasks.markRepetitive(CurrentUser.userId(), id, request.repetitive());
   }
 
   @PostMapping("/{id}/unbind")
@@ -74,10 +73,6 @@ public class TaskController {
   }
 
   private TaskDto owned(UUID taskId) {
-    TaskDto task = scheduler.get(taskId);
-    if (!task.userId().equals(CurrentUser.userId())) {
-      throw new NotFoundException("Task", taskId);
-    }
-    return task;
+    return tasks.ownedBy(CurrentUser.userId(), taskId);
   }
 }

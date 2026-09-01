@@ -22,7 +22,16 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Task lifecycle: create, cancel, list, bind a procedure, mark repetitive (R29, R34-R36). */
+/**
+ * Task lifecycle: create, cancel, list, bind a procedure, mark repetitive (R29, R34-R36).
+ *
+ * <p>{@code schedule} is also called from {@code ScheduleTaskToolProvider} mid an agent's own tool
+ * call, and {@code bindProcedure}/{@code unbindProcedure} are also called from
+ * {@code DefaultProcedureService} when a procedure is approved, rejected, rolled back or disabled --
+ * both purely engine-internal callers, so those three keep their validation and audit here. Only
+ * {@code cancel} and {@code markRepetitive} have no caller but the platform's {@code TaskController},
+ * so only their audit logging moved out, to {@code TaskUseCase}.
+ */
 @Service
 public class DefaultSchedulerService implements SchedulerService {
 
@@ -88,7 +97,6 @@ public class DefaultSchedulerService implements SchedulerService {
     entity.setStatus(TaskStatus.CANCELLED);
     entity.setNextRunAt(null);
     tasks.save(entity);
-    audit.record(entity.getUserId(), ActorType.USER, null, "task.cancelled", entity.getTitle(), null);
   }
 
   @Override
@@ -132,8 +140,6 @@ public class DefaultSchedulerService implements SchedulerService {
     ScheduledTaskEntity entity = require(taskId);
     entity.setRepetitive(repetitive);
     tasks.save(entity);
-    audit.record(entity.getUserId(), ActorType.USER, null,
-        repetitive ? "task.marked_repetitive" : "task.unmarked_repetitive", entity.getTitle(), null);
   }
 
   @Transactional
