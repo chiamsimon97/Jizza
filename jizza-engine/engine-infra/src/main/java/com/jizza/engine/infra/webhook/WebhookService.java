@@ -3,8 +3,10 @@ package com.jizza.engine.infra.webhook;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.crypto.EncryptionService;
+import com.jizza.engine.api.dto.WebhookSubscriptionDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.webhook.WebhookRegistry;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.persistence.entity.InboundEventEntity;
@@ -18,6 +20,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -34,9 +37,15 @@ import org.springframework.transaction.annotation.Transactional;
  * an unguessable per-subscription token in the path, and -- where the connector declares one -- an
  * HMAC signature over the raw body, compared in constant time. An unverified delivery is recorded
  * and dropped rather than triggering anything.
+ *
+ * <p>{@code receive} stays engine-side in full: it is the security mechanism, and its own audit
+ * entries ({@code webhook.received}/{@code webhook.rejected}) have no caller to move them behind.
+ * {@code subscribe}/{@code unsubscribe} have no such requirement -- only {@code WebhookController}
+ * calls them -- so their audit logging and the ownership check that was missing from
+ * {@code unsubscribe} both live in {@code WebhookUseCase} instead.
  */
 @Service
-public class WebhookService {
+public class WebhookService implements WebhookRegistry {
 
   private static final Logger log = LoggerFactory.getLogger(WebhookService.class);
 
@@ -57,11 +66,10 @@ public class WebhookService {
     this.audit = audit;
   }
 
-  public record Delivery(boolean accepted, String reason, UUID runId) {}
-
+  @Override
   @Transactional
-  public WebhookSubscriptionEntity subscribe(UUID userId, UUID connectionId, UUID workflowId,
-                                             JsonNode verifyConfig) {
+  public WebhookSubscriptionDto subscribe(UUID userId, UUID connectionId, UUID workflowId,
+                                          JsonNode verifyConfig) {
     byte[] bytes = new byte[32];
     random.nextBytes(bytes);
 
@@ -73,24 +81,27 @@ public class WebhookService {
     entity.setVerifyConfig(verifyConfig);
     entity.setEnabled(true);
     subscriptions.save(entity);
-
-    audit.record(userId, ActorType.USER, null, "webhook.subscribed",
-        workflowId == null ? null : workflowId.toString(), null);
-    return entity;
+    return toDto(entity);
   }
 
+  @Override
   @Transactional(readOnly = true)
-  public List<WebhookSubscriptionEntity> list(UUID userId) {
-    return subscriptions.findByUserId(userId);
+  public List<WebhookSubscriptionDto> list(UUID userId) {
+    return subscriptions.findByUserId(userId).stream().map(WebhookService::toDto).toList();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<WebhookSubscriptionDto> find(UUID subscriptionId) {
+    return subscriptions.findById(subscriptionId).map(WebhookService::toDto);
+  }
+
+  @Override
   @Transactional
   public void unsubscribe(UUID subscriptionId) {
     subscriptions.findById(subscriptionId).ifPresent(entity -> {
       entity.setEnabled(false);
       subscriptions.save(entity);
-      audit.record(entity.getUserId(), ActorType.USER, null, "webhook.unsubscribed",
-          subscriptionId.toString(), null);
     });
   }
 
@@ -98,6 +109,7 @@ public class WebhookService {
    * @param rawBody the body exactly as received; a signature is over the bytes, so it cannot be
    *                recomputed from a re-serialized object
    */
+  @Override
   @Transactional
   public Delivery receive(String endpointToken, String rawBody, Map<String, String> headers) {
     WebhookSubscriptionEntity subscription = subscriptions.findByEndpointToken(endpointToken)
@@ -185,6 +197,11 @@ public class WebhookService {
   private boolean constantTimeEquals(String a, String b) {
     return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8),
         b.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static WebhookSubscriptionDto toDto(WebhookSubscriptionEntity e) {
+    return new WebhookSubscriptionDto(e.getId(), e.getUserId(), e.getConnectionId(),
+        e.getWorkflowId(), e.getEndpointToken(), Boolean.TRUE.equals(e.getEnabled()));
   }
 
   /** A webhook body is untrusted; store it as JSON where possible and as text otherwise. */

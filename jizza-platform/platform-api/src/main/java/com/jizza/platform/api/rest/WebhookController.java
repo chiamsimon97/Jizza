@@ -1,7 +1,8 @@
 package com.jizza.platform.api.rest;
 
-import com.jizza.engine.infra.webhook.WebhookService;
+import com.jizza.engine.api.webhook.WebhookRegistry;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.webhook.WebhookUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,9 +30,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class WebhookController {
 
-  private final WebhookService webhooks;
+  private final WebhookRegistry webhooks;
 
-  public WebhookController(WebhookService webhooks) {
+  public WebhookController(WebhookRegistry webhooks) {
     this.webhooks = webhooks;
   }
 
@@ -55,10 +56,10 @@ public class WebhookController {
   @RequestMapping("/api/webhook-endpoints")
   public static class Management {
 
-    private final WebhookService webhooks;
+    private final WebhookUseCase webhooks;
     private final com.jizza.engine.connectors.config.ConnectorProperties connectorProps;
 
-    public Management(WebhookService webhooks,
+    public Management(WebhookUseCase webhooks,
                       com.jizza.engine.connectors.config.ConnectorProperties connectorProps) {
       this.webhooks = webhooks;
       this.connectorProps = connectorProps;
@@ -67,9 +68,9 @@ public class WebhookController {
     @GetMapping
     public List<Responses.WebhookEndpoint> list() {
       return webhooks.list(CurrentUser.userId()).stream()
-          .map(subscription -> new Responses.WebhookEndpoint(subscription.getId(),
-              url(subscription.getEndpointToken()), subscription.getWorkflowId(),
-              Boolean.TRUE.equals(subscription.getEnabled())))
+          .map(subscription -> new Responses.WebhookEndpoint(subscription.id(),
+              url(subscription.endpointToken()), subscription.workflowId(),
+              subscription.enabled()))
           .toList();
     }
 
@@ -78,14 +79,14 @@ public class WebhookController {
     public Responses.WebhookEndpoint subscribe(@Valid @RequestBody Requests.WebhookSubscribe request) {
       var subscription = webhooks.subscribe(CurrentUser.userId(), request.connectionId(),
           request.workflowId(), request.verifyConfig());
-      return new Responses.WebhookEndpoint(subscription.getId(),
-          url(subscription.getEndpointToken()), subscription.getWorkflowId(), true);
+      return new Responses.WebhookEndpoint(subscription.id(),
+          url(subscription.endpointToken()), subscription.workflowId(), true);
     }
 
     @DeleteMapping("/{id}")
     @com.jizza.engine.api.util.StepUpRequired
     public Responses.Message unsubscribe(@PathVariable UUID id) {
-      webhooks.unsubscribe(id);
+      webhooks.unsubscribe(CurrentUser.userId(), id);
       return new Responses.Message("Endpoint disabled.");
     }
 

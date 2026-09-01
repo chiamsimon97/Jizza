@@ -54,6 +54,8 @@ class WebhookServiceTest {
     });
     when(subscriptions.findByEndpointToken(any())).thenAnswer(inv -> subscriptionRows.stream()
         .filter(s -> s.getEndpointToken().equals(inv.getArgument(0))).findFirst());
+    when(subscriptions.findById(any())).thenAnswer(inv -> subscriptionRows.stream()
+        .filter(s -> s.getId().equals(inv.getArgument(0))).findFirst());
 
     InboundEventRepository events = mock(InboundEventRepository.class);
     when(events.save(any())).thenAnswer(inv -> {
@@ -92,7 +94,7 @@ class WebhookServiceTest {
     }
   }
 
-  private WebhookSubscriptionEntity subscribeSigned() {
+  private com.jizza.engine.api.dto.WebhookSubscriptionDto subscribeSigned() {
     return service.subscribe(userId, UUID.randomUUID(), workflowId,
         Json.obj().put("type", "hmac_sha256").put("header", "X-Signature")
             .put("secret", SECRET).put("prefix", "sha256="));
@@ -103,7 +105,7 @@ class WebhookServiceTest {
     var first = service.subscribe(userId, null, workflowId, null);
     var second = service.subscribe(userId, null, workflowId, null);
 
-    assertThat(first.getEndpointToken()).isNotEqualTo(second.getEndpointToken())
+    assertThat(first.endpointToken()).isNotEqualTo(second.endpointToken())
         .hasSizeGreaterThanOrEqualTo(40).matches("[A-Za-z0-9_-]+");
   }
 
@@ -112,7 +114,7 @@ class WebhookServiceTest {
     var subscription = subscribeSigned();
     String body = "{\"event\":\"invoice.paid\",\"id\":\"inv_1\"}";
 
-    var delivery = service.receive(subscription.getEndpointToken(), body,
+    var delivery = service.receive(subscription.endpointToken(), body,
         Map.of("x-signature", sign(body)));
 
     assertThat(delivery.accepted()).isTrue();
@@ -125,7 +127,7 @@ class WebhookServiceTest {
   void aBadSignatureIsRecordedAndDroppedWithoutFiringAnything() {
     var subscription = subscribeSigned();
 
-    var delivery = service.receive(subscription.getEndpointToken(), "{\"event\":\"spoofed\"}",
+    var delivery = service.receive(subscription.endpointToken(), "{\"event\":\"spoofed\"}",
         Map.of("x-signature", "sha256=deadbeef"));
 
     assertThat(delivery.accepted()).isFalse();
@@ -138,7 +140,7 @@ class WebhookServiceTest {
   @Test
   void aMissingSignatureHeaderIsRefused() {
     var subscription = subscribeSigned();
-    assertThat(service.receive(subscription.getEndpointToken(), "{}", Map.of()).accepted()).isFalse();
+    assertThat(service.receive(subscription.endpointToken(), "{}", Map.of()).accepted()).isFalse();
   }
 
   @Test
@@ -146,7 +148,7 @@ class WebhookServiceTest {
     var subscription = subscribeSigned();
     String signature = sign("{\"amount\":1}");
 
-    var delivery = service.receive(subscription.getEndpointToken(), "{\"amount\":100000}",
+    var delivery = service.receive(subscription.endpointToken(), "{\"amount\":100000}",
         Map.of("x-signature", signature));
 
     assertThat(delivery.accepted()).isFalse();
@@ -157,14 +159,14 @@ class WebhookServiceTest {
     var subscription = service.subscribe(userId, null, workflowId,
         Json.obj().put("type", "magic"));
 
-    assertThat(service.receive(subscription.getEndpointToken(), "{}", Map.of()).accepted()).isFalse();
+    assertThat(service.receive(subscription.endpointToken(), "{}", Map.of()).accepted()).isFalse();
   }
 
   @Test
   void withNoVerificationConfiguredThePathTokenIsTheCredential() {
     var subscription = service.subscribe(userId, null, workflowId, null);
 
-    var delivery = service.receive(subscription.getEndpointToken(), "{\"ok\":true}", Map.of());
+    var delivery = service.receive(subscription.endpointToken(), "{\"ok\":true}", Map.of());
 
     assertThat(delivery.accepted()).isTrue();
   }
@@ -172,16 +174,16 @@ class WebhookServiceTest {
   @Test
   void aDisabledEndpointAcceptsNothing() {
     var subscription = service.subscribe(userId, null, workflowId, null);
-    subscription.setEnabled(false);
+    service.unsubscribe(subscription.id());
 
-    assertThat(service.receive(subscription.getEndpointToken(), "{}", Map.of()).accepted()).isFalse();
+    assertThat(service.receive(subscription.endpointToken(), "{}", Map.of()).accepted()).isFalse();
   }
 
   @Test
   void anUnparseableBodyIsStillRecordedRatherThanThrown() {
     var subscription = service.subscribe(userId, null, null, null);
 
-    var delivery = service.receive(subscription.getEndpointToken(), "not json at all", Map.of());
+    var delivery = service.receive(subscription.endpointToken(), "not json at all", Map.of());
 
     assertThat(delivery.accepted()).isTrue();
     assertThat(eventRows.get(0).getPayload().path("raw").asText()).isEqualTo("not json at all");
