@@ -1,7 +1,7 @@
 # Engine / Platform split — handoff
 
-Status at commit `4a2062c` on `claude/jizza-backend-assembly-bk9fwz`.
-**Full build green: 481 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
+Status at commit `554a396` on `claude/jizza-backend-assembly-bk9fwz`.
+**Full build green: 488 tests** (`JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn install`).
 
 ## The goal
 
@@ -51,6 +51,9 @@ jizza-parent
 3. **Connections + skills** (`d2a0e11`) — `ConnectionUseCase`, `SkillUseCase`.
 4. **Agents + autonomy** (`4a2062c`) — `AgentTeamUseCase`, `AgentAdminUseCase`,
    `AutonomyDefaultsUseCase`, `AutonomyUseCase`.
+5. **Workflow builder save** (`91da172`) — `WorkflowUseCase`.
+6. **Procedure rollback/disable** (`554a396`, narrowed from the original A2 scope — see the gotcha
+   below) — `ProcedureReviewUseCase`.
 
 ### The established pattern — follow this exactly for each remaining domain
 
@@ -76,7 +79,7 @@ In rough order of value. Each is one commit.
 | # | Domain | Engine class to reduce | New port | New use-case |
 |---|---|---|---|---|
 | A1 | Workflows | `DefaultWorkflowRegistry` | extend `WorkflowRegistry` | `WorkflowUseCase` (save, ownership, `USER_BUILT` origin) |
-| A2 | Procedures | `DefaultProcedureService` | `ProcedureStore` | `ProcedureReviewUseCase` (approve/reject/revise/rollback/disable policy, audit) |
+| A2 | Procedures | **done, narrowed** -- see below | -- | `ProcedureReviewUseCase` (rollback/disable audit only) |
 | A3 | Tasks | `DefaultSchedulerService` | `TaskStore` | `TaskUseCase` (create/cancel/mark-repetitive/bind, validation, audit) |
 | A4 | Notifications | `DefaultNotificationBus` | split read/answer from raise | `NotificationUseCase` (list/read/answer, ownership) |
 | A5 | Auth | `AuthService` | `IdentityStore` / keep `SessionService` | `AuthUseCase` (register/login/step-up journeys, lockout policy) |
@@ -123,6 +126,16 @@ needs the new structure, and the gap list needs entries for the decisions record
 
 ## Gotchas that already cost time
 
+- **A service called from inside the engine as well as from a platform controller cannot have its
+  policy/audit moved to a use-case without breaking the internal caller.** `ProcedureService.approve`
+  and `.reject` are called both from `ProcedureController` (HTTP) and from
+  `DefaultNotificationBus#answerReview` (a review notification being answered, entirely
+  engine-internal — engine can never call back into platform). `.propose` is called only from
+  `ProposeWorkflowToolProvider`, mid an agent's own tool-calling turn. All three, plus `.revise`
+  (which shares a notifying/auditing helper with `.propose`), had to stay in the engine for this
+  reason; only `.rollback`/`.disable`, which truly have no caller but the controller, moved. Check
+  **every** caller of a class before assuming its policy is extractable — `grep -rn` for every method
+  you plan to touch, not just the controller you started from.
 - **`find(UUID)` / `list(UUID)` erase identically across ports.** One class cannot implement two
   ports with those signatures — this is why `DefaultSkillStore` was split out of
   `DefaultWorkflowRegistry`. Expect the same when adding `TaskStore`/`ProcedureStore`.
