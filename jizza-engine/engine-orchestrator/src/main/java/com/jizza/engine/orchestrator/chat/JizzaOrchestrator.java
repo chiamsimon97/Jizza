@@ -73,6 +73,31 @@ public class JizzaOrchestrator implements Orchestrator {
     return handle(userId, null, message);
   }
 
+  @Override
+  public AssistantReply handleIncognito(UUID userId, String message) {
+    AgentEntity jizza = agents.findByUserIdAndIsOrchestratorTrue(userId)
+        .orElseThrow(() -> new NotFoundException("Orchestrator agent for user", userId));
+
+    recorder.beginTurn();
+    AgentResult result;
+    List<DelegationRecorder.Contribution> contributions;
+    try {
+      result = baseAgent.run(new AgentRequest(userId, jizza.getId(), message, null,
+          List.of(), ModelTier.STANDARD, false, null));
+    } finally {
+      contributions = recorder.endTurn();
+    }
+
+    String text = result.text() == null || result.text().isBlank()
+        ? "I could not put together an answer for that."
+        : result.text();
+
+    return new AssistantReply(null, null, text,
+        contributions.stream()
+            .map(c -> new AssistantReply.Contribution(c.agentId(), c.agentName(), c.task()))
+            .toList());
+  }
+
   /**
    * Deliberately not transactional. A turn spans model calls and, on a cross-domain request, work
    * fanned out across threads; holding a transaction open across that would pin a connection for

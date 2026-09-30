@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -24,8 +25,16 @@ public class ChatController {
     this.orchestrator = orchestrator;
   }
 
+  /**
+   * Send a message. Pass {@code incognito=true} for a temporary turn: the message and its reply are
+   * not stored, no audit entry is created, and the reply carries a null conversationId.
+   */
   @PostMapping
-  public AssistantReply chat(@Valid @RequestBody Requests.Chat request) {
+  public AssistantReply chat(@Valid @RequestBody Requests.Chat request,
+                             @RequestParam(defaultValue = "false") boolean incognito) {
+    if (incognito) {
+      return orchestrator.handleIncognito(CurrentUser.userId(), request.message());
+    }
     return orchestrator.handle(CurrentUser.userId(), request.conversationId(), request.message());
   }
 }
