@@ -1,0 +1,50 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { AppShell } from '@/components/layout/AppShell'
+import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
+import { LoginPage } from '@/pages/LoginPage'
+import { RegisterPage } from '@/pages/RegisterPage'
+import { MfaPage } from '@/pages/MfaPage'
+import { RecoverPage } from '@/pages/RecoverPage'
+import { ChatPage } from '@/pages/ChatPage'
+import { ConversationsPage } from '@/pages/ConversationsPage'
+import { NotificationsPage } from '@/pages/NotificationsPage'
+import { AgentsPage } from '@/pages/AgentsPage'
+import { TasksPage } from '@/pages/TasksPage'
+import { ConnectionsPage } from '@/pages/ConnectionsPage'
+import { WorkflowsPage } from '@/pages/WorkflowsPage'
+import { ProceduresPage } from '@/pages/ProceduresPage'
+import { AutonomyPage } from '@/pages/AutonomyPage'
+import { ActivityPage } from '@/pages/ActivityPage'
+import { UsagePage } from '@/pages/UsagePage'
+
+export default function App() {
+  return (
+    <Routes>
+      {/* Public */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/mfa" element={<MfaPage />} />
+      <Route path="/recover" element={<RecoverPage />} />
+
+      {/* Protected */}
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppShell />}>
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/conversations" element={<ConversationsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/workflows" element={<WorkflowsPage />} />
+          <Route path="/procedures" element={<ProceduresPage />} />
+          <Route path="/autonomy" element={<AutonomyPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/settings" element={<Navigate to="/chat" replace />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/chat" replace />} />
+    </Routes>
+  )
+}
