@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { Sidebar, Logo } from './Sidebar'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
+import { JizzaDock } from '@/jizza/JizzaDock'
 
 const COLLAPSED_KEY = 'jizza-sidebar-collapsed'
 
@@ -63,6 +64,8 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      <JizzaDock />
     </div>
   )
 }

@@ -17,6 +17,10 @@ import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.orchestrator.AssistantReply;
 import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.orchestrator.delegation.DelegationRecorder;
+import com.jizza.engine.orchestrator.ui.UiActionRecorder;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.orchestrator.UiAction;
+import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.ConversationEntity;
 import com.jizza.engine.persistence.entity.DelegationTraceEntity;
@@ -45,6 +49,7 @@ class JizzaOrchestratorTest {
   private AgentEntity jizza;
   private Agent baseAgent;
   private DelegationRecorder recorder;
+  private final UiActionRecorder uiActions = new UiActionRecorder();
   private JizzaOrchestrator orchestrator;
 
   @BeforeEach
@@ -100,7 +105,7 @@ class JizzaOrchestratorTest {
 
     ObjectProvider<RealtimeGateway> realtime = mock(ObjectProvider.class);
     orchestrator = new JizzaOrchestrator(agents, conversations, messages, traces, baseAgent,
-        recorder, mock(AuditLog.class), realtime);
+        recorder, uiActions, mock(AuditLog.class), realtime);
   }
 
   private void answerWith(String text, DelegationRecorder.Contribution... contributions) {
@@ -216,5 +221,33 @@ class JizzaOrchestratorTest {
     AssistantReply second = orchestrator.handle(userId, "second");
 
     assertThat(second.contributors()).isEmpty();
+  }
+
+  @Test
+  void carriesScreenActionsOnTheReplyAndKeepsTheScreenOutOfTheStoredMessage() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      assertThat(req.instruction()).contains("[App context: the user is on the 'tasks' page");
+      uiActions.record(new UiAction(UiAction.NAVIGATE, Json.obj().put("page", "workflows")));
+      return AgentResult.of(jizza.getId(), "Jizza", "Opened Workflows.");
+    });
+
+    AssistantReply reply = orchestrator.handle(userId, null, "Make me a workflow", "tasks");
+
+    assertThat(reply.actions()).extracting(UiAction::type).containsExactly(UiAction.NAVIGATE);
+    assertThat(messageRows.get(0).getContent()).isEqualTo("Make me a workflow");
+  }
+
+  @Test
+  void opensNoScreenTurnWhenTheMessageDidNotComeFromTheApp() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      assertThat(uiActions.active()).isFalse();
+      return AgentResult.of(jizza.getId(), "Jizza", "Hello.");
+    });
+
+    AssistantReply reply = orchestrator.handle(userId, "Hi");
+
+    assertThat(reply.actions()).isEmpty();
+    assertThat(uiActions.active()).isFalse();
   }
 }

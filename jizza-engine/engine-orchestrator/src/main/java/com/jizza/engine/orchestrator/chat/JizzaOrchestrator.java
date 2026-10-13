@@ -11,9 +11,11 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.orchestrator.AssistantReply;
 import com.jizza.engine.api.orchestrator.Orchestrator;
+import com.jizza.engine.api.orchestrator.UiAction;
 import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.orchestrator.delegation.DelegationRecorder;
+import com.jizza.engine.orchestrator.ui.UiActionRecorder;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.ConversationEntity;
 import com.jizza.engine.persistence.entity.DelegationTraceEntity;
@@ -51,12 +53,14 @@ public class JizzaOrchestrator implements Orchestrator {
   private final DelegationTraceRepository traces;
   private final Agent baseAgent;
   private final DelegationRecorder recorder;
+  private final UiActionRecorder uiActions;
   private final AuditLog audit;
   private final ObjectProvider<RealtimeGateway> realtime;
 
   public JizzaOrchestrator(AgentRepository agents, ConversationRepository conversations,
                            MessageRepository messages, DelegationTraceRepository traces,
-                           Agent baseAgent, DelegationRecorder recorder, AuditLog audit,
+                           Agent baseAgent, DelegationRecorder recorder,
+                           UiActionRecorder uiActions, AuditLog audit,
                            ObjectProvider<RealtimeGateway> realtime) {
     this.agents = agents;
     this.conversations = conversations;
@@ -64,6 +68,7 @@ public class JizzaOrchestrator implements Orchestrator {
     this.traces = traces;
     this.baseAgent = baseAgent;
     this.recorder = recorder;
+    this.uiActions = uiActions;
     this.audit = audit;
     this.realtime = realtime;
   }
@@ -75,17 +80,25 @@ public class JizzaOrchestrator implements Orchestrator {
 
   @Override
   public AssistantReply handleIncognito(UUID userId, String message) {
+    return handleIncognito(userId, message, null);
+  }
+
+  @Override
+  public AssistantReply handleIncognito(UUID userId, String message, String screen) {
     AgentEntity jizza = agents.findByUserIdAndIsOrchestratorTrue(userId)
         .orElseThrow(() -> new NotFoundException("Orchestrator agent for user", userId));
 
     recorder.beginTurn();
+    if (screen != null) uiActions.beginTurn();
     AgentResult result;
     List<DelegationRecorder.Contribution> contributions;
+    List<UiAction> actions;
     try {
-      result = baseAgent.run(new AgentRequest(userId, jizza.getId(), message, null,
-          List.of(), ModelTier.STANDARD, false, null));
+      result = baseAgent.run(new AgentRequest(userId, jizza.getId(), withScreen(message, screen),
+          null, List.of(), ModelTier.STANDARD, false, null));
     } finally {
       contributions = recorder.endTurn();
+      actions = uiActions.endTurn();
     }
 
     String text = result.text() == null || result.text().isBlank()
@@ -95,7 +108,8 @@ public class JizzaOrchestrator implements Orchestrator {
     return new AssistantReply(null, null, text,
         contributions.stream()
             .map(c -> new AssistantReply.Contribution(c.agentId(), c.agentName(), c.task()))
-            .toList());
+            .toList(),
+        actions);
   }
 
   /**
@@ -106,6 +120,16 @@ public class JizzaOrchestrator implements Orchestrator {
    */
   @Override
   public AssistantReply handle(UUID userId, UUID conversationId, String message) {
+    return handle(userId, conversationId, message, null);
+  }
+
+  /**
+   * {@code screen} is set when the message comes from inside the app. Only then does Jizza get a
+   * screen to act on: the app-control tools record actions for the reply, and the page the user is
+   * on is passed to the model for this turn without being stored with the message.
+   */
+  @Override
+  public AssistantReply handle(UUID userId, UUID conversationId, String message, String screen) {
     AgentEntity jizza = agents.findByUserIdAndIsOrchestratorTrue(userId)
         .orElseThrow(() -> new NotFoundException("Orchestrator agent for user", userId));
 
@@ -116,13 +140,16 @@ public class JizzaOrchestrator implements Orchestrator {
         Json.obj().put("messageId", userMessage.getId().toString()));
 
     recorder.beginTurn();
+    if (screen != null) uiActions.beginTurn();
     AgentResult result;
     List<DelegationRecorder.Contribution> contributions;
+    List<UiAction> actions;
     try {
-      result = baseAgent.run(new AgentRequest(userId, jizza.getId(), message, null,
-          history(conversation.getId()), ModelTier.STANDARD, false, null));
+      result = baseAgent.run(new AgentRequest(userId, jizza.getId(), withScreen(message, screen),
+          null, history(conversation.getId()), ModelTier.STANDARD, false, null));
     } finally {
       contributions = recorder.endTurn();
+      actions = uiActions.endTurn();
     }
 
     String text = result.text() == null || result.text().isBlank()
@@ -134,10 +161,18 @@ public class JizzaOrchestrator implements Orchestrator {
     AssistantReply reply = new AssistantReply(conversation.getId(), assistantMessage.getId(), text,
         contributions.stream()
             .map(c -> new AssistantReply.Contribution(c.agentId(), c.agentName(), c.task()))
-            .toList());
+            .toList(),
+        actions);
 
     realtime.ifAvailable(gateway -> gateway.publishChatChunk(userId, conversation.getId(), text, true));
     return reply;
+  }
+
+  /** Tells the model where the user is, for this turn only. */
+  private static String withScreen(String message, String screen) {
+    if (screen == null || screen.isBlank()) return message;
+    String page = screen.length() > 40 ? screen.substring(0, 40) : screen;
+    return message + "\n\n[App context: the user is on the '" + page + "' page of the Jizza app.]";
   }
 
   private ConversationEntity resolveConversation(UUID userId, UUID conversationId) {

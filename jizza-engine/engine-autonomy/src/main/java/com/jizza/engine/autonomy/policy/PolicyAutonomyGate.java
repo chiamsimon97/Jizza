@@ -44,7 +44,9 @@ public class PolicyAutonomyGate implements AutonomyGate {
   private static final List<String> READ_ONLY_BUILTINS = List.of(
       "knowledge_search", "knowledge_get", "knowledge_upsert",
       "delegate_to_specialist", "delegate_to_specialists",
-      "notify_user", "request_permission", "propose_workflow");
+      "notify_user", "request_permission", "propose_workflow",
+      // Jizza steering the user's own screen: opening pages and forms, asking, theming.
+      "app_navigate", "app_open_form", "app_ask_user", "app_set_theme");
 
   private final AutonomyPolicyRepository policies;
   private final AgentRepository agents;
