@@ -190,3 +190,109 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Brand: cartoon mascots (Jizza and the agents) ───────────────────────────
+   Every character bobs and hops now and then, wiggles on hover, jumps when poked and snoozes
+   when off. Parts are keyed by class; the root carries data-state, data-hover and data-poke. */
+.mascot [class*='m-'] { transform-box: fill-box; transform-origin: center; }
+.mascot .m-bob { transform-origin: 50% 100%; animation: m-bob 4.2s ease-in-out infinite; }
+.mascot .m-shadow { animation: m-shadow 4.2s ease-in-out infinite; }
+.mascot[data-state='working'] .m-bob,
+.mascot[data-state='listening'] .m-bob { animation: m-busy 0.7s ease-in-out infinite; }
+.mascot[data-state='working'] .m-shadow { animation: m-shadow-busy 0.7s ease-in-out infinite; }
+.mascot[data-state='thinking'] .m-bob { animation: m-ponder 1.6s ease-in-out infinite; }
+.mascot[data-state='off'] .m-bob { animation: m-snooze 3.6s ease-in-out infinite; }
+.mascot[data-hover='true'] .m-bob { animation: m-wiggle 0.55s ease-in-out infinite; }
+.mascot[data-poke='true'] .m-bob { animation: m-boing 0.75s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.mascot[data-state='off'] svg { filter: saturate(0.3); opacity: 0.8; }
+.mascot[data-state='off'] .m-bob * { animation: none !important; }
+.mascot .m-eye { transition: transform 80ms ease-out; }
+.mascot .m-pupil { transition: transform 120ms ease-out; }
+.m-z { display: inline-block; opacity: 0; animation: m-z 2.4s ease-out infinite; }
+.m-quip { transform: translate(-50%, -100%); animation: m-quip 260ms cubic-bezier(0.3, 1.6, 0.5, 1); white-space: nowrap; }
+
+/* Jizza */
+.mascot .m-antenna { transform-origin: 50% 100%; animation: m-wobble 2.6s ease-in-out infinite; }
+.mascot[data-hover='true'] .m-antenna { animation-duration: 0.4s; }
+.mascot[data-state='thinking'] .m-bulb,
+.mascot[data-state='working'] .m-bulb { animation: m-flash 0.5s steps(2) infinite; }
+.mascot .m-arm-r, .mascot .m-arm-l { transform-box: view-box; }
+.mascot .m-arm-r { transform-origin: 82px 56px; }
+.mascot .m-arm-l { transform-origin: 18px 56px; }
+.mascot[data-hover='true'] .m-arm-r,
+.mascot[data-poke='true'] .m-arm-r { animation: m-wave 0.4s ease-in-out infinite alternate; }
+.mascot[data-poke='true'] .m-arm-l { animation: m-wave-l 0.4s ease-in-out infinite alternate; }
+.mascot .m-thought { transform-origin: 0% 100%; animation: m-pop 300ms cubic-bezier(0.3, 1.6, 0.5, 1); }
+.mascot .m-dot { animation: m-dot 0.9s ease-in-out infinite; }
+.jz-orb-ring { transform-box: view-box !important; transform-origin: 50px 58px !important; animation: jz-ring 1.35s ease-out infinite; }
+
+/* Vita: beating heart, curling dumbbells */
+.mascot .m-beat { animation: m-beat 1.4s ease-in-out infinite; }
+.mascot[data-state='working'] .m-beat { animation-duration: 0.6s; }
+.mascot .m-curl { transform-box: view-box; }
+.mascot[data-state='working'] .m-curl-r { animation: m-curl-r 0.8s ease-in-out infinite alternate; }
+.mascot[data-state='working'] .m-curl-l { animation: m-curl-l 0.8s ease-in-out 0.4s infinite alternate; }
+.mascot .m-sweat { animation: m-sweat 1s ease-in infinite; }
+
+/* Kai: coins drop in, the pig jiggles, the tail wags */
+.mascot .m-coin { opacity: 0; animation: m-coin 1.35s ease-in infinite; }
+.mascot[data-state='working'] .m-jiggle { animation: m-jiggle 0.45s ease-in-out infinite; }
+.mascot .m-tail { transform-origin: 0% 50%; animation: m-wag 1.2s ease-in-out infinite alternate; }
+.mascot[data-state='working'] .m-tail,
+.mascot[data-hover='true'] .m-tail { animation-duration: 0.2s; }
+
+/* Cato: flap chatters, pencil scribbles, paper planes fly off */
+.mascot .m-flap { transform-origin: 50% 0%; }
+.mascot[data-state='working'] .m-flap { animation: m-flap 0.5s ease-in-out infinite alternate; }
+.mascot .m-pencil { transform-box: view-box; animation: m-tap 3s ease-in-out infinite; }
+.mascot[data-state='working'] .m-pencil { animation: m-scribble 0.22s linear infinite alternate; }
+.mascot .m-plane { opacity: 0; animation: m-plane 1.6s ease-out infinite; }
+
+/* The wordmark letters do a wave when you hover the logo */
+.jz-word > span { display: inline-block; }
+.group\/logo:hover .jz-word > span { animation: m-letter 0.6s ease-in-out; }
+
+@keyframes m-bob {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  35% { transform: translateY(-2px) scale(0.99, 1.01); }
+  70% { transform: translateY(0) scale(1, 1); }
+  78% { transform: translateY(0) scale(1.08, 0.9); }
+  86% { transform: translateY(-9px) scale(0.95, 1.06); }
+  93% { transform: translateY(0) scale(1.06, 0.94); }
+}
+@keyframes m-shadow { 0%, 78%, 100% { transform: scale(1); opacity: 1; } 86% { transform: scale(0.75); opacity: 0.6; } }
+@keyframes m-busy { 0%, 100% { transform: translateY(0) scale(1.04, 0.96); } 50% { transform: translateY(-5px) scale(0.97, 1.03); } }
+@keyframes m-shadow-busy { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.8); } }
+@keyframes m-ponder { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg) translateY(-2px); } }
+@keyframes m-snooze { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.04, 0.96); } }
+@keyframes m-wiggle { 0%, 100% { transform: rotate(0) translateY(-2px); } 25% { transform: rotate(-7deg) translateY(-4px); } 75% { transform: rotate(7deg) translateY(-4px); } }
+@keyframes m-boing {
+  0% { transform: scale(1, 1); }
+  15% { transform: scale(1.25, 0.75); }
+  40% { transform: translateY(-22px) scale(0.85, 1.18) rotate(-6deg); }
+  65% { transform: translateY(0) scale(1.15, 0.88); }
+  82% { transform: scale(0.96, 1.05); }
+  100% { transform: scale(1, 1); }
+}
+@keyframes m-z { 0% { transform: translate(0, 4px) scale(0.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(6px, -12px) scale(1.1); opacity: 0; } }
+@keyframes m-quip { from { transform: translate(-50%, -70%) scale(0.5); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
+@keyframes m-wobble { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes m-flash { 0% { fill: #fde047; filter: drop-shadow(0 0 4px #fde047); } 100% { fill: rgb(var(--accent-400)); } }
+@keyframes m-wave { from { transform: rotate(0deg); } to { transform: rotate(-80deg); } }
+@keyframes m-wave-l { from { transform: rotate(0deg); } to { transform: rotate(80deg); } }
+@keyframes m-pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes m-dot { 0%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-3px); opacity: 1; } }
+@keyframes m-beat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.1); } 28% { transform: scale(0.97); } 42% { transform: scale(1.06); } }
+@keyframes m-curl-r { from { transform: rotate(0deg); } to { transform: rotate(-75deg); } }
+@keyframes m-curl-l { from { transform: rotate(0deg); } to { transform: rotate(75deg); } }
+@keyframes m-sweat { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+@keyframes m-coin { 0% { transform: translateY(-6px) scale(1); opacity: 0; } 15% { opacity: 1; } 75% { transform: translateY(24px) scale(1, 1); opacity: 1; } 100% { transform: translateY(27px) scale(0.2, 1); opacity: 0; } }
+@keyframes m-jiggle { 0%, 100% { transform: scale(1, 1); } 30% { transform: scale(1.06, 0.94); } 60% { transform: scale(0.97, 1.03); } }
+@keyframes m-wag { from { transform: rotate(-15deg); } to { transform: rotate(20deg); } }
+@keyframes m-flap { from { transform: scaleY(1); } to { transform: scaleY(-0.6); } }
+@keyframes m-tap { 0%, 80%, 100% { transform: rotate(0); } 85% { transform: rotate(-12deg); } 90% { transform: rotate(4deg); } }
+@keyframes m-scribble { from { transform: rotate(-10deg) translate(-2px, 1px); } to { transform: rotate(8deg) translate(2px, -1px); } }
+@keyframes m-plane { 0% { transform: translate(0, 0) rotate(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(38px, -42px) rotate(-15deg); opacity: 0; } }
+@keyframes m-letter { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-5px) rotate(-6deg); } }
+@keyframes jz-ring { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.45); opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }

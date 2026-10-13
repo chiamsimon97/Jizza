@@ -10,6 +10,7 @@ import { useFormStore } from '@/jizza/formStore'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
+import { AgentLogo } from '@/components/brand/AgentLogo'
 
 interface Step {
   key: number
@@ -137,7 +138,11 @@ export function WorkflowForm() {
                 <div className="mb-2 flex items-center gap-2">
                   <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500 text-xs font-semibold text-white">{i + 1}</span>
                   <span className="flex items-center gap-1 text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {step.kind === 'agent' ? <><Bot className="h-4 w-4" /> Agent does</> : <><Hand className="h-4 w-4" /> Ask me</>}
+                    {step.kind === 'agent'
+                      ? <>{step.agentId
+                          ? <AgentLogo agentKey={agents?.find(a => a.id === step.agentId)?.key ?? 'other'} size={22} />
+                          : <Bot className="h-4 w-4" />} {agents?.find(a => a.id === step.agentId)?.name ?? 'Agent'} does</>
+                      : <><Hand className="h-4 w-4" /> Ask me</>}
                   </span>
                   <span className="flex-1" />
                   <IconButton label="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconButton>

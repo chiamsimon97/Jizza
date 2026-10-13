@@ -3,6 +3,8 @@ import { ListTodo, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { TaskForm } from '@/components/forms/TaskForm'
 import { useFormStore } from '@/jizza/formStore'
+import { AgentLogo } from '@/components/brand/AgentLogo'
+import { agentsApi } from '@/api/agents'
 import { tasksApi } from '@/api/tasks'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -24,6 +26,7 @@ export function TasksPage() {
     queryKey: ['tasks'],
     queryFn: () => tasksApi.list(),
   })
+  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
   const cancel = useMutation({
     mutationFn: (id: string) => tasksApi.cancel(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
@@ -45,6 +48,8 @@ export function TasksPage() {
           {data.map(task => (
             <Card key={task.id} padding="md">
               <div className="flex items-start justify-between gap-3">
+                <AgentLogo agentKey={agents?.find(a => a.id === task.agentId)?.key ?? 'other'} size={36}
+                  state={task.status === 'RUNNING' ? 'working' : 'idle'} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant={statusVariant(task.status)}>{task.status}</Badge>

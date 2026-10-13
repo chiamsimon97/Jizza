@@ -20,6 +20,8 @@ export interface AssistantMessage {
   steps?: Step[]
   /** A question Jizza is waiting on, with one-tap answers. */
   question?: { text: string; options: string[] }
+  /** Specialists who worked on this reply, shown by their logos. */
+  helpers?: { agentId: string; agentName: string }[]
   error?: boolean
 }
 
@@ -136,7 +138,8 @@ export const useAssistantStore = create<AssistantState>()(
             : await chatApi.send(text, conversationId, screen)
           if (!incognito && res.conversationId) set({ conversationId: res.conversationId })
           const { steps, question } = execute(res.actions ?? [])
-          reply({ text: res.text, steps, question })
+          const helpers = (res.contributors ?? []).map(c => ({ agentId: c.agentId, agentName: c.agentName }))
+          reply({ text: res.text, steps, question, helpers })
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Request failed'
           reply({ text: `I couldn't reach my reasoning engine (${message}). Simple commands like "open workflows" or "create a workflow" still work.`, error: true })

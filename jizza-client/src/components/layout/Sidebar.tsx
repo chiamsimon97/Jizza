@@ -7,6 +7,8 @@ import {
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
+import { JizzaLogo } from '@/components/brand/JizzaLogo'
+import { useAssistantStore } from '@/jizza/assistantStore'
 
 const sections = [
   {
@@ -45,14 +47,8 @@ interface SidebarProps {
 }
 
 export function Logo({ collapsed = false }: { collapsed?: boolean }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg brand-gradient text-sm font-bold text-white shadow-glow">
-        J
-      </div>
-      {!collapsed && <span className="text-lg font-bold tracking-tight brand-gradient-text">Jizza</span>}
-    </div>
-  )
+  const thinking = useAssistantStore(s => s.thinking)
+  return <JizzaLogo size={34} markOnly={collapsed} state={thinking ? 'thinking' : 'idle'} />
 }
 
 export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps) {
