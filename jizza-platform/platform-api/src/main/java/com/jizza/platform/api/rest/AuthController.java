@@ -50,6 +50,15 @@ public class AuthController {
     this.mail = mail;
   }
 
+  /**
+   * Issues the XSRF-TOKEN cookie to a browser that has none yet. CsrfCookieFilter writes the cookie
+   * on any response; this endpoint just gives a fresh page something public to call first.
+   */
+  @GetMapping("/csrf")
+  public ResponseEntity<Void> csrf() {
+    return ResponseEntity.noContent().build();
+  }
+
   @PostMapping("/register")
   public Responses.Message register(@Valid @RequestBody Requests.Register request) {
     auth.register(request.email(), request.password());

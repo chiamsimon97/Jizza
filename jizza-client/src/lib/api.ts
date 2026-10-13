@@ -15,12 +15,18 @@ function getCsrfToken(): string | undefined {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const mutating = init.method != null && init.method !== 'GET'
+  // A fresh browser has no XSRF-TOKEN cookie until the server sets one, so fetch it before the
+  // first mutating call (e.g. register or login) rather than letting that call be rejected.
+  if (mutating && !getCsrfToken()) {
+    await fetch('/api/auth/csrf', { credentials: 'include' })
+  }
   const csrf = getCsrfToken()
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
-  if (csrf && init.method && init.method !== 'GET') {
+  if (csrf && mutating) {
     headers.set('X-XSRF-TOKEN', csrf)
   }
 
