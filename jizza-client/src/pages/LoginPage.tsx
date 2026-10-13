@@ -15,6 +15,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const from = (location.state as { from?: Location })?.from?.pathname ?? '/chat'
+  const notice = (location.state as { notice?: string })?.notice
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -59,6 +60,7 @@ export function LoginPage() {
             value={password}
             onChange={e => setPassword(e.target.value)}
           />
+          {notice && !error && <p className="text-sm text-green-600">{notice}</p>}
           {error && <p className="text-sm text-red-500">{error}</p>}
           <Button type="submit" loading={loading} className="mt-1">Sign in</Button>
         </form>

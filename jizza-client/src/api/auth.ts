@@ -3,7 +3,7 @@ import type { LoginResult, MfaSetup, SessionDto } from '@/types'
 
 export const authApi = {
   register: (body: { email: string; password: string; name?: string }) =>
-    api.post<{ userId: string }>('/api/auth/register', body),
+    api.post<{ message: string }>('/api/auth/register', body),
 
   login: (body: { email: string; password: string }) =>
     api.post<LoginResult>('/api/auth/login', body),

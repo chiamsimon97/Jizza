@@ -1,13 +1,11 @@
 import { FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '@/api/auth'
-import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
 export function RegisterPage() {
   const navigate = useNavigate()
-  const { setAuthenticated } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -20,10 +18,8 @@ export function RegisterPage() {
     setLoading(true)
     try {
       const result = await authApi.register({ email, password, name })
-      if (result.userId) {
-        setAuthenticated(result.userId)
-        navigate('/chat', { replace: true })
-      }
+      // Registration does not sign the user in; send them to the login page with the server's notice.
+      navigate('/login', { replace: true, state: { notice: result.message } })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
