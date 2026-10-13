@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { agentsApi } from '@/api/agents'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -20,11 +21,8 @@ export function AgentsPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Bot className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Agents</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={Bot} title="Agents" description="Enable or pause the specialists Jizza delegates to." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -33,7 +31,7 @@ export function AgentsPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {data.map(agent => (
             <Card key={agent.id} padding="md">
               <div className="flex items-start justify-between gap-2">

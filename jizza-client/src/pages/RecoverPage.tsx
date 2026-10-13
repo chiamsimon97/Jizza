@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { authApi } from '@/api/auth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { AuthLayout } from '@/components/layout/AuthLayout'
 
 export function RecoverPage() {
   const [email, setEmail] = useState('')
@@ -25,31 +26,29 @@ export function RecoverPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
-      <div className="w-full max-w-sm">
-        <h1 className="mb-2 text-center text-2xl font-bold text-gray-900 dark:text-gray-100">Recover account</h1>
-        {sent ? (
-          <p className="mt-4 text-center text-sm text-green-600 dark:text-green-400">
-            If that address exists you'll get a reset link shortly.
-          </p>
-        ) : (
-          <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
-            <Input
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
-            {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button type="submit" loading={loading}>Send reset link</Button>
-          </form>
-        )}
-        <p className="mt-6 text-center text-sm text-gray-500">
-          <Link to="/login" className="text-brand-500 hover:underline">Back to login</Link>
+    <AuthLayout>
+      <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Recover account</h1>
+      {sent ? (
+        <p className="mt-4 text-center text-sm text-green-600 dark:text-green-400">
+          If that address exists you'll get a reset link shortly.
         </p>
-      </div>
-    </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+          <Input
+            label="Email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <Button type="submit" loading={loading}>Send reset link</Button>
+        </form>
+      )}
+      <p className="mt-6 text-center text-sm text-gray-500">
+        <Link to="/login" className="font-medium text-brand-600 transition-colors hover:text-brand-700 hover:underline dark:text-brand-400 dark:hover:text-brand-300">Back to login</Link>
+      </p>
+    </AuthLayout>
   )
 }

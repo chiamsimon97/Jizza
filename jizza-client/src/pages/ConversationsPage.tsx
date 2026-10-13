@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { History, MessageSquare } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { conversationsApi } from '@/api/conversations'
 import { Card } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
@@ -14,11 +15,8 @@ export function ConversationsPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <History className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Chat History</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={History} title="Chat History" description="Pick up where you left off." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -32,12 +30,13 @@ export function ConversationsPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="space-y-2">
+        <div className="stagger space-y-2">
           {data.map(conv => (
             <Card
               key={conv.id}
               padding="md"
-              className="cursor-pointer hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+              interactive
+              className="cursor-pointer"
               onClick={() => navigate(`/chat?conversationId=${conv.id}`)}
             >
               <div className="flex items-start justify-between gap-4">

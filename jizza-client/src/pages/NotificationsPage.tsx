@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { notificationsApi } from '@/api/notifications'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -19,11 +20,8 @@ export function NotificationsPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Bell className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notifications</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={Bell} title="Notifications" description="Questions, approvals and updates for you." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -32,7 +30,7 @@ export function NotificationsPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="space-y-2">
+        <div className="stagger space-y-2">
           {data.map(n => (
             <Card key={n.id} padding="md" className={n.status === 'READ' ? 'opacity-60' : ''}>
               <div className="flex items-start gap-3">

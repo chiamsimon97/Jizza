@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ListTodo } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { tasksApi } from '@/api/tasks'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -26,11 +27,8 @@ export function TasksPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <ListTodo className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Tasks</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={ListTodo} title="Tasks" description="Scheduled and one-off work." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -39,7 +37,7 @@ export function TasksPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="space-y-2">
+        <div className="stagger space-y-2">
           {data.map(task => (
             <Card key={task.id} padding="md">
               <div className="flex items-start justify-between gap-3">

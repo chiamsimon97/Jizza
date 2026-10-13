@@ -2,11 +2,191 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Themes. Each theme sets the gray (surfaces/text), brand (primary) and accent
+ * scales as RGB channels. The dark theme also gets the `dark` class on <html>
+ * so the existing dark: variants apply.
+ */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --gray-50: 248 250 252;
+  --gray-100: 241 245 249;
+  --gray-200: 226 232 240;
+  --gray-300: 203 213 225;
+  --gray-400: 148 163 184;
+  --gray-500: 100 116 139;
+  --gray-600: 71 85 105;
+  --gray-700: 51 65 85;
+  --gray-800: 30 41 59;
+  --gray-900: 15 23 42;
+  --gray-950: 2 6 23;
+
+  --brand-50: 238 242 255;
+  --brand-100: 224 231 255;
+  --brand-200: 199 210 254;
+  --brand-300: 165 180 252;
+  --brand-400: 129 140 248;
+  --brand-500: 79 70 229;
+  --brand-600: 67 56 202;
+  --brand-700: 55 48 163;
+  --brand-800: 49 46 129;
+  --brand-900: 30 27 75;
+  --brand-950: 20 18 54;
+
+  --accent-50: 236 254 255;
+  --accent-100: 207 250 254;
+  --accent-200: 165 243 252;
+  --accent-300: 103 232 249;
+  --accent-400: 34 211 238;
+  --accent-500: 6 182 212;
+  --accent-600: 8 145 178;
+  --accent-700: 14 116 144;
+  --accent-800: 21 94 117;
+  --accent-900: 22 78 99;
+  --accent-950: 8 51 68;
+
+  --app-bg: var(--gray-50);
+  --sidebar-bg: 255 255 255;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --gray-50: 248 250 252;
+  --gray-100: 236 239 245;
+  --gray-200: 214 219 229;
+  --gray-300: 178 186 202;
+  --gray-400: 136 146 166;
+  --gray-500: 103 113 134;
+  --gray-600: 69 78 98;
+  --gray-700: 43 51 69;
+  --gray-800: 27 33 47;
+  --gray-900: 18 22 33;
+  --gray-950: 10 13 21;
+
+  --brand-50: 238 242 255;
+  --brand-100: 224 231 255;
+  --brand-200: 199 210 254;
+  --brand-300: 165 180 252;
+  --brand-400: 140 150 250;
+  --brand-500: 109 104 245;
+  --brand-600: 92 84 232;
+  --brand-700: 74 66 200;
+  --brand-800: 58 52 150;
+  --brand-900: 44 40 110;
+  --brand-950: 26 24 70;
+
+  --app-bg: var(--gray-950);
+  --sidebar-bg: var(--gray-900);
+}
+
+[data-theme='sunset'] {
+  color-scheme: light;
+  --gray-50: 255 250 245;
+  --gray-100: 253 242 233;
+  --gray-200: 245 225 210;
+  --gray-300: 228 200 182;
+  --gray-400: 190 156 138;
+  --gray-500: 150 115 100;
+  --gray-600: 117 85 74;
+  --gray-700: 90 62 55;
+  --gray-800: 62 42 38;
+  --gray-900: 42 27 25;
+  --gray-950: 26 16 15;
+
+  --brand-50: 255 241 238;
+  --brand-100: 255 225 218;
+  --brand-200: 254 199 186;
+  --brand-300: 252 160 140;
+  --brand-400: 248 120 98;
+  --brand-500: 234 88 62;
+  --brand-600: 210 66 46;
+  --brand-700: 175 50 38;
+  --brand-800: 140 42 34;
+  --brand-900: 110 36 30;
+  --brand-950: 66 18 14;
+
+  --accent-50: 255 247 237;
+  --accent-100: 255 237 213;
+  --accent-200: 254 215 170;
+  --accent-300: 253 186 116;
+  --accent-400: 251 146 60;
+  --accent-500: 236 72 153;
+  --accent-600: 219 39 119;
+  --accent-700: 190 24 93;
+  --accent-800: 157 23 77;
+  --accent-900: 131 24 67;
+  --accent-950: 80 7 36;
+
+  --app-bg: var(--gray-50);
+  --sidebar-bg: 255 246 238;
+}
+
 @layer base {
   html {
     font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-color: rgb(var(--app-bg));
+    color: rgb(var(--gray-900));
+  }
+  .dark body {
+    color: rgb(var(--gray-100));
   }
   code, kbd, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
+  }
+  ::selection {
+    background-color: rgb(var(--brand-500) / 0.25);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--gray-300)) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(var(--gray-700)) transparent;
+  }
+}
+
+@layer components {
+  /* Smooth recolouring when the theme changes; only colour properties animate. */
+  .theme-transition,
+  .theme-transition * {
+    transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+    transition-duration: 250ms;
+    transition-timing-function: ease;
+  }
+
+  .app-bg {
+    background-color: rgb(var(--app-bg));
+  }
+  .sidebar-bg {
+    background-color: rgb(var(--sidebar-bg));
+  }
+  .brand-gradient {
+    background-image: linear-gradient(135deg, rgb(var(--brand-500)), rgb(var(--accent-500)));
+  }
+  .brand-gradient-text {
+    @apply bg-clip-text text-transparent brand-gradient;
+  }
+  .page {
+    @apply mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 animate-fade-in-up;
+  }
+  .stagger > * {
+    @apply animate-fade-in-up;
+  }
+  .stagger > *:nth-child(2) { animation-delay: 30ms; }
+  .stagger > *:nth-child(3) { animation-delay: 60ms; }
+  .stagger > *:nth-child(4) { animation-delay: 90ms; }
+  .stagger > *:nth-child(5) { animation-delay: 120ms; }
+  .stagger > *:nth-child(n + 6) { animation-delay: 150ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
