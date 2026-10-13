@@ -60,4 +60,13 @@ public class JobLeaser {
     }
     return jobs.saveAll(leased);
   }
+
+  /**
+   * Re-offers jobs whose lease expired because the worker died mid-flight. Lives here rather than
+   * in the queue so the call crosses a bean boundary and the transaction actually applies.
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public int reclaimExpired() {
+    return jobs.reclaimExpiredLeases(Instant.now());
+  }
 }

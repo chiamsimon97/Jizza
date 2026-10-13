@@ -74,19 +74,14 @@ public class PostgresJobQueue implements JobQueue {
     if (!props.getQueue().isEnabled()) return;
 
     // Reclaim first: a job whose worker died is more urgent than a fresh one.
-    reclaim();
+    int reclaimed = leaser.reclaimExpired();
+    if (reclaimed > 0) log.info("Reclaimed {} job(s) from expired leases", reclaimed);
 
     List<JobEntity> leased = leaser.lease(props.getQueue().getBatchSize(),
         props.getQueue().getLeaseDuration());
     for (JobEntity job : leased) {
       handle(job);
     }
-  }
-
-  @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void reclaim() {
-    int reclaimed = jobs.reclaimExpiredLeases(Instant.now());
-    if (reclaimed > 0) log.info("Reclaimed {} job(s) from expired leases", reclaimed);
   }
 
   private void handle(JobEntity job) {

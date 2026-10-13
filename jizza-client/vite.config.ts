@@ -4,6 +4,8 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  // sockjs-client references Node's `global`, which browsers don't define.
+  define: { global: 'globalThis' },
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
