@@ -27,6 +27,7 @@
     <shedlock.version>5.16.0</shedlock.version>
     <bouncycastle.version>1.78.1</bouncycastle.version>
     <swagger-parser.version>2.1.22</swagger-parser.version>
+    <pdfbox.version>3.0.5</pdfbox.version>
   </properties>
 
   <!--
@@ -110,6 +111,9 @@
       </dependency>
       <dependency>
         <groupId>io.swagger.parser.v3</groupId><artifactId>swagger-parser</artifactId><version>${swagger-parser.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId><version>${pdfbox.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

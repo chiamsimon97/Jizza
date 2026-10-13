@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bot } from 'lucide-react'
+import { Bot, Brain } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { agentsApi } from '@/api/agents'
 import { tasksApi } from '@/api/tasks'
@@ -55,6 +56,7 @@ export function AgentsPage() {
 
 function AgentCard({ agent, tasks, onToggle }: { agent: AgentDto; tasks: TaskDto[]; onToggle: () => void }) {
   const [hovered, setHovered] = useState(false)
+  const navigate = useNavigate()
   const jizzaThinking = useAssistantStore(s => s.thinking)
   const running = tasks.filter(t => t.agentId === agent.id && t.status === 'RUNNING')
   const busy = running.length > 0 || (agent.isOrchestrator && jizzaThinking)
@@ -81,6 +83,9 @@ function AgentCard({ agent, tasks, onToggle }: { agent: AgentDto; tasks: TaskDto
         <Badge variant={!agent.enabled ? 'default' : busy ? 'info' : 'success'}>
           {!agent.enabled ? 'Paused' : busy ? 'Working' : 'Ready'}
         </Badge>
+        <Button size="sm" variant="ghost" onClick={() => navigate(`/memory/${agent.id}`)}>
+          <Brain className="h-3.5 w-3.5" /> Memory
+        </Button>
         {!agent.isOrchestrator && (
           <Button size="sm" variant="secondary" onClick={onToggle}>
             {agent.enabled ? 'Pause' : 'Resume'}

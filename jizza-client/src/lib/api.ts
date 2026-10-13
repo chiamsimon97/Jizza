@@ -14,7 +14,7 @@ function getCsrfToken(): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'blob' = 'json'): Promise<T> {
   const mutating = init.method != null && init.method !== 'GET'
   // A fresh browser has no XSRF-TOKEN cookie until the server sets one, so fetch it before the
   // first mutating call (e.g. register or login) rather than letting that call be rejected.
@@ -23,7 +23,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const csrf = getCsrfToken()
   const headers = new Headers(init.headers)
-  if (!headers.has('Content-Type') && init.body) {
+  // A FormData body sets its own multipart Content-Type, boundary included.
+  if (!headers.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
   if (csrf && mutating) {
@@ -36,6 +37,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (res.status === 204 || res.headers.get('Content-Length') === '0') {
       return undefined as T
     }
+    if (as === 'blob') return res.blob() as Promise<T>
     return res.json() as Promise<T>
   }
 
@@ -54,4 +56,7 @@ export const api = {
   put:    <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT',    body: body != null ? JSON.stringify(body) : undefined }),
   patch:  <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH',  body: body != null ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
+  /** Raw bytes, for files shown back to the user. */
+  blob:   (path: string) => request<Blob>(path, { method: 'GET' }, 'blob'),
 }

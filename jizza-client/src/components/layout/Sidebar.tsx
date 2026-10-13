@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  MessageSquare, History, Bell, Bot, ListTodo,
+  MessageSquare, History, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, GitBranch, Shield, Activity, BarChart2,
   ChevronsLeft, ChevronsRight, LogOut, X,
 } from 'lucide-react'
@@ -23,6 +23,7 @@ const sections = [
     title: 'Automation',
     items: [
       { to: '/agents',      icon: Bot,       label: 'Agents' },
+      { to: '/memory',      icon: Brain,     label: 'Memory' },
       { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
       { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
       { to: '/procedures',  icon: GitBranch, label: 'Procedures' },

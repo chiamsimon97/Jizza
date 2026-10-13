@@ -34,6 +34,12 @@ public class FileEntity {
 
   private String sha256;
 
+  /** The agent whose memory this file belongs to; null for files that are not agent memory. */
+  private UUID agentId;
+
+  /** The knowledge entry holding this file's readable text, when it has any. */
+  private UUID knowledgeEntryId;
+
   private Instant createdAt;
 
   public UUID getId() { return id; }
@@ -59,6 +65,12 @@ public class FileEntity {
 
   public String getSha256() { return sha256; }
   public void setSha256(String sha256) { this.sha256 = sha256; }
+
+  public UUID getAgentId() { return agentId; }
+  public void setAgentId(UUID agentId) { this.agentId = agentId; }
+
+  public UUID getKnowledgeEntryId() { return knowledgeEntryId; }
+  public void setKnowledgeEntryId(UUID knowledgeEntryId) { this.knowledgeEntryId = knowledgeEntryId; }
 
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

@@ -10,5 +10,7 @@
     <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-agents</artifactId></dependency>
+    <!-- Reads the text out of uploaded PDFs so the owning agent can search them. -->
+    <dependency><groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId></dependency>
   </dependencies>
 </project>

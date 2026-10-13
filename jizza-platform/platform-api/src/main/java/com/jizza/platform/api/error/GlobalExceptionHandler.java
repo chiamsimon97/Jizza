@@ -75,6 +75,17 @@ public class GlobalExceptionHandler {
     return problem;
   }
 
+  /** An upload over the multipart limit is the user's file being too big, not a server fault. */
+  @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+  public ProblemDetail handleTooLarge(Exception e, HttpServletRequest request) {
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE,
+        "That file is too large. Files are limited to 10 MB.");
+    problem.setType(java.net.URI.create(JizzaException.TYPE_BASE + "validation"));
+    problem.setTitle("File too large");
+    problem.setInstance(java.net.URI.create(request.getRequestURI()));
+    return problem;
+  }
+
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception e, HttpServletRequest request) {
     String requestId = org.slf4j.MDC.get("requestId");

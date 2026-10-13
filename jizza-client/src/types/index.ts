@@ -30,6 +30,33 @@ export interface AgentDto {
   isOrchestrator: boolean
 }
 
+// ── Agent memory ──────────────────────────────────────────────────────────────
+export interface MemoryNote {
+  id: string
+  title: string
+  content?: string
+  classification?: 'NONE' | 'PII' | 'HEALTH' | 'FINANCIAL'
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MemoryFile {
+  id: string
+  agentId: string
+  filename: string
+  contentType: string
+  sizeBytes: number
+  /** How much text the agent can search in this file; 0 means it holds the file but can't read it. */
+  readableChars: number
+  createdAt: string
+}
+
+export interface AgentMemory {
+  agent: { id: string; key: string; name: string; domain?: string }
+  notes: MemoryNote[]
+  files: MemoryFile[]
+}
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 export interface AssistantReply {
   conversationId?: string
