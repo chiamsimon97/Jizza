@@ -1,18 +1,29 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { agentsApi } from '@/api/agents'
+import { tasksApi } from '@/api/tasks'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { AgentLogo, AGENT_ACTIVITY, type AgentState } from '@/components/brand/AgentLogo'
+import { useAssistantStore } from '@/jizza/assistantStore'
+import type { AgentDto, TaskDto } from '@/types'
 
 export function AgentsPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['agents'],
     queryFn: () => agentsApi.list(),
+  })
+  // What is running right now drives each agent's logo.
+  const { data: tasks } = useQuery({
+    queryKey: ['tasks'],
+    queryFn: () => tasksApi.list(),
+    refetchInterval: 15_000,
   })
   const patch = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
@@ -22,7 +33,7 @@ export function AgentsPage() {
 
   return (
     <div className="page">
-      <PageHeader icon={Bot} title="Agents" description="Enable or pause the specialists Jizza delegates to." />
+      <PageHeader icon={Bot} title="Agents" description="Your team. Each logo shows what that agent is doing right now." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -31,34 +42,51 @@ export function AgentsPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map(agent => (
-            <Card key={agent.id} padding="md">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{agent.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{agent.domain ?? agent.key}</p>
-                  {agent.isOrchestrator && (
-                    <p className="text-xs text-brand-500 mt-0.5">Orchestrator</p>
-                  )}
-                </div>
-                <Badge variant={agent.enabled ? 'success' : 'default'}>
-                  {agent.enabled ? 'Active' : 'Disabled'}
-                </Badge>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => patch.mutate({ id: agent.id, enabled: !agent.enabled })}
-                >
-                  {agent.enabled ? 'Disable' : 'Enable'}
-                </Button>
-              </div>
-            </Card>
+        <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[...data].sort((a, b) => Number(b.isOrchestrator) - Number(a.isOrchestrator)).map(agent => (
+            <AgentCard key={agent.id} agent={agent} tasks={tasks ?? []}
+              onToggle={() => patch.mutate({ id: agent.id, enabled: !agent.enabled })} />
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+function AgentCard({ agent, tasks, onToggle }: { agent: AgentDto; tasks: TaskDto[]; onToggle: () => void }) {
+  const [hovered, setHovered] = useState(false)
+  const jizzaThinking = useAssistantStore(s => s.thinking)
+  const running = tasks.filter(t => t.agentId === agent.id && t.status === 'RUNNING')
+  const busy = running.length > 0 || (agent.isOrchestrator && jizzaThinking)
+  const state: AgentState = !agent.enabled ? 'off' : busy || hovered ? 'working' : 'idle'
+  const activity = AGENT_ACTIVITY[agent.key]
+  const line = !agent.enabled
+    ? 'Paused'
+    : running.length > 0
+      ? `Working on: ${running[0].title}`
+      : busy ? activity?.working ?? 'Working' : activity?.idle ?? agent.domain ?? 'Ready'
+
+  return (
+    <Card padding="lg" interactive onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      className={`flex flex-col items-center text-center ${agent.isOrchestrator ? 'ring-1 ring-brand-500/30' : ''}`}>
+      <AgentLogo agentKey={agent.key} state={state} size={72} />
+      <p className="mt-4 text-base font-semibold text-gray-900 dark:text-gray-100">{agent.name}</p>
+      <p className="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500">
+        {agent.isOrchestrator ? 'Your assistant' : agent.domain ?? agent.key}
+      </p>
+      <p className={`mt-3 min-h-[2.5rem] text-sm ${busy && agent.enabled ? 'text-brand-600 dark:text-brand-300' : 'text-gray-500 dark:text-gray-400'}`}>
+        {line}
+      </p>
+      <div className="mt-4 flex items-center gap-2">
+        <Badge variant={!agent.enabled ? 'default' : busy ? 'info' : 'success'}>
+          {!agent.enabled ? 'Paused' : busy ? 'Working' : 'Ready'}
+        </Badge>
+        {!agent.isOrchestrator && (
+          <Button size="sm" variant="secondary" onClick={onToggle}>
+            {agent.enabled ? 'Pause' : 'Resume'}
+          </Button>
+        )}
+      </div>
+    </Card>
   )
 }

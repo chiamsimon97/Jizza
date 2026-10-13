@@ -190,3 +190,54 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Brand: Jizza's orb ─────────────────────────────────────────────────── */
+.jz-orb-glow { transform-origin: 50px 50px; animation: jz-breathe 3.2s ease-in-out infinite; }
+.jz-orb[data-state='thinking'] .jz-orb-glow,
+.jz-orb[data-state='listening'] .jz-orb-glow { animation-duration: 1s; }
+.jz-orb-eye { transition: transform 90ms ease-out; }
+.jz-orb-eye ellipse, .jz-orb-eye circle { transition: cx 120ms ease-out, cy 120ms ease-out; }
+.jz-orb-orbit { transform-origin: 50px 50px; animation: spin 1.4s linear infinite; }
+.jz-orb-ring { transform-origin: 50px 50px; animation: jz-ring 1.35s ease-out infinite; }
+@keyframes jz-breathe { 0%, 100% { transform: scale(0.92); opacity: 0.55; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes jz-ring { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.45); opacity: 0; } }
+
+/* ── Brand: agent logos. Idle loops gently; working plays the full motion. ── */
+.agent-logo * { transform-box: fill-box; transform-origin: center; }
+.agent-logo .al-tile { transform-box: view-box; transform-origin: 32px 32px; transition: transform 300ms ease; }
+.agent-logo:hover .al-tile { transform: rotate(-4deg) scale(1.04); }
+
+.agent-logo .al-heart { animation: al-beat 1.6s ease-in-out infinite; }
+.agent-logo[data-state='working'] .al-heart { animation-duration: 0.7s; }
+.agent-logo .al-ecg { stroke-dasharray: 70; stroke-dashoffset: 0; }
+.agent-logo[data-state='working'] .al-ecg { animation: al-trace 1.1s linear infinite; }
+
+.agent-logo .al-bar { transform-origin: bottom; animation: al-sway 3s ease-in-out infinite; }
+.agent-logo .al-bar-2 { animation-delay: 0.2s; }
+.agent-logo .al-bar-3 { animation-delay: 0.4s; }
+.agent-logo[data-state='working'] .al-bar { animation: al-grow 0.9s ease-in-out infinite alternate; }
+.agent-logo[data-state='working'] .al-bar-2 { animation-delay: 0.15s; }
+.agent-logo[data-state='working'] .al-bar-3 { animation-delay: 0.3s; }
+.agent-logo[data-state='working'] .al-coin { animation: al-flip 1s ease-in-out infinite; }
+
+.agent-logo .al-letter { animation: al-bob 3s ease-in-out infinite; }
+.agent-logo[data-state='working'] .al-letter { animation: al-slide 1.4s ease-in-out infinite; }
+.agent-logo .al-write { stroke-dasharray: 20; }
+.agent-logo[data-state='working'] .al-write { animation: al-write 1.4s ease-in-out infinite; }
+.agent-logo[data-state='working'] .al-write-2 { animation-delay: 0.25s; }
+
+.agent-logo[data-state='working'] .al-gear { animation: spin 2.4s linear infinite; }
+
+.agent-logo[data-state='off'] * { animation: none !important; }
+.agent-zzz { animation: al-zzz 2.4s ease-in-out infinite; }
+
+@keyframes al-beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.12); } 30% { transform: scale(0.97); } 45% { transform: scale(1.08); } }
+@keyframes al-trace { from { stroke-dashoffset: 140; } to { stroke-dashoffset: 0; } }
+@keyframes al-sway { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.9); } }
+@keyframes al-grow { from { transform: scaleY(0.45); } to { transform: scaleY(1.08); } }
+@keyframes al-flip { 0%, 100% { transform: scaleX(1) translateY(0); } 50% { transform: scaleX(-1) translateY(-3px); } }
+@keyframes al-bob { 0%, 100% { transform: translateY(2px); } 50% { transform: translateY(0); } }
+@keyframes al-slide { 0%, 100% { transform: translateY(6px); } 50% { transform: translateY(-4px); } }
+@keyframes al-write { 0% { stroke-dashoffset: 20; } 60%, 100% { stroke-dashoffset: 0; } }
+@keyframes al-zzz { 0%, 100% { transform: translate(0, 0); opacity: 0.4; } 50% { transform: translate(2px, -3px); opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }

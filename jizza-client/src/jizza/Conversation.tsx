@@ -1,5 +1,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, Mic, MicOff, Send } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { agentsApi } from '@/api/agents'
+import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
 import { useAssistantStore, type AssistantMessage } from './assistantStore'
 import { JizzaOrb } from './JizzaOrb'
@@ -91,7 +94,7 @@ export function Conversation({ compact = false, autoFocus = false }: Conversatio
 
           {thinking && (
             <div className="flex items-center gap-2.5 animate-fade-in">
-              <JizzaOrb size={28} state="thinking" />
+              <JizzaOrb size={28} state="thinking" tracking={false} />
               <span className="text-sm text-gray-500 dark:text-gray-400">Working on it…</span>
             </div>
           )}
@@ -152,8 +155,9 @@ function MessageBubble({ msg, compact, onChoose }: { msg: AssistantMessage; comp
   }
   return (
     <div className="flex items-start gap-2.5 animate-fade-in-up">
-      <JizzaOrb size={28} className="mt-0.5" />
+      <JizzaOrb size={28} className="mt-0.5" tracking={false} />
       <div className={`flex min-w-0 flex-col gap-2 ${compact ? 'max-w-[88%]' : 'max-w-[85%] sm:max-w-[75%]'}`}>
+        {msg.helpers && msg.helpers.length > 0 && <Helpers helpers={msg.helpers} />}
         {msg.steps && msg.steps.length > 0 && (
           <ul className="flex flex-wrap gap-1.5">
             {msg.steps.map((step, i) => (
@@ -191,6 +195,25 @@ function MessageBubble({ msg, compact, onChoose }: { msg: AssistantMessage; comp
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** "Vita and Kai helped": the specialists behind a reply, each shown by its logo. */
+function Helpers({ helpers }: { helpers: { agentId: string; agentName: string }[] }) {
+  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list(), staleTime: 300_000 })
+  const names = helpers.map(h => h.agentName)
+  const label = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  return (
+    <div className="flex items-center gap-2 animate-fade-in">
+      <div className="flex -space-x-1.5">
+        {helpers.map(h => (
+          <span key={h.agentId} title={h.agentName} className="rounded-lg ring-2 ring-white dark:ring-gray-950">
+            <AgentLogo agentKey={agents?.find(a => a.id === h.agentId)?.key ?? 'other'} size={22} />
+          </span>
+        ))}
+      </div>
+      <span className="text-xs text-gray-500 dark:text-gray-400">{label} helped</span>
     </div>
   )
 }
