@@ -95,6 +95,23 @@ public class ConnectionEntity {
   @Column(columnDefinition = "text")
   private String baseUrl;
 
+  /** Stable machine name of the service; prefixes the tool names its actions get. */
+  @Column(nullable = false)
+  private String slug;
+
+  @Column(columnDefinition = "text")
+  private String description;
+
+  private String category;
+
+  /** {@code draft} while being built; {@code live} once published, when agents can use it. */
+  @Column(nullable = false)
+  private String versionStatus = "draft";
+
+  private int liveVersion;
+
+  private Instant publishedAt;
+
   private Instant createdAt;
 
   private Instant updatedAt;
@@ -177,14 +194,42 @@ public class ConnectionEntity {
   public String getBaseUrl() { return baseUrl; }
   public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
 
+  public String getSlug() { return slug; }
+  public void setSlug(String slug) { this.slug = slug; }
+
+  public String getDescription() { return description; }
+  public void setDescription(String description) { this.description = description; }
+
+  public String getCategory() { return category; }
+  public void setCategory(String category) { this.category = category; }
+
+  public String getVersionStatus() { return versionStatus; }
+  public void setVersionStatus(String versionStatus) { this.versionStatus = versionStatus; }
+
+  public int getLiveVersion() { return liveVersion; }
+  public void setLiveVersion(int liveVersion) { this.liveVersion = liveVersion; }
+
+  public Instant getPublishedAt() { return publishedAt; }
+  public void setPublishedAt(Instant publishedAt) { this.publishedAt = publishedAt; }
+
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
   public Instant getUpdatedAt() { return updatedAt; }
   public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
+  /** A slug from the service name plus a short random tail, so two services never collide. */
+  public static String slugFor(String serviceName) {
+    String base = serviceName == null ? "" : serviceName.toLowerCase(java.util.Locale.ROOT)
+        .replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
+    if (base.isEmpty()) base = "service";
+    if (base.length() > 40) base = base.substring(0, 40);
+    return base + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
+  }
+
   @PrePersist
   void onCreate() {
+    if (slug == null) slug = slugFor(serviceName);
     Instant now = Instant.now();
     if (createdAt == null) createdAt = now;
     if (updatedAt == null) updatedAt = now;

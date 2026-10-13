@@ -11,7 +11,8 @@ import { NotificationsPage } from '@/pages/NotificationsPage'
 import { MemoryPage } from '@/pages/MemoryPage'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { TasksPage } from '@/pages/TasksPage'
-import { ConnectionsPage } from '@/pages/ConnectionsPage'
+import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
+import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
 import { AutonomyPage } from '@/pages/AutonomyPage'
@@ -37,7 +38,9 @@ export default function App() {
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/memory/:agentId" element={<MemoryPage />} />
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/connectors" element={<ConnectorsPage />} />
+          <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />
+          <Route path="/connections" element={<Navigate to="/connectors" replace />} />
           <Route path="/workflows" element={<WorkflowsPage />} />
           <Route path="/procedures" element={<ProceduresPage />} />
           <Route path="/autonomy" element={<AutonomyPage />} />

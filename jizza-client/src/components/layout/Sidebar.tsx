@@ -27,7 +27,7 @@ const sections = [
       { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
       { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
       { to: '/procedures',  icon: GitBranch, label: 'Procedures' },
-      { to: '/connections', icon: Plug,      label: 'Connections' },
+      { to: '/connectors',  icon: Plug,      label: 'Connectors' },
     ],
   },
   {

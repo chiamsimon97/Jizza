@@ -6,7 +6,7 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   agents:        { path: '/agents',        label: 'Agents',        aliases: ['agents', 'team', 'specialists'] },
   memory:        { path: '/memory',        label: 'Memory',        aliases: ['memory', 'memories', 'what you know', 'my files', 'documents'] },
   tasks:         { path: '/tasks',         label: 'Tasks',         aliases: ['tasks', 'schedule', 'scheduled tasks', 'jobs'] },
-  connections:   { path: '/connections',   label: 'Connections',   aliases: ['connections', 'integrations', 'connectors', 'apps'] },
+  connections:   { path: '/connectors',    label: 'Connectors',    aliases: ['connectors', 'connector', 'services', 'connections', 'integrations', 'apps'] },
   workflows:     { path: '/workflows',     label: 'Workflows',     aliases: ['workflows', 'workflow', 'automations'] },
   procedures:    { path: '/procedures',    label: 'Procedures',    aliases: ['procedures', 'reviews', 'proposals'] },
   autonomy:      { path: '/autonomy',      label: 'Autonomy',      aliases: ['autonomy', 'kill switch', 'rules', 'permissions'] },

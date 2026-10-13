@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AgentCapabilityRepository extends JpaRepository<AgentCapabilityEntity, UUID> {
   List<AgentCapabilityEntity> findByAgentId(UUID agentId);
+
+  List<AgentCapabilityEntity> findByCapabilityTypeAndCapabilityRef(CapabilityType type, UUID ref);
   List<AgentCapabilityEntity> findByAgentIdAndCapabilityType(UUID agentId, CapabilityType type);
   Optional<AgentCapabilityEntity> findByAgentIdAndCapabilityTypeAndCapabilityRef(
       UUID agentId, CapabilityType type, UUID ref);

@@ -20,6 +20,7 @@ import com.jizza.engine.api.util.Redaction;
 import com.jizza.engine.connectors.http.GuardedHttpClient;
 import com.jizza.engine.connectors.oauth.DefaultOAuthService;
 import com.jizza.engine.connectors.service.ConnectionService;
+import com.jizza.engine.connectors.tools.service.ServiceVariables;
 import com.jizza.engine.persistence.entity.ConnectionEntity;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -49,16 +50,19 @@ public class DefaultToolExecutor implements ToolExecutor {
   private final EncryptionService encryption;
   private final GuardedHttpClient http;
   private final IdempotencyService idempotency;
+  private final ServiceVariables variables;
   private final AuditLog audit;
 
   public DefaultToolExecutor(ConnectionService connections, DefaultOAuthService oauth,
                              EncryptionService encryption, GuardedHttpClient http,
-                             IdempotencyService idempotency, AuditLog audit) {
+                             IdempotencyService idempotency, ServiceVariables variables,
+                             AuditLog audit) {
     this.connections = connections;
     this.oauth = oauth;
     this.encryption = encryption;
     this.http = http;
     this.idempotency = idempotency;
+    this.variables = variables;
     this.audit = audit;
   }
 
@@ -102,7 +106,10 @@ public class DefaultToolExecutor implements ToolExecutor {
     }
 
     JsonNode mapping = tool.paramMapping() == null ? Json.obj() : tool.paramMapping();
-    String path = renderPath(tool.pathTemplate(), mapping, args);
+    // Service variables ({{var.name}}) are resolved in the templates before any input is placed, so
+    // an input can never smuggle a reference to a secret variable into the request.
+    Map<String, String> vars = variables.valuesFor(connection.getId());
+    String path = renderPath(ServiceVariables.render(tool.pathTemplate(), vars), mapping, args);
 
     Map<String, String> query = new LinkedHashMap<>();
     for (JsonNode name : mapping.path("query")) {
@@ -113,6 +120,8 @@ public class DefaultToolExecutor implements ToolExecutor {
 
     Map<String, String> headers = new LinkedHashMap<>();
     headers.put("accept", "application/json");
+    mapping.path("headers").fields().forEachRemaining(fixed ->
+        headers.put(fixed.getKey(), ServiceVariables.render(fixed.getValue().asText(), vars)));
     for (JsonNode name : mapping.path("header")) {
       if (args.hasNonNull(name.asText())) headers.put(name.asText(), asText(args.get(name.asText())));
     }
@@ -128,9 +137,10 @@ public class DefaultToolExecutor implements ToolExecutor {
     injectAuth(connection, tool, headers, query, bodyNode);
     if (bodyNode != null) body = Json.write(bodyNode);
 
-    URI target = URI.create(baseUrl(connection) + path + queryString(query));
+    String base = ServiceVariables.render(baseUrl(connection), vars);
+    URI target = URI.create(base + path + queryString(query));
     GuardedHttpClient.Response response =
-        http.send(tool.httpMethod(), target, headers, body, declaredHost(connection));
+        http.send(tool.httpMethod(), target, headers, body, base);
 
     ObjectNode output = Json.obj();
     output.put("status", response.status());
@@ -168,6 +178,12 @@ public class DefaultToolExecutor implements ToolExecutor {
             "Authorization", "Bearer " + token, "access_token", token);
       }
       case API_KEY -> {
+        // Where the key goes: the API's own mapping if it has one, else the service-wide setting
+        // from the Authentication tab (extraFields.apiKey), else an Authorization header.
+        if (authMapping == null || authMapping.isNull() || authMapping.isEmpty()) {
+          authMapping = connection.getExtraFields() == null ? null
+              : connection.getExtraFields().get("apiKey");
+        }
         String apiKey = connections.decryptClientSecret(connection);
         if (apiKey == null) {
           throw new ValidationException(connection.getServiceName() + " has no API key configured");
@@ -242,10 +258,6 @@ public class DefaultToolExecutor implements ToolExecutor {
           + " has no base URL configured, so its tools have nowhere to call");
     }
     return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
-  }
-
-  private String declaredHost(ConnectionEntity connection) {
-    return connection.getBaseUrl();
   }
 
   private String fingerprint(GeneratedToolDto tool, JsonNode args) {

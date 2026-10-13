@@ -150,6 +150,144 @@ export interface GeneratedToolDto {
   path?: string
 }
 
+// ── Connector services ────────────────────────────────────────────────────────
+export type AuthScheme = 'OAUTH2' | 'API_KEY' | 'BASIC' | 'CUSTOM' | 'NO_AUTH'
+
+export interface ServiceInfo {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  category?: string
+  baseUrl?: string
+  authScheme: AuthScheme
+  connectionStatus: 'NEW' | 'CONNECTED' | 'NEEDS_REAUTH' | 'ERROR'
+  credentialPresent: boolean
+  versionStatus: 'draft' | 'live'
+  liveVersion: number
+  publishedAt?: string
+  apiCount: number
+  actionCount: number
+  triggerCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ServiceApi {
+  id: string
+  serviceId: string
+  name: string
+  label: string
+  description?: string
+  kind: 'request' | 'polling' | 'webhook'
+  httpMethod: string
+  pathTemplate: string
+  inputSchema?: Record<string, unknown>
+  paramMapping?: Record<string, unknown>
+  sideEffecting: boolean
+  enabled: boolean
+}
+
+export interface ResourceField { key: string; label?: string; type?: string; required?: boolean }
+
+export interface ServiceResource {
+  id: string
+  serviceId: string
+  name: string
+  label: string
+  description?: string
+  fields: ResourceField[]
+  idField?: string
+}
+
+export interface ServiceAction {
+  id: string
+  serviceId: string
+  name: string
+  label: string
+  description?: string
+  apiId: string
+  resourceId?: string
+  enabled: boolean
+  sideEffecting: boolean
+  toolName: string
+  agentIds: string[]
+}
+
+export interface ServiceTrigger {
+  id: string
+  serviceId: string
+  name: string
+  label: string
+  description?: string
+  apiId: string
+  resourceId?: string
+  kind: 'polling' | 'webhook'
+  pollIntervalMinutes: number
+  itemsPath?: string
+  idField: string
+  enabled: boolean
+  lastPolledAt?: string
+}
+
+export interface ServiceVariable {
+  id: string
+  serviceId: string
+  name: string
+  description?: string
+  value?: string
+  secret: boolean
+  valueSet: boolean
+}
+
+export interface ServiceRun {
+  id: string
+  kind: 'action' | 'trigger' | 'test'
+  refName?: string
+  source: string
+  status: 'ok' | 'error'
+  durationMs?: number
+  input?: unknown
+  output?: unknown
+  error?: string
+  createdAt: string
+}
+
+export interface ServiceDetail {
+  service: ServiceInfo
+  apis: ServiceApi[]
+  resources: ServiceResource[]
+  actions: ServiceAction[]
+  triggers: ServiceTrigger[]
+  variables: ServiceVariable[]
+  /** Where the OAuth provider sends the user back; register it with the provider. */
+  oauthRedirectUri: string
+}
+
+export interface TriggerSample { ok: boolean; error?: string; totalItems: number; newItems: number; items: unknown[] }
+
+export interface ToolRunResult { ok: boolean; output?: unknown; error?: string }
+
+export interface ConnectionDetail {
+  id: string
+  serviceName: string
+  authScheme: AuthScheme
+  clientId?: string
+  clientSecretSet: boolean
+  authorizationUrl?: string
+  accessTokenUrl?: string
+  refreshTokenUrl?: string
+  scopes?: string
+  scopeSeparator?: string
+  pkce: boolean
+  tokenPlacement?: 'HEADER' | 'QUERY' | 'BODY'
+  grantType?: string
+  tokenExpiresAt?: string
+  tokenPresent: boolean
+  extraFields?: { apiKey?: { name?: string; prefix?: string; in?: 'header' | 'query' } } | null
+  status: 'NEW' | 'CONNECTED' | 'NEEDS_REAUTH' | 'ERROR'
+}
+
 // ── Workflows ─────────────────────────────────────────────────────────────────
 export interface WorkflowDto {
   id: string

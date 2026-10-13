@@ -95,7 +95,7 @@ class DefaultToolExecutorTest {
         .findFirst());
 
     executor = new DefaultToolExecutor(connections, oauth, REVERSIBLE, http,
-        new IdempotencyService(keys), mock(AuditLog.class));
+        new IdempotencyService(keys), noVariables(), mock(AuditLog.class));
   }
 
   private GeneratedToolDto readTool() {
@@ -122,6 +122,36 @@ class DefaultToolExecutorTest {
     ArgumentCaptor<Map<String, String>> headers = ArgumentCaptor.forClass(Map.class);
     verify(http).send(any(), any(), headers.capture(), any(), any());
     return headers.getValue();
+  }
+
+  @Test
+  void resolvesServiceVariablesInThePathFixedHeadersAndBaseUrl() {
+    var repo = mock(com.jizza.engine.persistence.repository.ServiceVariableRepository.class);
+    var org = new com.jizza.engine.persistence.entity.ServiceVariableEntity();
+    org.setName("org");
+    org.setValue("acme");
+    var key = new com.jizza.engine.persistence.entity.ServiceVariableEntity();
+    key.setName("partnerKey");
+    key.setSecret(true);
+    key.setSecretValue(REVERSIBLE.encryptString("s3cret"));
+    when(repo.findByConnectionIdOrderByNameAsc(connection.getId())).thenReturn(List.of(org, key));
+    var withVariables = new DefaultToolExecutor(connections, oauth, REVERSIBLE, http,
+        new IdempotencyService(mock(IdempotencyKeyRepository.class)),
+        new com.jizza.engine.connectors.tools.service.ServiceVariables(repo, REVERSIBLE),
+        mock(AuditLog.class));
+    connection.setBaseUrl("https://{{var.org}}.petstore.test/v1");
+    var tool = new GeneratedToolDto(UUID.randomUUID(), connection.getId(), "list", "List",
+        Json.obj(), "GET", "/orgs/{{var.org}}/pets/{petId}",
+        Json.read("{\"path\":[\"petId\"],\"headers\":{\"X-Partner\":\"{{var.partnerKey}}\"}}"),
+        null, false, true);
+
+    // An input that names a variable is placed literally (encoded), never resolved.
+    var result = withVariables.execute(tool, Json.obj().put("petId", "{{var.partnerKey}}"), null);
+
+    assertThat(result.ok()).isTrue();
+    assertThat(capturedUri().toString()).isEqualTo(
+        "https://acme.petstore.test/v1/orgs/acme/pets/%7B%7Bvar.partnerKey%7D%7D");
+    assertThat(capturedHeaders()).containsEntry("X-Partner", "s3cret");
   }
 
   @Test
@@ -226,7 +256,8 @@ class DefaultToolExecutorTest {
     ConnectorProperties props = new ConnectorProperties();
     GuardedHttpClient guarded = new GuardedHttpClient(new DefaultEgressGuard(props), props);
     var realExecutor = new DefaultToolExecutor(connections, oauth, REVERSIBLE, guarded,
-        new IdempotencyService(mock(IdempotencyKeyRepository.class)), mock(AuditLog.class));
+        new IdempotencyService(mock(IdempotencyKeyRepository.class)), noVariables(),
+        mock(AuditLog.class));
     connection.setBaseUrl("https://169.254.169.254");
 
     var result = realExecutor.execute(
@@ -302,5 +333,10 @@ class DefaultToolExecutorTest {
     JsonNode output = result.output();
     assertThat(output.path("status").asInt()).isEqualTo(200);
     assertThat(output.path("body").path("id").asText()).isEqualTo("p1");
+  }
+
+  private static com.jizza.engine.connectors.tools.service.ServiceVariables noVariables() {
+    return new com.jizza.engine.connectors.tools.service.ServiceVariables(
+        mock(com.jizza.engine.persistence.repository.ServiceVariableRepository.class), REVERSIBLE);
   }
 }

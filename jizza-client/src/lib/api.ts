@@ -14,7 +14,16 @@ function getCsrfToken(): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined
 }
 
-async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'blob' = 'json'): Promise<T> {
+/**
+ * Sensitive routes answer 403 "step-up-required" until the user re-enters their password. The app
+ * shell registers a handler that asks for it; the request is then retried once.
+ */
+let stepUpHandler: (() => Promise<boolean>) | null = null
+export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
+  stepUpHandler = handler
+}
+
+async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'blob' = 'json', retried = false): Promise<T> {
   const mutating = init.method != null && init.method !== 'GET'
   // A fresh browser has no XSRF-TOKEN cookie until the server sets one, so fetch it before the
   // first mutating call (e.g. register or login) rather than letting that call be rejected.
@@ -46,6 +55,9 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
     problem = await res.json()
   } catch {
     problem = { type: 'error', title: res.statusText, status: res.status }
+  }
+  if (res.status === 403 && !retried && stepUpHandler && String(problem.type ?? '').endsWith('step-up-required')) {
+    if (await stepUpHandler()) return request<T>(path, init, as, true)
   }
   throw new ApiError(res.status, problem)
 }

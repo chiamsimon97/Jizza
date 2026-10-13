@@ -124,6 +124,19 @@ module.
 15. **A path with no handler returns 404, not 500.** `GlobalExceptionHandler` handles
    `NoResourceFoundException` / `NoHandlerFoundException` explicitly; without it a mistyped URL fell
    through to the catch-all and was logged at ERROR as an internal failure.
+16. **Agent memory files (`V3__agent_memory_files.sql`).** The Contract's `files` table has no
+    owner below the user, so `files.agent_id` and `files.knowledge_entry_id` were added. A memory
+    file lives in exactly one agent's namespace, is envelope-encrypted before it reaches storage,
+    and any readable text is indexed as a knowledge entry in that same namespace
+    (`MemoryFileStore`, `AgentMemoryUseCase`).
+17. **Connector (Service) module (`V4__connector_services.sql`).** A `connections` row is now the
+    definition of a Service: metadata (`slug`, `description`, `category`), a draft/live status, its
+    auth scheme and the user's credential for it. `generated_tools` are the service's raw APIs
+    (`label`, `kind` added). New tables hold resources, actions, triggers, variables and the run
+    history; `agent_capabilities` accepts `service_action`. The table names were kept so the OAuth,
+    executor and egress paths needed no rewrite; the ports are `ServiceDefinitions` and
+    `ServiceRunner`, and agents reach actions only through `ServiceActionToolProvider`, which hides
+    every action of a draft service.
 
 ## Acceptance suite
 

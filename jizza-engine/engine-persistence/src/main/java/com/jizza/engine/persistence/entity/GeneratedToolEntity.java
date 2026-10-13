@@ -50,6 +50,19 @@ public class GeneratedToolEntity {
 
   private boolean enabled;
 
+  /** Display name in the service editor; {@code name} stays the machine name. */
+  private String label;
+
+  /** {@code request}, {@code polling} (lists items for a trigger) or {@code webhook}. */
+  @Column(nullable = false)
+  private String kind = "request";
+
+  public String getLabel() { return label; }
+  public void setLabel(String label) { this.label = label; }
+
+  public String getKind() { return kind; }
+  public void setKind(String kind) { this.kind = kind; }
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 

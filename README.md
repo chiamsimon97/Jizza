@@ -137,7 +137,15 @@ GET    /api/agents                   PATCH  /api/agents/{id}          (rename, e
 GET    /api/agents/{id}/tools        POST   /api/agents/{id}/capabilities
 POST   /api/chat                     WS     /ws
 
-GET    /api/connections              POST   /api/connections
+GET    /api/services                 POST   /api/services           (Connector services)
+GET    /api/services/{id}            PATCH  DELETE  POST publish  unpublish
+POST   /api/services/{id}/apis|resources|actions|triggers|variables    PUT/DELETE …/{childId}
+PUT    /api/services/{id}/actions/{actionId}/agents   POST …/actions/{actionId}/test
+POST   /api/services/{id}/triggers/{triggerId}/test   GET  /api/services/{id}/history
+GET    /api/agents/{id}/memory       POST   /api/agents/{id}/memory/files
+GET    /api/agents/{id}/memory/files/{fileId}/content  DELETE …/files/{fileId}  …/notes/{noteId}
+
+GET    /api/connections/{id}         PATCH  /api/connections/{id}     (a service's authentication)
 POST   /api/connections/{id}/authorize  test  revoke
 POST   /api/connections/{id}/apidoc  GET    /api/connections/{id}/tools
 GET    /api/oauth/callback
