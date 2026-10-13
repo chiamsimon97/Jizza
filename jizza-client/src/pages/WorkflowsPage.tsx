@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Workflow } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { workflowsApi } from '@/api/workflows'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -13,11 +14,8 @@ export function WorkflowsPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Workflow className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Workflows</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -26,7 +24,7 @@ export function WorkflowsPage() {
       )}
 
       {data && data.length > 0 && (
-        <div className="space-y-2">
+        <div className="stagger space-y-2">
           {data.map(wf => (
             <Card key={wf.id} padding="md">
               <div className="flex items-start justify-between gap-3">

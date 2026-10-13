@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plug } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { connectionsApi } from '@/api/connections'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -22,11 +23,8 @@ export function ConnectionsPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Plug className="h-5 w-5 text-brand-500" />
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Connections</h1>
-      </div>
+    <div className="page">
+      <PageHeader icon={Plug} title="Connections" description="Services Jizza can reach on your behalf." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
