@@ -32,7 +32,8 @@ public final class Requests {
 
   public record ChangePassword(@NotBlank String currentPassword, @NotBlank String newPassword) {}
 
-  public record Chat(@NotBlank String message, UUID conversationId) {}
+  /** {@code screen} is the app page the message was sent from, when it came from the app. */
+  public record Chat(@NotBlank String message, UUID conversationId, String screen) {}
 
   public record AgentPatch(String name, Boolean enabled) {}
 

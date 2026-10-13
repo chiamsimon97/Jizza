@@ -36,7 +36,17 @@ export interface AssistantReply {
   messageId?: string
   text: string
   contributors: Contribution[]
+  actions?: UiAction[]
 }
+
+/** A step Jizza asks the app to take alongside its reply. */
+export type UiAction =
+  | { type: 'navigate'; payload: { page: string; reason?: string } }
+  | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
+  | { type: 'ask_user'; payload: { question: string; options?: string[] } }
+  | { type: 'set_theme'; payload: { theme: string } }
+
+export type JizzaForm = 'new_workflow' | 'new_task'
 
 export interface Contribution {
   agentId: string

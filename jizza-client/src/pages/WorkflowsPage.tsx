@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Workflow } from 'lucide-react'
+import { Workflow, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { WorkflowForm } from '@/components/forms/WorkflowForm'
+import { useFormStore } from '@/jizza/formStore'
 import { workflowsApi } from '@/api/workflows'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -8,6 +11,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 export function WorkflowsPage() {
+  const openForm = useFormStore(s => s.open)
   const { data, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list(),
@@ -15,7 +19,8 @@ export function WorkflowsPage() {
 
   return (
     <div className="page">
-      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." />
+      <WorkflowForm />
+      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<Button size="sm" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>} />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 

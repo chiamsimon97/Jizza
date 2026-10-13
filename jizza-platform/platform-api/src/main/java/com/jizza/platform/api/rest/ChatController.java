@@ -33,8 +33,9 @@ public class ChatController {
   public AssistantReply chat(@Valid @RequestBody Requests.Chat request,
                              @RequestParam(defaultValue = "false") boolean incognito) {
     if (incognito) {
-      return orchestrator.handleIncognito(CurrentUser.userId(), request.message());
+      return orchestrator.handleIncognito(CurrentUser.userId(), request.message(), request.screen());
     }
-    return orchestrator.handle(CurrentUser.userId(), request.conversationId(), request.message());
+    return orchestrator.handle(CurrentUser.userId(), request.conversationId(), request.message(),
+        request.screen());
   }
 }

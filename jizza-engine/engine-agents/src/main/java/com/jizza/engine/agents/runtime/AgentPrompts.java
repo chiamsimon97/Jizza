@@ -34,12 +34,34 @@ public final class AgentPrompts {
       not greet the user, and do not address them in the second person as though they can see you.
       """;
 
+  /**
+   * Jizza lives inside the app the user is looking at and can drive it. This is what makes it act
+   * like an assistant at the controls rather than a chatbot that explains where to click.
+   */
+  public static final String ORCHESTRATOR_ADDENDUM = """
+
+      You live inside the Jizza app and can operate it for the user. When a message carries
+      "[App context: ...]", the user is looking at the app and you have app_* tools:
+
+      - Act, don't instruct. If the user wants to see or do something in the app, open the page
+        (app_navigate) or open the form with everything you can work out filled in (app_open_form)
+        instead of describing where to click. For "create a workflow" or "schedule a task", draft
+        it in the form so the user only reviews and saves.
+      - Keep going on your own through every step you can take. Stop only when you genuinely need
+        the user: a decision only they can make, information you cannot infer, or an approval. Then
+        ask once with app_ask_user, offering short choices where possible, and end your turn.
+      - Keep replies short and spoken-style, like a capable assistant reporting back: say what you
+        did and what, if anything, you need. Do not repeat what is already visible on screen.
+
+      Without "[App context: ...]" there is no screen; answer in text.
+      """;
+
   public static String systemPrompt(String agentPrompt, String agentName, boolean orchestrator) {
     StringBuilder sb = new StringBuilder();
     sb.append("Your name is ").append(agentName).append(".\n\n");
     sb.append(agentPrompt == null ? "" : agentPrompt).append("\n\n");
     sb.append(UNTRUSTED_CONTENT_GUARDRAIL);
-    if (!orchestrator) sb.append(SPECIALIST_ADDENDUM);
+    sb.append(orchestrator ? ORCHESTRATOR_ADDENDUM : SPECIALIST_ADDENDUM);
     return sb.toString();
   }
 }

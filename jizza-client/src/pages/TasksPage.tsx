@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ListTodo } from 'lucide-react'
+import { ListTodo, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { TaskForm } from '@/components/forms/TaskForm'
+import { useFormStore } from '@/jizza/formStore'
 import { tasksApi } from '@/api/tasks'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -16,6 +18,7 @@ const statusVariant = (s: string) => {
 }
 
 export function TasksPage() {
+  const openForm = useFormStore(s => s.open)
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['tasks'],
@@ -28,7 +31,8 @@ export function TasksPage() {
 
   return (
     <div className="page">
-      <PageHeader icon={ListTodo} title="Tasks" description="Scheduled and one-off work." />
+      <TaskForm />
+      <PageHeader icon={ListTodo} title="Tasks" description="Scheduled and one-off work." actions={<Button size="sm" onClick={() => openForm('new_task')}><Plus className="h-4 w-4" />New task</Button>} />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
