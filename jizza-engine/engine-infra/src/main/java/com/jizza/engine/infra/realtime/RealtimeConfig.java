@@ -14,6 +14,10 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
  * relay configuration is the seam to swap in a real broker if this is ever hosted for many users.
  * The handshake shares the servlet session, so the same cookie that authenticates the REST API
  * authenticates the socket.
+ *
+ * <p>Everything is sent to user destinations ({@code /user/queue/<topic>}), which Spring routes only
+ * to the sessions of the user they are addressed to. The client speaks SockJS, so the endpoint
+ * offers it; plain WebSocket clients use {@code /ws/websocket}.
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -35,6 +39,9 @@ public class RealtimeConfig implements WebSocketMessageBrokerConfigurer {
 
   @Override
   public void registerStompEndpoints(StompEndpointRegistry registry) {
-    registry.addEndpoint("/ws").setAllowedOriginPatterns(allowedOrigins);
+    registry.addEndpoint("/ws")
+        .setHandshakeHandler(new UserIdHandshakeHandler())
+        .setAllowedOriginPatterns(allowedOrigins)
+        .withSockJS();
   }
 }
