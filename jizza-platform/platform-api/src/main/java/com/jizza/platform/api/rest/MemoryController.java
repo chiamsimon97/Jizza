@@ -68,6 +68,11 @@ public class MemoryController {
     return memory.confirm(CurrentUser.userId(), id);
   }
 
+  @PostMapping("/{id}/retire")
+  public Memory retire(@PathVariable UUID id) {
+    return memory.retire(CurrentUser.userId(), id);
+  }
+
   @PostMapping("/{id}/restore")
   public Memory restore(@PathVariable UUID id) {
     return memory.restore(CurrentUser.userId(), id);

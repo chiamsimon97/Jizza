@@ -8,7 +8,7 @@ import { RecoverPage } from '@/pages/RecoverPage'
 import { ChatPage } from '@/pages/ChatPage'
 import { ConversationsPage } from '@/pages/ConversationsPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
-import { MemoryPage } from '@/pages/MemoryPage'
+import { CosmosView } from '@/pages/memory/CosmosView'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { TasksPage } from '@/pages/TasksPage'
 import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
@@ -35,8 +35,8 @@ export default function App() {
           <Route path="/conversations" element={<ConversationsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/memory/:agentId" element={<MemoryPage />} />
+          <Route path="/memory" element={<CosmosView />} />
+          <Route path="/memory/:agentId" element={<CosmosView />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/connectors" element={<ConnectorsPage />} />
           <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />

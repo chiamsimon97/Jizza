@@ -151,9 +151,23 @@ module.
     `knowledge_upsert`) now redact their arguments (`ToolProvider.redactArguments`), so content
     never reaches the append-only log (R13). Design and configuration: `docs/MEMORY.md`.
 
+19. **Memory Cosmos (`V6__memory_cosmos.sql`).** The user can now see and govern everything Jizza
+    remembers on one screen. The migration adds `memory_access` (one read stamp per item, agent and
+    run, recorded through `MemoryAccessRecorder` with the run carried in `AgentRequest.traceId` as
+    `AccessContext`), `restricted` on facts and notes, read counts on notes, and `knowledge_history`.
+    It also widens the change values in `memory_history`. Sharing, moving and restricting change
+    only the columns the existing scoping already reads, so the R22 rules are untouched; notes are
+    never shared, only moved or promoted. `CosmosQueryService` (engine-api, implemented in
+    engine-memory) builds the sky and the passports. Connector and workflow moons come from
+    `CosmosBodyProvider`s in their own modules, so engine-memory takes no dependency on them.
+    Realtime pushes now go to each user's own queue: `UserIdHandshakeHandler` names the socket
+    after the signed-in user and `StompRealtimeGateway` uses `convertAndSendToUser`. Before this
+    change, the server sent to `/topic/{userId}` while the client listened on `/user/queue`, and
+    the topic name was guessable.
+
 ## Acceptance suite
 
-`jizza-app/src/test/java/com/jizza/app/e2e` — 98 tests, the whole application booted against a real
+`jizza-app/src/test/java/com/jizza/app/e2e` — 107 tests, the whole application booted against a real
 PostgreSQL and driven through its own HTTP API. Only two things are substituted: the model is
 scripted, and the background pollers are switched off so tests drive them deterministically.
 
@@ -165,7 +179,8 @@ scripted, and the background pollers are switched off so tests drive them determ
 | `SchedulerAndWorkflowE2eTest` | 14 | one-time and recurring tasks firing with no browser, no double-fire, missed-run reconciliation, DST safety, checkpointed runs resuming from the last completed node, exactly-once side effects, retry → dead-letter or intervention |
 | `ProceduresAndAutonomyE2eTest` | 19 | repetitive job → proposal → review → approve binds → exact execution, deviation → intervention, edit re-review, rollback, kill switch halting and resuming, `deny` blocked, `ask` routed to permission, per-agent disable |
 | `MemoryE2eTest` | 5 | a question about the user's wife reaching Kai with her plan, risk tolerance and Connector already in context (and nothing from health), Jizza seeing only the shared layer, preview/search/correct/forget, user isolation, learning from chat and withdrawing consent, export |
-| `PlatformE2eTest` | 18 | blocking items chased then expired, realtime push to a subscribed STOMP client, health and metrics, verified webhook firing a workflow, export without credentials, hard delete, audit chain verification and the activity view |
+| `CosmosE2eTest` | 8 | the wife under Jizza and her account under Kai linked to her and the Connector, one read stamp by Kai for the turn that used her plan, sharing with Cato reaching Cato but not Vita and unsharing undoing it, a restricted fact locked for agents and revealed only after step-up, move and forget needing step-up with a content-free audit trail, a note moved or promoted but never shared, a new memory pushed to an open Cosmos with ids only, another user unable to see or change any of it |
+| `PlatformE2eTest` | 19 | blocking items chased then expired, realtime push to the user's own STOMP queue (and never to another user's socket), health and metrics, verified webhook firing a workflow, export without credentials, hard delete, audit chain verification and the activity view |
 
 Run: `mvn test` (DB-backed tests skip) or, with a PostgreSQL,
 `JIZZA_TEST_DB_URL=jdbc:postgresql://127.0.0.1:5432/jizza mvn test`.

@@ -99,6 +99,11 @@ public class MemoryUseCase {
     return store.confirm(userId, memoryId, Actor.user(userId));
   }
 
+  /** The user setting a fact aside: no agent uses it until it is restored. */
+  public Memory retire(UUID userId, UUID memoryId) {
+    return store.retire(userId, memoryId, "retired by user", Actor.user(userId));
+  }
+
   public Memory restore(UUID userId, UUID memoryId) {
     return store.restore(userId, memoryId, Actor.user(userId));
   }

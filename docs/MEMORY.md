@@ -187,8 +187,9 @@ POST   /api/memory                    remember (confirmed: it is the user saying
 GET    /api/memory/{id}               the fact and its history
 PATCH  /api/memory/{id}               correct (history kept, becomes confirmed)
 POST   /api/memory/{id}/confirm       confirm a pending/inferred fact (replaces what it conflicted with)
+POST   /api/memory/{id}/retire        set a fact aside: no agent uses it until restored
 POST   /api/memory/{id}/restore       bring back a retired or superseded fact
-DELETE /api/memory/{id}               forget permanently (history too)
+DELETE /api/memory/{id}               forget permanently (history and read stamps too; step-up)
 GET    /api/memory/subjects           POST /api/memory/subjects    PATCH/DELETE /api/memory/subjects/{id}
 POST   /api/memory/subjects/{id}/relations    DELETE /api/memory/relations/{relationId}
 GET    /api/memory/settings           PUT  /api/memory/settings     {autoLearn, retentionDays}
@@ -196,6 +197,82 @@ POST   /api/memory/preview            {agentKey, request}: exactly what that age
 ```
 
 `GET /api/data/export` includes a `memory` section (subjects, relations, facts).
+
+## Memory Cosmos
+
+The `/memory` screen draws everything Jizza remembers as a solar system, and is where the user
+decides which agents can use what. Jizza is the sun and each specialist a planet. Moons are the
+subjects in the user's life, each agent's notes and files, its connectors and its workflows. Every
+fact and note is a satellite. A satellite's size shows how often agents have read it, and its
+brightness how recently. A lock means it is restricted, and an amber dashed ring means it is
+waiting for the user to confirm. A List view shows the same sky as an accessible tree, which also
+handles adding and removing files.
+
+**Where things sit** (`CosmosLayout`, the only place these rules live, so counts, pages and search
+paths agree):
+
+* A subject orbits the planet of its first domain held by an agent. Otherwise it orbits the sun.
+* A fact orbits its first subject. Failing that, it orbits the planet of its first domain, and
+  failing that, the sun. It is tethered to its other subjects and to every other planet whose
+  domain it carries.
+* A note orbits the file it was read from, or else its agent's Notes moon.
+* Connectors and workflows come from `CosmosBodyProvider`s in their own modules. A connector's
+  moon carries only its name and status, never credentials.
+
+**Who can use it.** The Cosmos changes nothing about how agents are kept apart. It only edits
+what the existing rules read:
+
+* Sharing a fact with an agent adds that agent's domain to the fact. Unsharing the last domain
+  is refused, so a fact can't be hidden by accident (restrict it instead). Move replaces the
+  domains, and an empty list means every agent.
+* Notes are never shared, because an agent's notes are its own namespace (R22). A note can be
+  moved to another agent, or promoted into a new user fact (source `IMPORT`, ref `note:<id>`).
+* **Restrict** keeps an item from every agent: `MemoryScope.withRestricted` is false for all
+  agents, and knowledge queries filter `restricted`. The user sees it redacted until they step up
+  and reveal it.
+* Move, unrestrict, reveal and forget ask for a fresh step-up.
+
+**Read stamps.** Every time a fact or note goes into an agent's context, or is returned by
+recall or knowledge search, a row goes into `memory_access` with the agent and the run it was
+part of: `chat_turn:<messageId>`, `task:<id>`, a workflow run, or `agent_run`. The run is carried
+through `AgentRequest.traceId` into `AccessContext`, including into delegated specialists. Each
+(item, agent, run) is stamped once, and `access_count` counts distinct runs. Writes are async by
+default (`jizza.memory.access.async`), in their own transaction, so a read never fails because
+of its stamp. Forgetting an item deletes its stamps, and retention sweeps orphans.
+
+**The passport** for an item shows what it says, who can use it, where it came from (a link to
+the conversation when it was learned from chat), and its history: every change and every read,
+newest first, 50 at a time.
+
+**Search** merges facts (the hybrid search, run with the user's all-seeing scope) with notes
+(vector distance ≤ 0.8 plus keywords) by reciprocal rank fusion (k = 60). It returns at most 50
+hits, and can be filtered by agent, kind, sensitivity, state and date. Each hit carries its path
+from the sun, so the sky can light it up and fly to it.
+
+**Live updates.** After each change commits, an event `{kind, itemKind, itemId}` (ids only, no
+content) goes to the user's own STOMP queue `/user/queue/memory`, and the screen refetches.
+
+```
+GET    /api/memory/cosmos                                   bodies and links (no items)
+GET    /api/memory/cosmos/bodies/{bodyId}/items?cursor=&limit=&includeInactive=
+GET    /api/memory/cosmos/search?q=&agentIds=&categories=&classification=&status=&from=&to=
+GET    /api/memory/cosmos/items/{fact|note}/{id}/passport?cursor=
+GET    /api/memory/cosmos/items/{fact|note}/{id}/reveal     step-up
+POST   /api/memory/{id}/share {agentId}      DELETE /api/memory/{id}/share/{agentId}
+POST   /api/memory/{id}/move {domains}       step-up
+POST   /api/memory/{id}/restrict             POST /api/memory/{id}/unrestrict (step-up)
+PATCH  /api/agents/{a}/memory/notes/{n} {title, content}
+POST   /api/agents/{a}/memory/notes/{n}/move {toAgentId}               step-up
+POST   /api/agents/{a}/memory/notes/{n}/restrict | unrestrict (step-up)
+POST   /api/agents/{a}/memory/notes/{n}/promote {category, removeNote}
+```
+
+The client keeps the layout deterministic: positions are a pure function of the snapshot, and
+angles come from a hash of each body's id. The same memory always draws the same sky, and loading
+a body's items never moves anything. It draws on a 2D canvas with d3-zoom, using a quadtree for
+hit testing. Zoom is semantic: planets far out, moons from 0.6×, and each body's items (fetched
+on demand, 200 at a time) from 1.5×. Drift is off by default and never runs under
+`prefers-reduced-motion`.
 
 ## Configuration (`jizza.memory.*`)
 
@@ -213,6 +290,7 @@ POST   /api/memory/preview            {agentKey, request}: exactly what that age
 | `write.duplicate-similarity` | 0.95 | Near-duplicate threshold |
 | `extraction.enabled` / `tier` / `min-confidence` | true / routing / 0.7 | Learning from chat (`JIZZA_MEMORY_LEARNING=false` to switch off) |
 | `retention.inactive` | 180d | How long superseded/retired facts are kept |
+| `access.async` | `true` | Write read stamps off the request thread |
 
 ## Limitations and next steps
 
@@ -222,8 +300,7 @@ POST   /api/memory/preview            {agentKey, request}: exactly what that age
 * Subject resolution is word matching, not coreference: "her" alone does not resolve to Priya in a
   fresh turn. Within a conversation, the replayed history and Jizza's delegation task usually name
   her.
-* No UI yet: the API is complete, and the existing per-agent Memory page is unchanged. A user-level
-  Memory page (people, facts, pending confirmations, settings) is the natural next step.
+* The Cosmos does not yet edit subjects or relations, or the learning settings. Those stay on the API.
 * No rolling conversation summary; short-term context remains the last 20 turns.
 * Per-agent knowledge notes are not migrated into user memory; they stay as each agent's private
   notes.

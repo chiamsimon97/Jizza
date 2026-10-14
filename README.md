@@ -150,7 +150,11 @@ GET    /api/agents/{id}/memory       POST   /api/agents/{id}/memory/files
 GET    /api/agents/{id}/memory/files/{fileId}/content  DELETE …/files/{fileId}  …/notes/{noteId}
 
 GET    /api/memory                   POST   /api/memory               (user memory, docs/MEMORY.md)
-GET    /api/memory/{id}              PATCH  DELETE  POST confirm  restore
+GET    /api/memory/{id}              PATCH  DELETE  POST confirm  retire  restore
+POST   /api/memory/{id}/share  move  restrict  unrestrict   DELETE …/share/{agentId}
+GET    /api/memory/cosmos            GET …/cosmos/bodies/{bodyId}/items  …/cosmos/search
+GET    /api/memory/cosmos/items/{kind}/{id}/passport  …/reveal      (Memory Cosmos, docs/MEMORY.md)
+PATCH  /api/agents/{id}/memory/notes/{noteId}   POST …/move  restrict  unrestrict  promote
 GET    /api/memory/subjects          POST   PATCH/DELETE …/{id}  POST …/{id}/relations
 GET    /api/memory/settings          PUT    /api/memory/settings      POST /api/memory/preview
 
