@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Eye, Lock, Trash2, Upload } from 'lucide-react'
+import { ChevronRight, Eye, Lock, RotateCcw, Trash2, Upload } from 'lucide-react'
 import { cosmosApi } from '@/api/cosmos'
 import { memoryApi } from '@/api/memory'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +16,8 @@ interface Props {
   includeInactive: boolean
   matches: (n: MemoryNode) => boolean
   onOpenItem: (n: MemoryNode) => void
+  /** Offers to forget a body's part of the sky. */
+  onReset?: (b: PlacedBody) => void
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -27,7 +29,7 @@ const TYPE_LABEL: Record<string, string> = {
  * The Cosmos as a tree, for keyboards and screen readers and for anyone who'd rather read than fly:
  * the same bodies and items, the same passport. Files are added and removed here too.
  */
-export function CosmosListView({ layout, agentId, includeInactive, matches, onOpenItem }: Props) {
+export function CosmosListView({ layout, agentId, includeInactive, matches, onOpenItem, onReset }: Props) {
   const sun = layout.sunId ? layout.byId.get(layout.sunId) : undefined
   const startOpen = () => {
     const open = new Set<string>()
@@ -89,7 +91,7 @@ export function CosmosListView({ layout, agentId, includeInactive, matches, onOp
         {roots.map((b, i) => (
           <BodyRow key={b.body.bodyId} placed={b} layout={layout} depth={0} first={i === 0}
             expanded={expanded} toggle={toggle} includeInactive={includeInactive} matches={matches}
-            onOpenItem={onOpenItem} onPreview={setPreview} />
+            onOpenItem={onOpenItem} onPreview={setPreview} onReset={onReset} />
         ))}
       </ul>
       <FilePreview agentId={preview?.agentId ?? ''} file={preview?.file ?? null} onClose={() => setPreview(null)} />
@@ -108,9 +110,10 @@ interface RowProps {
   matches: (n: MemoryNode) => boolean
   onOpenItem: (n: MemoryNode) => void
   onPreview: (p: { agentId: string; file: MemoryFile }) => void
+  onReset?: (b: PlacedBody) => void
 }
 
-function BodyRow({ placed, layout, depth, first, expanded, toggle, includeInactive, matches, onOpenItem, onPreview }: RowProps) {
+function BodyRow({ placed, layout, depth, first, expanded, toggle, includeInactive, matches, onOpenItem, onPreview, onReset }: RowProps) {
   const b = placed.body
   const id = b.bodyId
   const open = expanded.has(id)
@@ -131,6 +134,13 @@ function BodyRow({ placed, layout, depth, first, expanded, toggle, includeInacti
         <span className={`truncate ${isAgent ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-800 dark:text-gray-200'}`}>{b.label}</span>
         <span className="shrink-0 text-xs text-gray-400">{TYPE_LABEL[b.type]}</span>
         {placed.total > 0 && <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">{placed.total}</span>}
+        {onReset && (placed.total > 0 || b.memoryCount > 0) && !['WORKFLOW', 'SKILL', 'CONNECTOR'].includes(b.type) && (
+          <button type="button" aria-label={`Reset ${b.label}`} title={b.type === 'SUN' ? 'Reset all memory' : `Reset ${b.label}`}
+            onClick={e => { e.stopPropagation(); onReset(placed) }}
+            className={`${placed.total > 0 ? '' : 'ml-auto '}shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40`}>
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {open && (
         <ul role="group">
@@ -140,7 +150,7 @@ function BodyRow({ placed, layout, depth, first, expanded, toggle, includeInacti
           )}
           {kids.map(k => (
             <BodyRow key={k.body.bodyId} placed={k} layout={layout} depth={depth + 1} expanded={expanded} toggle={toggle}
-              includeInactive={includeInactive} matches={matches} onOpenItem={onOpenItem} onPreview={onPreview} />
+              includeInactive={includeInactive} matches={matches} onOpenItem={onOpenItem} onPreview={onPreview} onReset={onReset} />
           ))}
           {(b.memoryCount > 0 || includeInactive) && (
             <BodyItems bodyId={id} depth={depth + 1} includeInactive={includeInactive} matches={matches} onOpenItem={onOpenItem} />

@@ -230,7 +230,14 @@ what the existing rules read:
 * **Restrict** keeps an item from every agent: `MemoryScope.withRestricted` is false for all
   agents, and knowledge queries filter `restricted`. The user sees it redacted until they step up
   and reveal it.
-* Move, unrestrict, reveal and forget ask for a fresh step-up.
+* Move, unrestrict, reveal, forget and reset ask for a fresh step-up.
+
+**Reset** forgets one part of the sky: every fact and note placed in a body or any moon under it
+(by the same placement rules the sky draws with, inactive facts included), and the subjects that
+are moons there. Resetting a planet clears that agent's system; resetting the sun clears all of
+the user's memory. Files stay, but the notes read from them go. Each deletion goes through
+`MemoryStore.forget` / `KnowledgeStore.delete`, so stamps, history, audit and live updates are
+the same as forgetting one item. It returns how many facts, notes and subjects went.
 
 **Read stamps.** Every time a fact or note goes into an agent's context, or is returned by
 recall or knowledge search, a row goes into `memory_access` with the agent and the run it was
@@ -258,6 +265,7 @@ GET    /api/memory/cosmos/bodies/{bodyId}/items?cursor=&limit=&includeInactive=
 GET    /api/memory/cosmos/search?q=&agentIds=&categories=&classification=&status=&from=&to=
 GET    /api/memory/cosmos/items/{fact|note}/{id}/passport?cursor=
 GET    /api/memory/cosmos/items/{fact|note}/{id}/reveal     step-up
+POST   /api/memory/cosmos/reset {bodyId}                    step-up; the sun's id resets everything
 POST   /api/memory/{id}/share {agentId}      DELETE /api/memory/{id}/share/{agentId}
 POST   /api/memory/{id}/move {domains}       step-up
 POST   /api/memory/{id}/restrict             POST /api/memory/{id}/unrestrict (step-up)
@@ -270,9 +278,20 @@ POST   /api/agents/{a}/memory/notes/{n}/promote {category, removeNote}
 The client keeps the layout deterministic: positions are a pure function of the snapshot, and
 angles come from a hash of each body's id. The same memory always draws the same sky, and loading
 a body's items never moves anything. It draws on a 2D canvas with d3-zoom, using a quadtree for
-hit testing. Zoom is semantic: planets far out, moons from 0.6×, and each body's items (fetched
-on demand, 200 at a time) from 1.5×. Drift is off by default and never runs under
-`prefers-reduced-motion`.
+hit testing. Zoom is semantic: planets far out, moons from 0.25×, and each body's items (fetched
+on demand, 200 at a time) from 0.9×.
+
+The sky turns slowly: each body's offset from its parent is rotated by its own orbit (a planet
+at the innermost orbit takes about six minutes round the sun, outer ones longer; moons about two
+minutes; items about three). Time only advances while the sky is free to move: it eases to a stop
+while the pointer is over something or held down, while a passport is open, and when paused.
+Stars twinkle, the sun pulses and a hovered body swells. None of it runs under
+`prefers-reduced-motion`. Hit testing uses the positions just drawn.
+
+**Sample memory (development only).** `jizza.memory.sample.seed-email`
+(`JIZZA_SAMPLE_MEMORY_EMAIL`, comma-separated) seeds each named account with a sample of people,
+accounts, plans, facts, notes and read stamps at startup, through the stores, but only while the
+account remembers nothing. Off by default.
 
 ## Configuration (`jizza.memory.*`)
 

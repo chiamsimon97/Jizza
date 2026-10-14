@@ -154,6 +154,7 @@ GET    /api/memory/{id}              PATCH  DELETE  POST confirm  retire  restor
 POST   /api/memory/{id}/share  move  restrict  unrestrict   DELETE …/share/{agentId}
 GET    /api/memory/cosmos            GET …/cosmos/bodies/{bodyId}/items  …/cosmos/search
 GET    /api/memory/cosmos/items/{kind}/{id}/passport  …/reveal      (Memory Cosmos, docs/MEMORY.md)
+POST   /api/memory/cosmos/reset {bodyId}   (forget one planet's or moon's part of the sky; the sun: all)
 PATCH  /api/agents/{id}/memory/notes/{noteId}   POST …/move  restrict  unrestrict  promote
 GET    /api/memory/subjects          POST   PATCH/DELETE …/{id}  POST …/{id}/relations
 GET    /api/memory/settings          PUT    /api/memory/settings      POST /api/memory/preview

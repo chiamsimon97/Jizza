@@ -81,6 +81,13 @@ public class CosmosController {
     return cosmos.reveal(CurrentUser.userId(), kind, id);
   }
 
+  /** Forgets every fact, note and subject in one body's part of the sky. Permanent. */
+  @StepUpRequired
+  @PostMapping("/api/memory/cosmos/reset")
+  public CosmosUseCase.ResetResult reset(@Valid @RequestBody Requests.ResetMemory input) {
+    return cosmos.reset(CurrentUser.userId(), input.bodyId());
+  }
+
   // ── facts ───────────────────────────────────────────────────────────────────────────────────
 
   @PostMapping("/api/memory/{id}/share")

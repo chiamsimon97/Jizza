@@ -9,6 +9,10 @@ const enc = encodeURIComponent
 export const cosmosApi = {
   snapshot: () => api.get<CosmosSnapshot>('/api/memory/cosmos'),
 
+  /** Forgets everything in one body's part of the sky (the sun's: all of it). Asks for step-up. */
+  reset: (bodyId: string) =>
+    api.post<{ facts: number; notes: number; subjects: number }>('/api/memory/cosmos/reset', { bodyId }),
+
   items: (bodyId: string, opts: { cursor?: string | null; limit?: number; includeInactive?: boolean } = {}) => {
     const q = new URLSearchParams()
     if (opts.cursor) q.set('cursor', opts.cursor)

@@ -1,5 +1,6 @@
 package com.jizza.engine.memory.cosmos;
 
+import com.jizza.engine.api.cosmos.BodyContents;
 import com.jizza.engine.api.cosmos.CelestialBody;
 import com.jizza.engine.api.cosmos.CosmosBodyProvider;
 import com.jizza.engine.api.cosmos.CosmosQueryService;
@@ -195,6 +196,29 @@ public class DefaultCosmosQueryService implements CosmosQueryService {
     }
     String next = offset + size < here.size() ? String.valueOf(offset + size) : null;
     return new ItemPage(items, next);
+  }
+
+  // ── a body's part of the sky ────────────────────────────────────────────────────────────────
+
+  @Override
+  @Transactional(readOnly = true)
+  public BodyContents contentsOf(UUID userId, String bodyId) {
+    Placed placed = place(userId, true);
+    CosmosLayout layout = placed.layout;
+    if (!layout.bodies.containsKey(bodyId)) throw new NotFoundException("Body", bodyId);
+
+    // The same placement rules the sky draws with, so a reset takes exactly what is shown there.
+    Map<String, Boolean> under = new HashMap<>();
+    java.util.function.Predicate<String> inside =
+        home -> under.computeIfAbsent(home, h -> layout.pathTo(h).contains(bodyId));
+    List<UUID> facts = placed.facts.stream().filter(f -> inside.test(layout.homeOf(f)))
+        .map(FactRef::id).toList();
+    List<BodyContents.Note> noteIds = placed.notes.stream().filter(n -> inside.test(layout.homeOf(n)))
+        .map(n -> new BodyContents.Note(n.id(), n.agentId())).toList();
+    List<UUID> subjectIds = layout.bodies.values().stream()
+        .filter(b -> b.type() == com.jizza.engine.api.cosmos.BodyType.SUBJECT && inside.test(b.bodyId()))
+        .map(b -> UUID.fromString(b.meta().get("subjectId").toString())).toList();
+    return new BodyContents(bodyId, facts, noteIds, subjectIds);
   }
 
   // ── search ──────────────────────────────────────────────────────────────────────────────────

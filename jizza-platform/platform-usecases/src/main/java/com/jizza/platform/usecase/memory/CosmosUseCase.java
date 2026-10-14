@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.memory;
 
+import com.jizza.engine.api.cosmos.BodyContents;
 import com.jizza.engine.api.cosmos.CosmosQueryService;
 import com.jizza.engine.api.cosmos.CosmosSnapshot;
 import com.jizza.engine.api.cosmos.ItemPage;
@@ -157,6 +158,28 @@ public class CosmosUseCase {
     }
     if (removeNote) knowledge.delete(agentId, noteId);
     return written;
+  }
+
+  // ── reset ───────────────────────────────────────────────────────────────────────────────────
+
+  /** What a reset forgot. */
+  public record ResetResult(int facts, int notes, int subjects) {}
+
+  /**
+   * Forgets one part of the sky: every fact and note placed in {@code bodyId} or any moon under
+   * it, and the subjects that are moons there. For the sun, that is all of the user's memory.
+   * Files stay; the notes read from them go. Each deletion goes through its store, so history,
+   * read stamps, audit and live updates stay right. Permanent; the route asks for step-up.
+   */
+  @org.springframework.transaction.annotation.Transactional
+  public ResetResult reset(UUID userId, String bodyId) {
+    if (bodyId == null || bodyId.isBlank()) throw new ValidationException("Say which part of your memory to reset");
+    BodyContents contents = cosmos.contentsOf(userId, bodyId);
+    Actor actor = Actor.user(userId);
+    for (UUID id : contents.factIds()) memory.forget(userId, id, actor);
+    for (BodyContents.Note n : contents.notes()) knowledge.delete(n.agentId(), n.id());
+    for (UUID id : contents.subjectIds()) memory.deleteSubject(userId, id, actor);
+    return new ResetResult(contents.factIds().size(), contents.notes().size(), contents.subjectIds().size());
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────────────────────────

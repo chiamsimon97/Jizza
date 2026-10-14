@@ -227,6 +227,57 @@ class CosmosE2eTest extends E2eSupport {
         .doesNotContain("Nifty").doesNotContain("penicillin");
   }
 
+  // ── Reset ────────────────────────────────────────────────────────────────────────────────────
+
+  @Test
+  void resettingAMoonForgetsOnlyWhatIsThereAndNeedsAFreshStepUp() {
+    var other = api.post("/api/memory", Map.of("category", "PREFERENCE",
+        "content", "Prefers tea to coffee", "subjectIds", List.of()));
+    assertThat(other.ok()).as(other.body()).isTrue();
+    String teaId = other.json().path("memory").path("id").asText();
+    String priya = "SUBJECT:" + priyaId;
+
+    ApiClient later = signedInWithoutStepUp();
+    var refused = later.post("/api/memory/cosmos/reset", Map.of("bodyId", priya));
+    assertThat(refused.status()).isEqualTo(403);
+    assertThat(refused.problemType()).endsWith("step-up-required");
+    assertThat(bodies()).containsKey(priya);
+
+    later.post("/api/auth/step-up", Map.of("password", PASSWORD));
+    var reset = later.post("/api/memory/cosmos/reset", Map.of("bodyId", priya));
+    assertThat(reset.ok()).as(reset.body()).isTrue();
+    assertThat(reset.json().path("facts").asInt()).isEqualTo(4);
+    assertThat(reset.json().path("subjects").asInt()).isEqualTo(1);
+
+    Map<String, JsonNode> after = bodies();
+    assertThat(after).doesNotContainKey(priya).containsKey("SUBJECT:" + accountId);
+    assertThat(api.get("/api/memory/" + sipId).status()).isEqualTo(404);
+    assertThat(api.get("/api/memory/" + teaId).ok()).isTrue();
+  }
+
+  @Test
+  void resettingTheSunForgetsEverythingAndAStrangerCannotResetIt() {
+    String sun = bodies().values().stream().filter(b -> b.path("type").asText().equals("SUN"))
+        .findFirst().orElseThrow().path("bodyId").asText();
+
+    ApiClient stranger = new ApiClient(port);
+    stranger.prime();
+    String other = "stranger-" + UUID.randomUUID() + "@jizza.local";
+    stranger.post("/api/auth/register", Map.of("email", other, "password", PASSWORD));
+    stranger.post("/api/auth/login", Map.of("email", other, "password", PASSWORD));
+    stranger.post("/api/auth/step-up", Map.of("password", PASSWORD));
+    assertThat(stranger.post("/api/memory/cosmos/reset", Map.of("bodyId", "SUBJECT:" + priyaId)).status())
+        .isEqualTo(404);
+    assertThat(stranger.post("/api/memory/cosmos/reset", Map.of("bodyId", sun)).status()).isEqualTo(404);
+    assertThat(bodies()).containsKey("SUBJECT:" + priyaId);
+
+    var reset = api.post("/api/memory/cosmos/reset", Map.of("bodyId", sun));
+    assertThat(reset.ok()).as(reset.body()).isTrue();
+    Map<String, JsonNode> after = bodies();
+    assertThat(after.values()).allSatisfy(b -> assertThat(b.path("memoryCount").asInt()).isZero());
+    assertThat(after).doesNotContainKeys("SUBJECT:" + priyaId, "SUBJECT:" + accountId);
+  }
+
   // ── Notes ────────────────────────────────────────────────────────────────────────────────────
 
   @Test

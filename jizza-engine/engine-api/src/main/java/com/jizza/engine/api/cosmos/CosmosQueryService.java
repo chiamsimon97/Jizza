@@ -19,4 +19,10 @@ public interface CosmosQueryService {
 
   /** A restricted item's text. Callers put a fresh step-up in front of it. */
   Passport reveal(UUID userId, String itemKind, UUID id);
+
+  /**
+   * Every fact, note and subject placed in {@code bodyId}'s part of the sky (it and its moons),
+   * inactive facts included. For the sun, that is everything.
+   */
+  BodyContents contentsOf(UUID userId, String bodyId);
 }

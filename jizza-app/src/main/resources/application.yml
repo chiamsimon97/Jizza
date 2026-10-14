@@ -153,6 +153,10 @@ jizza:
   # life, handed to every agent turn. See docs/MEMORY.md.
   memory:
     enabled: true
+    # Development only: fills these accounts' (comma-separated emails) memory with a sample, once,
+    # while they remember nothing. Off by default.
+    sample:
+      seed-email: ${JIZZA_SAMPLE_MEMORY_EMAIL:}
     # Which specialist domains see a category; unlisted categories are shared with every agent.
     category-domains:
       finance: [finance]

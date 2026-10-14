@@ -125,6 +125,9 @@ public final class Requests {
   /** Memory Cosmos: who can see a fact from now on; empty means every agent. */
   public record MoveMemory(@NotNull java.util.List<String> domains) {}
 
+  /** The body whose part of the sky to forget; the sun's id resets everything. */
+  public record ResetMemory(@jakarta.validation.constraints.NotBlank String bodyId) {}
+
   public record EditNote(@jakarta.validation.constraints.Size(max = 200) String title,
                          @jakarta.validation.constraints.Size(max = 20000) String content) {}
 
