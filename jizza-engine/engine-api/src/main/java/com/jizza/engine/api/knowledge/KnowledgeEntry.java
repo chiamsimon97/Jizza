@@ -8,10 +8,19 @@ import java.util.UUID;
 /**
  * A single namespaced knowledge record. {@code agentId} <em>is</em> the namespace; the store rejects
  * any attempt to read or write across it (R22).
+ *
+ * @param restricted never handed to an agent, its owner included; the user sees it after step-up
  */
 public record KnowledgeEntry(UUID id, UUID userId, UUID agentId, String title, String content,
                              JsonNode data, DataClassification classification,
-                             Instant createdAt, Instant updatedAt, Double score) {
+                             Instant createdAt, Instant updatedAt, Double score,
+                             boolean restricted) {
+
+  public KnowledgeEntry(UUID id, UUID userId, UUID agentId, String title, String content,
+                        JsonNode data, DataClassification classification, Instant createdAt,
+                        Instant updatedAt, Double score) {
+    this(id, userId, agentId, title, content, data, classification, createdAt, updatedAt, score, false);
+  }
 
   public static KnowledgeEntry create(UUID userId, UUID agentId, String title, String content,
                                       JsonNode data, DataClassification classification) {
@@ -19,6 +28,7 @@ public record KnowledgeEntry(UUID id, UUID userId, UUID agentId, String title, S
   }
 
   public KnowledgeEntry withScore(double s) {
-    return new KnowledgeEntry(id, userId, agentId, title, content, data, classification, createdAt, updatedAt, s);
+    return new KnowledgeEntry(id, userId, agentId, title, content, data, classification, createdAt,
+        updatedAt, s, restricted);
   }
 }

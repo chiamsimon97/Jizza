@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
+import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.tool.JsonSchemas;
@@ -121,7 +122,7 @@ public class DelegationToolProvider implements ToolProvider {
       return ToolResult.error(specialist.get().getName() + " is currently disabled, so that part "
           + "of the request cannot be handled.");
     }
-    Outcome outcome = run(specialist.get(), task);
+    Outcome outcome = run(specialist.get(), task, parentRun());
     if (outcome.contribution() != null) recorder.record(outcome.contribution());
     return ToolResult.ok(outcome.node());
   }
@@ -138,6 +139,7 @@ public class DelegationToolProvider implements ToolProvider {
           node.path("task").asText(), key));
     }
 
+    String trace = parentRun();
     List<CompletableFuture<Outcome>> futures = jobs.stream()
         .map(job -> CompletableFuture.supplyAsync(() -> {
           if (job.specialist() == null) {
@@ -147,7 +149,7 @@ public class DelegationToolProvider implements ToolProvider {
             return Outcome.problem(job.requestedKey(), job.specialist().getName(),
                 "this specialist is disabled");
           }
-          return run(job.specialist(), job.task());
+          return run(job.specialist(), job.task(), trace);
         }, fanOut))
         .toList();
 
@@ -184,14 +186,19 @@ public class DelegationToolProvider implements ToolProvider {
    * Runs the specialist as an attended turn: a user is waiting on the other end of this chat, so
    * this is not autonomous activity even though a model initiated it.
    */
-  private Outcome run(AgentEntity specialist, String task) {
+  /** The run delegating, so the specialist's memory reads are stamped with the same chat turn. */
+  private static String parentRun() {
+    return AccessContext.current().map(AccessContext::toTrace).orElse(null);
+  }
+
+  private Outcome run(AgentEntity specialist, String task, String trace) {
     ObjectNode node = Json.obj();
     node.put("agent_key", specialist.getKey());
     node.put("agent_name", specialist.getName());
     String summary;
     try {
       AgentResult result = baseAgent.run(new AgentRequest(specialist.getUserId(), specialist.getId(),
-          task, null, List.of(), ModelTier.STANDARD, false, null));
+          task, null, List.of(), ModelTier.STANDARD, false, trace));
       node.put("answer", result.text());
       if (result.truncatedByBudget()) node.put("truncated", true);
       summary = result.text();

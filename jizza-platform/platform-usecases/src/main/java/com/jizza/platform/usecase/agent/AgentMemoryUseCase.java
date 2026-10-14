@@ -65,7 +65,7 @@ public class AgentMemoryUseCase {
   /** A fact or note the agent saved about the user while working. */
   public record MemoryNote(UUID id, String title, String content,
                            DataClassification classification, Instant createdAt,
-                           Instant updatedAt) {}
+                           Instant updatedAt, boolean restricted) {}
 
   public record AgentMemory(AgentDto agent, List<MemoryNote> notes, List<MemoryFile> files) {}
 
@@ -85,8 +85,10 @@ public class AgentMemoryUseCase {
     // Text read out of a file is shown as that file, not repeated as a note.
     List<MemoryNote> notes = knowledge.list(agentId, MAX_NOTES).stream()
         .filter(entry -> !isFromFile(entry))
-        .map(entry -> new MemoryNote(entry.id(), entry.title(), entry.content(),
-            entry.classification(), entry.createdAt(), entry.updatedAt()))
+        // A restricted note's words are shown only through the step-up guarded reveal.
+        .map(entry -> new MemoryNote(entry.id(), entry.restricted() ? null : entry.title(),
+            entry.restricted() ? null : entry.content(), entry.classification(), entry.createdAt(),
+            entry.updatedAt(), entry.restricted()))
         .toList();
     return new AgentMemory(agent, notes, memoryFiles.list(agentId));
   }

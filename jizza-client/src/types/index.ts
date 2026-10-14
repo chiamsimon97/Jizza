@@ -36,6 +36,8 @@ export interface MemoryNote {
   title: string
   content?: string
   classification?: 'NONE' | 'PII' | 'HEALTH' | 'FINANCIAL'
+  /** Kept from every agent; title and content are hidden until the user reveals it. */
+  restricted?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -49,6 +51,94 @@ export interface MemoryFile {
   /** How much text the agent can search in this file; 0 means it holds the file but can't read it. */
   readableChars: number
   createdAt: string
+}
+
+// ── Memory Cosmos ─────────────────────────────────────────────────────────────
+export type BodyType = 'SUN' | 'AGENT' | 'SUBJECT' | 'NOTES' | 'FILE' | 'CONNECTOR' | 'WORKFLOW' | 'SKILL'
+export type MemoryCategory =
+  'PROFILE' | 'PREFERENCE' | 'RELATIONSHIP' | 'FINANCE' | 'HEALTH' | 'PROFESSIONAL' | 'PROJECT' | 'TASK' | 'GENERAL'
+export type MemoryStatus = 'ACTIVE' | 'PENDING' | 'SUPERSEDED' | 'RETIRED'
+export type Classification = 'NONE' | 'PII' | 'HEALTH' | 'FINANCIAL'
+export type ItemKind = 'fact' | 'note'
+/** The Cosmos speaks in lower case: a fact's category, or "note" for an agent's note. */
+export type NodeCategory = Lowercase<MemoryCategory> | 'note'
+export type NodeStatus = 'active' | 'pending' | 'superseded' | 'retired'
+export type NodeClassification = 'none' | 'pii' | 'health' | 'financial'
+
+export interface CelestialBody {
+  bodyId: string
+  type: BodyType
+  parentBodyId: string | null
+  label: string
+  agentKey: string
+  tier: number
+  memoryCount: number
+  sharedCount: number
+  lastActivityAt: string | null
+  meta: Record<string, unknown> | null
+}
+
+export interface BodyLink { fromBodyId: string; toBodyId: string; kind: string }
+
+export interface CosmosSnapshot { bodies: CelestialBody[]; links: BodyLink[]; generatedAt: string }
+
+export interface MemoryNode {
+  itemKind: ItemKind
+  id: string
+  parentBodyId: string
+  /** Null when the item is restricted and not yet revealed. */
+  label: string | null
+  agentKey: string
+  category: NodeCategory | null
+  classification: NodeClassification | null
+  restricted: boolean
+  redacted: boolean
+  status: NodeStatus | null
+  confirmed: boolean
+  accessCount: number
+  lastAccessedAt: string | null
+  createdAt: string
+  tetherBodyIds: string[]
+}
+
+export interface ItemPage { items: MemoryNode[]; nextCursor: string | null }
+
+export interface MemorySearchHit { item: MemoryNode; bodyPath: string[]; snippet: string | null; score: number }
+
+export interface PassportStamp {
+  action: string
+  actorType: string | null
+  actorId: string | null
+  actorLabel: string | null
+  contextKind: string | null
+  contextRef: string | null
+  at: string
+  note: string | null
+}
+
+export interface Passport {
+  item: MemoryNode
+  title: string | null
+  content: string | null
+  visibility: { everyAgent: boolean; domains: string[]; agents: { id: string; key: string; name: string }[] }
+  origin: { kind: string; label: string | null; ref: string | null; conversationId: string | null; fileId: string | null; agentId: string | null }
+  stamps: PassportStamp[]
+  nextCursor: string | null
+}
+
+export interface MemorySearchFilters {
+  agentIds?: string[]
+  categories?: NodeCategory[]
+  classification?: NodeClassification
+  status?: NodeStatus
+  from?: string
+  to?: string
+}
+
+export interface MemoryRealtimeEvent {
+  kind: 'MEMORY_CREATED' | 'MEMORY_UPDATED' | 'MEMORY_FORGOTTEN' | 'VISIBILITY_CHANGED' | 'BODY_CHANGED'
+  itemKind?: ItemKind
+  itemId?: string
 }
 
 export interface AgentMemory {

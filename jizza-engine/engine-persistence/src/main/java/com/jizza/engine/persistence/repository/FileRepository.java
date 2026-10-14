@@ -9,4 +9,6 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
   List<FileEntity> findByUserId(UUID userId);
 
   List<FileEntity> findByAgentIdOrderByCreatedAtDesc(UUID agentId);
+
+  java.util.Optional<FileEntity> findFirstByKnowledgeEntryId(UUID knowledgeEntryId);
 }

@@ -88,6 +88,13 @@ public abstract class E2eSupport {
     // catcher that is deliberately not running.
     registry.add("management.health.mail.enabled", () -> "false");
 
+    // Learning from chat calls the model after every turn; it is off for the suite so it cannot
+    // consume replies scripted for agents, and the memory suite switches it on where it is tested.
+    // When on, it runs on the calling thread so its effect can be asserted.
+    registry.add("jizza.memory.extraction.enabled", () -> "false");
+    registry.add("jizza.memory.extraction.async", () -> "false");
+    registry.add("jizza.memory.access.async", () -> "false");
+
     registry.add("jizza.agents.models.routing", () -> "test-routing");
     registry.add("jizza.agents.models.standard", () -> "test-standard");
     registry.add("jizza.agents.models.deep", () -> "test-deep");

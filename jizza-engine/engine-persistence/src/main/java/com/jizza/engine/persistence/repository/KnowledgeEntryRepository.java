@@ -20,13 +20,26 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntryEn
    */
   @Query("""
       select k from KnowledgeEntryEntity k
-      where k.agentId = :agentId
+      where k.agentId = :agentId and k.restricted = false
         and (lower(k.title) like lower(concat('%', :q, '%'))
              or lower(k.content) like lower(concat('%', :q, '%')))
       order by k.updatedAt desc
       """)
   List<KnowledgeEntryEntity> searchLexical(@Param("agentId") UUID agentId, @Param("q") String q,
                                            Pageable pageable);
+
+  /** The user searching every agent's notes from the Cosmos; restricted ones included. */
+  @Query("""
+      select k from KnowledgeEntryEntity k
+      where k.userId = :userId
+        and (lower(k.title) like lower(concat('%', :q, '%'))
+             or lower(k.content) like lower(concat('%', :q, '%')))
+      order by k.updatedAt desc
+      """)
+  List<KnowledgeEntryEntity> searchLexicalForUser(@Param("userId") UUID userId, @Param("q") String q,
+                                                  Pageable pageable);
+
+  List<KnowledgeEntryEntity> findByUserId(UUID userId);
 
   void deleteByUserId(UUID userId);
 }

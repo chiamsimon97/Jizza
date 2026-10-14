@@ -79,6 +79,8 @@ public class AgentMemoryController {
     return new Responses.Message("File removed.");
   }
 
+  /** Permanent, so it asks for a fresh step-up like forgetting a fact. */
+  @com.jizza.engine.api.util.StepUpRequired
   @DeleteMapping("/notes/{noteId}")
   public Responses.Message deleteNote(@PathVariable UUID agentId, @PathVariable UUID noteId) {
     memory.deleteNote(CurrentUser.userId(), agentId, noteId);

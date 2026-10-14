@@ -28,7 +28,9 @@ public class StompRealtimeGateway implements RealtimeGateway {
   @Override
   public void publish(UUID userId, String topic, Object payload) {
     try {
-      messaging.convertAndSend("/topic/" + userId + "/" + topic, payload);
+      // A user destination, not a topic: the broker delivers it only to this user's own sessions,
+      // where a "/topic/<userId>" could be subscribed to by anyone who knew the id.
+      messaging.convertAndSendToUser(userId.toString(), "/queue/" + topic, payload);
     } catch (RuntimeException e) {
       // Realtime is a convenience layer; a disconnected client must never fail the work behind it.
       log.debug("Could not publish to {}/{}", userId, topic, e);

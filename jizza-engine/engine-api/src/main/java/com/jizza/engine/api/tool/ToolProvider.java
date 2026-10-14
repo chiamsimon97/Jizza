@@ -17,4 +17,11 @@ public interface ToolProvider {
   boolean supports(UUID agentId, String toolName);
 
   ToolResult invoke(UUID agentId, ToolCall call);
+
+  /**
+   * True when a tool's arguments carry the user's personal detail (a fact to remember, a note to
+   * keep), so the audit log records that the call happened but not what it said (R13). The audit
+   * log is append-only, so anything written there could never be forgotten.
+   */
+  default boolean redactArguments(String toolName) { return false; }
 }

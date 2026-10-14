@@ -48,6 +48,13 @@ public class KnowledgeEntryEntity {
   @Column(columnDefinition = "vector(1536)")
   private float[] embedding;
 
+  /** Never handed to an agent, its owner included; shown to the user only after a fresh step-up. */
+  private boolean restricted;
+
+  private int accessCount;
+
+  private Instant lastAccessedAt;
+
   private Instant createdAt;
 
   private Instant updatedAt;
@@ -78,6 +85,15 @@ public class KnowledgeEntryEntity {
 
   public float[] getEmbedding() { return embedding; }
   public void setEmbedding(float[] embedding) { this.embedding = embedding; }
+
+  public boolean isRestricted() { return restricted; }
+  public void setRestricted(boolean restricted) { this.restricted = restricted; }
+
+  public int getAccessCount() { return accessCount; }
+  public void setAccessCount(int accessCount) { this.accessCount = accessCount; }
+
+  public Instant getLastAccessedAt() { return lastAccessedAt; }
+  public void setLastAccessedAt(Instant lastAccessedAt) { this.lastAccessedAt = lastAccessedAt; }
 
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

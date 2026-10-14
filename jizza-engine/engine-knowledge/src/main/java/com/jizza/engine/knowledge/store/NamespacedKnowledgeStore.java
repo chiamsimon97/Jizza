@@ -1,18 +1,26 @@
 package com.jizza.engine.knowledge.store;
 
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.cosmos.MemoryAccessRecorder;
+import com.jizza.engine.api.cosmos.MemoryNode;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.DataClassification;
 import com.jizza.engine.api.error.IsolationViolationException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.knowledge.KnowledgeEntry;
 import com.jizza.engine.api.knowledge.KnowledgeStore;
+import com.jizza.engine.api.memory.Actor;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.knowledge.embedding.EmbeddingProvider;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.KnowledgeEntryEntity;
+import com.jizza.engine.persistence.entity.KnowledgeHistoryEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import com.jizza.engine.persistence.repository.FileRepository;
 import com.jizza.engine.persistence.repository.KnowledgeEntryRepository;
+import com.jizza.engine.persistence.repository.KnowledgeHistoryRepository;
+import com.jizza.engine.persistence.repository.MemoryAccessRepository;
+import com.jizza.engine.persistence.support.MemoryEvents;
 import com.jizza.engine.persistence.support.KnowledgeVectorSearch;
 import com.jizza.engine.persistence.support.Vectors;
 import java.time.Instant;
@@ -24,6 +32,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +43,11 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The rule is structural: the calling agent id is the namespace, every query is scoped by it in
  * the {@code where} clause, and any entry that arrives claiming a different {@code agentId} is
  * rejected outright. There is no code path through this class that reads or writes another agent's
- * namespace.
+ * namespace, except {@link #move}, which only the user can call and which takes the note out of
+ * the old namespace entirely.
+ *
+ * <p>A restricted entry is invisible to every agent, its owner included: {@code search} and
+ * {@code get} skip it in the query, and an upsert naming it is refused as if it did not exist.
  */
 @Service
 public class NamespacedKnowledgeStore implements KnowledgeStore {
@@ -46,15 +59,27 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
   private final EmbeddingProvider embeddings;
   private final KnowledgeVectorSearch vectorSearch;
   private final AuditLog audit;
+  private final KnowledgeHistoryRepository history;
+  private final FileRepository files;
+  private final MemoryAccessRepository access;
+  private final MemoryEvents events;
+  private final ObjectProvider<MemoryAccessRecorder> recorder;
 
   public NamespacedKnowledgeStore(KnowledgeEntryRepository entries, AgentRepository agents,
                                   EmbeddingProvider embeddings, KnowledgeVectorSearch vectorSearch,
-                                  AuditLog audit) {
+                                  AuditLog audit, KnowledgeHistoryRepository history,
+                                  FileRepository files, MemoryAccessRepository access,
+                                  MemoryEvents events, ObjectProvider<MemoryAccessRecorder> recorder) {
     this.entries = entries;
     this.agents = agents;
     this.embeddings = embeddings;
     this.vectorSearch = vectorSearch;
     this.audit = audit;
+    this.history = history;
+    this.files = files;
+    this.access = access;
+    this.events = events;
+    this.recorder = recorder;
   }
 
   @Override
@@ -65,7 +90,7 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
 
     for (var scored : semanticIds(agentId, query, limit)) {
       entries.findById(scored.id())
-          .filter(e -> e.getAgentId().equals(agentId))
+          .filter(e -> e.getAgentId().equals(agentId) && !e.isRestricted())
           .ifPresent(e -> found.put(e.getId(), toDto(e).withScore(1.0 - scored.distance())));
     }
     if (found.size() < limit) {
@@ -74,17 +99,23 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
         found.putIfAbsent(entity.getId(), toDto(entity));
       }
     }
-    return new ArrayList<>(found.values()).subList(0, Math.min(found.size(), limit));
+    List<KnowledgeEntry> result = new ArrayList<>(found.values()).subList(0, Math.min(found.size(), limit));
+    stampReads(agentId, result);
+    return result;
   }
 
   @Override
   @Transactional(readOnly = true)
   public Optional<KnowledgeEntry> get(UUID agentId, UUID entryId) {
-    return entries.findById(entryId)
+    Optional<KnowledgeEntry> entry = entries.findById(entryId)
         .map(entity -> {
           requireOwnNamespace(agentId, entity.getAgentId());
-          return toDto(entity);
-        });
+          return entity;
+        })
+        .filter(entity -> !entity.isRestricted())
+        .map(this::toDto);
+    entry.ifPresent(e -> stampReads(agentId, List.of(e)));
+    return entry;
   }
 
   @Override
@@ -101,6 +132,8 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
       entity = entries.findById(entry.id())
           .orElseThrow(() -> new NotFoundException("Knowledge entry", entry.id()));
       requireOwnNamespace(agentId, entity.getAgentId());
+      // The user put it out of reach; to the agent it does not exist.
+      if (entity.isRestricted()) throw new NotFoundException("Knowledge entry", entry.id());
     } else {
       entity = new KnowledgeEntryEntity();
       entity.setAgentId(agentId);
@@ -122,6 +155,8 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
     audit.record(agent.getUserId(), ActorType.AGENT, agentId, "knowledge.upsert", saved.getTitle(),
         Json.obj().put("entryId", saved.getId().toString())
             .put("classification", String.valueOf(saved.getClassification())));
+    events.changed(saved.getUserId(), entry.id() == null ? MemoryEvents.CREATED : MemoryEvents.UPDATED,
+        MemoryNode.NOTE, saved.getId());
     return toDto(saved);
   }
 
@@ -130,9 +165,11 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
   public void delete(UUID agentId, UUID entryId) {
     entries.findById(entryId).ifPresent(entity -> {
       requireOwnNamespace(agentId, entity.getAgentId());
+      access.deleteItem(MemoryNode.NOTE, entity.getId());
       entries.delete(entity);
       audit.record(entity.getUserId(), ActorType.AGENT, agentId, "knowledge.delete",
           entity.getTitle(), null);
+      events.changed(entity.getUserId(), MemoryEvents.FORGOTTEN, MemoryNode.NOTE, entity.getId());
     });
   }
 
@@ -142,6 +179,97 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
     return entries.findByAgentIdOrderByUpdatedAtDesc(agentId,
             PageRequest.of(0, Math.max(1, Math.min(limit, 200))))
         .stream().map(this::toDto).toList();
+  }
+
+  @Override
+  @Transactional
+  public KnowledgeEntry edit(UUID agentId, UUID entryId, String title, String content, Actor actor) {
+    KnowledgeEntryEntity entity = ownEntry(agentId, entryId);
+    if (title == null && content == null) return toDto(entity);
+    record(entity, "updated", actor);
+    if (title != null && !title.isBlank()) entity.setTitle(title.strip());
+    if (content != null) entity.setContent(content);
+    entity.setUpdatedAt(Instant.now());
+    entity.setEmbedding(Vectors.fit(embeddings.embed(embeddingText(toDto(entity)))));
+    KnowledgeEntryEntity saved = entries.save(entity);
+    audit.record(saved.getUserId(), actor.type(), actor.id(), "knowledge.updated",
+        saved.getId().toString(), classificationOf(saved));
+    events.changed(saved.getUserId(), MemoryEvents.UPDATED, MemoryNode.NOTE, saved.getId());
+    return toDto(saved);
+  }
+
+  @Override
+  @Transactional
+  public KnowledgeEntry move(UUID fromAgentId, UUID entryId, UUID toAgentId, Actor actor) {
+    KnowledgeEntryEntity entity = ownEntry(fromAgentId, entryId);
+    AgentEntity target = agents.findById(toAgentId)
+        .filter(a -> a.getUserId().equals(entity.getUserId()))
+        .orElseThrow(() -> new NotFoundException("Agent", toAgentId));
+    if (target.getId().equals(fromAgentId)) return toDto(entity);
+
+    record(entity, "moved", actor);
+    entity.setAgentId(target.getId());
+    entity.setUpdatedAt(Instant.now());
+    KnowledgeEntryEntity saved = entries.save(entity);
+    // The file the note was read from belongs to the same namespace; it moves with it.
+    files.findFirstByKnowledgeEntryId(entryId).ifPresent(file -> {
+      file.setAgentId(target.getId());
+      files.save(file);
+    });
+    audit.record(saved.getUserId(), actor.type(), actor.id(), "knowledge.moved", saved.getId().toString(),
+        classificationOf(saved).put("from", fromAgentId.toString()).put("to", toAgentId.toString()));
+    events.changed(saved.getUserId(), MemoryEvents.VISIBILITY, MemoryNode.NOTE, saved.getId());
+    return toDto(saved);
+  }
+
+  @Override
+  @Transactional
+  public KnowledgeEntry restrict(UUID agentId, UUID entryId, boolean restricted, Actor actor) {
+    KnowledgeEntryEntity entity = ownEntry(agentId, entryId);
+    if (entity.isRestricted() == restricted) return toDto(entity);
+    record(entity, restricted ? "restricted" : "unrestricted", actor);
+    entity.setRestricted(restricted);
+    KnowledgeEntryEntity saved = entries.save(entity);
+    audit.record(saved.getUserId(), actor.type(), actor.id(),
+        restricted ? "knowledge.restricted" : "knowledge.unrestricted", saved.getId().toString(),
+        classificationOf(saved));
+    events.changed(saved.getUserId(), MemoryEvents.VISIBILITY, MemoryNode.NOTE, saved.getId());
+    return toDto(saved);
+  }
+
+  private KnowledgeEntryEntity ownEntry(UUID agentId, UUID entryId) {
+    KnowledgeEntryEntity entity = entries.findById(entryId)
+        .orElseThrow(() -> new NotFoundException("Knowledge entry", entryId));
+    requireOwnNamespace(agentId, entity.getAgentId());
+    return entity;
+  }
+
+  private void record(KnowledgeEntryEntity entity, String change, Actor actor) {
+    KnowledgeHistoryEntity h = new KnowledgeHistoryEntity();
+    h.setEntryId(entity.getId());
+    h.setUserId(entity.getUserId());
+    h.setChange(change);
+    h.setPreviousTitle(entity.getTitle());
+    h.setPreviousContent(entity.getContent());
+    h.setPreviousAgentId(entity.getAgentId());
+    h.setActorType(actor.type());
+    h.setActorId(actor.id());
+    history.save(h);
+  }
+
+  private static com.fasterxml.jackson.databind.node.ObjectNode classificationOf(KnowledgeEntryEntity e) {
+    return Json.obj().put("classification", String.valueOf(e.getClassification()));
+  }
+
+  /** A stamp in each entry's passport; a failure here never fails the agent's read. */
+  private void stampReads(UUID agentId, List<KnowledgeEntry> read) {
+    if (read.isEmpty()) return;
+    try {
+      recorder.ifAvailable(r -> r.notes(read.get(0).userId(), agentId,
+          read.stream().map(KnowledgeEntry::id).toList()));
+    } catch (RuntimeException e) {
+      log.debug("Could not record knowledge access", e);
+    }
   }
 
   private void requireOwnNamespace(UUID callingAgent, UUID targetNamespace) {
@@ -176,6 +304,6 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
 
   private KnowledgeEntry toDto(KnowledgeEntryEntity e) {
     return new KnowledgeEntry(e.getId(), e.getUserId(), e.getAgentId(), e.getTitle(), e.getContent(),
-        e.getData(), e.getClassification(), e.getCreatedAt(), e.getUpdatedAt(), null);
+        e.getData(), e.getClassification(), e.getCreatedAt(), e.getUpdatedAt(), null, e.isRestricted());
   }
 }

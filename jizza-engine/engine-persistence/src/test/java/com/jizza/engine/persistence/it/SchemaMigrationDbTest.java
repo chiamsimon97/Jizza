@@ -22,6 +22,7 @@ class SchemaMigrationDbTest extends PostgresIntegrationTest {
         "select table_name from information_schema.tables where table_schema = 'public'").getResultList();
     assertThat(tables).containsAll(SchemaInfo.CONTRACT_TABLES);
     assertThat(tables).containsAll(SchemaInfo.PLATFORM_TABLES);
+    assertThat(tables).containsAll(SchemaInfo.MEMORY_TABLES);
   }
 
   @Test

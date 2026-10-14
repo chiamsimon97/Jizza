@@ -48,6 +48,17 @@
 
   --app-bg: var(--gray-50);
   --sidebar-bg: 255 255 255;
+
+  /* Memory Cosmos: one colour per agent, as RGB channels. */
+  --agent-jizza: 79 70 229;
+  --agent-health: 225 29 72;
+  --agent-finance: 217 119 6;
+  --agent-professional: 8 145 178;
+  --agent-other: 100 116 139;
+  --cosmos-bg: 248 250 252;
+  --cosmos-orbit: 203 213 225;
+  --cosmos-text: 30 41 59;
+  --cosmos-pending: 217 119 6;
 }
 
 [data-theme='dark'] {
@@ -78,6 +89,16 @@
 
   --app-bg: var(--gray-950);
   --sidebar-bg: var(--gray-900);
+
+  --agent-jizza: 140 150 250;
+  --agent-health: 251 113 133;
+  --agent-finance: 251 191 36;
+  --agent-professional: 34 211 238;
+  --agent-other: 148 163 184;
+  --cosmos-bg: 7 9 16;
+  --cosmos-orbit: 43 51 69;
+  --cosmos-text: 226 232 240;
+  --cosmos-pending: 251 191 36;
 }
 
 [data-theme='sunset'] {
@@ -120,6 +141,7 @@
 
   --app-bg: var(--gray-50);
   --sidebar-bg: 255 246 238;
+  --cosmos-bg: 255 250 245;
 }
 
 @layer base {

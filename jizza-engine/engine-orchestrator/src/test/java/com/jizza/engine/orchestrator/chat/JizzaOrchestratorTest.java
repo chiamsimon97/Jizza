@@ -104,8 +104,33 @@ class JizzaOrchestratorTest {
     recorder = new DelegationRecorder();
 
     ObjectProvider<RealtimeGateway> realtime = mock(ObjectProvider.class);
+    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+    beans.addBean("learner", (com.jizza.engine.api.memory.MemoryLearner) learnedTurns::add);
     orchestrator = new JizzaOrchestrator(agents, conversations, messages, traces, baseAgent,
-        recorder, uiActions, mock(AuditLog.class), realtime);
+        recorder, uiActions, mock(AuditLog.class), realtime,
+        beans.getBeanProvider(com.jizza.engine.api.memory.MemoryLearner.class));
+  }
+
+  private final List<com.jizza.engine.api.memory.MemoryLearner.Turn> learnedTurns = new ArrayList<>();
+
+  @Test
+  void handsEachFinishedTurnToMemoryLearning() {
+    answerWith("Noted, I'll keep Priya's plan in mind.");
+    var reply = orchestrator.handle(userId, "My wife Priya invests 20k a month in an index fund");
+
+    assertThat(learnedTurns).hasSize(1);
+    var turn = learnedTurns.get(0);
+    assertThat(turn.userId()).isEqualTo(userId);
+    assertThat(turn.conversationId()).isEqualTo(reply.conversationId());
+    assertThat(turn.userText()).contains("Priya invests");
+    assertThat(turn.assistantText()).contains("Priya's plan");
+  }
+
+  @Test
+  void incognitoTurnsAreNeverLearnedFrom() {
+    answerWith("ok");
+    orchestrator.handleIncognito(userId, "My wife Priya invests 20k a month in an index fund");
+    assertThat(learnedTurns).isEmpty();
   }
 
   private void answerWith(String text, DelegationRecorder.Contribution... contributions) {

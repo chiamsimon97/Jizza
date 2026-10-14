@@ -189,23 +189,8 @@ class PlatformE2eTest extends E2eSupport {
   void aSubscribedClientIsPushedTheNotificationTheMomentItIsRaised() throws Exception {
     var client = new WebSocketStompClient(new StandardWebSocketClient());
     client.setMessageConverter(new org.springframework.messaging.converter.SimpleMessageConverter());
-
-    var handshake = new WebSocketHttpHeaders();
-    handshake.add("Cookie", api.cookieHeader());
-    StompSession session = client
-        .connectAsync("ws://localhost:" + port + "/ws", handshake,
-            new StompSessionHandlerAdapter() {})
-        .get(10, TimeUnit.SECONDS);
-
-    BlockingQueue<String> received = new LinkedBlockingQueue<>();
-    session.subscribe("/topic/" + userId + "/notifications", new StompFrameHandler() {
-      @Override public java.lang.reflect.Type getPayloadType(StompHeaders headers) {
-        return byte[].class;
-      }
-      @Override public void handleFrame(StompHeaders headers, Object payload) {
-        received.add(new String((byte[]) payload, StandardCharsets.UTF_8));
-      }
-    });
+    StompSession session = connect(client, api);
+    BlockingQueue<String> received = subscribe(session, "/user/queue/notifications");
 
     blockingItem("Approve a payment to Acme?");
 
@@ -214,6 +199,59 @@ class PlatformE2eTest extends E2eSupport {
     assertThat(frame).contains("Approve a payment to Acme?").contains("PERMISSION_REQUEST");
     session.disconnect();
     client.stop();
+  }
+
+  @Test
+  void anotherUsersSocketIsNeverPushedThisUsersNotifications() throws Exception {
+    ApiClient stranger = new ApiClient(port);
+    stranger.prime();
+    String email = "stranger-" + UUID.randomUUID() + "@jizza.local";
+    stranger.post("/api/auth/register", Map.of("email", email, "password", "Correct-Horse-92"));
+    stranger.post("/api/auth/login", Map.of("email", email, "password", "Correct-Horse-92"));
+
+    var client = new WebSocketStompClient(new StandardWebSocketClient());
+    client.setMessageConverter(new org.springframework.messaging.converter.SimpleMessageConverter());
+    StompSession theirs = connect(client, stranger);
+    BlockingQueue<String> ownQueue = subscribe(theirs, "/user/queue/notifications");
+    // The old per-user topic was guessable; nothing is published there any more.
+    BlockingQueue<String> guessed = subscribe(theirs, "/topic/" + userId + "/notifications");
+    StompSession mine = connect(client, api);
+    BlockingQueue<String> received = subscribe(mine, "/user/queue/notifications");
+
+    blockingItem("Approve a payment to Acme?");
+
+    assertThat(received.poll(10, TimeUnit.SECONDS)).isNotNull();
+    assertThat(ownQueue.poll(1, TimeUnit.SECONDS)).isNull();
+    assertThat(guessed.poll(1, TimeUnit.SECONDS)).isNull();
+    theirs.disconnect();
+    mine.disconnect();
+    client.stop();
+  }
+
+  private StompSession connect(WebSocketStompClient client, ApiClient as) throws Exception {
+    var handshake = new WebSocketHttpHeaders();
+    handshake.add("Cookie", as.cookieHeader());
+    // SockJS's raw WebSocket transport; the browser client negotiates its way to the same place.
+    return client
+        .connectAsync("ws://localhost:" + port + "/ws/websocket", handshake,
+            new StompSessionHandlerAdapter() {})
+        .get(10, TimeUnit.SECONDS);
+  }
+
+  private static BlockingQueue<String> subscribe(StompSession session, String destination)
+      throws InterruptedException {
+    BlockingQueue<String> received = new LinkedBlockingQueue<>();
+    session.subscribe(destination, new StompFrameHandler() {
+      @Override public java.lang.reflect.Type getPayloadType(StompHeaders headers) {
+        return byte[].class;
+      }
+      @Override public void handleFrame(StompHeaders headers, Object payload) {
+        received.add(new String((byte[]) payload, StandardCharsets.UTF_8));
+      }
+    });
+    // A SUBSCRIBE is asynchronous; give the broker a moment to register it before publishing.
+    Thread.sleep(200);
+    return received;
   }
 
   // ── the service reporting on itself ──────────────────────────────────────

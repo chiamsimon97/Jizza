@@ -3,6 +3,7 @@ package com.jizza.engine.agents.runtime;
 import com.jizza.engine.agents.config.AgentProperties;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
+import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
@@ -17,6 +18,7 @@ import com.jizza.engine.api.llm.LlmClient;
 import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.llm.RunBudget;
+import com.jizza.engine.api.memory.MemoryContextProvider;
 import com.jizza.engine.api.tool.ToolCall;
 import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.tool.ToolSpec;
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,6 +39,10 @@ import org.springframework.stereotype.Service;
  * <p>Three things bound the loop (R16): an iteration cap, a per-run token budget, and the user's
  * spend ceiling. Hitting any of them ends the turn with what the agent has so far rather than
  * spinning.
+ *
+ * <p>Before the first model call, the user's memory relevant to this request -- limited to what
+ * this agent may see -- is placed in the system prompt, so every agent, including a specialist
+ * handed a delegated task, starts the turn knowing what the user already told Jizza.
  */
 @Service
 public class BaseAgent implements Agent {
@@ -50,10 +57,12 @@ public class BaseAgent implements Agent {
   private final KillSwitch killSwitch;
   private final AuditLog audit;
   private final AgentProperties props;
+  private final ObjectProvider<MemoryContextProvider> memory;
 
   public BaseAgent(AgentRepository agents, LlmClient llm, CapabilityRegistry capabilities,
                    CostAccountant costs, AutonomyGate autonomyGate, KillSwitch killSwitch,
-                   AuditLog audit, AgentProperties props) {
+                   AuditLog audit, AgentProperties props,
+                   ObjectProvider<MemoryContextProvider> memory) {
     this.agents = agents;
     this.llm = llm;
     this.capabilities = capabilities;
@@ -62,10 +71,19 @@ public class BaseAgent implements Agent {
     this.killSwitch = killSwitch;
     this.audit = audit;
     this.props = props;
+    this.memory = memory;
   }
 
   @Override
   public AgentResult run(AgentRequest req) {
+    // The run every memory read in it is stamped with: the one the caller named, or the run this
+    // one was started from (a delegation), or a fresh one.
+    AccessContext context = req.traceId() != null ? AccessContext.fromTrace(req.traceId())
+        : AccessContext.current().orElseGet(() -> AccessContext.fromTrace(null));
+    return context.run(() -> runInContext(req));
+  }
+
+  private AgentResult runInContext(AgentRequest req) {
     AgentEntity agent = agents.findById(req.agentId())
         .orElseThrow(() -> new NotFoundException("Agent", req.agentId()));
 
@@ -81,9 +99,13 @@ public class BaseAgent implements Agent {
               + "jizza.agents.budget.per-window-units or wait for the window to roll over.");
     }
 
+    MemoryContextProvider.MemoryContext remembered = recall(req);
+    String systemPrompt = AgentPrompts.systemPrompt(agent.getSystemPrompt(), agent.getName(),
+        agent.isOrchestrator());
+    if (!remembered.isEmpty()) systemPrompt = systemPrompt + "\n\n" + remembered.rendered();
+
     List<Msg> messages = new ArrayList<>();
-    messages.add(Msg.system(AgentPrompts.systemPrompt(agent.getSystemPrompt(), agent.getName(),
-        agent.isOrchestrator())));
+    messages.add(Msg.system(systemPrompt));
     messages.addAll(req.history());
     messages.add(Msg.user(userTurn(req)));
 
@@ -97,7 +119,8 @@ public class BaseAgent implements Agent {
     String lastText = "";
 
     audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.start", agent.getKey(),
-        Json.obj().put("autonomous", req.autonomous()).put("tier", req.tier().name()));
+        Json.obj().put("autonomous", req.autonomous()).put("tier", req.tier().name())
+            .put("memoryFacts", remembered.memoryIds().size()));
 
     try {
       while (true) {
@@ -136,6 +159,23 @@ public class BaseAgent implements Agent {
           : lastText;
       return new AgentResult(agent.getId(), agent.getName(), text, callsMade, true,
           inputTokens, outputTokens, null);
+    }
+  }
+
+  /**
+   * The memory this turn starts with. Never fatal: an agent that cannot reach its memory still
+   * answers, it just knows less.
+   */
+  private MemoryContextProvider.MemoryContext recall(AgentRequest req) {
+    MemoryContextProvider provider = memory.getIfAvailable();
+    if (provider == null || req.instruction() == null || req.instruction().isBlank()) {
+      return MemoryContextProvider.MemoryContext.EMPTY;
+    }
+    try {
+      return provider.contextFor(req.userId(), req.agentId(), req.instruction());
+    } catch (RuntimeException e) {
+      log.warn("Memory unavailable for this turn: {}", e.getMessage());
+      return MemoryContextProvider.MemoryContext.EMPTY;
     }
   }
 
