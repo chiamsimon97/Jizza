@@ -123,13 +123,14 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
       return refuse(agent, call, "policy-deny", decision.reason());
     }
     if (decision.needsPermission()) {
-      return requestPermission(agent, call, decision);
+      return requestPermission(agent, call, decision, provider.redactArguments(call.name()));
     }
 
     audit.record(agent.getUserId(), ActorType.AGENT, agentId, "tool.call", call.name(),
         Json.obj().put("autonomous", autonomous)
             .put("decision", decision.rule().name())
-            .set("args", call.args()));
+            .set("args", provider.redactArguments(call.name())
+                ? Json.obj().put("redacted", true) : call.args()));
 
     ToolResult result;
     try {
@@ -199,10 +200,12 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
    * An {@code ask} rule does not execute and does not silently drop: it raises a permission request
    * attributed to this agent and reports back that the work is waiting on the user (R37/R41).
    */
-  private ToolResult requestPermission(AgentEntity agent, ToolCall call, Decision decision) {
+  private ToolResult requestPermission(AgentEntity agent, ToolCall call, Decision decision,
+                                       boolean redact) {
     NotificationBus bus = notifications.getIfAvailable();
     audit.record(agent.getUserId(), ActorType.AGENT, agent.getId(), "tool.permission_requested",
-        call.name(), Json.obj().put("policy", decision.matchedPolicy()).set("args", call.args()));
+        call.name(), Json.obj().put("policy", decision.matchedPolicy())
+            .set("args", redact ? Json.obj().put("redacted", true) : call.args()));
 
     if (bus == null) {
       return ToolResult.error("Tool '" + call.name() + "' needs your approval, but the notification "

@@ -83,6 +83,12 @@ public class KnowledgeToolProvider implements ToolProvider {
     return specs.containsKey(toolName);
   }
 
+  /** What an agent writes into its knowledge is the user's detail; the audit log keeps only that it happened. */
+  @Override
+  public boolean redactArguments(String toolName) {
+    return UPSERT.equals(toolName);
+  }
+
   @Override
   public ToolResult invoke(UUID agentId, ToolCall call) {
     JsonNode args = call.args() == null ? Json.obj() : call.args();

@@ -85,4 +85,37 @@ public final class Requests {
   public record KillSwitch(boolean paused) {}
 
   public record WebhookSubscribe(UUID connectionId, UUID workflowId, JsonNode verifyConfig) {}
+
+  /** A fact the user tells Jizza to remember, or the corrected version of one. */
+  public record MemoryInput(com.jizza.engine.api.enums.MemoryCategory category,
+                            @jakarta.validation.constraints.Size(max = 2000) String content,
+                            String key, JsonNode data,
+                            com.jizza.engine.api.enums.DataClassification classification,
+                            @jakarta.validation.constraints.DecimalMin("0")
+                            @jakarta.validation.constraints.DecimalMax("1") Double importance,
+                            java.util.List<UUID> subjectIds, java.util.List<String> domains,
+                            Instant expiresAt) {
+
+    public com.jizza.engine.api.memory.MemoryDraft toDraft() {
+      return new com.jizza.engine.api.memory.MemoryDraft(category, content, key, data, classification,
+          null, importance, null, null, null, subjectIds, domains, expiresAt);
+    }
+  }
+
+  public record SubjectInput(com.jizza.engine.api.enums.SubjectKind kind,
+                             @jakarta.validation.constraints.Size(max = 200) String name,
+                             String relation, java.util.List<String> aliases, JsonNode attributes,
+                             UUID connectionId, java.util.List<String> domains) {
+
+    public com.jizza.engine.api.memory.SubjectDraft toDraft() {
+      return new com.jizza.engine.api.memory.SubjectDraft(kind, name, relation, aliases, attributes,
+          connectionId, domains);
+    }
+  }
+
+  public record SubjectRelation(@NotNull UUID toSubjectId, @NotBlank String relation) {}
+
+  public record MemorySettings(boolean autoLearn, Integer retentionDays) {}
+
+  public record MemoryPreview(String agentKey, @NotBlank String request) {}
 }

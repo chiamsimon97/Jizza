@@ -19,6 +19,9 @@ public class LocalHashingEmbeddingProvider implements EmbeddingProvider {
   public int dimensions() { return Vectors.DIMENSIONS; }
 
   @Override
+  public String id() { return "local-hash-3gram-v1"; }
+
+  @Override
   public float[] embed(String text) {
     float[] vector = new float[dimensions()];
     if (text == null || text.isBlank()) return vector;

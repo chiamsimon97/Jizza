@@ -32,6 +32,9 @@ export ANTHROPIC_API_KEY=sk-ant-...     # without it the app boots but agents ca
 export JIZZA_CALLBACK_BASE_URL=https://your-tunnel.example   # see "OAuth callbacks" below
 ```
 
+Optional: `JIZZA_EMBEDDING_PROVIDER=openai-compatible` with a local Ollama gives memory and
+knowledge real semantic search without data leaving the machine (see [docs/MEMORY.md](docs/MEMORY.md)).
+
 Everything else has a working local default. The full list is in
 [`jizza-app/src/main/resources/application.yml`](jizza-app/src/main/resources/application.yml);
 each value is an environment variable, so nothing sensitive belongs in the file.
@@ -108,7 +111,8 @@ Two Maven aggregates plus the deployable that assembles them:
 | `jizza-engine/engine-persistence` | JPA entities, repositories, Flyway migrations, pgvector search |
 | `jizza-engine/engine-security` | Argon2id + TOTP, sessions, step-up, lockout, envelope encryption, hash-chained audit log |
 | `jizza-engine/engine-agents` | The Base Agent loop, the Anthropic client, the Capability Registry choke point |
-| `jizza-engine/engine-knowledge` | Per-agent knowledge with isolation enforced in code |
+| `jizza-engine/engine-knowledge` | Per-agent knowledge with isolation enforced in code; the shared `EmbeddingProvider` (local or any OpenAI-compatible endpoint, e.g. Ollama) |
+| `jizza-engine/engine-memory` | Hybrid user memory: facts grouped around the people, accounts and plans in the user's life, scoped by agent domain, retrieved by structure + pgvector + keywords and handed to every agent turn ([docs/MEMORY.md](docs/MEMORY.md)) |
 | `jizza-engine/engine-orchestrator` | Jizza, delegation, agent seeding and renaming |
 | `jizza-engine/engine-connectors` | OAuth2 handshake, connection config, the SSRF/egress guard |
 | `jizza-engine/engine-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
@@ -144,6 +148,11 @@ PUT    /api/services/{id}/actions/{actionId}/agents   POST …/actions/{actionId
 POST   /api/services/{id}/triggers/{triggerId}/test   GET  /api/services/{id}/history
 GET    /api/agents/{id}/memory       POST   /api/agents/{id}/memory/files
 GET    /api/agents/{id}/memory/files/{fileId}/content  DELETE …/files/{fileId}  …/notes/{noteId}
+
+GET    /api/memory                   POST   /api/memory               (user memory, docs/MEMORY.md)
+GET    /api/memory/{id}              PATCH  DELETE  POST confirm  restore
+GET    /api/memory/subjects          POST   PATCH/DELETE …/{id}  POST …/{id}/relations
+GET    /api/memory/settings          PUT    /api/memory/settings      POST /api/memory/preview
 
 GET    /api/connections/{id}         PATCH  /api/connections/{id}     (a service's authentication)
 POST   /api/connections/{id}/authorize  test  revoke

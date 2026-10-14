@@ -19,4 +19,8 @@ public final class SchemaInfo {
 
   public static final List<String> PLATFORM_TABLES = List.of(
       "job_queue", "shedlock", "outbox", "llm_usage", "oauth_states", "password_reset_tokens");
+
+  public static final List<String> MEMORY_TABLES = List.of(
+      "memory_subjects", "memory_subject_relations", "memories", "memory_about",
+      "memory_history", "memory_settings");
 }

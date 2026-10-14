@@ -35,6 +35,7 @@ module.
 | 3 | `engine-security` | `KeyProvider`, `EncryptionService` (AES-GCM envelope), `HashChainAuditLog` (implements `AuditLog`), `DefaultAuthService` (implements `AuthService`), `SessionService`, `TotpService`, `StepUpInterceptor`, `CurrentUser`/`SessionCookies` (session infra used directly by `platform-api`), `SecurityConfig` | `engine-api`, `engine-persistence` | complete |
 | 4 | `engine-agents` | `LlmClient` (Anthropic, tiered models), `Agent` (Base Agent), `CapabilityRegistry`, `CostAccountant`, permissive autonomy fallbacks | `engine-api`, `engine-persistence`, `engine-security` | complete |
 | 5 | `engine-knowledge` | `KnowledgeStore` (namespace-enforced), `EmbeddingProvider`, knowledge tool provider | `engine-api`, `engine-persistence`, `engine-agents` | complete |
+| 5b | `engine-memory` | `MemoryStore`, `MemoryContextProvider`, `MemoryLearner` (hybrid user memory), memory tool provider, retention/re-embedding | `engine-api`, `engine-persistence`, `engine-knowledge` | complete |
 | 6 | `engine-orchestrator` | `Orchestrator` (Jizza), `AgentDirectory`, `AgentSeeder`, delegation tools (`delegate_to_specialist`, `delegate_to_specialists`) | `engine-api`, `engine-persistence`, `engine-security`, `engine-agents`, `engine-knowledge` | complete |
 | 7 | `engine-connectors` | `OAuthService` (state+PKCE, rotation, revoke, test), `ConnectionService` (implements `ConnectionStore`), `EgressGuard`, `GuardedHttpClient`, `ConnectorProperties` (infra config, used directly by `platform-api`) | `engine-api`, `engine-persistence`, `engine-security` | complete |
 | 8 | `engine-connectors-tools` | `ApiDocIngestService` (implements `ToolGenerator` + `ToolCatalog`: OpenAPI/LLM generation, size/type limits, `find`/`list`/`setEnabled`), `ToolExecutor` (auth injection, SSRF guard, idempotency), `GeneratedToolProvider`, `IdempotencyService` | `engine-api`, `engine-persistence`, `engine-connectors`, `engine-agents` | complete |
@@ -138,9 +139,21 @@ module.
     `ServiceRunner`, and agents reach actions only through `ServiceActionToolProvider`, which hides
     every action of a draft service.
 
+18. **Hybrid memory (`V5__hybrid_memory.sql`).** Per-agent knowledge has no notion of who a fact is
+    about and is only seen when an agent searches for it, so a user-level memory was added beside it
+    rather than in place of it: subjects (people, accounts, plans, optionally linked to a
+    `connections` row), typed relations between them, and facts with category, agent-domain
+    visibility, provenance, confidence, `fact_key` conflict slots, history and pgvector embeddings.
+    `BaseAgent` places the relevant, in-scope facts in every agent's system prompt through the
+    `MemoryContextProvider` port, the orchestrator hands finished turns to `MemoryLearner`, and the
+    user manages it at `/api/memory`. Domain scoping is bound into the SQL like R22. Tool-call
+    audit entries for tools that write personal detail (`memory_remember`, `memory_describe`,
+    `knowledge_upsert`) now redact their arguments (`ToolProvider.redactArguments`), so content
+    never reaches the append-only log (R13). Design and configuration: `docs/MEMORY.md`.
+
 ## Acceptance suite
 
-`jizza-app/src/test/java/com/jizza/app/e2e` — 93 tests, the whole application booted against a real
+`jizza-app/src/test/java/com/jizza/app/e2e` — 98 tests, the whole application booted against a real
 PostgreSQL and driven through its own HTTP API. Only two things are substituted: the model is
 scripted, and the background pollers are switched off so tests drive them deterministically.
 
@@ -151,6 +164,7 @@ scripted, and the background pollers are switched off so tests drive them determ
 | `ConnectorsE2eTest` | 14 | OAuth2 with state + PKCE, auto-refresh and rotation, revoke, test connection, OpenAPI → tools, auth-injected idempotent call, SSRF block |
 | `SchedulerAndWorkflowE2eTest` | 14 | one-time and recurring tasks firing with no browser, no double-fire, missed-run reconciliation, DST safety, checkpointed runs resuming from the last completed node, exactly-once side effects, retry → dead-letter or intervention |
 | `ProceduresAndAutonomyE2eTest` | 19 | repetitive job → proposal → review → approve binds → exact execution, deviation → intervention, edit re-review, rollback, kill switch halting and resuming, `deny` blocked, `ask` routed to permission, per-agent disable |
+| `MemoryE2eTest` | 5 | a question about the user's wife reaching Kai with her plan, risk tolerance and Connector already in context (and nothing from health), Jizza seeing only the shared layer, preview/search/correct/forget, user isolation, learning from chat and withdrawing consent, export |
 | `PlatformE2eTest` | 18 | blocking items chased then expired, realtime push to a subscribed STOMP client, health and metrics, verified webhook firing a workflow, export without credentials, hard delete, audit chain verification and the activity view |
 
 Run: `mvn test` (DB-backed tests skip) or, with a PostgreSQL,

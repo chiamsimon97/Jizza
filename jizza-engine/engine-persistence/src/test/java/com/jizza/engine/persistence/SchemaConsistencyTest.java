@@ -47,6 +47,8 @@ class SchemaConsistencyTest {
       }
       for (Field f : entity.getDeclaredFields()) {
         if (Modifier.isStatic(f.getModifiers()) || f.isAnnotationPresent(Transient.class)) continue;
+        // An element collection's column lives in its own collection table, not the entity's.
+        if (f.isAnnotationPresent(jakarta.persistence.ElementCollection.class)) continue;
         Column col = f.getAnnotation(Column.class);
         String name = col != null && !col.name().isBlank() ? col.name() : camelToSnake(f.getName());
         if (!columns.contains(name)) {

@@ -9,6 +9,7 @@ import com.jizza.engine.api.enums.MessageRole;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.llm.Msg;
+import com.jizza.engine.api.memory.MemoryLearner;
 import com.jizza.engine.api.orchestrator.AssistantReply;
 import com.jizza.engine.api.orchestrator.Orchestrator;
 import com.jizza.engine.api.orchestrator.UiAction;
@@ -56,12 +57,14 @@ public class JizzaOrchestrator implements Orchestrator {
   private final UiActionRecorder uiActions;
   private final AuditLog audit;
   private final ObjectProvider<RealtimeGateway> realtime;
+  private final ObjectProvider<MemoryLearner> learner;
 
   public JizzaOrchestrator(AgentRepository agents, ConversationRepository conversations,
                            MessageRepository messages, DelegationTraceRepository traces,
                            Agent baseAgent, DelegationRecorder recorder,
                            UiActionRecorder uiActions, AuditLog audit,
-                           ObjectProvider<RealtimeGateway> realtime) {
+                           ObjectProvider<RealtimeGateway> realtime,
+                           ObjectProvider<MemoryLearner> learner) {
     this.agents = agents;
     this.conversations = conversations;
     this.messages = messages;
@@ -71,6 +74,7 @@ public class JizzaOrchestrator implements Orchestrator {
     this.uiActions = uiActions;
     this.audit = audit;
     this.realtime = realtime;
+    this.learner = learner;
   }
 
   @Override
@@ -165,6 +169,11 @@ public class JizzaOrchestrator implements Orchestrator {
         actions);
 
     realtime.ifAvailable(gateway -> gateway.publishChatChunk(userId, conversation.getId(), text, true));
+
+    // Durable facts in what the user just said are promoted to long-term memory, off this thread.
+    // Incognito turns never reach here: nothing said there is kept, in history or in memory.
+    learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, conversation.getId(),
+        userMessage.getId(), message, text)));
     return reply;
   }
 

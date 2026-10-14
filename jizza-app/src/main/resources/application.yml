@@ -137,6 +137,49 @@ jizza:
       per-window-units: ${JIZZA_LLM_BUDGET:5.0}
       window: 24h
 
+  # Embeddings for knowledge and memory. "local" is offline hashing (lexical similarity, nothing
+  # leaves the machine). "openai-compatible" calls any /v1/embeddings endpoint; a local Ollama
+  # (ollama pull nomic-embed-text) gives real semantic search and still stays on this machine.
+  # Switching provider is safe: memory facts are re-embedded in the background.
+  embedding:
+    provider: ${JIZZA_EMBEDDING_PROVIDER:local}
+    openai-compatible:
+      base-url: ${JIZZA_EMBEDDING_BASE_URL:http://localhost:11434/v1}
+      api-key: ${JIZZA_EMBEDDING_API_KEY:}
+      model: ${JIZZA_EMBEDDING_MODEL:nomic-embed-text}
+      timeout: 30s
+
+  # Hybrid memory: what Jizza knows about the user and the people, accounts and plans in their
+  # life, handed to every agent turn. See docs/MEMORY.md.
+  memory:
+    enabled: true
+    # Which specialist domains see a category; unlisted categories are shared with every agent.
+    category-domains:
+      finance: [finance]
+      health: [health]
+      professional: [professional]
+    orchestrator-sees-all-domains: false
+    retrieval:
+      max-items: 12
+      max-chars: 4000
+      candidate-limit: 30
+      min-similarity: 0.2
+      min-score: 0.35
+      pinned-importance: 0.9
+      pinned-limit: 5
+      recency-half-life: 90d
+      relation-depth: 1
+    write:
+      duplicate-similarity: 0.95
+      max-content-chars: 2000
+    extraction:
+      enabled: ${JIZZA_MEMORY_LEARNING:true}
+      tier: routing
+      min-confidence: 0.7
+      max-facts-per-turn: 8
+    retention:
+      inactive: 180d
+
   connectors:
     # Providers redirect here, so it must be reachable from the internet. In local development that
     # means a tunnel (ngrok / cloudflared) or a provider that permits http://localhost.

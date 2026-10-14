@@ -19,6 +19,7 @@ import com.jizza.engine.api.error.BudgetExceededException;
 import com.jizza.engine.api.llm.CostAccountant;
 import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.llm.Msg;
+import com.jizza.engine.api.memory.MemoryContextProvider;
 import com.jizza.engine.api.tool.JsonSchemas;
 import com.jizza.engine.api.tool.ToolCall;
 import com.jizza.engine.api.tool.ToolResult;
@@ -43,6 +44,7 @@ class BaseAgentTest {
   private FixedGate gate;
   private TogglableKillSwitch killSwitch;
   private AgentProperties props;
+  private MemoryContextProvider memory;
 
   @BeforeEach
   void setUp() {
@@ -64,8 +66,10 @@ class BaseAgentTest {
   }
 
   private BaseAgent agentWith(ScriptedLlm llm) {
+    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+    if (memory != null) beans.addBean("memory", memory);
     return new BaseAgent(agents, llm, capabilities, costs, gate, killSwitch,
-        mock(AuditLog.class), props);
+        mock(AuditLog.class), props, beans.getBeanProvider(MemoryContextProvider.class));
   }
 
   private static LlmResponse toolUse(String name) {
@@ -200,5 +204,33 @@ class BaseAgentTest {
 
     List<Msg> first = llm.requests.get(0);
     assertThat(first.get(first.size() - 1).text()).contains("Summarise").contains("\"steps\":8000");
+  }
+
+  @Test
+  void relevantMemoryIsPlacedInTheSystemPromptForThisAgentAndRequest() {
+    memory = mock(MemoryContextProvider.class);
+    when(memory.contextFor(agent.getUserId(), agent.getId(), "plan my wife's check-up"))
+        .thenReturn(new MemoryContextProvider.MemoryContext(
+            "## What you already know about the user\nPriya (wife; person):\n- Allergic to penicillin.",
+            List.of(java.util.UUID.randomUUID()), List.of()));
+    var llm = new ScriptedLlm(List.of(text("ok")));
+
+    agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "plan my wife's check-up"));
+
+    Msg system = llm.requests.get(0).get(0);
+    assertThat(system.role()).isEqualTo(Msg.Role.SYSTEM);
+    assertThat(system.text()).contains("Operating rules").contains("Allergic to penicillin");
+  }
+
+  @Test
+  void aMemoryFailureNeverCostsTheTurn() {
+    memory = mock(MemoryContextProvider.class);
+    when(memory.contextFor(any(), any(), any())).thenThrow(new IllegalStateException("db down"));
+    var llm = new ScriptedLlm(List.of(text("still here")));
+
+    var result = agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "hello"));
+
+    assertThat(result.text()).isEqualTo("still here");
+    assertThat(llm.requests.get(0).get(0).text()).doesNotContain("What you already know");
   }
 }

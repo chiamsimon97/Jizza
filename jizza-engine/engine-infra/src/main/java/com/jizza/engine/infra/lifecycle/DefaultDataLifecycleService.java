@@ -14,6 +14,9 @@ import com.jizza.engine.persistence.repository.ConnectionRepository;
 import com.jizza.engine.persistence.repository.ConversationRepository;
 import com.jizza.engine.persistence.repository.FileRepository;
 import com.jizza.engine.persistence.repository.KnowledgeEntryRepository;
+import com.jizza.engine.persistence.repository.MemoryEntryRepository;
+import com.jizza.engine.persistence.repository.MemorySubjectRelationRepository;
+import com.jizza.engine.persistence.repository.MemorySubjectRepository;
 import com.jizza.engine.persistence.repository.MessageRepository;
 import com.jizza.engine.persistence.repository.NotificationRepository;
 import com.jizza.engine.persistence.repository.ScheduledTaskRepository;
@@ -56,6 +59,9 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
   private final StorageProvider storage;
   private final AuditLog audit;
   private final PlatformProperties props;
+  private final MemoryEntryRepository memories;
+  private final MemorySubjectRepository memorySubjects;
+  private final MemorySubjectRelationRepository memoryRelations;
 
   public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
@@ -64,7 +70,9 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
                               ScheduledTaskRepository tasks, NotificationRepository notifications,
                               AutonomyPolicyRepository policies, AuditLogRepository auditEntries,
                               FileRepository files, StorageProvider storage, AuditLog audit,
-                              PlatformProperties props) {
+                              PlatformProperties props, MemoryEntryRepository memories,
+                              MemorySubjectRepository memorySubjects,
+                              MemorySubjectRelationRepository memoryRelations) {
     this.users = users;
     this.agents = agents;
     this.knowledge = knowledge;
@@ -80,6 +88,9 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
     this.storage = storage;
     this.audit = audit;
     this.props = props;
+    this.memories = memories;
+    this.memorySubjects = memorySubjects;
+    this.memoryRelations = memoryRelations;
   }
 
   /**
@@ -119,6 +130,38 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
             e.put("classification", String.valueOf(entry.getClassification()));
             if (entry.getData() != null) e.set("data", entry.getData());
           });
+    });
+
+    ObjectNode memory = root.putObject("memory");
+    ArrayNode subjectArray = memory.putArray("subjects");
+    memorySubjects.findByUserIdOrderByNameAsc(userId).forEach(subject -> {
+      ObjectNode node = subjectArray.addObject();
+      node.put("id", subject.getId().toString());
+      node.put("kind", String.valueOf(subject.getKind()).toLowerCase(java.util.Locale.ROOT));
+      node.put("name", subject.getName());
+      node.put("relation", subject.getRelation());
+      node.set("aliases", Json.toNode(subject.getAliases()));
+      if (subject.getAttributes() != null) node.set("attributes", subject.getAttributes());
+      node.set("domains", Json.toNode(subject.getDomains()));
+    });
+    ArrayNode relationArray = memory.putArray("relations");
+    memoryRelations.findByUserId(userId).forEach(relation -> relationArray.addObject()
+        .put("from", relation.getFromSubjectId().toString())
+        .put("to", relation.getToSubjectId().toString())
+        .put("relation", relation.getRelation()));
+    ArrayNode factArray = memory.putArray("facts");
+    memories.findAll((r, q, cb) -> cb.equal(r.get("userId"), userId)).forEach(fact -> {
+      ObjectNode node = factArray.addObject();
+      node.put("category", String.valueOf(fact.getCategory()).toLowerCase(java.util.Locale.ROOT));
+      node.put("content", fact.getContent());
+      node.put("key", fact.getFactKey());
+      if (fact.getData() != null) node.set("data", fact.getData());
+      node.put("status", String.valueOf(fact.getStatus()).toLowerCase(java.util.Locale.ROOT));
+      node.put("confirmed", fact.isConfirmed());
+      node.put("source", String.valueOf(fact.getSource()).toLowerCase(java.util.Locale.ROOT));
+      node.set("about", Json.toNode(fact.getSubjectIds().stream().map(Object::toString).toList()));
+      node.set("domains", Json.toNode(fact.getDomains()));
+      node.put("updatedAt", String.valueOf(fact.getUpdatedAt()));
     });
 
     ArrayNode conversationArray = root.putArray("conversations");
