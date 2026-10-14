@@ -1,4 +1,5 @@
 import type { ProblemDetail } from '@/types'
+import { useAuthStore } from '@/store/authStore'
 
 export class ApiError extends Error {
   constructor(
@@ -55,6 +56,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
     problem = await res.json()
   } catch {
     problem = { type: 'error', title: res.statusText, status: res.status }
+  }
+  // The session expired or was revoked. Forget the stale login so the app goes back to sign-in,
+  // instead of every page showing its own "couldn't load" error. Auth calls report their own 401s.
+  if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated) {
+    useAuthStore.getState().clear()
   }
   if (res.status === 403 && !retried && stepUpHandler && String(problem.type ?? '').endsWith('step-up-required')) {
     if (await stepUpHandler()) return request<T>(path, init, as, true)
