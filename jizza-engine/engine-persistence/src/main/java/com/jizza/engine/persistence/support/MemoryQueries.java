@@ -3,7 +3,7 @@ package com.jizza.engine.persistence.support;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
-import java.time.Instant;
+import com.jizza.engine.api.memory.MemoryScope;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -26,17 +26,19 @@ public class MemoryQueries {
   /** Agent domains are short identifiers; anything else is refused before it reaches SQL. */
   private static final Pattern DOMAIN = Pattern.compile("[a-z0-9_-]{1,40}");
 
-  private static final String VISIBLE = """
+  private static final String IN_DOMAIN = """
       (:allDomains or cardinality(%1$s.domains) = 0 or %1$s.domains && cast(:domains as text[]))
       """;
+
+  /** Facts also carry restriction: a restricted fact reaches only the user, never an agent. */
+  private static final String VISIBLE = IN_DOMAIN.strip() + " and (:withRestricted or not %1$s.restricted)";
 
   @PersistenceContext
   private EntityManager em;
 
   /** Nearest active facts by cosine distance, embedded by {@code model}. */
   @Transactional(readOnly = true)
-  public List<Scored> nearest(UUID userId, float[] embedding, String model, Collection<String> domains,
-                              boolean allDomains, int k) {
+  public List<Scored> nearest(UUID userId, float[] embedding, String model, MemoryScope scope, int k) {
     Query q = em.createNativeQuery("""
             select m.id, 1 - (m.embedding <=> cast(:vec as vector)) as similarity
               from memories m
@@ -50,7 +52,7 @@ public class MemoryQueries {
         .setParameter("userId", userId)
         .setParameter("model", model)
         .setParameter("k", k);
-    return scored(scope(q, domains, allDomains));
+    return scored(scope(q, scope).setParameter("withRestricted", scope.withRestricted()));
   }
 
   /**
@@ -58,8 +60,7 @@ public class MemoryQueries {
    * a second signal alongside it when it does.
    */
   @Transactional(readOnly = true)
-  public List<Scored> lexical(UUID userId, Collection<String> terms, Collection<String> domains,
-                              boolean allDomains, int k) {
+  public List<Scored> lexical(UUID userId, Collection<String> terms, MemoryScope scope, int k) {
     if (terms.isEmpty()) return List.of();
     StringJoiner patterns = new StringJoiner(",", "{", "}");
     for (String term : terms) patterns.add(arrayElement("%" + escapeLike(term) + "%"));
@@ -75,13 +76,13 @@ public class MemoryQueries {
         .setParameter("userId", userId)
         .setParameter("patterns", patterns.toString())
         .setParameter("k", k);
-    return scored(scope(q, domains, allDomains));
+    return scored(scope(q, scope).setParameter("withRestricted", scope.withRestricted()));
   }
 
   /** Active facts about any of the subjects. */
   @Transactional(readOnly = true)
-  public List<Scored> aboutSubjects(UUID userId, Collection<UUID> subjectIds,
-                                    Collection<String> domains, boolean allDomains, int k) {
+  public List<Scored> aboutSubjects(UUID userId, Collection<UUID> subjectIds, MemoryScope scope,
+                                    int k) {
     if (subjectIds.isEmpty()) return List.of();
     Query q = em.createNativeQuery("""
             select distinct m.id, 1.0 as similarity, m.updated_at
@@ -96,13 +97,12 @@ public class MemoryQueries {
         .setParameter("userId", userId)
         .setParameter("subjects", subjectIds)
         .setParameter("k", k);
-    return scored(scope(q, domains, allDomains));
+    return scored(scope(q, scope).setParameter("withRestricted", scope.withRestricted()));
   }
 
   /** The user's most important active facts: the core profile every turn should know. */
   @Transactional(readOnly = true)
-  public List<Scored> pinned(UUID userId, double minImportance, Collection<String> domains,
-                             boolean allDomains, int k) {
+  public List<Scored> pinned(UUID userId, double minImportance, MemoryScope scope, int k) {
     Query q = em.createNativeQuery("""
             select m.id, 1.0 as similarity
               from memories m
@@ -114,38 +114,25 @@ public class MemoryQueries {
         .setParameter("userId", userId)
         .setParameter("minImportance", minImportance)
         .setParameter("k", k);
-    return scored(scope(q, domains, allDomains));
+    return scored(scope(q, scope).setParameter("withRestricted", scope.withRestricted()));
   }
 
   /** Subject ids the reader may see. */
   @Transactional(readOnly = true)
   @SuppressWarnings("unchecked")
-  public List<UUID> visibleSubjectIds(UUID userId, Collection<String> domains, boolean allDomains) {
+  public List<UUID> visibleSubjectIds(UUID userId, MemoryScope scope) {
     Query q = em.createNativeQuery("""
             select s.id from memory_subjects s
              where s.user_id = :userId and %s
-            """.formatted(VISIBLE.formatted("s")))
+            """.formatted(IN_DOMAIN.formatted("s")))
         .setParameter("userId", userId);
-    return ((List<Object>) scope(q, domains, allDomains).getResultList()).stream()
+    return ((List<Object>) scope(q, scope).getResultList()).stream()
         .map(o -> (UUID) o).toList();
   }
 
-  /** Records that these facts were handed to an agent; feeds recency and retention. */
-  @Transactional
-  public void touch(Collection<UUID> memoryIds, Instant at) {
-    if (memoryIds.isEmpty()) return;
-    em.createNativeQuery("""
-            update memories set last_accessed_at = :at, access_count = access_count + 1
-             where id in (:ids)
-            """)
-        .setParameter("at", at)
-        .setParameter("ids", memoryIds)
-        .executeUpdate();
-  }
-
-  private Query scope(Query q, Collection<String> domains, boolean allDomains) {
-    return q.setParameter("allDomains", allDomains)
-        .setParameter("domains", domainArray(domains));
+  private Query scope(Query q, MemoryScope scope) {
+    return q.setParameter("allDomains", scope.allDomains())
+        .setParameter("domains", domainArray(scope.domains()));
   }
 
   static String domainArray(Collection<String> domains) {

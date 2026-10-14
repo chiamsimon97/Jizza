@@ -155,6 +155,6 @@ class ConversationMemoryLearnerTest {
   private Memory memory(MemoryDraft d) {
     return new Memory(UUID.randomUUID(), userId, d.category(), List.of(), null, d.content(),
         d.factKey(), null, 0.9, 0.5, d.source(), d.sourceRef(), false, null, null, d.subjectIds(),
-        null, null, null, null, null);
+        null, null, null, null, false, 0, null);
   }
 }

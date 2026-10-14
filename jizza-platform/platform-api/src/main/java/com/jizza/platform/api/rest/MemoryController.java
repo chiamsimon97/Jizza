@@ -73,6 +73,8 @@ public class MemoryController {
     return memory.restore(CurrentUser.userId(), id);
   }
 
+  /** Permanent, so it asks for a fresh step-up like the other irreversible actions. */
+  @com.jizza.engine.api.util.StepUpRequired
   @DeleteMapping("/{id}")
   public Responses.Message forget(@PathVariable UUID id) {
     memory.forget(CurrentUser.userId(), id);

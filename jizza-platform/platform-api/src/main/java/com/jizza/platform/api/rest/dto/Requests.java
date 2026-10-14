@@ -118,4 +118,17 @@ public final class Requests {
   public record MemorySettings(boolean autoLearn, Integer retentionDays) {}
 
   public record MemoryPreview(String agentKey, @NotBlank String request) {}
+
+  /** Memory Cosmos: let one more agent see a fact. */
+  public record ShareMemory(@NotNull UUID agentId) {}
+
+  /** Memory Cosmos: who can see a fact from now on; empty means every agent. */
+  public record MoveMemory(@NotNull java.util.List<String> domains) {}
+
+  public record EditNote(@jakarta.validation.constraints.Size(max = 200) String title,
+                         @jakarta.validation.constraints.Size(max = 20000) String content) {}
+
+  public record MoveNote(@NotNull UUID toAgentId) {}
+
+  public record PromoteNote(com.jizza.engine.api.enums.MemoryCategory category, boolean removeNote) {}
 }

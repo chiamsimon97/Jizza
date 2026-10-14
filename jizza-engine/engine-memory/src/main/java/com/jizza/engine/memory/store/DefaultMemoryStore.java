@@ -3,6 +3,7 @@ package com.jizza.engine.memory.store;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.cosmos.MemoryNode;
 import com.jizza.engine.api.enums.MemoryCategory;
 import com.jizza.engine.api.enums.MemorySource;
 import com.jizza.engine.api.enums.MemoryStatus;
@@ -33,11 +34,13 @@ import com.jizza.engine.persistence.entity.MemorySettingsEntity;
 import com.jizza.engine.persistence.entity.MemorySubjectEntity;
 import com.jizza.engine.persistence.entity.MemorySubjectRelationEntity;
 import com.jizza.engine.persistence.repository.ConnectionRepository;
+import com.jizza.engine.persistence.repository.MemoryAccessRepository;
 import com.jizza.engine.persistence.repository.MemoryEntryRepository;
 import com.jizza.engine.persistence.repository.MemoryHistoryRepository;
 import com.jizza.engine.persistence.repository.MemorySettingsRepository;
 import com.jizza.engine.persistence.repository.MemorySubjectRelationRepository;
 import com.jizza.engine.persistence.repository.MemorySubjectRepository;
+import com.jizza.engine.persistence.support.MemoryEvents;
 import com.jizza.engine.persistence.support.MemoryQueries;
 import com.jizza.engine.persistence.support.Vectors;
 import jakarta.persistence.criteria.Predicate;
@@ -95,13 +98,16 @@ public class DefaultMemoryStore implements MemoryStore {
   private final MemoryScopes scopes;
   private final MemoryProperties props;
   private final AuditLog audit;
+  private final MemoryAccessRepository access;
+  private final MemoryEvents events;
 
   public DefaultMemoryStore(MemoryEntryRepository memories, MemorySubjectRepository subjects,
                             MemorySubjectRelationRepository relations,
                             MemoryHistoryRepository history, MemorySettingsRepository settings,
                             ConnectionRepository connections, MemoryQueries queries,
                             HybridSearch search, EmbeddingProvider embeddings, MemoryScopes scopes,
-                            MemoryProperties props, AuditLog audit) {
+                            MemoryProperties props, AuditLog audit,
+                            MemoryAccessRepository access, MemoryEvents events) {
     this.memories = memories;
     this.subjects = subjects;
     this.relations = relations;
@@ -114,6 +120,8 @@ public class DefaultMemoryStore implements MemoryStore {
     this.scopes = scopes;
     this.props = props;
     this.audit = audit;
+    this.access = access;
+    this.events = events;
   }
 
   // ── Facts ─────────────────────────────────────────────────────────────────────────────────────
@@ -275,8 +283,78 @@ public class DefaultMemoryStore implements MemoryStore {
   public void forget(UUID userId, UUID memoryId, Actor actor) {
     MemoryEntryEntity entity = owned(userId, memoryId);
     auditChange(entity, actor, "memory.deleted", null);
-    // History and subject links go with it (on delete cascade): forgetting means forgetting.
+    // History and subject links go with it (on delete cascade), and so do its read stamps:
+    // forgetting means forgetting.
+    access.deleteItem(MemoryNode.FACT, entity.getId());
     memories.delete(entity);
+  }
+
+  @Override
+  @Transactional
+  public Memory share(UUID userId, UUID memoryId, String domain, Actor actor) {
+    MemoryEntryEntity entity = owned(userId, memoryId);
+    String d = validDomain(domain);
+    List<String> current = new ArrayList<>(List.of(entity.getDomains()));
+    if (current.isEmpty()) {
+      throw new ConflictException("Every agent can already see this memory");
+    }
+    if (current.contains(d)) return MemoryMapping.toMemory(entity);
+    current.add(d);
+    return changeDomains(entity, current, "shared", d, actor, "memory.shared");
+  }
+
+  @Override
+  @Transactional
+  public Memory unshare(UUID userId, UUID memoryId, String domain, Actor actor) {
+    MemoryEntryEntity entity = owned(userId, memoryId);
+    String d = validDomain(domain);
+    List<String> current = new ArrayList<>(List.of(entity.getDomains()));
+    if (!current.contains(d)) return MemoryMapping.toMemory(entity);
+    if (current.size() == 1) {
+      // No domains means every agent: taking the last one away would widen, not narrow.
+      throw new ConflictException("This is the only agent that can see this memory; move or forget it instead");
+    }
+    current.remove(d);
+    return changeDomains(entity, current, "unshared", d, actor, "memory.unshared");
+  }
+
+  @Override
+  @Transactional
+  public Memory setDomains(UUID userId, UUID memoryId, List<String> domains, Actor actor) {
+    MemoryEntryEntity entity = owned(userId, memoryId);
+    List<String> target = domains == null ? List.of() : domains.stream().map(this::validDomain).toList();
+    String note = String.join(",", entity.getDomains()) + " -> " + String.join(",",
+        MemoryMapping.normaliseDomains(target));
+    return changeDomains(entity, target, "moved", note, actor, "memory.moved");
+  }
+
+  @Override
+  @Transactional
+  public Memory restrict(UUID userId, UUID memoryId, boolean restricted, Actor actor) {
+    MemoryEntryEntity entity = owned(userId, memoryId);
+    if (entity.isRestricted() == restricted) return MemoryMapping.toMemory(entity);
+    entity.setRestricted(restricted);
+    entity.setUpdatedAt(java.time.Instant.now());
+    MemoryEntryEntity saved = memories.save(entity);
+    record(saved, restricted ? "restricted" : "unrestricted", null, actor, null);
+    auditChange(saved, actor, restricted ? "memory.restricted" : "memory.unrestricted", null);
+    return MemoryMapping.toMemory(saved);
+  }
+
+  private Memory changeDomains(MemoryEntryEntity entity, List<String> domains, String change,
+                               String note, Actor actor, String action) {
+    entity.setDomains(MemoryMapping.normaliseDomains(domains));
+    entity.setUpdatedAt(java.time.Instant.now());
+    MemoryEntryEntity saved = memories.save(entity);
+    record(saved, change, null, actor, note);
+    auditChange(saved, actor, action, null);
+    return MemoryMapping.toMemory(saved);
+  }
+
+  private String validDomain(String domain) {
+    String d = domain == null ? "" : domain.strip().toLowerCase(Locale.ROOT);
+    if (!d.matches("[a-z0-9_-]{1,40}")) throw new ValidationException("Not a valid agent domain: " + domain);
+    return d;
   }
 
   @Override
@@ -339,6 +417,7 @@ public class DefaultMemoryStore implements MemoryStore {
     MemorySubjectEntity saved = subjects.save(entity);
     audit.record(userId, actor.type(), actor.id(), created ? "memory.subject.created" : "memory.subject.updated",
         saved.getId().toString(), Json.obj().put("kind", saved.getKind().name().toLowerCase(Locale.ROOT)));
+    events.changed(userId, MemoryEvents.BODY, null, null);
     return toSubject(saved);
   }
 
@@ -351,6 +430,7 @@ public class DefaultMemoryStore implements MemoryStore {
     apply(userId, entity, draft);
     MemorySubjectEntity saved = subjects.save(entity);
     audit.record(userId, actor.type(), actor.id(), "memory.subject.updated", saved.getId().toString(), null);
+    events.changed(userId, MemoryEvents.BODY, null, null);
     return toSubject(saved);
   }
 
@@ -358,7 +438,7 @@ public class DefaultMemoryStore implements MemoryStore {
   @Transactional(readOnly = true)
   public List<MemorySubject> subjects(UUID userId, MemoryScope scope) {
     Set<UUID> visible = scope.allDomains() ? null
-        : Set.copyOf(queries.visibleSubjectIds(userId, scope.domains(), false));
+        : Set.copyOf(queries.visibleSubjectIds(userId, scope));
     Map<UUID, List<MemorySubject.Relation>> edges = relations.findByUserId(userId).stream()
         .collect(Collectors.groupingBy(MemorySubjectRelationEntity::getFromSubjectId,
             Collectors.mapping(r -> new MemorySubject.Relation(r.getId(), r.getToSubjectId(), r.getRelation()),
@@ -381,6 +461,7 @@ public class DefaultMemoryStore implements MemoryStore {
   public void deleteSubject(UUID userId, UUID subjectId, Actor actor) {
     MemorySubjectEntity entity = ownedSubject(userId, subjectId);
     audit.record(userId, actor.type(), actor.id(), "memory.subject.deleted", subjectId.toString(), null);
+    events.changed(userId, MemoryEvents.BODY, null, null);
     subjects.delete(entity);
   }
 
@@ -404,6 +485,7 @@ public class DefaultMemoryStore implements MemoryStore {
           MemorySubjectRelationEntity saved = relations.save(created);
           audit.record(userId, actor.type(), actor.id(), "memory.subject.related",
               fromSubjectId + "->" + toSubjectId, Json.obj().put("relation", name));
+          events.changed(userId, MemoryEvents.BODY, null, null);
           return saved;
         });
     return new MemorySubject.Relation(edge.getId(), edge.getToSubjectId(), edge.getRelation());
@@ -416,6 +498,7 @@ public class DefaultMemoryStore implements MemoryStore {
         .orElseThrow(() -> new NotFoundException("Relation", relationId));
     relations.delete(edge);
     audit.record(userId, actor.type(), actor.id(), "memory.subject.unrelated", relationId.toString(), null);
+    events.changed(userId, MemoryEvents.BODY, null, null);
   }
 
   // ── Settings ──────────────────────────────────────────────────────────────────────────────────
@@ -466,7 +549,7 @@ public class DefaultMemoryStore implements MemoryStore {
     if (vector == null) return Optional.empty();
     List<MemoryQueries.Scored> near;
     try {
-      near = queries.nearest(userId, vector, embeddings.id(), List.of(), true, 5);
+      near = queries.nearest(userId, vector, embeddings.id(), MemoryScope.everything(), 5);
     } catch (RuntimeException e) {
       log.debug("Vector search unavailable for duplicate detection", e);
       return Optional.empty();
@@ -626,6 +709,14 @@ public class DefaultMemoryStore implements MemoryStore {
         .put("classification", String.valueOf(memory.getClassification()).toLowerCase(Locale.ROOT));
     if (outcome != null) detail.put("outcome", outcome);
     audit.record(memory.getUserId(), actor.type(), actor.id(), action, memory.getId().toString(), detail);
+    String kind = switch (action) {
+      case "memory.created" -> MemoryEvents.CREATED;
+      case "memory.deleted" -> MemoryEvents.FORGOTTEN;
+      case "memory.shared", "memory.unshared", "memory.moved", "memory.restricted",
+           "memory.unrestricted" -> MemoryEvents.VISIBILITY;
+      default -> MemoryEvents.UPDATED;
+    };
+    events.changed(memory.getUserId(), kind, MemoryNode.FACT, memory.getId());
   }
 
   private static MemorySource sourceFor(Actor actor) {

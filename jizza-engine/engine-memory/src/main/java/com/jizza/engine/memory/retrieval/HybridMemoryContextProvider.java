@@ -9,8 +9,7 @@ import com.jizza.engine.persistence.entity.ConnectionEntity;
 import com.jizza.engine.persistence.entity.MemorySubjectEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import com.jizza.engine.persistence.repository.ConnectionRepository;
-import com.jizza.engine.persistence.support.MemoryQueries;
-import java.time.Instant;
+import com.jizza.engine.api.cosmos.MemoryAccessRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -40,17 +39,17 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
   private final HybridSearch search;
   private final AgentRepository agents;
   private final ConnectionRepository connections;
-  private final MemoryQueries queries;
+  private final MemoryAccessRecorder recorder;
   private final MemoryScopes scopes;
   private final MemoryProperties props;
 
   public HybridMemoryContextProvider(HybridSearch search, AgentRepository agents,
-                                     ConnectionRepository connections, MemoryQueries queries,
+                                     ConnectionRepository connections, MemoryAccessRecorder recorder,
                                      MemoryScopes scopes, MemoryProperties props) {
     this.search = search;
     this.agents = agents;
     this.connections = connections;
-    this.queries = queries;
+    this.recorder = recorder;
     this.scopes = scopes;
     this.props = props;
   }
@@ -69,10 +68,19 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
     if (!props.isEnabled()) return MemoryContext.EMPTY;
     AgentEntity agent = agents.findById(agentId).orElse(null);
     if (agent == null || !agent.getUserId().equals(userId)) return MemoryContext.EMPTY;
-    return contextFor(userId, scopes.forAgent(agent), request, touch);
+    MemoryContext context = contextFor(userId, scopes.forAgent(agent), request);
+    if (touch && !context.isEmpty()) {
+      // A stamp in each fact's passport, for this agent and this run.
+      try {
+        recorder.facts(userId, agentId, context.memoryIds());
+      } catch (RuntimeException e) {
+        log.debug("Could not record memory access", e);
+      }
+    }
+    return context;
   }
 
-  MemoryContext contextFor(UUID userId, MemoryScope scope, String request, boolean touch) {
+  MemoryContext contextFor(UUID userId, MemoryScope scope, String request) {
     MemoryProperties.Retrieval cfg = props.getRetrieval();
     HybridSearch.Result result = search.rank(userId, request, scope, cfg.getMaxItems(), true);
     if (result.ranked().isEmpty() && result.resolution().direct().isEmpty()) return MemoryContext.EMPTY;
@@ -83,13 +91,6 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
         cfg.getMaxChars());
     if (rendered.text().isEmpty()) return MemoryContext.EMPTY;
 
-    if (touch) {
-      try {
-        queries.touch(rendered.memoryIds(), Instant.now());
-      } catch (RuntimeException e) {
-        log.debug("Could not record memory access", e);
-      }
-    }
     List<UUID> subjectIds = new ArrayList<>(result.resolution().direct());
     subjectIds.addAll(result.resolution().related());
     return new MemoryContext(rendered.text(), rendered.memoryIds(), List.copyOf(subjectIds));

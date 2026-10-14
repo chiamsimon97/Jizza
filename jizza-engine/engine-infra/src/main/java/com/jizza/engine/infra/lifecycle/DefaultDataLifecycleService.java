@@ -62,6 +62,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
   private final MemoryEntryRepository memories;
   private final MemorySubjectRepository memorySubjects;
   private final MemorySubjectRelationRepository memoryRelations;
+  private final com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess;
 
   public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
@@ -72,7 +73,8 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
                               FileRepository files, StorageProvider storage, AuditLog audit,
                               PlatformProperties props, MemoryEntryRepository memories,
                               MemorySubjectRepository memorySubjects,
-                              MemorySubjectRelationRepository memoryRelations) {
+                              MemorySubjectRelationRepository memoryRelations,
+                              com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess) {
     this.users = users;
     this.agents = agents;
     this.knowledge = knowledge;
@@ -91,6 +93,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
     this.memories = memories;
     this.memorySubjects = memorySubjects;
     this.memoryRelations = memoryRelations;
+    this.memoryAccess = memoryAccess;
   }
 
   /**
@@ -152,6 +155,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
     ArrayNode factArray = memory.putArray("facts");
     memories.findAll((r, q, cb) -> cb.equal(r.get("userId"), userId)).forEach(fact -> {
       ObjectNode node = factArray.addObject();
+      node.put("id", fact.getId().toString());
       node.put("category", String.valueOf(fact.getCategory()).toLowerCase(java.util.Locale.ROOT));
       node.put("content", fact.getContent());
       node.put("key", fact.getFactKey());
@@ -161,8 +165,18 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
       node.put("source", String.valueOf(fact.getSource()).toLowerCase(java.util.Locale.ROOT));
       node.set("about", Json.toNode(fact.getSubjectIds().stream().map(Object::toString).toList()));
       node.set("domains", Json.toNode(fact.getDomains()));
+      node.put("restricted", fact.isRestricted());
       node.put("updatedAt", String.valueOf(fact.getUpdatedAt()));
     });
+
+    // Which agent was handed which memory item, and in which run: the passport stamps.
+    ArrayNode readArray = memory.putArray("reads");
+    memoryAccess.findByUserIdOrderByOccurredAtAsc(userId).forEach(read -> readArray.addObject()
+        .put("itemKind", read.getItemKind())
+        .put("itemId", read.getItemId().toString())
+        .put("agentId", read.getAgentId() == null ? null : read.getAgentId().toString())
+        .put("context", read.getContextKind())
+        .put("at", String.valueOf(read.getOccurredAt())));
 
     ArrayNode conversationArray = root.putArray("conversations");
     conversations.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, 1_000))

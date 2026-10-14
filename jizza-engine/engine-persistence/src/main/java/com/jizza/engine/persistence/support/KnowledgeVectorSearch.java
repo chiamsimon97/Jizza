@@ -24,12 +24,35 @@ public class KnowledgeVectorSearch {
     var rows = em.createNativeQuery("""
             select id, (embedding <=> cast(:vec as vector)) as distance
               from knowledge_entries
-             where agent_id = :agentId and embedding is not null
+             where agent_id = :agentId and embedding is not null and not restricted
              order by embedding <=> cast(:vec as vector)
              limit :k
             """)
         .setParameter("vec", Vectors.toLiteral(Vectors.fit(embedding)))
         .setParameter("agentId", agentId)
+        .setParameter("k", k)
+        .getResultList();
+    return ((List<Object[]>) rows).stream()
+        .map(r -> new ScoredId((UUID) r[0], ((Number) r[1]).doubleValue()))
+        .toList();
+  }
+
+  /**
+   * Every agent's notes for one user, restricted ones included: the user searching their own
+   * memory from the Cosmos. Never reachable from an agent.
+   */
+  @Transactional(readOnly = true)
+  @SuppressWarnings("unchecked")
+  public List<ScoredId> nearestForUser(UUID userId, float[] embedding, int k) {
+    var rows = em.createNativeQuery("""
+            select id, (embedding <=> cast(:vec as vector)) as distance
+              from knowledge_entries
+             where user_id = :userId and embedding is not null
+             order by embedding <=> cast(:vec as vector)
+             limit :k
+            """)
+        .setParameter("vec", Vectors.toLiteral(Vectors.fit(embedding)))
+        .setParameter("userId", userId)
         .setParameter("k", k)
         .getResultList();
     return ((List<Object[]>) rows).stream()

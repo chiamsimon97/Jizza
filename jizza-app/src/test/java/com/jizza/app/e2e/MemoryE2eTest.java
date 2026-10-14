@@ -151,6 +151,8 @@ class MemoryE2eTest extends E2eSupport {
     stranger.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
 
     assertThat(stranger.get("/api/memory/" + sipId).status()).isEqualTo(404);
+    // Forgetting asks for a fresh step-up first; even with one, someone else's memory is not there.
+    stranger.post("/api/auth/step-up", Map.of("password", PASSWORD));
     assertThat(stranger.delete("/api/memory/" + sipId).status()).isEqualTo(404);
     assertThat(stranger.get("/api/memory").json()).isEmpty();
     assertThat(stranger.get("/api/memory/subjects").json()).isEmpty();

@@ -22,5 +22,5 @@ public final class SchemaInfo {
 
   public static final List<String> MEMORY_TABLES = List.of(
       "memory_subjects", "memory_subject_relations", "memories", "memory_about",
-      "memory_history", "memory_settings");
+      "memory_history", "memory_settings", "memory_access", "knowledge_history");
 }

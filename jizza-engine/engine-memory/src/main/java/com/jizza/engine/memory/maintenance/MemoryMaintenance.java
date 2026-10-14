@@ -7,6 +7,7 @@ import com.jizza.engine.persistence.entity.MemoryEntryEntity;
 import com.jizza.engine.persistence.entity.MemorySettingsEntity;
 import com.jizza.engine.persistence.entity.MemorySubjectEntity;
 import com.jizza.engine.persistence.repository.MemoryEntryRepository;
+import com.jizza.engine.persistence.support.MemoryAccessWriter;
 import com.jizza.engine.persistence.repository.MemorySettingsRepository;
 import com.jizza.engine.persistence.repository.MemorySubjectRepository;
 import com.jizza.engine.persistence.support.Vectors;
@@ -45,15 +46,17 @@ public class MemoryMaintenance {
   private final MemorySettingsRepository settings;
   private final EmbeddingProvider embeddings;
   private final MemoryProperties props;
+  private final MemoryAccessWriter accessWriter;
 
   public MemoryMaintenance(MemoryEntryRepository memories, MemorySubjectRepository subjects,
                            MemorySettingsRepository settings, EmbeddingProvider embeddings,
-                           MemoryProperties props) {
+                           MemoryProperties props, MemoryAccessWriter accessWriter) {
     this.memories = memories;
     this.subjects = subjects;
     this.settings = settings;
     this.embeddings = embeddings;
     this.props = props;
+    this.accessWriter = accessWriter;
   }
 
   @Scheduled(cron = "${jizza.memory.retention.cron:0 45 3 * * *}")
@@ -67,6 +70,8 @@ public class MemoryMaintenance {
       removed += memories.deleteUnusedSince(user.getUserId(),
           now.minus(Duration.ofDays(user.getRetentionDays())));
     }
+    // Bulk deletes skip the store, so their read stamps are swept here.
+    if (removed > 0) accessWriter.deleteOrphans();
     if (removed > 0) log.info("Memory retention removed {} fact(s)", removed);
     return removed;
   }

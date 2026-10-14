@@ -3,6 +3,7 @@ package com.jizza.engine.agents.runtime;
 import com.jizza.engine.agents.config.AgentProperties;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
+import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
@@ -75,6 +76,14 @@ public class BaseAgent implements Agent {
 
   @Override
   public AgentResult run(AgentRequest req) {
+    // The run every memory read in it is stamped with: the one the caller named, or the run this
+    // one was started from (a delegation), or a fresh one.
+    AccessContext context = req.traceId() != null ? AccessContext.fromTrace(req.traceId())
+        : AccessContext.current().orElseGet(() -> AccessContext.fromTrace(null));
+    return context.run(() -> runInContext(req));
+  }
+
+  private AgentResult runInContext(AgentRequest req) {
     AgentEntity agent = agents.findById(req.agentId())
         .orElseThrow(() -> new NotFoundException("Agent", req.agentId()));
 

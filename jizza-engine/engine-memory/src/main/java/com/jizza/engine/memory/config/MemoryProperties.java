@@ -35,6 +35,7 @@ public class MemoryProperties {
   private final Write write = new Write();
   private final Extraction extraction = new Extraction();
   private final Retention retention = new Retention();
+  private final Access access = new Access();
 
   private static Map<MemoryCategory, List<String>> defaultCategoryDomains() {
     Map<MemoryCategory, List<String>> map = new EnumMap<>(MemoryCategory.class);
@@ -180,4 +181,14 @@ public class MemoryProperties {
   public Write getWrite() { return write; }
   public Extraction getExtraction() { return extraction; }
   public Retention getRetention() { return retention; }
+  public Access getAccess() { return access; }
+
+  /** Read stamps: which agent was handed which memory, once per run. */
+  public static class Access {
+    /** Write stamps off the request thread, so an agent's read never waits on them. */
+    private boolean async = true;
+
+    public boolean isAsync() { return async; }
+    public void setAsync(boolean async) { this.async = async; }
+  }
 }

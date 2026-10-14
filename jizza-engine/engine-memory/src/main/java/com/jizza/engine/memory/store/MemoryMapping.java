@@ -22,7 +22,7 @@ public final class MemoryMapping {
         e.getClassification(), e.getContent(), e.getFactKey(), e.getData(), e.getConfidence(),
         e.getImportance(), e.getSource(), e.getSourceRef(), e.isConfirmed(), e.getStatus(),
         e.getSupersededBy(), List.copyOf(e.getSubjectIds()), e.getExpiresAt(), e.getCreatedAt(),
-        e.getUpdatedAt(), e.getLastAccessedAt(), null);
+        e.getUpdatedAt(), e.getLastAccessedAt(), e.isRestricted(), e.getAccessCount(), null);
   }
 
   public static MemorySubject toSubject(MemorySubjectEntity e, List<MemorySubject.Relation> relations) {

@@ -57,15 +57,21 @@ public class MemoryUseCase {
   public List<Memory> list(UUID userId, MemoryCategory category, MemoryStatus status, UUID subjectId,
                            String query, Integer limit) {
     int n = limit == null ? 200 : Math.max(1, Math.min(limit, MAX_LIST));
-    if (query != null && !query.isBlank()) {
-      return store.search(userId, query, MemoryScope.everything(), Math.min(n, 50));
-    }
-    return store.list(userId, new MemoryFilter(category, status, subjectId, n));
+    List<Memory> found = query != null && !query.isBlank()
+        ? store.search(userId, query, MemoryScope.everything(), Math.min(n, 50))
+        : store.list(userId, new MemoryFilter(category, status, subjectId, n));
+    return found.stream().map(MemoryUseCase::shown).toList();
+  }
+
+  /** A restricted fact's words are shown only through the step-up guarded reveal. */
+  static Memory shown(Memory m) {
+    return m.restricted() ? m.redacted() : m;
   }
 
   public MemoryDetail detail(UUID userId, UUID memoryId) {
     Memory memory = store.get(userId, memoryId)
         .orElseThrow(() -> new NotFoundException("Memory", memoryId));
+    if (memory.restricted()) return new MemoryDetail(memory.redacted(), List.of());
     return new MemoryDetail(memory, store.history(userId, memoryId));
   }
 
@@ -79,6 +85,13 @@ public class MemoryUseCase {
   }
 
   public Memory correct(UUID userId, UUID memoryId, MemoryDraft changes) {
+    if (changes.domains() != null) {
+      Memory current = store.get(userId, memoryId).orElseThrow(() -> new NotFoundException("Memory", memoryId));
+      if (!java.util.Set.copyOf(current.domains()).equals(java.util.Set.copyOf(changes.domains()))) {
+        // Who can see a fact changes through move or share, which have their own checks.
+        throw new ValidationException("Use move or share to change which agents can see this memory");
+      }
+    }
     return store.correct(userId, memoryId, changes, Actor.user(userId));
   }
 

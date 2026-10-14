@@ -114,10 +114,10 @@ public class HybridSearch {
     Function<UUID, Candidate> at = id -> candidates.computeIfAbsent(id, x -> new Candidate());
 
     // 1. Structure.
-    for (var hit : queries.aboutSubjects(userId, resolution.direct(), scope.domains(), scope.allDomains(), k)) {
+    for (var hit : queries.aboutSubjects(userId, resolution.direct(), scope, k)) {
       at.apply(hit.id()).subject = 1.0;
     }
-    for (var hit : queries.aboutSubjects(userId, resolution.related(), scope.domains(), scope.allDomains(), k)) {
+    for (var hit : queries.aboutSubjects(userId, resolution.related(), scope, k)) {
       Candidate c = at.apply(hit.id());
       c.subject = Math.max(c.subject, w.getRelatedSubject());
     }
@@ -130,15 +130,14 @@ public class HybridSearch {
     }
 
     // 3. Keywords.
-    for (var hit : queries.lexical(userId, terms(query), scope.domains(), scope.allDomains(), k)) {
+    for (var hit : queries.lexical(userId, terms(query), scope, k)) {
       Candidate c = at.apply(hit.id());
       c.similarity = Math.max(c.similarity, w.getKeywordHit());
     }
 
     // The core profile.
     if (includePinned) {
-      for (var hit : queries.pinned(userId, cfg.getPinnedImportance(), scope.domains(), scope.allDomains(),
-          cfg.getPinnedLimit())) {
+      for (var hit : queries.pinned(userId, cfg.getPinnedImportance(), scope, cfg.getPinnedLimit())) {
         at.apply(hit.id()).pinned = true;
       }
     }
@@ -148,7 +147,7 @@ public class HybridSearch {
     List<Ranked> ranked = new ArrayList<>();
     for (MemoryEntryEntity m : memories.findAllById(candidates.keySet())) {
       if (!m.getUserId().equals(userId) || m.getStatus() != MemoryStatus.ACTIVE) continue;
-      if (!scope.sees(List.of(m.getDomains()))) continue;
+      if (!scope.sees(List.of(m.getDomains()), m.isRestricted())) continue;
       if (m.getExpiresAt() != null && m.getExpiresAt().isBefore(now)) continue;
 
       Candidate c = candidates.get(m.getId());
@@ -170,8 +169,7 @@ public class HybridSearch {
   private List<MemoryQueries.Scored> semantic(UUID userId, String query, MemoryScope scope, int k) {
     if (query == null || query.isBlank()) return List.of();
     try {
-      return queries.nearest(userId, embeddings.embed(query), embeddings.id(), scope.domains(),
-          scope.allDomains(), k);
+      return queries.nearest(userId, embeddings.embed(query), embeddings.id(), scope, k);
     } catch (RuntimeException e) {
       // No pgvector, or the embedding endpoint is down: structure and keywords still answer.
       log.debug("Semantic memory search unavailable; using structure and keywords only", e);
@@ -183,7 +181,7 @@ public class HybridSearch {
     List<MemorySubjectEntity> all = subjects.findByUserIdOrderByNameAsc(userId);
     if (all.isEmpty()) return Map.of();
     Set<UUID> visible = scope.allDomains() ? null
-        : new HashSet<>(queries.visibleSubjectIds(userId, scope.domains(), false));
+        : new HashSet<>(queries.visibleSubjectIds(userId, scope));
     return all.stream()
         .filter(s -> visible == null || visible.contains(s.getId()))
         .collect(Collectors.toMap(MemorySubjectEntity::getId, s -> s, (a, b) -> a, LinkedHashMap::new));

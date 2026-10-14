@@ -155,7 +155,8 @@ public class TaskRunner {
         : task.getPayload().path("instruction").asText(task.getTitle());
 
     AgentResult result = baseAgent.run(new AgentRequest(task.getUserId(), task.getAgentId(),
-        instruction, task.getPayload(), java.util.List.of(), ModelTier.STANDARD, true, null)
+        instruction, task.getPayload(), java.util.List.of(), ModelTier.STANDARD, true,
+        com.jizza.engine.api.cosmos.AccessContext.task(task.getId()).toTrace())
         .autonomous(true));
 
     audit.record(task.getUserId(), ActorType.AGENT, task.getAgentId(), "task.ran", task.getTitle(),

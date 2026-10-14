@@ -32,8 +32,23 @@ public interface MemoryStore {
   /** Back to active after a retire or supersede. */
   Memory restore(UUID userId, UUID memoryId, Actor actor);
 
-  /** Permanent: the fact and its history are deleted. */
+  /** Permanent: the fact, its history and its read stamps are deleted. */
   void forget(UUID userId, UUID memoryId, Actor actor);
+
+  /**
+   * Lets one more agent domain see a fact. A fact every agent already sees (no domains) is refused:
+   * adding a domain would narrow it, which is {@link #setDomains}.
+   */
+  Memory share(UUID userId, UUID memoryId, String domain, Actor actor);
+
+  /** Takes a domain away. Refused for the last one, which would make the fact visible to every agent. */
+  Memory unshare(UUID userId, UUID memoryId, String domain, Actor actor);
+
+  /** Replaces who can see a fact; an empty list means every agent. */
+  Memory setDomains(UUID userId, UUID memoryId, List<String> domains, Actor actor);
+
+  /** A restricted fact is never handed to any agent. */
+  Memory restrict(UUID userId, UUID memoryId, boolean restricted, Actor actor);
 
   Optional<Memory> get(UUID userId, UUID memoryId);
 

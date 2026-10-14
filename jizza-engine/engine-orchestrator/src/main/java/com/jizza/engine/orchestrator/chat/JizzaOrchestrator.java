@@ -2,6 +2,7 @@ package com.jizza.engine.orchestrator.chat;
 
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
+import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.enums.ActorType;
@@ -150,7 +151,8 @@ public class JizzaOrchestrator implements Orchestrator {
     List<UiAction> actions;
     try {
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(), withScreen(message, screen),
-          null, history(conversation.getId()), ModelTier.STANDARD, false, null));
+          null, history(conversation.getId()), ModelTier.STANDARD, false,
+          AccessContext.chatTurn(userMessage.getId()).toTrace()));
     } finally {
       contributions = recorder.endTurn();
       actions = uiActions.endTurn();

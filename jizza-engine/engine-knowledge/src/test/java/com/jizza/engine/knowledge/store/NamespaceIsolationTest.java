@@ -84,8 +84,15 @@ class NamespaceIsolationTest {
     when(vectorSearch.nearest(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
         .thenThrow(new IllegalStateException("no pgvector in this unit test"));
 
+    @SuppressWarnings("unchecked")
+    org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.cosmos.MemoryAccessRecorder>
+        recorder = mock(org.springframework.beans.factory.ObjectProvider.class);
     store = new NamespacedKnowledgeStore(entries, agents, new LocalHashingEmbeddingProvider(),
-        vectorSearch, audit);
+        vectorSearch, audit,
+        mock(com.jizza.engine.persistence.repository.KnowledgeHistoryRepository.class),
+        mock(com.jizza.engine.persistence.repository.FileRepository.class),
+        mock(com.jizza.engine.persistence.repository.MemoryAccessRepository.class),
+        mock(com.jizza.engine.persistence.support.MemoryEvents.class), recorder);
   }
 
   private KnowledgeEntry write(AgentEntity agent, String title, String content) {

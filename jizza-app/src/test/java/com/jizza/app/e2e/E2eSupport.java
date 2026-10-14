@@ -93,6 +93,7 @@ public abstract class E2eSupport {
     // When on, it runs on the calling thread so its effect can be asserted.
     registry.add("jizza.memory.extraction.enabled", () -> "false");
     registry.add("jizza.memory.extraction.async", () -> "false");
+    registry.add("jizza.memory.access.async", () -> "false");
 
     registry.add("jizza.agents.models.routing", () -> "test-routing");
     registry.add("jizza.agents.models.standard", () -> "test-standard");

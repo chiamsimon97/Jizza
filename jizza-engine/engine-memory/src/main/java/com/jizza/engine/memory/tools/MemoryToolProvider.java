@@ -8,6 +8,7 @@ import com.jizza.engine.api.enums.MemoryCategory;
 import com.jizza.engine.api.enums.MemorySource;
 import com.jizza.engine.api.enums.SubjectKind;
 import com.jizza.engine.api.memory.Actor;
+import com.jizza.engine.api.cosmos.MemoryAccessRecorder;
 import com.jizza.engine.api.memory.Memory;
 import com.jizza.engine.api.memory.MemoryDraft;
 import com.jizza.engine.api.memory.MemoryScope;
@@ -61,12 +62,14 @@ public class MemoryToolProvider implements ToolProvider {
   private final ConnectionRepository connections;
   private final MemoryScopes scopes;
   private final MemoryProperties props;
+  private final MemoryAccessRecorder recorder;
   private final Map<String, ToolSpec> specs = new LinkedHashMap<>();
 
   public MemoryToolProvider(MemoryStore store, AgentRepository agents,
                             ConnectionRepository connections, MemoryScopes scopes,
-                            MemoryProperties props) {
+                            MemoryProperties props, MemoryAccessRecorder recorder) {
     this.store = store;
+    this.recorder = recorder;
     this.agents = agents;
     this.connections = connections;
     this.scopes = scopes;
@@ -186,6 +189,7 @@ public class MemoryToolProvider implements ToolProvider {
       node.put("updated", String.valueOf(m.updatedAt()));
       if (m.score() != null) node.put("relevance", Math.round(m.score() * 1000) / 1000.0);
     }
+    recorder.facts(agent.getUserId(), agent.getId(), found.stream().map(Memory::id).toList());
     return ToolResult.ok(out);
   }
 
@@ -260,7 +264,7 @@ public class MemoryToolProvider implements ToolProvider {
       return ToolResult.error("'id' must be a memory id");
     }
     MemoryScope scope = scopes.forAgent(agent);
-    Optional<Memory> memory = store.get(agent.getUserId(), id).filter(m -> scope.sees(m.domains()));
+    Optional<Memory> memory = store.get(agent.getUserId(), id).filter(m -> scope.sees(m.domains(), m.restricted()));
     if (memory.isEmpty()) return ToolResult.error("No memory with id " + id + " that you can see");
     store.retire(agent.getUserId(), id, textOrNull(args.path("reason")), Actor.agent(agent.getId()));
     return ToolResult.ok(Json.obj().put("id", id.toString()).put("status", "retired"));

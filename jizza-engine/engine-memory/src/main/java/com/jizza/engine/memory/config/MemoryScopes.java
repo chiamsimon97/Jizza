@@ -23,12 +23,12 @@ public class MemoryScopes {
 
   /**
    * A specialist sees shared facts and its own domain's. The orchestrator sees the shared layer,
-   * or everything when {@code jizza.memory.orchestrator-sees-all-domains} is on. An agent with no
-   * domain sees shared facts only.
+   * or every domain when {@code jizza.memory.orchestrator-sees-all-domains} is on. An agent with no
+   * domain sees shared facts only. No agent sees a restricted fact.
    */
   public MemoryScope forAgent(AgentEntity agent) {
     if (agent.isOrchestrator()) {
-      return props.isOrchestratorSeesAllDomains() ? MemoryScope.everything() : MemoryScope.sharedOnly();
+      return props.isOrchestratorSeesAllDomains() ? MemoryScope.everyDomain() : MemoryScope.sharedOnly();
     }
     String domain = agent.getDomain();
     return domain == null || domain.isBlank()

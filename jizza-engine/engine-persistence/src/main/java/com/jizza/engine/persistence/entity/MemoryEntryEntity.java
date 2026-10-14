@@ -89,6 +89,9 @@ public class MemoryEntryEntity {
 
   private int accessCount;
 
+  /** Never handed to an agent; shown to the user only after a fresh step-up. */
+  private boolean restricted;
+
   @ElementCollection(fetch = FetchType.EAGER)
   @CollectionTable(name = "memory_about", joinColumns = @JoinColumn(name = "memory_id"))
   @Column(name = "subject_id")
@@ -163,6 +166,9 @@ public class MemoryEntryEntity {
 
   public int getAccessCount() { return accessCount; }
   public void setAccessCount(int accessCount) { this.accessCount = accessCount; }
+
+  public boolean isRestricted() { return restricted; }
+  public void setRestricted(boolean restricted) { this.restricted = restricted; }
 
   public Set<UUID> getSubjectIds() { return subjectIds; }
   public void setSubjectIds(Set<UUID> subjectIds) {

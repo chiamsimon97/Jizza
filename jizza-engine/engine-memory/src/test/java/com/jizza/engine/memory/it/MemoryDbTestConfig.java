@@ -15,6 +15,13 @@ import com.jizza.engine.memory.store.DefaultMemoryStore;
 import com.jizza.engine.memory.tools.MemoryToolProvider;
 import com.jizza.engine.persistence.config.PersistenceConfig;
 import com.jizza.engine.persistence.support.MemoryQueries;
+import com.jizza.engine.persistence.support.CosmosQueries;
+import com.jizza.engine.persistence.support.KnowledgeVectorSearch;
+import com.jizza.engine.persistence.support.MemoryAccessWriter;
+import com.jizza.engine.persistence.support.MemoryEvents;
+import com.jizza.engine.knowledge.store.NamespacedKnowledgeStore;
+import com.jizza.engine.memory.cosmos.DefaultCosmosQueryService;
+import com.jizza.engine.memory.cosmos.DefaultMemoryAccessRecorder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -29,7 +36,9 @@ import org.springframework.context.annotation.Import;
 @EnableAutoConfiguration
 @Import({PersistenceConfig.class, MemoryQueries.class, MemoryConfig.class, MemoryScopes.class,
     HybridSearch.class, DefaultMemoryStore.class, HybridMemoryContextProvider.class,
-    MemoryToolProvider.class, MemoryMaintenance.class})
+    MemoryToolProvider.class, MemoryMaintenance.class, MemoryEvents.class, MemoryAccessWriter.class,
+    DefaultMemoryAccessRecorder.class, CosmosQueries.class, KnowledgeVectorSearch.class,
+    NamespacedKnowledgeStore.class, DefaultCosmosQueryService.class})
 public class MemoryDbTestConfig {
 
   @Bean

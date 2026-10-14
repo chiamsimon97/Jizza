@@ -162,14 +162,6 @@ class HybridMemoryDbTest {
     assertThat(ctx.isEmpty()).isTrue();
   }
 
-  @Test
-  void handingFactsToAnAgentRecordsThatTheyWereUsed() {
-    context.contextFor(user, kai, WIFE_REQUEST);
-    em.clear();
-    assertThat(memoryRows.findById(sip.id()).orElseThrow().getAccessCount()).isEqualTo(1);
-    assertThat(memoryRows.findById(sip.id()).orElseThrow().getLastAccessedAt()).isNotNull();
-  }
-
   // ── Semantic and keyword retrieval ─────────────────────────────────────────────────────────
 
   @Test
