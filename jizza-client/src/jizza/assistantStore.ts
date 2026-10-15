@@ -15,8 +15,11 @@ export interface Step {
 
 export interface AssistantMessage {
   id: number
-  role: 'user' | 'assistant'
+  /** 'event' is something that happened rather than something said: "You approved Kai's request". */
+  role: 'user' | 'assistant' | 'event'
   text: string
+  /** On an event line: the approval it records, so its card in the reply above shows as answered. */
+  notificationId?: string
   /** The job that answered (or is answering) this message; opens it in the Activity panel. */
   jobId?: string
   /** Text is still arriving. */
@@ -209,7 +212,26 @@ export const useAssistantStore = create<AssistantState>()(
         if (!job) {
           // Only the conversation on screen is followed; anything else waits to be opened.
           if (e.conversationId && e.conversationId === state.conversationId && e.type === 'job.started') {
-            set(s => ({ jobs: { ...s.jobs, [e.jobId]: { id: e.jobId, title: e.payload.title, status: 'running', startedAt: e.at, events: [], loaded: true } }, jobOrder: [...s.jobOrder, e.jobId] }))
+            const continuation = e.payload.origin === 'continuation'
+            const parent: string | undefined = e.payload.noteData?.parentJobId
+            set(s => ({
+              jobs: {
+                ...s.jobs,
+                ...(parent && s.jobs[parent] ? { [parent]: { ...s.jobs[parent], status: 'completed' as JobStatus } } : {}),
+                [e.jobId]: { id: e.jobId, title: e.payload.title, status: 'running', startedAt: e.at, events: [], loaded: true },
+              },
+              jobOrder: [...s.jobOrder, e.jobId],
+              // Something happened that Jizza is now reporting on (an approval was answered, maybe
+              // from the Notifications page): show what happened, then Jizza's reply streaming in.
+              ...(continuation ? {
+                messages: [...s.messages,
+                  { id: nextId++, role: 'event' as const, text: e.payload.note ?? '', jobId: e.jobId, notificationId: e.payload.noteData?.notificationId },
+                  { id: nextId++, role: 'assistant' as const, text: '', streaming: true, jobId: e.jobId }],
+                activeJobId: e.jobId, thinking: true, selectedJobId: e.jobId,
+                expanded: { ...s.expanded, [e.jobId]: true },
+              } : {}),
+            }))
+            if (continuation) arm(e.jobId)
           } else {
             const held = early.get(e.jobId) ?? []
             held.push(e)
@@ -255,7 +277,7 @@ export const useAssistantStore = create<AssistantState>()(
           return { jobs: { ...s.jobs, [e.jobId]: { ...current, events: mergeEvents(current.events, [e]) } } }
         })
 
-        if (e.type === 'job.completed') finish(e.jobId, 'completed', e.payload.summary)
+        if (e.type === 'job.completed') finish(e.jobId, (e.payload.status as JobStatus) ?? 'completed', e.payload.summary)
         if (e.type === 'job.failed') finish(e.jobId, 'failed')
         if (e.type === 'job.cancelled') finish(e.jobId, 'cancelled', e.payload.summary)
       }
@@ -375,7 +397,7 @@ export const useAssistantStore = create<AssistantState>()(
 )
 
 /** Fetches a finished job's timeline the first time it is opened. */
-async function loadJob(jobId: string) {
+export async function loadJob(jobId: string) {
   const job = useAssistantStore.getState().jobs[jobId]
   if (!job || job.loaded) return
   try {
@@ -387,6 +409,9 @@ async function loadJob(jobId: string) {
 }
 
 function messageFromDto(m: MessageDto): AssistantMessage {
+  if (m.role === 'event') {
+    return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
+  }
   const actions = m.metadata?.actions ?? []
   const { steps, question } = execute(actions, false)
   return {
@@ -412,7 +437,7 @@ export async function loadHistory() {
     if (useAssistantStore.getState().conversationId !== conversationId) return
     const running = jobs.find(j => j.status === 'running')
     useAssistantStore.setState(s => (s.messages.length > 0 ? s : {
-      messages: rows.filter(r => r.role !== 'event').map(messageFromDto),
+      messages: rows.map(messageFromDto),
       jobs: Object.fromEntries(jobs.map(j => [j.id, jobFromDto(j)])),
       jobOrder: jobs.map(j => j.id),
       expanded: running ? { [running.id]: true } : {},

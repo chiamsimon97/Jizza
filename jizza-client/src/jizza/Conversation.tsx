@@ -1,10 +1,11 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Mic, MicOff, Send, Square } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Mic, MicOff, Send, ShieldQuestion, Square, X } from 'lucide-react'
+import { notificationsApi } from '@/api/notifications'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
-import { useAssistantStore, type AssistantMessage } from './assistantStore'
+import { loadJob, useAssistantStore, type AssistantMessage } from './assistantStore'
 import { JizzaOrb } from './JizzaOrb'
 import { useDictation } from './useSpeech'
 
@@ -155,6 +156,15 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob }: 
 function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
   msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
 }) {
+  if (msg.role === 'event') {
+    return (
+      <div className="flex items-center gap-2 py-1 animate-fade-in" role="note">
+        <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        <span className="max-w-[80%] text-center text-xs text-gray-500 dark:text-gray-400">{msg.text}</span>
+        <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+      </div>
+    )
+  }
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end animate-fade-in-up">
@@ -189,6 +199,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
+        {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
         {msg.jobId && onOpenJob && !msg.streaming && (
           <button
             type="button"
@@ -219,6 +230,62 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Calls held for the user's approval while Jizza answered, each with Approve and Deny. Answering
+ * here is the same as answering on the Notifications page; either way Jizza carries on in this
+ * conversation and the card turns into the line saying what was decided.
+ */
+function Approvals({ jobId }: { jobId: string }) {
+  const job = useAssistantStore(s => s.jobs[jobId])
+  const answeredIds = useAssistantStore(s => s.messages.filter(m => m.role === 'event' && m.notificationId).map(m => m.notificationId!).join(','))
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (job && job.status === 'awaiting_user' && !job.loaded) void loadJob(jobId)
+  }, [job, jobId])
+
+  if (!job) return null
+  const answered = new Set(answeredIds.split(',').filter(Boolean))
+  const pending = job.events.filter(e => e.type === 'approval.required' && !answered.has(e.payload.notificationId))
+  if (pending.length === 0) return null
+
+  const answer = async (id: string, kind: 'APPROVE' | 'DENY') => {
+    setBusy(id)
+    setError(null)
+    try {
+      await notificationsApi.answer(id, kind)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not go through.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {pending.map(e => (
+        <div key={e.seq} className="rounded-2xl border border-amber-300 bg-amber-50/70 p-3 animate-fade-in-up dark:border-amber-500/40 dark:bg-amber-500/10">
+          <p className="flex items-start gap-2 text-sm text-gray-900 dark:text-gray-100">
+            <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+            <span><span className="font-medium">{e.agentName ?? 'An agent'}</span> needs your approval to run <span className="font-medium">{e.payload.label ?? e.payload.tool}</span>.</span>
+          </p>
+          {e.payload.reason && <p className="ml-6 mt-0.5 text-xs text-gray-600 dark:text-gray-400">{e.payload.reason}</p>}
+          <div className="ml-6 mt-2 flex gap-2">
+            <Button size="sm" loading={busy === e.payload.notificationId} disabled={busy !== null} onClick={() => void answer(e.payload.notificationId, 'APPROVE')}>
+              <Check className="h-3.5 w-3.5" /> Approve
+            </Button>
+            <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => void answer(e.payload.notificationId, 'DENY')}>
+              <X className="h-3.5 w-3.5" /> Deny
+            </Button>
+          </div>
+          {error && <p className="ml-6 mt-1.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+        </div>
+      ))}
     </div>
   )
 }

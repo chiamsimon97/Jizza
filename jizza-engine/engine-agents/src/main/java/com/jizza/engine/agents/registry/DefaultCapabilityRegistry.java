@@ -1,6 +1,11 @@
 package com.jizza.engine.agents.registry;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.agent.ApprovedCall;
+import com.jizza.engine.api.dto.NotificationDto;
+import com.jizza.engine.api.enums.NotificationStatus;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.activity.Activity;
 import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.activity.JobCancelledException;
@@ -95,6 +100,36 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
 
   @Override
   public ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous) {
+    return execute(agentId, call, autonomous, null);
+  }
+
+  @Override
+  public ApprovedCall runApproved(UUID userId, UUID notificationId) {
+    NotificationBus bus = notifications.getIfAvailable();
+    if (bus == null) throw new IllegalStateException("The notification bus is unavailable");
+    NotificationDto request = bus.get(notificationId);
+    if (request == null || !userId.equals(request.userId())
+        || request.kind() != NotificationKind.PERMISSION_REQUEST) {
+      throw new NotFoundException("Permission request", notificationId);
+    }
+    if (request.status() != NotificationStatus.APPROVED) {
+      throw new ValidationException("That request has not been approved");
+    }
+    String tool = request.context() == null ? null : request.context().path("tool").asText(null);
+    if (request.sourceAgentId() == null || tool == null) {
+      throw new ValidationException("That request does not hold a call to run");
+    }
+    JsonNode args = request.context().path("args");
+    // The call id doubles as the idempotency reference, so a side-effecting call runs once per
+    // approval however many times this is reached.
+    ToolCall call = new ToolCall("approval:" + notificationId, tool,
+        args.isObject() ? args.deepCopy() : Json.obj());
+    ToolResult result = execute(request.sourceAgentId(), call, false, notificationId);
+    return new ApprovedCall(notificationId, request.sourceAgentId(), request.sourceAgentName(), tool,
+        result);
+  }
+
+  private ToolResult execute(UUID agentId, ToolCall call, boolean autonomous, UUID approvedBy) {
     AgentEntity agent = agents.findById(agentId)
         .orElseThrow(() -> new NotFoundException("Agent", agentId));
 
@@ -125,15 +160,16 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     if (decision.denied()) {
       return refuse(agent, call, "policy-deny", decision.reason());
     }
-    if (decision.needsPermission()) {
+    if (decision.needsPermission() && approvedBy == null) {
       return requestPermission(agent, call, decision, provider.redactArguments(call.name()));
     }
 
+    ObjectNode detail = Json.obj().put("autonomous", autonomous)
+        .put("decision", approvedBy != null ? "APPROVED" : decision.rule().name());
+    if (approvedBy != null) detail.put("approval", approvedBy.toString());
     audit.record(agent.getUserId(), ActorType.AGENT, agentId, "tool.call", call.name(),
-        Json.obj().put("autonomous", autonomous)
-            .put("decision", decision.rule().name())
-            .set("args", provider.redactArguments(call.name())
-                ? Json.obj().put("redacted", true) : call.args()));
+        detail.set("args", provider.redactArguments(call.name())
+            ? Json.obj().put("redacted", true) : call.args()));
 
     boolean shown = shownInActivity(call.name());
     String stepId = call.id() != null ? call.id() : UUID.randomUUID().toString();

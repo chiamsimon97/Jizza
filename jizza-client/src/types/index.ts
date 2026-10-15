@@ -198,7 +198,7 @@ export interface MessageDto {
   status?: 'streaming' | 'complete' | 'failed' | 'cancelled'
   jobId?: string
   /** What the reply looked like live: who helped and what it did on screen. */
-  metadata?: { contributors?: Contribution[]; actions?: UiAction[]; jobId?: string }
+  metadata?: { contributors?: Contribution[]; actions?: UiAction[]; jobId?: string; notificationId?: string; parentJobId?: string; approved?: boolean }
 }
 
 // ── Jobs (the Activity panel) ─────────────────────────────────────────────────

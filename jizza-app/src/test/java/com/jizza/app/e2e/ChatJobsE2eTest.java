@@ -246,4 +246,102 @@ class ChatJobsE2eTest extends E2eSupport {
     assertThat(api.delete("/api/conversations/" + older).status()).isEqualTo(204);
     assertThat(api.get("/api/conversations/" + older).status()).isEqualTo(404);
   }
+
+  /** Cato asks to schedule a task; an ASK rule holds the call for the user's approval. */
+  private String chatUntilApprovalIsNeeded() {
+    UUID cato = UUID.fromString(api.get("/api/agents").json().findParents("key").stream()
+        .filter(a -> a.path("key").asText().equals("professional")).findFirst().orElseThrow()
+        .path("id").asText());
+    api.put("/api/autonomy/policies", Map.of(
+        "agentId", cato.toString(), "toolRef", "schedule_task", "rule", "ASK", "precedence", 50));
+
+    model.scriptFor("Jizza",
+        new LlmResponse("", List.of(new ToolCall("d1", "delegate_to_specialist",
+            Json.obj().put("agent_key", "professional").put("task", "schedule the insurance reminder"))),
+            "tool_use", 5, 5, "m"),
+        LlmResponse.text("Cato has the reminder ready; approve it and it will be scheduled."));
+    model.scriptFor("Cato",
+        new LlmResponse("", List.of(new ToolCall("s1", "schedule_task", Json.obj()
+            .put("title", "Renew car insurance").put("instruction", "Remind me to renew")
+            .put("run_at", Instant.now().plusSeconds(86_400).toString()))), "tool_use", 5, 5, "m"),
+        LlmResponse.text("It needs the user's approval first."));
+
+    // Answering an approval is a sensitive action, as it is on the Notifications page.
+    api.post("/api/auth/step-up", Map.of("password", PASSWORD));
+    var reply = api.post("/api/chat", Map.of("message", "Remind me to renew my car insurance tomorrow"));
+    assertThat(reply.ok()).as(reply.body()).isTrue();
+    return reply.json().path("conversationId").asText();
+  }
+
+  private JsonNode awaitJobs(String conversationId, int count) {
+    Instant deadline = Instant.now().plus(Duration.ofSeconds(20));
+    while (Instant.now().isBefore(deadline)) {
+      JsonNode jobs = api.get("/api/conversations/" + conversationId + "/jobs").json();
+      if (jobs.size() >= count && !"running".equals(jobs.get(count - 1).path("status").asText())) return jobs;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    throw new AssertionError("no finished job " + count + " in " + conversationId);
+  }
+
+  private String approvalIn(JsonNode job) {
+    for (JsonNode e : job.path("events")) {
+      if (e.path("type").asText().equals("approval.required")) return e.path("payload").path("notificationId").asText();
+    }
+    throw new AssertionError("no approval in " + job);
+  }
+
+  @Test
+  void approvingInChatRunsTheHeldCallAndJizzaReportsBack() {
+    String conversationId = chatUntilApprovalIsNeeded();
+    JsonNode first = awaitJobs(conversationId, 1).get(0);
+    assertThat(first.path("status").asText()).isEqualTo("awaiting_user");
+    String notificationId = approvalIn(api.get("/api/chat/jobs/" + first.path("id").asText()).json());
+    assertThat(api.get("/api/tasks").json()).as("nothing runs before approval").isEmpty();
+
+    model.scriptFor("Jizza", LlmResponse.text("Done: your car insurance reminder is set for tomorrow."));
+    var answered = api.post("/api/notifications/" + notificationId + "/answer", Map.of("kind", "APPROVE"));
+    assertThat(answered.ok()).as(answered.body()).isTrue();
+
+    JsonNode jobs = awaitJobs(conversationId, 2);
+    assertThat(jobs.get(0).path("status").asText()).isEqualTo("completed");
+    JsonNode continuation = api.get("/api/chat/jobs/" + jobs.get(1).path("id").asText()).json();
+    assertThat(continuation.path("origin").asText()).isEqualTo("continuation");
+    assertThat(continuation.path("status").asText()).as(continuation.toString()).isEqualTo("completed");
+    assertThat(continuation.path("events").toString())
+        .contains("schedule_task").contains("\"state\":\"done\"");
+
+    // The approved call ran exactly once, with the arguments Cato asked for.
+    JsonNode tasks = api.get("/api/tasks").json();
+    assertThat(tasks).hasSize(1);
+    assertThat(tasks.get(0).path("title").asText()).isEqualTo("Renew car insurance");
+
+    var messages = api.get("/api/conversations/" + conversationId + "/messages").json();
+    assertThat(messages.findValuesAsText("role")).containsExactly("user", "assistant", "event", "assistant");
+    assertThat(messages.get(2).path("content").asText()).startsWith("You approved Cato's request");
+    assertThat(messages.get(3).path("content").asText()).contains("reminder is set");
+    // Jizza was told what happened as an event, framed as data, not as something the user said.
+    assertThat(model.everythingTheModelSaw()).contains("[System event, not typed by the user]");
+  }
+
+  @Test
+  void decliningRunsNothingAndJizzaAcknowledgesIt() {
+    String conversationId = chatUntilApprovalIsNeeded();
+    String jobId = awaitJobs(conversationId, 1).get(0).path("id").asText();
+    String notificationId = approvalIn(api.get("/api/chat/jobs/" + jobId).json());
+
+    model.scriptFor("Jizza", LlmResponse.text("Okay, I won't schedule it."));
+    api.post("/api/notifications/" + notificationId + "/answer", Map.of("kind", "DENY"));
+
+    JsonNode jobs = awaitJobs(conversationId, 2);
+    assertThat(jobs.get(1).path("status").asText()).isEqualTo("completed");
+    assertThat(api.get("/api/tasks").json()).isEmpty();
+    var messages = api.get("/api/conversations/" + conversationId + "/messages").json();
+    assertThat(messages.get(2).path("content").asText()).startsWith("You declined");
+    assertThat(messages.get(3).path("content").asText()).isEqualTo("Okay, I won't schedule it.");
+  }
 }

@@ -98,6 +98,44 @@ public class TurnStore {
     return new TurnRef(job.getId(), conversation.getId(), user.getId(), reply.getId(), false);
   }
 
+  /**
+   * A turn nobody typed: something happened that Jizza should report on (an approval answered).
+   * The conversation shows {@code note} as an event line, then Jizza's reply streams under it.
+   */
+  @Transactional
+  public TurnRef beginContinuation(UUID userId, UUID conversationId, String note, JsonNode noteData,
+                                   String title) {
+    ConversationEntity conversation = owned(userId, conversationId);
+    ChatJobEntity job = new ChatJobEntity();
+    job.setUserId(userId);
+    job.setConversationId(conversation.getId());
+    job.setOrigin("continuation");
+    job.setStatus(ChatJobEntity.RUNNING);
+    job.setTitle(JobSummaries.title(title));
+    try {
+      job = jobs.saveAndFlush(job);
+    } catch (DataIntegrityViolationException e) {
+      throw new ConflictException("Jizza is answering in this conversation right now");
+    }
+    MessageEntity event = message(conversation.getId(), MessageRole.EVENT, note, MessageEntity.COMPLETE, job.getId());
+    event.setMetadata(noteData);
+    event = messages.save(event);
+    MessageEntity reply = messages.save(
+        message(conversation.getId(), MessageRole.ASSISTANT, "", MessageEntity.STREAMING, job.getId()));
+    job.setUserMessageId(event.getId());
+    job.setAssistantMessageId(reply.getId());
+    conversation.setLastMessageAt(Instant.now());
+    conversation.setMessageCount(conversation.getMessageCount() + 2);
+    return new TurnRef(job.getId(), conversation.getId(), event.getId(), reply.getId(), false);
+  }
+
+  /** A job that was waiting on the user, now that they answered. */
+  @Transactional
+  public void settle(UUID jobId) {
+    jobs.findById(jobId).filter(j -> ChatJobEntity.AWAITING_USER.equals(j.getStatus()))
+        .ifPresent(j -> j.setStatus(ChatJobEntity.COMPLETED));
+  }
+
   /** The turns before this one, oldest first: what Jizza is reminded of. */
   @Transactional(readOnly = true)
   public List<Msg> history(UUID conversationId, UUID userMessageId) {
@@ -129,7 +167,7 @@ public class TurnStore {
       messages.findById(job.getAssistantMessageId()).ifPresent(reply -> {
         reply.setContent(text == null ? "" : text);
         reply.setStatus(switch (status) {
-          case ChatJobEntity.COMPLETED -> MessageEntity.COMPLETE;
+          case ChatJobEntity.COMPLETED, ChatJobEntity.AWAITING_USER -> MessageEntity.COMPLETE;
           case ChatJobEntity.CANCELLED -> MessageEntity.CANCELLED;
           default -> MessageEntity.FAILED;
         });

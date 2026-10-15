@@ -40,6 +40,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -119,7 +120,7 @@ public class TurnRunner implements ChatService {
     if (s.incognito()) {
       UUID jobId = UUID.randomUUID();
       TurnRef ref = new TurnRef(jobId, null, null, null, true);
-      return new Started(ref, launch(userId, ref, s, List.of(), false));
+      return new Started(ref, launch(userId, ref, s, List.of(), false, null));
     }
 
     var existing = store.existing(userId, s.conversationId(), s.clientMessageId());
@@ -133,11 +134,46 @@ public class TurnRunner implements ChatService {
     audit.record(userId, ActorType.USER, userId, "chat.message", ref.conversationId().toString(),
         Json.obj().put("messageId", ref.userMessageId().toString()).put("jobId", ref.jobId().toString()));
     List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
-    return new Started(ref, launch(userId, ref, s, history, true));
+    return new Started(ref, launch(userId, ref, s, history, true, null));
   }
 
+  /**
+   * Something happened in a conversation that nobody typed (an approval was answered), and Jizza
+   * should report on it in its own words. {@code note} is the line the conversation shows;
+   * {@code prepare} runs first inside the new job (so whatever it does shows in Activity) and
+   * returns what Jizza is told. Waits its turn if Jizza is mid-reply in that conversation.
+   */
+  public TurnRef continueConversation(UUID userId, UUID conversationId, String note,
+                                      ObjectNode noteData, Supplier<String> prepare) {
+    TurnRef ref = null;
+    Instant giveUp = Instant.now().plus(CONTINUATION_WAIT);
+    while (ref == null) {
+      try {
+        ref = store.beginContinuation(userId, conversationId, note, noteData, note);
+      } catch (com.jizza.engine.api.error.ConflictException busy) {
+        if (Instant.now().isAfter(giveUp)) throw busy;
+        try {
+          Thread.sleep(500);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw busy;
+        }
+      }
+    }
+    List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
+    TurnSubmission s = new TurnSubmission(conversationId, null, note, null, false);
+    launch(userId, ref, s, history, true, new Continuation(prepare, noteData));
+    return ref;
+  }
+
+  /** How long a continuation waits for a reply already running in its conversation. */
+  private static final Duration CONTINUATION_WAIT = Duration.ofMinutes(5);
+
+  private record Continuation(Supplier<String> prepare, ObjectNode noteData) {}
+
   private CompletableFuture<AssistantReply> launch(UUID userId, TurnRef ref, TurnSubmission s,
-                                                   List<Msg> history, boolean persist) {
+                                                   List<Msg> history, boolean persist,
+                                                   Continuation continuation) {
     JobRecorder recorder = new JobRecorder(ref.jobId(), userId, ref.conversationId(), persist,
         events, eventTx, realtime.getIfAvailable());
     CompletableFuture<AssistantReply> reply = new CompletableFuture<>();
@@ -148,22 +184,32 @@ public class TurnRunner implements ChatService {
       p.put("title", JobSummaries.title(s.text()));
       if (ref.userMessageId() != null) p.put("userMessageId", ref.userMessageId().toString());
       if (ref.assistantMessageId() != null) p.put("assistantMessageId", ref.assistantMessageId().toString());
+      if (continuation != null) {
+        p.put("origin", "continuation").put("note", s.text());
+        if (continuation.noteData() != null) p.set("noteData", continuation.noteData());
+      }
     }));
-    runner.submit(() -> run(userId, ref, s, history, recorder, reply));
+    runner.submit(() -> run(userId, ref, s, history, recorder, reply, continuation));
     return reply;
   }
 
   private void run(UUID userId, TurnRef ref, TurnSubmission s, List<Msg> history,
-                   JobRecorder recorder, CompletableFuture<AssistantReply> reply) {
+                   JobRecorder recorder, CompletableFuture<AssistantReply> reply,
+                   Continuation continuation) {
     boolean persist = !ref.incognito();
     Orchestrator.Turn turn = null;
     try {
+      String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
       turn = Activity.run(recorder, () -> orchestrator.respond(userId,
-          new Orchestrator.TurnInput(s.text(), s.screen(), history, ref.userMessageId())));
+          new Orchestrator.TurnInput(input, s.screen(), history, ref.userMessageId())));
       Orchestrator.Turn done = turn;
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());
       String summary = JobSummaries.summarize(recorder.all());
+      // A reply that left a call waiting for the user's approval is done talking, not done working.
+      String status = recorder.all().stream()
+          .anyMatch(e -> ActivityTypes.APPROVAL_REQUIRED.equals(e.type()))
+          ? ChatJobEntity.AWAITING_USER : ChatJobEntity.COMPLETED;
 
       // The closing event is written before the job row says it finished, so anyone who sees a
       // finished job can also read how it ended.
@@ -173,17 +219,21 @@ public class TurnRunner implements ChatService {
         p.set("contributors", Json.toNode(answer.contributors()));
         p.set("actions", Json.toNode(answer.actions()));
         p.put("inputTokens", done.inputTokens()).put("outputTokens", done.outputTokens());
+        p.put("status", status);
       }));
       if (persist) {
-        store.finish(ref.jobId(), ChatJobEntity.COMPLETED, done.text(), metadata(ref, answer), summary, done);
+        store.finish(ref.jobId(), status, done.text(), metadata(ref, answer), summary, done);
       }
       if (persist) {
         // Durable facts in what the user said, and in what the job fetched, are kept (off this
         // thread unless configured otherwise). Bound to the job so what is saved shows under it.
         // Incognito turns never reach here: they read memory but never write it.
         Activity.run(recorder, () -> {
-          learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
-              ref.userMessageId(), s.text(), done.text())));
+          // A continuation's input is a system event, not the user's words: nothing to learn there.
+          if (continuation == null) {
+            learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
+                ref.userMessageId(), s.text(), done.text())));
+          }
           List<OutputLearner.Finding> found = findings(recorder.all());
           if (!found.isEmpty()) {
             outputLearner.ifAvailable(l -> l.afterJob(new OutputLearner.JobOutput(userId,
