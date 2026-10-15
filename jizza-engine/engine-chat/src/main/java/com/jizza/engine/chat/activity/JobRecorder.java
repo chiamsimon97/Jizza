@@ -39,6 +39,7 @@ public class JobRecorder implements ActivitySink {
   private final UUID userId;
   private final UUID conversationId;
   private final boolean persist;
+  private final String origin;
   private final JobEventRepository events;
   private final TransactionTemplate tx;
   private final RealtimeGateway realtime;
@@ -47,8 +48,9 @@ public class JobRecorder implements ActivitySink {
   private final StringBuilder partial = new StringBuilder();
   private volatile boolean cancelled;
 
-  public JobRecorder(UUID jobId, UUID userId, UUID conversationId, boolean persist,
+  public JobRecorder(UUID jobId, UUID userId, UUID conversationId, String origin, boolean persist,
                      JobEventRepository events, TransactionTemplate tx, RealtimeGateway realtime) {
+    this.origin = origin;
     this.jobId = jobId;
     this.userId = userId;
     this.conversationId = conversationId;
@@ -59,6 +61,12 @@ public class JobRecorder implements ActivitySink {
   }
 
   public UUID jobId() { return jobId; }
+
+  @Override
+  public String origin() { return origin; }
+
+  @Override
+  public UUID conversationId() { return conversationId; }
 
   @Override
   public void emit(ActivityEvent event) {

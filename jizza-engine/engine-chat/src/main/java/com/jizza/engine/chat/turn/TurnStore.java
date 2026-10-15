@@ -103,13 +103,15 @@ public class TurnStore {
    * The conversation shows {@code note} as an event line, then Jizza's reply streams under it.
    */
   @Transactional
-  public TurnRef beginContinuation(UUID userId, UUID conversationId, String note, JsonNode noteData,
-                                   String title) {
-    ConversationEntity conversation = owned(userId, conversationId);
+  public TurnRef beginContinuation(UUID userId, UUID conversationId, String origin, UUID planId,
+                                   String note, JsonNode noteData, String title) {
+    ConversationEntity conversation = conversationId == null ? create(userId) : owned(userId, conversationId);
+    if (conversation.getTitle() == null) conversation.setTitle(JobSummaries.title(title));
     ChatJobEntity job = new ChatJobEntity();
     job.setUserId(userId);
     job.setConversationId(conversation.getId());
-    job.setOrigin("continuation");
+    job.setOrigin(origin);
+    job.setPlanId(planId);
     job.setStatus(ChatJobEntity.RUNNING);
     job.setTitle(JobSummaries.title(title));
     try {

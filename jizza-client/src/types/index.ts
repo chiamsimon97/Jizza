@@ -56,7 +56,7 @@ export interface MemoryFile {
 // ── Memory Cosmos ─────────────────────────────────────────────────────────────
 export type BodyType = 'SUN' | 'AGENT' | 'SUBJECT' | 'NOTES' | 'FILE' | 'CONNECTOR' | 'WORKFLOW' | 'SKILL'
 export type MemoryCategory =
-  'PROFILE' | 'PREFERENCE' | 'RELATIONSHIP' | 'FINANCE' | 'HEALTH' | 'PROFESSIONAL' | 'PROJECT' | 'TASK' | 'GENERAL'
+  'PROFILE' | 'PREFERENCE' | 'RELATIONSHIP' | 'FINANCE' | 'HEALTH' | 'PROFESSIONAL' | 'PROJECT' | 'TASK' | 'GENERAL' | 'INSTRUCTION'
 export type MemoryStatus = 'ACTIVE' | 'PENDING' | 'SUPERSEDED' | 'RETIRED'
 export type Classification = 'NONE' | 'PII' | 'HEALTH' | 'FINANCIAL'
 export type ItemKind = 'fact' | 'note'

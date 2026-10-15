@@ -212,7 +212,7 @@ export const useAssistantStore = create<AssistantState>()(
         if (!job) {
           // Only the conversation on screen is followed; anything else waits to be opened.
           if (e.conversationId && e.conversationId === state.conversationId && e.type === 'job.started') {
-            const continuation = e.payload.origin === 'continuation'
+            const continuation = e.payload.origin === 'continuation' || e.payload.origin === 'signal'
             const parent: string | undefined = e.payload.noteData?.parentJobId
             set(s => ({
               jobs: {

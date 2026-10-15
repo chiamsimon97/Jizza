@@ -145,11 +145,21 @@ public class TurnRunner implements ChatService {
    */
   public TurnRef continueConversation(UUID userId, UUID conversationId, String note,
                                       ObjectNode noteData, Supplier<String> prepare) {
+    return continueConversation(userId, conversationId, "continuation", null, note, noteData, prepare);
+  }
+
+  /**
+   * As above, for any job nobody typed: {@code origin} says what started it ({@code signal} when a
+   * specialist flagged something on a plan), {@code planId} the plan it concerns. A null
+   * conversation starts a new one.
+   */
+  public TurnRef continueConversation(UUID userId, UUID conversationId, String origin, UUID planId,
+                                      String note, ObjectNode noteData, Supplier<String> prepare) {
     TurnRef ref = null;
     Instant giveUp = Instant.now().plus(CONTINUATION_WAIT);
     while (ref == null) {
       try {
-        ref = store.beginContinuation(userId, conversationId, note, noteData, note);
+        ref = store.beginContinuation(userId, conversationId, origin, planId, note, noteData, note);
       } catch (com.jizza.engine.api.error.ConflictException busy) {
         if (Instant.now().isAfter(giveUp)) throw busy;
         try {
@@ -161,20 +171,22 @@ public class TurnRunner implements ChatService {
       }
     }
     List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
-    TurnSubmission s = new TurnSubmission(conversationId, null, note, null, false);
-    launch(userId, ref, s, history, true, new Continuation(prepare, noteData));
+    // On the chat screen, so Jizza can put a question with one-tap answers to the user.
+    TurnSubmission s = new TurnSubmission(ref.conversationId(), null, note, "chat", false);
+    launch(userId, ref, s, history, true, new Continuation(origin, prepare, noteData));
     return ref;
   }
 
   /** How long a continuation waits for a reply already running in its conversation. */
   private static final Duration CONTINUATION_WAIT = Duration.ofMinutes(5);
 
-  private record Continuation(Supplier<String> prepare, ObjectNode noteData) {}
+  private record Continuation(String origin, Supplier<String> prepare, ObjectNode noteData) {}
 
   private CompletableFuture<AssistantReply> launch(UUID userId, TurnRef ref, TurnSubmission s,
                                                    List<Msg> history, boolean persist,
                                                    Continuation continuation) {
-    JobRecorder recorder = new JobRecorder(ref.jobId(), userId, ref.conversationId(), persist,
+    String origin = continuation != null ? continuation.origin() : persist ? "chat" : "incognito";
+    JobRecorder recorder = new JobRecorder(ref.jobId(), userId, ref.conversationId(), origin, persist,
         events, eventTx, realtime.getIfAvailable());
     CompletableFuture<AssistantReply> reply = new CompletableFuture<>();
     active.put(ref.jobId(), new Active(userId, recorder, reply, !persist,
@@ -185,7 +197,7 @@ public class TurnRunner implements ChatService {
       if (ref.userMessageId() != null) p.put("userMessageId", ref.userMessageId().toString());
       if (ref.assistantMessageId() != null) p.put("assistantMessageId", ref.assistantMessageId().toString());
       if (continuation != null) {
-        p.put("origin", "continuation").put("note", s.text());
+        p.put("origin", continuation.origin()).put("note", s.text());
         if (continuation.noteData() != null) p.set("noteData", continuation.noteData());
       }
     }));

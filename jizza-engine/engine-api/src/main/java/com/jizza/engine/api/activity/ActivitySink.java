@@ -10,4 +10,14 @@ public interface ActivitySink {
 
   /** Set when the user pressed Stop; the agent loop checks it between steps. */
   boolean cancelled();
+
+  /**
+   * What started the job: {@code chat} when the user typed a message, otherwise {@code
+   * continuation}, {@code signal}, ... Tools that may only act on the user's own words (saving a
+   * standing instruction) check it.
+   */
+  default String origin() { return null; }
+
+  /** The conversation the job belongs to, if any. */
+  default java.util.UUID conversationId() { return null; }
 }

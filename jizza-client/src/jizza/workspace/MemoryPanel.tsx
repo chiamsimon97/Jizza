@@ -21,6 +21,7 @@ const REASON: Record<string, string> = {
   related: 'related',
   meaning: 'similar meaning',
   keywords: 'matched words',
+  instruction: 'your standing instruction',
 }
 
 function contextOf(events: JobEvent[]): ContextItem[] {

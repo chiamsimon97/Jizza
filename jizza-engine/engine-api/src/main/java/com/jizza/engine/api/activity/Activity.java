@@ -55,4 +55,9 @@ public final class Activity {
     ActivitySink sink = CURRENT.get();
     if (sink != null && sink.cancelled()) throw new JobCancelledException();
   }
+
+  /** True when the current job was started by the user typing a message (not by an event). */
+  public static boolean fromUser() {
+    return current().map(ActivitySink::origin).map("chat"::equals).orElse(false);
+  }
 }

@@ -30,6 +30,8 @@ public class ChatJobEntity {
 
   private UUID conversationId;
 
+  private UUID planId;
+
   @Column(nullable = false)
   private String origin;
 
@@ -86,4 +88,7 @@ public class ChatJobEntity {
   void onCreate() {
     if (startedAt == null) startedAt = Instant.now();
   }
+
+  public UUID getPlanId() { return planId; }
+  public void setPlanId(UUID planId) { this.planId = planId; }
 }

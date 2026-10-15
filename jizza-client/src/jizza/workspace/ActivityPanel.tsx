@@ -225,7 +225,10 @@ function Step({ e }: { e: JobEvent }) {
         <li className="relative flex gap-2">
           <Dot tone="brand"><Brain className="h-2.5 w-2.5" /></Dot>
           <p className="text-xs text-gray-700 dark:text-gray-300">
-            <span className="font-medium">{e.agentName ?? 'Agent'}</span> recalled {p.count} {p.count === 1 ? 'memory' : 'memories'}
+            <span className="font-medium">{e.agentName ?? 'Agent'}</span>{' '}
+            {p.purpose === 'instructions'
+              ? (p.count === 0 ? 'found no standing instruction for this' : `checked ${p.count} standing ${p.count === 1 ? 'instruction' : 'instructions'}`)
+              : `recalled ${p.count} ${p.count === 1 ? 'memory' : 'memories'}`}
           </p>
         </li>
       )

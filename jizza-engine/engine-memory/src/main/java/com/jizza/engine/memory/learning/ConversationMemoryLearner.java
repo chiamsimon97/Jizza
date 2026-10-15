@@ -161,7 +161,8 @@ public class ConversationMemoryLearner implements MemoryLearner {
       if (confidence < props.getExtraction().getMinConfidence()) continue;
       String content = fact.path("content").asText("").strip();
       MemoryCategory category = enumOr(MemoryCategory.class, fact.path("category").asText(), null);
-      if (content.isEmpty() || category == null) continue;
+      // Instructions are saved only when the user deliberately gives one (save_instruction).
+      if (content.isEmpty() || category == null || category == MemoryCategory.INSTRUCTION) continue;
 
       List<UUID> about = new ArrayList<>();
       for (JsonNode ref : fact.path("about")) {

@@ -133,6 +133,16 @@ public class DefaultMemoryStore implements MemoryStore {
   @Transactional
   public MemoryWrite remember(UUID userId, MemoryDraft draft, Actor actor) {
     if (draft.category() == null) throw new ValidationException("A memory needs a category");
+    // Incognito reads memory but never writes it, whoever asks.
+    if (Activity.current().map(a -> "incognito".equals(a.origin())).orElse(false)) {
+      throw new ValidationException("This is an incognito chat, so nothing is saved to memory");
+    }
+    // Standing instructions come only from what the user typed in a chat; never from an event,
+    // a schedule, or anything an agent read.
+    if (draft.category() == MemoryCategory.INSTRUCTION && actor.type() != ActorType.USER
+        && !Activity.fromUser()) {
+      throw new ValidationException("Only you can give Jizza a standing instruction");
+    }
     String content = validContent(draft.content());
     Set<UUID> about = ownedSubjects(userId, draft.subjectIds());
     MemorySource source = draft.source() == null ? sourceFor(actor) : draft.source();
