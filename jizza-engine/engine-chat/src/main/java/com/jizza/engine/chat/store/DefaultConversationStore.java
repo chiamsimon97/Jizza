@@ -103,6 +103,12 @@ class DefaultConversationStore implements ConversationStore {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public ConversationSummaryDto summary(UUID userId, UUID conversationId) {
+    return summary(owned(userId, conversationId), null);
+  }
+
+  @Override
   @Transactional
   public ConversationSummaryDto create(UUID userId, String title) {
     ConversationEntity entity = new ConversationEntity();

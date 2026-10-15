@@ -19,6 +19,9 @@ public interface ConversationStore {
 
   ConversationSummaryDto create(UUID userId, String title);
 
+  /** One conversation's list row: its title, pin and counts. */
+  ConversationSummaryDto summary(UUID userId, UUID conversationId);
+
   /** Any argument left null is unchanged. A title set here is the user's and is never replaced automatically. */
   ConversationSummaryDto update(UUID userId, UUID conversationId, String title, Boolean pinned,
                                 Boolean archived);

@@ -56,6 +56,52 @@ public class ConversationUseCase {
     return store.update(userId, conversationId, checkedTitle(title), pinned, archived);
   }
 
+  /** A conversation to keep outside Jizza: Markdown to read, or JSON with every message's details. */
+  public Export export(UUID userId, UUID conversationId, String format) {
+    ConversationSummaryDto row = store.summary(userId, conversationId);
+    List<ConversationDto.MessageDto> all = store.messages(userId, conversationId).stream()
+        .filter(m -> m.content() != null && !m.content().isBlank()).toList();
+    String title = row.title() == null || row.title().isBlank() ? "Conversation" : row.title();
+    String file = fileName(title);
+    if ("json".equalsIgnoreCase(format)) {
+      var node = com.jizza.engine.api.util.Json.obj()
+          .put("id", conversationId.toString()).put("title", title)
+          .put("createdAt", String.valueOf(row.createdAt()));
+      node.set("messages", com.jizza.engine.api.util.Json.toNode(all));
+      return new Export(file + ".json", "application/json", com.jizza.engine.api.util.Json.write(node));
+    }
+    if (format != null && !format.isBlank() && !"md".equalsIgnoreCase(format)) {
+      throw new ValidationException("Export as md or json");
+    }
+    java.time.format.DateTimeFormatter when = java.time.format.DateTimeFormatter
+        .ofPattern("d MMM yyyy, HH:mm 'UTC'", java.util.Locale.ENGLISH).withZone(java.time.ZoneOffset.UTC);
+    StringBuilder md = new StringBuilder("# ").append(title).append("\n\n");
+    if (row.createdAt() != null) md.append("_Started ").append(when.format(row.createdAt())).append("_\n\n");
+    for (ConversationDto.MessageDto m : all) {
+      switch (m.role()) {
+        case "user" -> md.append("**You** · ");
+        case "assistant" -> md.append("**Jizza** · ");
+        default -> md.append("_");
+      }
+      md.append(m.createdAt() == null ? "" : when.format(m.createdAt()));
+      if ("event".equals(m.role())) {
+        md.append(": ").append(m.content().strip()).append("_\n\n");
+      } else {
+        md.append("\n\n").append(m.content().strip()).append("\n\n");
+      }
+    }
+    return new Export(file + ".md", "text/markdown; charset=utf-8", md.toString());
+  }
+
+  public record Export(String fileName, String contentType, String body) {}
+
+  static String fileName(String title) {
+    String slug = title.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
+        .replaceAll("(^-+|-+$)", "");
+    if (slug.length() > 60) slug = slug.substring(0, 60).replaceAll("-+$", "");
+    return slug.isEmpty() ? "conversation" : slug;
+  }
+
   public void delete(UUID userId, UUID conversationId) {
     store.delete(userId, conversationId);
   }

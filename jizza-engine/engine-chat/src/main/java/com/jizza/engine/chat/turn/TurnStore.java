@@ -7,6 +7,7 @@ import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.chat.activity.JobSummaries;
+import com.jizza.engine.chat.config.ChatProperties;
 import com.jizza.engine.persistence.entity.ConversationEntity;
 import com.jizza.engine.persistence.entity.DelegationTraceEntity;
 import com.jizza.engine.persistence.entity.ChatJobEntity;
@@ -17,8 +18,6 @@ import com.jizza.engine.persistence.repository.ChatJobRepository;
 import com.jizza.engine.persistence.repository.MessageRepository;
 import com.jizza.engine.api.orchestrator.Orchestrator;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,16 +30,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class TurnStore {
 
-  /** How many prior messages are replayed into the model as conversation context. */
-  static final int HISTORY_MESSAGES = 20;
-
   private final ConversationRepository conversations;
   private final MessageRepository messages;
   private final ChatJobRepository jobs;
   private final DelegationTraceRepository traces;
+  private final ChatProperties props;
 
   public TurnStore(ConversationRepository conversations, MessageRepository messages,
-                   ChatJobRepository jobs, DelegationTraceRepository traces) {
+                   ChatJobRepository jobs, DelegationTraceRepository traces, ChatProperties props) {
+    this.props = props;
     this.conversations = conversations;
     this.messages = messages;
     this.jobs = jobs;
@@ -141,17 +139,13 @@ public class TurnStore {
   /** The turns before this one, oldest first: what Jizza is reminded of. */
   @Transactional(readOnly = true)
   public List<Msg> history(UUID conversationId, UUID userMessageId) {
-    List<MessageEntity> recent = new ArrayList<>(messages.findByConversationIdOrderByCreatedAtDesc(
-        conversationId, PageRequest.of(0, HISTORY_MESSAGES + 2)));
-    Collections.reverse(recent);
-    List<Msg> history = recent.stream()
-        .filter(m -> !m.getId().equals(userMessageId))
-        .filter(m -> m.getRole() != MessageRole.EVENT)
-        .filter(m -> m.getContent() != null && !m.getContent().isBlank())
-        .filter(m -> !MessageEntity.STREAMING.equals(m.getStatus()))
-        .map(m -> m.getRole() == MessageRole.USER ? Msg.user(m.getContent()) : Msg.assistant(m.getContent()))
-        .toList();
-    return history.subList(Math.max(0, history.size() - HISTORY_MESSAGES), history.size());
+    ConversationEntity conversation = conversations.findById(conversationId).orElse(null);
+    String summary = conversation == null ? null : conversation.getSummary();
+    Instant after = conversation == null || conversation.getSummaryThrough() == null
+        ? Instant.EPOCH : conversation.getSummaryThrough();
+    List<MessageEntity> recent = messages.findByConversationIdAndCreatedAtAfterOrderByCreatedAtDesc(
+        conversationId, after, PageRequest.of(0, props.getContext().getMaxMessages()));
+    return ContextWindow.build(summary, recent, userMessageId, props.getContext().getMaxHistoryTokens());
   }
 
   @Transactional

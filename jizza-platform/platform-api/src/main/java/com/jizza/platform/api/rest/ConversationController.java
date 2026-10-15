@@ -66,6 +66,18 @@ public class ConversationController {
     return conversations.messages(CurrentUser.userId(), id);
   }
 
+  /** The conversation as a file: {@code md} (default) or {@code json}. */
+  @GetMapping("/{id}/export")
+  public org.springframework.http.ResponseEntity<String> export(@PathVariable UUID id,
+      @RequestParam(defaultValue = "md") String format) {
+    ConversationUseCase.Export file = conversations.export(CurrentUser.userId(), id, format);
+    return org.springframework.http.ResponseEntity.ok()
+        .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+            org.springframework.http.ContentDisposition.attachment().filename(file.fileName()).build().toString())
+        .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+        .body(file.body());
+  }
+
   /** The conversation's jobs, oldest first, without their events. */
   @GetMapping("/{id}/jobs")
   public List<JobDto> jobs(@PathVariable UUID id) {

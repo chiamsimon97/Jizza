@@ -33,4 +33,6 @@ public final class ActivityTypes {
   public static final String APPROVAL_REQUIRED = "approval.required";
   /** Something Jizza asked the user's screen to do. */
   public static final String UI_ACTION = "ui.action";
+  /** The conversation was given a title after its first exchange. */
+  public static final String CONVERSATION_TITLED = "conversation.titled";
 }

@@ -80,10 +80,13 @@ public class TurnRunner implements ChatService {
   private record Active(UUID userId, JobRecorder recorder, CompletableFuture<AssistantReply> reply,
                         boolean incognito, String title, Instant startedAt) {}
 
+  private final ObjectProvider<ConversationUpkeep> upkeep;
+
   public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
                     AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
                     ObjectProvider<MemoryLearner> learner, ObjectProvider<OutputLearner> outputLearner,
-                    PlatformTransactionManager transactions) {
+                    PlatformTransactionManager transactions, ObjectProvider<ConversationUpkeep> upkeep) {
+    this.upkeep = upkeep;
     this.store = store;
     this.orchestrator = orchestrator;
     this.events = events;
@@ -251,6 +254,8 @@ public class TurnRunner implements ChatService {
             outputLearner.ifAvailable(l -> l.afterJob(new OutputLearner.JobOutput(userId,
                 ref.conversationId(), ref.jobId(), s.text(), found)));
           }
+          // A title after the first exchange, and a summary once the chat outgrows the window.
+          upkeep.ifAvailable(u -> u.afterTurn(userId, ref.conversationId()));
           return null;
         });
       }

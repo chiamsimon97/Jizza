@@ -210,7 +210,7 @@ export type JobEventType =
   | 'agent.started' | 'agent.message'
   | 'tool.call' | 'tool.api'
   | 'memory.used' | 'memory.saved' | 'output'
-  | 'approval.required' | 'ui.action'
+  | 'approval.required' | 'ui.action' | 'conversation.titled'
 
 export interface JobEvent {
   seq: number

@@ -247,6 +247,10 @@ export const useAssistantStore = create<AssistantState>()(
           case 'delta':
             updateMessage(e.jobId, m => ({ ...m, text: m.streaming ? m.text + (e.payload.text ?? '') : m.text }))
             return
+          case 'conversation.titled':
+            // The model named the conversation after its first exchange; the list shows it.
+            set(s => ({ conversationsVersion: s.conversationsVersion + 1 }))
+            break
           case 'segment.preamble':
             // What streamed so far was Jizza narrating before using tools; the answer comes next.
             updateMessage(e.jobId, m => ({ ...m, text: '' }))

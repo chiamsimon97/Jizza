@@ -25,7 +25,10 @@ public class ConversationEntity {
 
   private String title;
 
-  /** {@code auto} titles may be replaced by a better one; {@code user} titles never are. */
+  /**
+   * {@code auto} titles (the first words typed) are replaced by a {@code model} one after the first
+   * exchange; {@code user} titles are never replaced.
+   */
   @Column(nullable = false)
   private String titleSource = "auto";
 
@@ -38,6 +41,17 @@ public class ConversationEntity {
 
   @Column(nullable = false)
   private int messageCount;
+
+  /** What the conversation said before {@link #summaryThrough}, folded into prose. */
+  private String summary;
+
+  private Instant summaryThrough;
+
+  public String getSummary() { return summary; }
+  public void setSummary(String summary) { this.summary = summary; }
+
+  public Instant getSummaryThrough() { return summaryThrough; }
+  public void setSummaryThrough(Instant summaryThrough) { this.summaryThrough = summaryThrough; }
 
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }

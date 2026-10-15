@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
 import { conversationsApi } from '@/api/conversations'
 import type { ConversationSummary } from '@/types'
 import { resumeConversation, useAssistantStore } from '../assistantStore'
@@ -190,6 +190,7 @@ function Row({ c, active, onPicked, patch, remove }: {
         <div className="absolute right-1 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900">
           <MenuItem icon={c.pinned ? PinOff : Pin} label={c.pinned ? 'Unpin' : 'Pin'} onClick={() => { patch({ id: c.id, pinned: !c.pinned }); setMenu(false) }} />
           <MenuItem icon={Pencil} label="Rename" onClick={() => { setTitle(c.title ?? ''); setRenaming(true); setMenu(false) }} />
+          <MenuItem icon={Download} label="Download" onClick={() => { void conversationsApi.download(c.id, c.title, 'md'); setMenu(false) }} />
           <MenuItem icon={c.archived ? ArchiveRestore : Archive} label={c.archived ? 'Unarchive' : 'Archive'} onClick={() => { patch({ id: c.id, archived: !c.archived }); setMenu(false) }} />
           {confirming
             ? <MenuItem icon={Trash2} label="Delete for good" danger onClick={() => { remove(c.id); setMenu(false) }} />

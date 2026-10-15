@@ -36,6 +36,7 @@ class ChatJobsE2eTest extends E2eSupport {
   @LocalServerPort private int port;
   @Autowired private E2eSupport.ScriptedLlmClient model;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private com.jizza.engine.chat.config.ChatProperties chat;
 
   private ApiClient api;
   private UUID userId;
@@ -462,5 +463,99 @@ class ChatJobsE2eTest extends E2eSupport {
     assertThat(model.everythingTheModelSaw()).contains("can only come from a message the user typed");
     assertThat(jdbc.queryForObject("select count(*) from memories where user_id = ? and category = 'instruction'",
         Integer.class, userId)).isZero();
+  }
+
+  // ---- Long conversations (design 4.6) ----
+
+  private <T> T await(java.util.function.Supplier<T> read, java.util.function.Predicate<T> done, String what) {
+    Instant deadline = Instant.now().plus(Duration.ofSeconds(20));
+    T value = read.get();
+    while (!done.test(value) && Instant.now().isBefore(deadline)) {
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+      value = read.get();
+    }
+    assertThat(done.test(value)).as(what + ": " + value).isTrue();
+    return value;
+  }
+
+  @Test
+  void aLongConversationIsTitledAndKeepsItsStartAsASummary() {
+    int budget = chat.getContext().getMaxHistoryTokens();
+    chat.getTitles().setEnabled(true);
+    chat.getContext().setMaxHistoryTokens(120);
+    try {
+      model.fallback = messages -> {
+        String system = messages.get(0).text() == null ? "" : messages.get(0).text();
+        if (system.startsWith("Write a title")) return LlmResponse.text("\"Car insurance renewal.\"");
+        if (system.startsWith("You keep the running summary")) {
+          return LlmResponse.text("The user drives a 2019 Honda Civic and wants to renew its insurance.");
+        }
+        return LlmResponse.text("Noted, " + "z".repeat(80));
+      };
+      var first = api.post("/api/chat", Map.of("message",
+          "My car is a 2019 Honda Civic and its insurance runs out on 30 November, please help me renew it."));
+      String conversationId = first.json().path("conversationId").asText();
+
+      // The first words typed are replaced by a short title once Jizza has answered.
+      await(() -> jdbc.queryForMap("select title, title_source from conversations where id = ?::uuid", conversationId),
+          row -> "model".equals(row.get("title_source")), "titled");
+      assertThat(jdbc.queryForObject("select title from conversations where id = ?::uuid", String.class, conversationId))
+          .isEqualTo("Car insurance renewal");
+
+      for (int i = 1; i <= 4; i++) {
+        api.post("/api/chat", Map.of("conversationId", conversationId, "message",
+            "Follow-up number " + i + ": " + "w".repeat(100)));
+      }
+      // What fell out of the window is folded into a summary...
+      await(() -> jdbc.queryForObject("select summary from conversations where id = ?::uuid", String.class, conversationId),
+          s -> s != null && s.contains("2019 Honda Civic"), "summarised");
+
+      // ...which the next turn is handed in place of the first message.
+      model.requests.clear();
+      api.post("/api/chat", Map.of("conversationId", conversationId, "message", "So what's my car?"));
+      String seen = model.requests.stream().filter(r -> r.get(0).text() != null && r.get(0).text().startsWith("Your name is Jizza"))
+          .reduce((a, b) -> b).map(Object::toString).orElseThrow();
+      assertThat(seen).contains("Summary of earlier in this conversation").contains("2019 Honda Civic and wants to renew");
+      assertThat(seen).doesNotContain("insurance runs out on 30 November");
+
+      // A title the user chose is never replaced.
+      api.patch("/api/conversations/" + conversationId, Map.of("title", "Civic"));
+      api.post("/api/chat", Map.of("conversationId", conversationId, "message", "Thanks"));
+      assertThat(jdbc.queryForObject("select title from conversations where id = ?::uuid", String.class, conversationId))
+          .isEqualTo("Civic");
+    } finally {
+      chat.getTitles().setEnabled(false);
+      chat.getContext().setMaxHistoryTokens(budget);
+    }
+  }
+
+  @Test
+  void aConversationExportsAsMarkdownOrJson() {
+    model.scriptFor("Jizza", LlmResponse.text("Your SIP is Rs 20,000 a month."));
+    var reply = api.post("/api/chat", Map.of("message", "How much is my SIP?"));
+    String conversationId = reply.json().path("conversationId").asText();
+
+    var md = api.get("/api/conversations/" + conversationId + "/export");
+    assertThat(md.status()).isEqualTo(200);
+    assertThat(md.body()).startsWith("# How much is my SIP?")
+        .contains("**You**").contains("How much is my SIP?")
+        .contains("**Jizza**").contains("Your SIP is Rs 20,000 a month.");
+
+    var json = api.get("/api/conversations/" + conversationId + "/export?format=json");
+    assertThat(json.json().path("messages").findValuesAsText("role")).containsExactly("user", "assistant");
+    assertThat(api.get("/api/conversations/" + conversationId + "/export?format=pdf").status()).isEqualTo(400);
+
+    // Someone else's conversation is not theirs to export.
+    var stranger = new ApiClient(port);
+    stranger.prime();
+    String email = "other-" + UUID.randomUUID() + "@jizza.local";
+    stranger.post("/api/auth/register", Map.of("email", email, "password", PASSWORD));
+    stranger.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+    assertThat(stranger.get("/api/conversations/" + conversationId + "/export").status()).isEqualTo(404);
   }
 }
