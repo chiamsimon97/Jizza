@@ -155,9 +155,8 @@ public class TurnRunner implements ChatService {
           done.text(), contributors(done), done.actions());
       String summary = JobSummaries.summarize(recorder.all());
 
-      if (persist) {
-        store.finish(ref.jobId(), ChatJobEntity.COMPLETED, done.text(), metadata(ref, answer), summary, done);
-      }
+      // The closing event is written before the job row says it finished, so anyone who sees a
+      // finished job can also read how it ended.
       recorder.emit(event(ActivityTypes.JOB_COMPLETED, p -> {
         p.put("text", done.text());
         p.put("summary", summary);
@@ -165,6 +164,9 @@ public class TurnRunner implements ChatService {
         p.set("actions", Json.toNode(answer.actions()));
         p.put("inputTokens", done.inputTokens()).put("outputTokens", done.outputTokens());
       }));
+      if (persist) {
+        store.finish(ref.jobId(), ChatJobEntity.COMPLETED, done.text(), metadata(ref, answer), summary, done);
+      }
       if (persist) {
         // Durable facts in what the user just said are promoted to long-term memory (off this
         // thread unless configured otherwise). Incognito turns never reach here.
@@ -175,9 +177,9 @@ public class TurnRunner implements ChatService {
     } catch (JobCancelledException e) {
       String partial = recorder.partialText();
       String summary = JobSummaries.summarize(recorder.all()) + " Stopped by you.";
+      recorder.emit(event(ActivityTypes.JOB_CANCELLED, p -> p.put("text", partial).put("summary", summary)));
       if (persist) store.finish(ref.jobId(), ChatJobEntity.CANCELLED, partial, null, summary, null);
       audit.record(userId, ActorType.USER, userId, "chat.turn.cancel", ref.jobId().toString(), null);
-      recorder.emit(event(ActivityTypes.JOB_CANCELLED, p -> p.put("text", partial).put("summary", summary)));
       reply.completeExceptionally(new JizzaException(org.springframework.http.HttpStatus.CONFLICT,
           "turn-cancelled", "Stopped", "The turn was stopped before it finished"));
     } catch (RuntimeException e) {
@@ -185,16 +187,16 @@ public class TurnRunner implements ChatService {
       String title = e instanceof JizzaException je ? je.title() : "Something went wrong";
       String detail = e.getMessage() == null ? "The turn failed" : e.getMessage();
       String type = e instanceof JizzaException je ? je.type() : "turn-failed";
+      String summary = JobSummaries.summarize(recorder.all()) + " Stopped: " + detail;
+      recorder.emit(event(ActivityTypes.JOB_FAILED, p -> p.put("title", title).put("detail", detail)
+          .put("problemType", type)));
       if (persist) {
         try {
-          store.finish(ref.jobId(), ChatJobEntity.FAILED, detail, null,
-              JobSummaries.summarize(recorder.all()) + " Stopped: " + detail, null);
+          store.finish(ref.jobId(), ChatJobEntity.FAILED, detail, null, summary, null);
         } catch (RuntimeException inner) {
           log.warn("Could not record the failure of turn {}", ref.jobId(), inner);
         }
       }
-      recorder.emit(event(ActivityTypes.JOB_FAILED, p -> p.put("title", title).put("detail", detail)
-          .put("problemType", type)));
       reply.completeExceptionally(e);
     } finally {
       if (persist) active.remove(ref.jobId());
