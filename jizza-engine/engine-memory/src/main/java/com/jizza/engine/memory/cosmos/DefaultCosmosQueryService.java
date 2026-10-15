@@ -428,6 +428,9 @@ public class DefaultCosmosQueryService implements CosmosQueryService {
           null, createdBy);
       case CONVERSATION -> new Passport.Origin("conversation", "Learned from a conversation", ref,
           conversationOf(ref), null, null);
+      case TOOL -> new Passport.Origin("tool",
+          ref != null && ref.startsWith("tool:") ? "Found in " + ref.substring(5) + " data"
+              : "Found in a connected service's data", ref, null, null, null);
       case IMPORT -> new Passport.Origin("import",
           ref != null && ref.startsWith("note:") ? "Promoted from an agent's note" : "Imported", ref,
           null, null, null);

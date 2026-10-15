@@ -164,6 +164,15 @@ public class DefaultToolExecutor implements ToolExecutor {
       return ToolResult.error("The service replied " + response.status() + ": "
           + Redaction.scrub(abbreviate(response.body())));
     }
+    // What came back, in the few values a person would want to see (the Memory panel's output).
+    ObjectNode summary = OutputSummary.of(response.json());
+    if (!summary.path("fields").isEmpty() || summary.has("items")) {
+      String label = tool.name().replace('_', ' ');
+      com.jizza.engine.api.activity.Activity.emit(com.jizza.engine.api.activity.ActivityTypes.OUTPUT,
+          null, null, p -> p.put("tool", tool.name()).put("service", connection.getServiceName())
+              .put("label", label).put("text", OutputSummary.line(connection.getServiceName(), label, summary))
+              .setAll(summary));
+    }
     return ToolResult.ok(output);
   }
 

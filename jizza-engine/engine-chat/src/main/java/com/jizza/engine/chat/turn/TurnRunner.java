@@ -17,6 +17,10 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.memory.MemoryLearner;
+import com.jizza.engine.api.memory.OutputLearner;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.jizza.engine.api.orchestrator.AssistantReply;
 import com.jizza.engine.api.orchestrator.Orchestrator;
 import com.jizza.engine.api.orchestrator.UiAction;
@@ -64,6 +68,8 @@ public class TurnRunner implements ChatService {
   private final AuditLog audit;
   private final ObjectProvider<RealtimeGateway> realtime;
   private final ObjectProvider<MemoryLearner> learner;
+  private final ObjectProvider<OutputLearner> outputLearner;
+  private final TransactionTemplate eventTx;
   private final ExecutorService runner =
       Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("jizza-turn-", 0).factory());
 
@@ -75,13 +81,17 @@ public class TurnRunner implements ChatService {
 
   public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
                     AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
-                    ObjectProvider<MemoryLearner> learner) {
+                    ObjectProvider<MemoryLearner> learner, ObjectProvider<OutputLearner> outputLearner,
+                    PlatformTransactionManager transactions) {
     this.store = store;
     this.orchestrator = orchestrator;
     this.events = events;
     this.audit = audit;
     this.realtime = realtime;
     this.learner = learner;
+    this.outputLearner = outputLearner;
+    this.eventTx = new TransactionTemplate(transactions);
+    this.eventTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
   @Override
@@ -129,7 +139,7 @@ public class TurnRunner implements ChatService {
   private CompletableFuture<AssistantReply> launch(UUID userId, TurnRef ref, TurnSubmission s,
                                                    List<Msg> history, boolean persist) {
     JobRecorder recorder = new JobRecorder(ref.jobId(), userId, ref.conversationId(), persist,
-        events, realtime.getIfAvailable());
+        events, eventTx, realtime.getIfAvailable());
     CompletableFuture<AssistantReply> reply = new CompletableFuture<>();
     active.put(ref.jobId(), new Active(userId, recorder, reply, !persist,
         JobSummaries.title(s.text()), Instant.now()));
@@ -168,10 +178,19 @@ public class TurnRunner implements ChatService {
         store.finish(ref.jobId(), ChatJobEntity.COMPLETED, done.text(), metadata(ref, answer), summary, done);
       }
       if (persist) {
-        // Durable facts in what the user just said are promoted to long-term memory (off this
-        // thread unless configured otherwise). Incognito turns never reach here.
-        learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
-            ref.userMessageId(), s.text(), done.text())));
+        // Durable facts in what the user said, and in what the job fetched, are kept (off this
+        // thread unless configured otherwise). Bound to the job so what is saved shows under it.
+        // Incognito turns never reach here: they read memory but never write it.
+        Activity.run(recorder, () -> {
+          learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
+              ref.userMessageId(), s.text(), done.text())));
+          List<OutputLearner.Finding> found = findings(recorder.all());
+          if (!found.isEmpty()) {
+            outputLearner.ifAvailable(l -> l.afterJob(new OutputLearner.JobOutput(userId,
+                ref.conversationId(), ref.jobId(), s.text(), found)));
+          }
+          return null;
+        });
       }
       reply.complete(answer);
     } catch (JobCancelledException e) {
@@ -244,6 +263,24 @@ public class TurnRunner implements ChatService {
     return new JobDto(j.getId(), j.getConversationId(), j.getOrigin(), j.getTitle(), j.getSummary(),
         j.getStatus(), j.getUserMessageId(), j.getAssistantMessageId(), j.getStartedAt(),
         j.getFinishedAt(), events, partial);
+  }
+
+  /** What the job fetched, as the summaries the Activity trail already shows, never raw payloads. */
+  static List<OutputLearner.Finding> findings(List<JobEventDto> events) {
+    List<OutputLearner.Finding> out = new java.util.ArrayList<>();
+    for (JobEventDto e : events) {
+      if (ActivityTypes.OUTPUT.equals(e.type())) {
+        out.add(new OutputLearner.Finding(e.agentId(), e.agentName(),
+            e.payload().path("service").asText(null), e.payload().path("text").asText("")));
+      } else if (ActivityTypes.AGENT_MESSAGE.equals(e.type())
+          && "answer".equals(e.payload().path("kind").asText())) {
+        String text = e.payload().path("text").asText("");
+        out.add(new OutputLearner.Finding(e.agentId(), e.agentName(), null,
+            text.length() <= 2000 ? text : text.substring(0, 2000)));
+      }
+    }
+    // Only what a service returned is new information; a specialist answering from memory is not.
+    return out.stream().anyMatch(f -> f.service() != null) ? out : List.of();
   }
 
   /** A reply already given, for a retried send that arrives after its turn finished. */

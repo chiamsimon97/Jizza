@@ -1,4 +1,6 @@
-import { Brain, Database, Globe, MessageSquareQuote, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { Brain, Check, Database, Globe, MessageSquareQuote, Sparkles, Trash2 } from 'lucide-react'
+import { cosmosApi } from '@/api/cosmos'
 import type { JobEvent } from '@/types'
 import { useAssistantStore } from '../assistantStore'
 import { PanelTitle } from './ActivityPanel'
@@ -55,8 +57,12 @@ export function MemoryPanel() {
   }
 
   const context = contextOf(job.events)
+  // A call whose result was summarised shows as that summary; a bare call line is only kept when
+  // there is nothing better to show (an error, or a response with no readable values).
+  const summarised = new Set(job.events.filter(e => e.type === 'output').map(e => e.payload.tool))
   const outputs = job.events.filter(e =>
-    e.type === 'output' || e.type === 'tool.api' || (e.type === 'agent.message' && e.payload.kind === 'answer'))
+    e.type === 'output' || (e.type === 'tool.api' && !summarised.has(e.payload.tool))
+    || (e.type === 'agent.message' && e.payload.kind === 'answer'))
   const saved = job.events.filter(e => e.type === 'memory.saved')
 
   return (
@@ -97,24 +103,66 @@ export function MemoryPanel() {
           {incognito ? (
             <Empty>Incognito: Jizza can read your memory but saves nothing from this chat.</Empty>
           ) : saved.length === 0 ? (
-            <Empty>Nothing new to remember from this one.</Empty>
+            <Empty>{job.status === 'running' ? 'Anything worth keeping shows up here.' : 'Nothing new to remember from this one.'}</Empty>
           ) : (
             <ul className="flex flex-col gap-1.5">
-              {saved.map(e => (
-                <li key={e.seq} className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-2 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-                  <p className="text-xs leading-relaxed text-gray-800 dark:text-gray-200">{e.payload.text}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    {e.payload.category && <Chip>{String(e.payload.category).toLowerCase()}</Chip>}
-                    {e.payload.status === 'pending' && <Chip tone="amber">waiting for your OK</Chip>}
-                    {e.payload.source && <span className="text-[10px] text-gray-400">· from {e.payload.source}</span>}
-                  </div>
-                </li>
-              ))}
+              {saved.map(e => <SavedFact key={e.seq} e={e} />)}
             </ul>
           )}
         </Section>
       </div>
     </div>
+  )
+}
+
+const ORIGIN: Record<string, string> = {
+  conversation: 'from what you said',
+  agent: 'saved by an agent',
+  user: 'you told Jizza',
+}
+
+function origin(e: JobEvent): string | undefined {
+  const ref: string | undefined = e.payload.sourceRef
+  if (e.payload.source === 'tool') return ref?.startsWith('tool:') ? `found in ${ref.slice(5)} data` : 'found in service data'
+  return ORIGIN[e.payload.source]
+}
+
+/** A fact the job kept. Anything not confirmed can be confirmed or forgotten right here. */
+function SavedFact({ e }: { e: JobEvent }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'confirmed' | 'forgotten' | 'error'>('idle')
+  const p = e.payload
+  const confirmed = p.confirmed === true || state === 'confirmed'
+  const act = async (fn: () => Promise<unknown>, done: 'confirmed' | 'forgotten') => {
+    setState('busy')
+    try { await fn(); setState(done) } catch { setState('error') }
+  }
+  if (state === 'forgotten') {
+    return <li className="text-xs text-gray-400 line-through">{p.text}</li>
+  }
+  return (
+    <li className={`rounded-lg border px-2.5 py-2 ${confirmed
+      ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10'
+      : 'border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/10'}`}>
+      <p className="text-xs leading-relaxed text-gray-800 dark:text-gray-200">{p.text}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        {p.category && <Chip>{String(p.category).toLowerCase()}</Chip>}
+        {!confirmed && <Chip tone="amber">{p.status === 'pending' ? 'conflicts with what you said' : 'not confirmed'}</Chip>}
+        {origin(e) && <span className="text-[10px] text-gray-400">· {origin(e)}</span>}
+      </div>
+      {!confirmed && p.id && (
+        <div className="mt-1.5 flex gap-1.5">
+          <button type="button" disabled={state === 'busy'} onClick={() => void act(() => cosmosApi.confirmFact(p.id), 'confirmed')}
+            className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-300 hover:bg-emerald-50 disabled:opacity-50 dark:bg-gray-900 dark:text-emerald-300 dark:ring-emerald-500/40">
+            <Check className="h-3 w-3" /> Confirm
+          </button>
+          <button type="button" disabled={state === 'busy'} onClick={() => void act(() => cosmosApi.forgetFact(p.id), 'forgotten')}
+            className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
+            <Trash2 className="h-3 w-3" /> Forget
+          </button>
+          {state === 'error' && <span className="text-[11px] text-red-500">That didn't work; try again.</span>}
+        </div>
+      )}
+    </li>
   )
 }
 
@@ -136,10 +184,24 @@ function Output({ e }: { e: JobEvent }) {
       </li>
     )
   }
+  const fields = (p.fields ?? []) as { key: string; value: string }[]
   return (
-    <li className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-300">
-      <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
-      <span className="min-w-0">{p.label && <span className="font-medium">{p.label}: </span>}{p.summary ?? p.text}</span>
+    <li className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs dark:border-gray-800 dark:bg-gray-900">
+      <p className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-200">
+        <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        {p.service} · {p.label}
+        {typeof p.items === 'number' && <span className="font-normal text-gray-400">· {p.items} items</span>}
+      </p>
+      {fields.length > 0 && (
+        <dl className="mt-1 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+          {fields.map(f => (
+            <div key={f.key} className="contents">
+              <dt className="truncate text-gray-500 dark:text-gray-400">{f.key}</dt>
+              <dd className="truncate font-mono text-[11px] text-gray-800 dark:text-gray-200">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </li>
   )
 }

@@ -9,6 +9,7 @@ import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.JobEventEntity;
 import com.jizza.engine.persistence.repository.JobEventRepository;
+import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +40,7 @@ public class JobRecorder implements ActivitySink {
   private final UUID conversationId;
   private final boolean persist;
   private final JobEventRepository events;
+  private final TransactionTemplate tx;
   private final RealtimeGateway realtime;
   private final AtomicInteger seq = new AtomicInteger();
   private final List<JobEventDto> kept = new ArrayList<>();
@@ -46,12 +48,13 @@ public class JobRecorder implements ActivitySink {
   private volatile boolean cancelled;
 
   public JobRecorder(UUID jobId, UUID userId, UUID conversationId, boolean persist,
-                     JobEventRepository events, RealtimeGateway realtime) {
+                     JobEventRepository events, TransactionTemplate tx, RealtimeGateway realtime) {
     this.jobId = jobId;
     this.userId = userId;
     this.conversationId = conversationId;
     this.persist = persist;
     this.events = events;
+    this.tx = tx;
     this.realtime = realtime;
   }
 
@@ -89,7 +92,10 @@ public class JobRecorder implements ActivitySink {
       entity.setAgentName(dto.agentName());
       entity.setPayload(dto.payload());
       entity.setAt(dto.at());
-      events.save(entity);
+      // Its own transaction: an event can be raised from inside a tool's read-only or failing
+      // transaction, and must still be kept.
+      if (tx == null) events.save(entity);
+      else tx.executeWithoutResult(status -> events.save(entity));
     } catch (RuntimeException e) {
       log.warn("Could not keep event {} of job {}", dto.type(), jobId, e);
     }
