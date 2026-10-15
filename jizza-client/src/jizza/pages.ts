@@ -1,7 +1,7 @@
 /** The pages Jizza can open, keyed the way the backend's app_navigate tool names them. */
 export const PAGES: Record<string, { path: string; label: string; aliases: string[] }> = {
   chat:          { path: '/chat',          label: 'Chat',          aliases: ['chat', 'home'] },
-  conversations: { path: '/conversations', label: 'History',       aliases: ['history', 'conversations', 'past chats', 'chat history'] },
+  conversations: { path: '/chat',          label: 'History',       aliases: ['history', 'conversations', 'past chats', 'chat history'] },
   notifications: { path: '/notifications', label: 'Notifications', aliases: ['notifications', 'inbox', 'alerts', 'approvals'] },
   agents:        { path: '/agents',        label: 'Agents',        aliases: ['agents', 'team', 'specialists'] },
   memory:        { path: '/memory',        label: 'Memory',        aliases: ['memory', 'memories', 'what you know', 'my files', 'documents'] },

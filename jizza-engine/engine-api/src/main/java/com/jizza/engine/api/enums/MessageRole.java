@@ -1,3 +1,3 @@
 package com.jizza.engine.api.enums;
 
-public enum MessageRole { USER, ASSISTANT }
+public enum MessageRole { USER, ASSISTANT, EVENT }

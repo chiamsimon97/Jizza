@@ -1,6 +1,8 @@
 package com.jizza.engine.agents.runtime;
 
 import com.jizza.engine.agents.config.AgentProperties;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.cosmos.AccessContext;
@@ -118,19 +120,45 @@ public class BaseAgent implements Agent {
     int outputTokens = 0;
     String lastText = "";
 
+    if (!remembered.memoryIds().isEmpty()) {
+      Activity.emit(ActivityTypes.MEMORY_USED, agent.getId(), agent.getName(), p -> {
+        p.put("count", remembered.memoryIds().size());
+        var ids = p.putArray("memoryIds");
+        remembered.memoryIds().forEach(id -> ids.add(id.toString()));
+        var items = p.putArray("items");
+        for (MemoryContextProvider.Item item : remembered.items()) {
+          items.addObject().put("id", item.id().toString()).put("text", item.text())
+              .put("category", item.category()).put("reason", item.reason())
+              .put("score", Math.round(item.score() * 100) / 100.0).put("confirmed", item.confirmed());
+        }
+      });
+    }
+    // Only Jizza's own words stream to the user; a specialist's answer goes back to Jizza (R20).
+    boolean streams = agent.isOrchestrator() && Activity.active();
+
     audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.start", agent.getKey(),
         Json.obj().put("autonomous", req.autonomous()).put("tier", req.tier().name())
             .put("memoryFacts", remembered.memoryIds().size()));
 
     try {
       while (true) {
+        Activity.checkCancelled();
         budget.nextIteration();
-        LlmResponse response = llm.complete(model, messages, tools);
+        int segment = budget.iterations();
+        LlmResponse response = streams
+            ? llm.stream(model, messages, tools, piece -> {
+                Activity.checkCancelled();
+                Activity.emit(ActivityTypes.DELTA, agent.getId(), agent.getName(),
+                    p -> p.put("text", piece).put("segment", segment));
+              })
+            : llm.complete(model, messages, tools);
         inputTokens += response.inputTokens();
         outputTokens += response.outputTokens();
         costs.record(req.userId(), response.model() == null ? model : response.model(),
             response.inputTokens(), response.outputTokens(), "agent:" + agent.getKey());
         budget.addTokens(response.inputTokens(), response.outputTokens());
+        // A stop pressed while the model was thinking wins over whatever it came back with.
+        Activity.checkCancelled();
 
         if (response.text() != null && !response.text().isBlank()) lastText = response.text();
         if (!response.wantsTools()) {
@@ -140,9 +168,15 @@ public class BaseAgent implements Agent {
               inputTokens, outputTokens, null);
         }
 
+        if (streams && response.text() != null && !response.text().isBlank()) {
+          // What was streamed so far came before tool calls: narration, not the answer.
+          Activity.emit(ActivityTypes.SEGMENT_PREAMBLE, agent.getId(), agent.getName(),
+              p -> p.put("segment", segment).put("text", response.text()));
+        }
         messages.add(Msg.assistantToolCalls(response.text(), response.toolCalls()));
         List<Msg.ToolResultRef> results = new ArrayList<>();
         for (ToolCall call : response.toolCalls()) {
+          Activity.checkCancelled();
           callsMade.add(call);
           ToolResult result = capabilities.invoke(agent.getId(), call, req.autonomous());
           results.add(new Msg.ToolResultRef(call.id(), truncate(result)));

@@ -3,49 +3,37 @@ package com.jizza.engine.orchestrator.chat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivityEvent;
+import com.jizza.engine.api.activity.ActivitySink;
+import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.agent.AgentResult;
-import com.jizza.engine.api.audit.AuditLog;
-import com.jizza.engine.api.enums.MessageRole;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.llm.Msg;
-import com.jizza.engine.api.orchestrator.AssistantReply;
-import com.jizza.engine.api.realtime.RealtimeGateway;
+import com.jizza.engine.api.orchestrator.Orchestrator;
+import com.jizza.engine.api.orchestrator.UiAction;
+import com.jizza.engine.api.util.Json;
 import com.jizza.engine.orchestrator.delegation.DelegationRecorder;
 import com.jizza.engine.orchestrator.ui.UiActionRecorder;
-import com.jizza.engine.api.util.Json;
-import com.jizza.engine.api.orchestrator.UiAction;
-import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.persistence.entity.AgentEntity;
-import com.jizza.engine.persistence.entity.ConversationEntity;
-import com.jizza.engine.persistence.entity.DelegationTraceEntity;
-import com.jizza.engine.persistence.entity.MessageEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
-import com.jizza.engine.persistence.repository.ConversationRepository;
-import com.jizza.engine.persistence.repository.DelegationTraceRepository;
-import com.jizza.engine.persistence.repository.MessageRepository;
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 class JizzaOrchestratorTest {
 
   private final UUID userId = UUID.randomUUID();
-  private final List<MessageEntity> messageRows = new ArrayList<>();
-  private final List<ConversationEntity> conversationRows = new ArrayList<>();
-  private final List<DelegationTraceEntity> traceRows = new ArrayList<>();
-
   private AgentEntity jizza;
   private Agent baseAgent;
   private DelegationRecorder recorder;
@@ -53,7 +41,6 @@ class JizzaOrchestratorTest {
   private JizzaOrchestrator orchestrator;
 
   @BeforeEach
-  @SuppressWarnings("unchecked")
   void setUp() {
     jizza = new AgentEntity();
     jizza.setId(UUID.randomUUID());
@@ -66,71 +53,13 @@ class JizzaOrchestratorTest {
 
     AgentRepository agents = mock(AgentRepository.class);
     when(agents.findByUserIdAndIsOrchestratorTrue(userId)).thenReturn(Optional.of(jizza));
-
-    ConversationRepository conversations = mock(ConversationRepository.class);
-    when(conversations.save(any())).thenAnswer(inv -> {
-      ConversationEntity c = inv.getArgument(0);
-      if (c.getId() == null) c.setId(UUID.randomUUID());
-      c.setCreatedAt(Instant.now());
-      conversationRows.add(c);
-      return c;
-    });
-    when(conversations.findByUserIdOrderByCreatedAtDesc(eq(userId), any()))
-        .thenAnswer(inv -> List.copyOf(conversationRows));
-    when(conversations.findById(any())).thenAnswer(inv ->
-        conversationRows.stream().filter(c -> c.getId().equals(inv.getArgument(0))).findFirst());
-
-    MessageRepository messages = mock(MessageRepository.class);
-    when(messages.save(any())).thenAnswer(inv -> {
-      MessageEntity m = inv.getArgument(0);
-      m.setId(UUID.randomUUID());
-      m.setCreatedAt(Instant.now().plusNanos(messageRows.size()));
-      messageRows.add(m);
-      return m;
-    });
-    when(messages.findByConversationIdOrderByCreatedAtDesc(any(), any())).thenAnswer(inv ->
-        messageRows.stream()
-            .filter(m -> m.getConversationId().equals(inv.<UUID>getArgument(0)))
-            .sorted(Comparator.comparing(MessageEntity::getCreatedAt).reversed())
-            .toList());
-
-    DelegationTraceRepository traces = mock(DelegationTraceRepository.class);
-    when(traces.save(any())).thenAnswer(inv -> {
-      traceRows.add(inv.getArgument(0));
-      return inv.getArgument(0);
-    });
-
     baseAgent = mock(Agent.class);
     recorder = new DelegationRecorder();
-
-    ObjectProvider<RealtimeGateway> realtime = mock(ObjectProvider.class);
-    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
-    beans.addBean("learner", (com.jizza.engine.api.memory.MemoryLearner) learnedTurns::add);
-    orchestrator = new JizzaOrchestrator(agents, conversations, messages, traces, baseAgent,
-        recorder, uiActions, mock(AuditLog.class), realtime,
-        beans.getBeanProvider(com.jizza.engine.api.memory.MemoryLearner.class));
+    orchestrator = new JizzaOrchestrator(agents, baseAgent, recorder, uiActions);
   }
 
-  private final List<com.jizza.engine.api.memory.MemoryLearner.Turn> learnedTurns = new ArrayList<>();
-
-  @Test
-  void handsEachFinishedTurnToMemoryLearning() {
-    answerWith("Noted, I'll keep Priya's plan in mind.");
-    var reply = orchestrator.handle(userId, "My wife Priya invests 20k a month in an index fund");
-
-    assertThat(learnedTurns).hasSize(1);
-    var turn = learnedTurns.get(0);
-    assertThat(turn.userId()).isEqualTo(userId);
-    assertThat(turn.conversationId()).isEqualTo(reply.conversationId());
-    assertThat(turn.userText()).contains("Priya invests");
-    assertThat(turn.assistantText()).contains("Priya's plan");
-  }
-
-  @Test
-  void incognitoTurnsAreNeverLearnedFrom() {
-    answerWith("ok");
-    orchestrator.handleIncognito(userId, "My wife Priya invests 20k a month in an index fund");
-    assertThat(learnedTurns).isEmpty();
+  private Orchestrator.Turn ask(String message) {
+    return orchestrator.respond(userId, new Orchestrator.TurnInput(message, null, List.of(), UUID.randomUUID()));
   }
 
   private void answerWith(String text, DelegationRecorder.Contribution... contributions) {
@@ -141,32 +70,26 @@ class JizzaOrchestratorTest {
   }
 
   @Test
-  void answersInJizzasVoiceAndPersistsBothTurns() {
+  void answersInJizzasVoice() {
     answerWith("Your sleep is trending up.");
-
-    AssistantReply reply = orchestrator.handle(userId, "How did I sleep?");
-
-    assertThat(reply.text()).isEqualTo("Your sleep is trending up.");
-    assertThat(messageRows).extracting(MessageEntity::getRole)
-        .containsExactly(MessageRole.USER, MessageRole.ASSISTANT);
-    assertThat(reply.conversationId()).isNotNull();
+    assertThat(ask("How did I sleep?").text()).isEqualTo("Your sleep is trending up.");
   }
 
   @Test
-  void attributesTheSpecialistsThatContributedByName() {
+  void reportsWhichSpecialistsContributedAndWhatTheyWereAsked() {
     UUID vita = UUID.randomUUID();
     UUID kai = UUID.randomUUID();
     answerWith("Vita and Kai both looked into it.",
         new DelegationRecorder.Contribution(vita, "Vita", "sleep trend", "up 8%"),
         new DelegationRecorder.Contribution(kai, "Kai", "gym spend", "2,400 this month"));
 
-    AssistantReply reply = orchestrator.handle(userId, "Is the gym worth it?");
+    Orchestrator.Turn turn = ask("Is the gym worth it?");
 
-    assertThat(reply.contributors()).extracting(AssistantReply.Contribution::agentName)
+    assertThat(turn.delegations()).extracting(Orchestrator.Delegation::agentName)
         .containsExactly("Vita", "Kai");
-    assertThat(traceRows).hasSize(2);
-    assertThat(traceRows).extracting(DelegationTraceEntity::getFromAgent)
+    assertThat(turn.delegations()).extracting(Orchestrator.Delegation::fromAgentId)
         .containsOnly(jizza.getId());
+    assertThat(turn.delegations().get(0).task()).isEqualTo("sleep trend");
   }
 
   @Test
@@ -174,56 +97,36 @@ class JizzaOrchestratorTest {
     answerWith("Here is the short version.",
         new DelegationRecorder.Contribution(UUID.randomUUID(), "Vita",
             "sleep trend", "RAW SPECIALIST OUTPUT that should never surface"));
-
-    AssistantReply reply = orchestrator.handle(userId, "How did I sleep?");
-
-    assertThat(reply.text()).isEqualTo("Here is the short version.");
-    assertThat(reply.contributors()).allSatisfy(c ->
-        assertThat(c.summary()).doesNotContain("RAW SPECIALIST OUTPUT"));
-    assertThat(messageRows.get(1).getContent()).doesNotContain("RAW SPECIALIST OUTPUT");
+    assertThat(ask("How did I sleep?").text()).doesNotContain("RAW SPECIALIST OUTPUT");
   }
 
   @Test
-  void replaysPriorTurnsAsContextWithoutRepeatingTheCurrentOne() {
-    answerWith("first answer");
-    orchestrator.handle(userId, "first question");
+  void passesTheHistoryItIsGivenAndTheCurrentMessageSeparately() {
     answerWith("second answer");
+    orchestrator.respond(userId, new Orchestrator.TurnInput("second question", null,
+        List.of(Msg.user("first question"), Msg.assistant("first answer")), UUID.randomUUID()));
 
-    orchestrator.handle(userId, "second question");
-
-    var captor = org.mockito.ArgumentCaptor.forClass(AgentRequest.class);
-    org.mockito.Mockito.verify(baseAgent, org.mockito.Mockito.atLeast(1)).run(captor.capture());
-    AgentRequest last = captor.getAllValues().get(captor.getAllValues().size() - 1);
-    assertThat(last.instruction()).isEqualTo("second question");
-    assertThat(last.history()).extracting(Msg::text)
+    ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
+    Mockito.verify(baseAgent).run(captor.capture());
+    assertThat(captor.getValue().instruction()).isEqualTo("second question");
+    assertThat(captor.getValue().history()).extracting(Msg::text)
         .containsExactly("first question", "first answer");
+    assertThat(captor.getValue().traceId()).startsWith("chat_turn:");
   }
 
   @Test
-  void continuesAnExistingConversationWhenOneIsNamed() {
+  void anIncognitoTurnHasNoMessageToStampMemoryReadsWith() {
     answerWith("ok");
-    UUID conversationId = orchestrator.handle(userId, "hello").conversationId();
-
-    answerWith("still ok");
-    AssistantReply second = orchestrator.handle(userId, conversationId, "again");
-
-    assertThat(second.conversationId()).isEqualTo(conversationId);
-    assertThat(conversationRows).hasSize(1);
-  }
-
-  @Test
-  void refusesAConversationBelongingToSomeoneElse() {
-    answerWith("ok");
-    UUID conversationId = orchestrator.handle(userId, "hello").conversationId();
-    conversationRows.get(0).setUserId(UUID.randomUUID());
-
-    assertThatThrownBy(() -> orchestrator.handle(userId, conversationId, "peek"))
-        .isInstanceOf(NotFoundException.class);
+    orchestrator.respond(userId, new Orchestrator.TurnInput("hi", null, List.of(), null));
+    ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
+    Mockito.verify(baseAgent).run(captor.capture());
+    assertThat(captor.getValue().traceId()).isNull();
   }
 
   @Test
   void aUserWithoutAnOrchestratorAgentIsARecognisableError() {
-    assertThatThrownBy(() -> orchestrator.handle(UUID.randomUUID(), "hello"))
+    assertThatThrownBy(() -> orchestrator.respond(UUID.randomUUID(),
+        new Orchestrator.TurnInput("hello", null, List.of(), null)))
         .isInstanceOf(NotFoundException.class)
         .hasMessageContaining("Orchestrator agent for user");
   }
@@ -231,36 +134,36 @@ class JizzaOrchestratorTest {
   @Test
   void anEmptyModelReplyStillProducesSomethingHonest() {
     when(baseAgent.run(any())).thenReturn(AgentResult.of(jizza.getId(), "Jizza", "  "));
-
-    AssistantReply reply = orchestrator.handle(userId, "hello?");
-
-    assertThat(reply.text()).isEqualTo("I could not put together an answer for that.");
+    assertThat(ask("hello?").text()).isEqualTo("I could not put together an answer for that.");
   }
 
   @Test
   void theTurnScopedRecorderDoesNotLeakBetweenTurns() {
     answerWith("one", new DelegationRecorder.Contribution(UUID.randomUUID(), "Vita", "t", "r"));
-    orchestrator.handle(userId, "first");
-
+    ask("first");
     answerWith("two");
-    AssistantReply second = orchestrator.handle(userId, "second");
-
-    assertThat(second.contributors()).isEmpty();
+    assertThat(ask("second").delegations()).isEmpty();
   }
 
   @Test
-  void carriesScreenActionsOnTheReplyAndKeepsTheScreenOutOfTheStoredMessage() {
+  void carriesScreenActionsAndReportsThemToTheJob() {
     when(baseAgent.run(any())).thenAnswer(inv -> {
       AgentRequest req = inv.getArgument(0);
       assertThat(req.instruction()).contains("[App context: the user is on the 'tasks' page");
       uiActions.record(new UiAction(UiAction.NAVIGATE, Json.obj().put("page", "workflows")));
       return AgentResult.of(jizza.getId(), "Jizza", "Opened Workflows.");
     });
+    List<ActivityEvent> events = new ArrayList<>();
+    ActivitySink sink = new ActivitySink() {
+      public void emit(ActivityEvent event) { events.add(event); }
+      public boolean cancelled() { return false; }
+    };
 
-    AssistantReply reply = orchestrator.handle(userId, null, "Make me a workflow", "tasks");
+    Orchestrator.Turn turn = Activity.run(sink, () -> orchestrator.respond(userId,
+        new Orchestrator.TurnInput("Make me a workflow", "tasks", List.of(), UUID.randomUUID())));
 
-    assertThat(reply.actions()).extracting(UiAction::type).containsExactly(UiAction.NAVIGATE);
-    assertThat(messageRows.get(0).getContent()).isEqualTo("Make me a workflow");
+    assertThat(turn.actions()).extracting(UiAction::type).containsExactly(UiAction.NAVIGATE);
+    assertThat(events).extracting(ActivityEvent::type).containsExactly(ActivityTypes.UI_ACTION);
   }
 
   @Test
@@ -269,10 +172,7 @@ class JizzaOrchestratorTest {
       assertThat(uiActions.active()).isFalse();
       return AgentResult.of(jizza.getId(), "Jizza", "Hello.");
     });
-
-    AssistantReply reply = orchestrator.handle(userId, "Hi");
-
-    assertThat(reply.actions()).isEmpty();
+    assertThat(ask("Hi").actions()).isEmpty();
     assertThat(uiActions.active()).isFalse();
   }
 }

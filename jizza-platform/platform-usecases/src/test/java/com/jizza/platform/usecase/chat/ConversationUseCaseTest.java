@@ -22,7 +22,7 @@ class ConversationUseCaseTest {
   @BeforeEach
   void setUp() {
     store = mock(ConversationStore.class);
-    useCase = new ConversationUseCase(store);
+    useCase = new ConversationUseCase(store, mock(com.jizza.engine.api.chat.ChatService.class));
   }
 
   @Test

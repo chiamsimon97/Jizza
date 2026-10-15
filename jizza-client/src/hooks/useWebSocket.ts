@@ -2,10 +2,11 @@ import { useEffect, useRef } from 'react'
 import { Client, type IMessage } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import { useAuthStore } from '@/store/authStore'
-import type { MemoryRealtimeEvent } from '@/types'
+import type { ChatSocketEvent, MemoryRealtimeEvent } from '@/types'
 
 interface UseWebSocketOptions {
-  onChatChunk?: (conversationId: string, text: string, complete: boolean) => void
+  /** Something a chat job did: streamed text, an agent's message, a tool call, the finished reply. */
+  onChatEvent?: (event: ChatSocketEvent) => void
   onNotification?: (payload: unknown) => void
   /** Something in the user's memory changed. Carries ids only; refetch to see what. */
   onMemoryEvent?: (event: MemoryRealtimeEvent) => void
@@ -33,8 +34,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       reconnectDelay: 5000,
       onConnect: () => {
         client.subscribe('/user/queue/chat', msg => {
-          const data = parse(msg) as { conversationId: string; chunk: string; last: boolean } | null
-          if (data) handlers.current.onChatChunk?.(data.conversationId, data.chunk, data.last)
+          const data = parse(msg) as ChatSocketEvent | null
+          if (data?.jobId && data.type) handlers.current.onChatEvent?.(data)
         })
         client.subscribe('/user/queue/notifications', msg => {
           const data = parse(msg)

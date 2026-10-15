@@ -23,6 +23,22 @@ public class ConversationEntity {
 
   private Instant createdAt;
 
+  private String title;
+
+  /** {@code auto} titles may be replaced by a better one; {@code user} titles never are. */
+  @Column(nullable = false)
+  private String titleSource = "auto";
+
+  @Column(nullable = false)
+  private boolean pinned;
+
+  private Instant archivedAt;
+
+  private Instant lastMessageAt;
+
+  @Column(nullable = false)
+  private int messageCount;
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -31,6 +47,24 @@ public class ConversationEntity {
 
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+  public String getTitle() { return title; }
+  public void setTitle(String title) { this.title = title; }
+
+  public String getTitleSource() { return titleSource; }
+  public void setTitleSource(String titleSource) { this.titleSource = titleSource; }
+
+  public boolean isPinned() { return pinned; }
+  public void setPinned(boolean pinned) { this.pinned = pinned; }
+
+  public Instant getArchivedAt() { return archivedAt; }
+  public void setArchivedAt(Instant archivedAt) { this.archivedAt = archivedAt; }
+
+  public Instant getLastMessageAt() { return lastMessageAt; }
+  public void setLastMessageAt(Instant lastMessageAt) { this.lastMessageAt = lastMessageAt; }
+
+  public int getMessageCount() { return messageCount; }
+  public void setMessageCount(int messageCount) { this.messageCount = messageCount; }
 
   @PrePersist
   void onCreate() {

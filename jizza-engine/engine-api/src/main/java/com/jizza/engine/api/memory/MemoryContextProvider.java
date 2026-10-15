@@ -23,11 +23,28 @@ public interface MemoryContextProvider {
    * @param rendered    the block to place in the agent's prompt; empty when nothing is relevant
    * @param memoryIds   the facts included, in rank order
    * @param subjectIds  the subjects the request was resolved to
+   * @param items       the same facts with why each was picked, for showing the user what an agent
+   *                    was given; may be empty when the provider does not say
    */
-  record MemoryContext(String rendered, List<UUID> memoryIds, List<UUID> subjectIds) {
+  record MemoryContext(String rendered, List<UUID> memoryIds, List<UUID> subjectIds, List<Item> items) {
 
     public static final MemoryContext EMPTY = new MemoryContext("", List.of(), List.of());
 
+    public MemoryContext(String rendered, List<UUID> memoryIds, List<UUID> subjectIds) {
+      this(rendered, memoryIds, subjectIds, List.of());
+    }
+
+    public MemoryContext {
+      items = items == null ? List.of() : List.copyOf(items);
+    }
+
     public boolean isEmpty() { return rendered == null || rendered.isBlank(); }
   }
+
+  /**
+   * @param reason {@code core} (always included), {@code subject} (about who or what the request
+   *               names), {@code related} (about something linked to it), {@code meaning} or
+   *               {@code keywords}
+   */
+  record Item(UUID id, String text, String category, String reason, double score, boolean confirmed) {}
 }

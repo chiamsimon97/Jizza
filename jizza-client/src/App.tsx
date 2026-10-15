@@ -6,7 +6,6 @@ import { RegisterPage } from '@/pages/RegisterPage'
 import { MfaPage } from '@/pages/MfaPage'
 import { RecoverPage } from '@/pages/RecoverPage'
 import { ChatPage } from '@/pages/ChatPage'
-import { ConversationsPage } from '@/pages/ConversationsPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { CosmosView } from '@/pages/memory/CosmosView'
 import { AgentsPage } from '@/pages/AgentsPage'
@@ -32,7 +31,8 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/chat" element={<ChatPage />} />
-          <Route path="/conversations" element={<ConversationsPage />} />
+          {/* Conversations live in the chat workspace's left column now. */}
+          <Route path="/conversations" element={<Navigate to="/chat" replace />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/memory" element={<CosmosView />} />

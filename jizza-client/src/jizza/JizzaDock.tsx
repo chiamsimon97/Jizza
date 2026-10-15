@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Maximize2, Plus, Volume2, VolumeX, X } from 'lucide-react'
 import { useAssistantStore, bindNavigator, loadHistory } from './assistantStore'
@@ -32,6 +33,9 @@ export function JizzaDock() {
   }, [navigate])
 
   useEffect(() => { void loadHistory() }, [])
+
+  // The dock is mounted on every page, so it is where chat events are followed, whichever view shows them.
+  useWebSocket({ onChatEvent: event => useAssistantStore.getState().applyEvent(event) })
 
   // Ctrl/Cmd+K summons Jizza from anywhere; Escape dismisses the panel.
   useEffect(() => {
@@ -83,7 +87,11 @@ export function JizzaDock() {
             <DockButton label="Close" onClick={() => setDockOpen(false)}><X className="h-4 w-4" /></DockButton>
           </div>
           <div className="min-h-0 flex-1">
-            <Conversation compact autoFocus />
+            <Conversation compact autoFocus onOpenJob={jobId => {
+              setDockOpen(false)
+              useAssistantStore.getState().openJob(jobId)
+              navigate('/chat')
+            }} />
           </div>
         </div>
       )}

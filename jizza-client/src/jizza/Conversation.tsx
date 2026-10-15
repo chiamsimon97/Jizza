@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, Mic, MicOff, Send } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Mic, MicOff, Send, Square } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -23,11 +23,13 @@ function greeting() {
 interface ConversationProps {
   compact?: boolean
   autoFocus?: boolean
+  /** Opens a reply's job in the Activity panel ("See how this was done"). */
+  onOpenJob?: (jobId: string) => void
 }
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
-export function Conversation({ compact = false, autoFocus = false }: ConversationProps) {
-  const { messages, thinking, incognito, send } = useAssistantStore()
+export function Conversation({ compact = false, autoFocus = false, onOpenJob }: ConversationProps) {
+  const { messages, thinking, incognito, send, stop } = useAssistantStore()
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -90,9 +92,10 @@ export function Conversation({ compact = false, autoFocus = false }: Conversatio
             </div>
           )}
 
-          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={t => void send(t)} />)}
+          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={t => void send(t)} onOpenJob={onOpenJob} />)}
 
-          {thinking && (
+          {/* Between sending and the job starting there is no reply bubble yet to show progress in. */}
+          {thinking && messages[messages.length - 1]?.role === 'user' && (
             <div className="flex items-center gap-2.5 animate-fade-in">
               <JizzaOrb size={28} state="thinking" tracking={false} />
               <span className="text-sm text-gray-500 dark:text-gray-400">Working on it…</span>
@@ -129,9 +132,15 @@ export function Conversation({ compact = false, autoFocus = false }: Conversatio
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
           />
-          <Button type="submit" disabled={!input.trim() || thinking} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Send">
-            <Send className="h-4 w-4" />
-          </Button>
+          {thinking ? (
+            <Button type="button" variant="secondary" onClick={() => void stop()} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Stop" title="Stop">
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button type="submit" disabled={!input.trim()} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Send">
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
@@ -143,7 +152,9 @@ export function Conversation({ compact = false, autoFocus = false }: Conversatio
   )
 }
 
-function MessageBubble({ msg, compact, onChoose }: { msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void }) {
+function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
+  msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
+}) {
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end animate-fade-in-up">
@@ -174,7 +185,20 @@ function MessageBubble({ msg, compact, onChoose }: { msg: AssistantMessage; comp
             : 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
         }`}>
           {msg.text}
+          {msg.streaming && !msg.text && <TypingDots />}
+          {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
+          {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
+        {msg.jobId && onOpenJob && !msg.streaming && (
+          <button
+            type="button"
+            onClick={() => onOpenJob(msg.jobId!)}
+            className="inline-flex w-fit items-center gap-0.5 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300"
+          >
+            See how this was done
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        )}
         {msg.question && (
           <div className="rounded-2xl border border-brand-300 bg-brand-50/60 p-3 animate-fade-in-up dark:border-brand-700 dark:bg-brand-500/10">
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{msg.question.text}</p>
@@ -196,6 +220,16 @@ function MessageBubble({ msg, compact, onChoose }: { msg: AssistantMessage; comp
         )}
       </div>
     </div>
+  )
+}
+
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-1" aria-label="Jizza is working">
+      {[0, 1, 2].map(i => (
+        <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 dark:bg-gray-500" style={{ animationDelay: `${i * 150}ms` }} />
+      ))}
+    </span>
   )
 }
 

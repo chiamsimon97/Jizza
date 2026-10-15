@@ -26,6 +26,7 @@
     <dependency><groupId>com.jizza</groupId><artifactId>engine-knowledge</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-memory</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-orchestrator</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-chat</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><scope>runtime</scope></dependency>

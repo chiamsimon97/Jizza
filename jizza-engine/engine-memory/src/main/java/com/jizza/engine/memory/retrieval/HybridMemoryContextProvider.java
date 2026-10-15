@@ -1,6 +1,7 @@
 package com.jizza.engine.memory.retrieval;
 
 import com.jizza.engine.api.memory.MemoryContextProvider;
+import com.jizza.engine.api.memory.MemoryContextProvider.Item;
 import com.jizza.engine.api.memory.MemoryScope;
 import com.jizza.engine.memory.config.MemoryProperties;
 import com.jizza.engine.memory.config.MemoryScopes;
@@ -93,7 +94,25 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
 
     List<UUID> subjectIds = new ArrayList<>(result.resolution().direct());
     subjectIds.addAll(result.resolution().related());
-    return new MemoryContext(rendered.text(), rendered.memoryIds(), List.copyOf(subjectIds));
+    Map<UUID, HybridSearch.Ranked> byId = new HashMap<>();
+    result.ranked().forEach(r -> byId.put(r.memory().getId(), r));
+    List<Item> items = rendered.memoryIds().stream()
+        .map(byId::get).filter(Objects::nonNull)
+        .map(r -> new Item(r.memory().getId(), r.memory().getContent(),
+            r.memory().getCategory().name().toLowerCase(Locale.ROOT), reason(r), r.score(),
+            r.memory().getStatus() == com.jizza.engine.api.enums.MemoryStatus.ACTIVE
+                && r.memory().getSource() == com.jizza.engine.api.enums.MemorySource.USER))
+        .toList();
+    return new MemoryContext(rendered.text(), rendered.memoryIds(), List.copyOf(subjectIds), items);
+  }
+
+  /** Which signal put a fact in front of the agent, in the user's terms. */
+  static String reason(HybridSearch.Ranked r) {
+    if (r.subject() >= 1.0) return "subject";
+    if (r.subject() > 0) return "related";
+    if (r.pinned()) return "core";
+    if (r.similarity() > 0) return "meaning";
+    return "keywords";
   }
 
   private Map<UUID, MemoryContextRenderer.LinkedConnection> linkedConnections(

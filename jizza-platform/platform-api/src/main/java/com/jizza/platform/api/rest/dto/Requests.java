@@ -35,6 +35,14 @@ public final class Requests {
   /** {@code screen} is the app page the message was sent from, when it came from the app. */
   public record Chat(@NotBlank String message, UUID conversationId, String screen) {}
 
+  /** A message sent as a background turn. {@code clientMessageId} makes a retried send safe. */
+  public record Turn(@NotBlank String message, UUID conversationId, UUID clientMessageId,
+                     String screen, Boolean incognito) {}
+
+  public record ConversationCreate(String title) {}
+
+  public record ConversationPatch(String title, Boolean pinned, Boolean archived) {}
+
   public record AgentPatch(String name, Boolean enabled) {}
 
   public record Connection(@NotBlank String serviceName, @NotNull AuthScheme authScheme,
