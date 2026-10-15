@@ -1,0 +1,392 @@
+package com.jizza.engine.chat.turn;
+
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivityTypes;
+import com.jizza.engine.api.activity.JobCancelledException;
+import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.chat.ChatService;
+import com.jizza.engine.api.chat.JobDto;
+import com.jizza.engine.api.chat.JobEventDto;
+import com.jizza.engine.api.chat.TurnRef;
+import com.jizza.engine.api.chat.TurnSubmission;
+import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.error.JizzaException;
+import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.llm.Msg;
+import com.jizza.engine.api.memory.MemoryLearner;
+import com.jizza.engine.api.memory.OutputLearner;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.jizza.engine.api.orchestrator.AssistantReply;
+import com.jizza.engine.api.orchestrator.Orchestrator;
+import com.jizza.engine.api.orchestrator.UiAction;
+import com.jizza.engine.api.realtime.RealtimeGateway;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.chat.activity.JobRecorder;
+import com.jizza.engine.chat.activity.JobSummaries;
+import com.jizza.engine.persistence.entity.ChatJobEntity;
+import com.jizza.engine.persistence.repository.JobEventRepository;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Service;
+
+/**
+ * Runs each chat turn as a job in the background (R43/R53).
+ *
+ * <p>Sending a message stores it, starts the job and returns at once. The job runs Jizza with a
+ * {@link JobRecorder} current on its thread, so everything it does -- Jizza's words as they are
+ * written, its tasks to specialists and their answers, the APIs they call, the memory they are
+ * given -- reaches the user's socket as it happens and is kept for the Activity panel. The reply is
+ * the job's last event.
+ */
+@Service
+public class TurnRunner implements ChatService {
+
+  private static final Logger log = LoggerFactory.getLogger(TurnRunner.class);
+
+  /** How long an incognito job's events stay in memory for a client to catch up. */
+  private static final Duration INCOGNITO_RETENTION = Duration.ofMinutes(10);
+
+  private final TurnStore store;
+  private final Orchestrator orchestrator;
+  private final JobEventRepository events;
+  private final AuditLog audit;
+  private final ObjectProvider<RealtimeGateway> realtime;
+  private final ObjectProvider<MemoryLearner> learner;
+  private final ObjectProvider<OutputLearner> outputLearner;
+  private final TransactionTemplate eventTx;
+  private final ExecutorService runner =
+      Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("jizza-turn-", 0).factory());
+
+  /** Jobs still running, plus incognito jobs kept briefly after they finish. */
+  private final Map<UUID, Active> active = new ConcurrentHashMap<>();
+
+  private record Active(UUID userId, JobRecorder recorder, CompletableFuture<AssistantReply> reply,
+                        boolean incognito, String title, Instant startedAt) {}
+
+  private final ObjectProvider<ConversationUpkeep> upkeep;
+
+  public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
+                    AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
+                    ObjectProvider<MemoryLearner> learner, ObjectProvider<OutputLearner> outputLearner,
+                    PlatformTransactionManager transactions, ObjectProvider<ConversationUpkeep> upkeep) {
+    this.upkeep = upkeep;
+    this.store = store;
+    this.orchestrator = orchestrator;
+    this.events = events;
+    this.audit = audit;
+    this.realtime = realtime;
+    this.learner = learner;
+    this.outputLearner = outputLearner;
+    this.eventTx = new TransactionTemplate(transactions);
+    this.eventTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+  }
+
+  @Override
+  public TurnRef submit(UUID userId, TurnSubmission submission) {
+    return start(userId, submission).ref();
+  }
+
+  @Override
+  public AssistantReply submitAndWait(UUID userId, TurnSubmission submission) {
+    Started started = start(userId, submission);
+    try {
+      return started.reply().join();
+    } catch (CompletionException e) {
+      if (e.getCause() instanceof RuntimeException cause) throw cause;
+      throw e;
+    }
+  }
+
+  private record Started(TurnRef ref, CompletableFuture<AssistantReply> reply) {}
+
+  private Started start(UUID userId, TurnSubmission s) {
+    if (s.text() == null || s.text().isBlank()) throw new ValidationException("The message is empty");
+    purgeIncognito();
+
+    if (s.incognito()) {
+      UUID jobId = UUID.randomUUID();
+      TurnRef ref = new TurnRef(jobId, null, null, null, true);
+      return new Started(ref, launch(userId, ref, s, List.of(), false, null));
+    }
+
+    var existing = store.existing(userId, s.conversationId(), s.clientMessageId());
+    if (existing.isPresent()) {
+      Active running = active.get(existing.get().jobId());
+      return new Started(existing.get(),
+          running != null ? running.reply() : CompletableFuture.completedFuture(replyFor(existing.get())));
+    }
+
+    TurnRef ref = store.begin(userId, s.conversationId(), s.clientMessageId(), s.text());
+    audit.record(userId, ActorType.USER, userId, "chat.message", ref.conversationId().toString(),
+        Json.obj().put("messageId", ref.userMessageId().toString()).put("jobId", ref.jobId().toString()));
+    List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
+    return new Started(ref, launch(userId, ref, s, history, true, null));
+  }
+
+  /**
+   * Something happened in a conversation that nobody typed (an approval was answered), and Jizza
+   * should report on it in its own words. {@code note} is the line the conversation shows;
+   * {@code prepare} runs first inside the new job (so whatever it does shows in Activity) and
+   * returns what Jizza is told. Waits its turn if Jizza is mid-reply in that conversation.
+   */
+  public TurnRef continueConversation(UUID userId, UUID conversationId, String note,
+                                      ObjectNode noteData, Supplier<String> prepare) {
+    return continueConversation(userId, conversationId, "continuation", null, note, noteData, prepare);
+  }
+
+  /**
+   * As above, for any job nobody typed: {@code origin} says what started it ({@code signal} when a
+   * specialist flagged something on a plan), {@code planId} the plan it concerns. A null
+   * conversation starts a new one.
+   */
+  public TurnRef continueConversation(UUID userId, UUID conversationId, String origin, UUID planId,
+                                      String note, ObjectNode noteData, Supplier<String> prepare) {
+    TurnRef ref = null;
+    Instant giveUp = Instant.now().plus(CONTINUATION_WAIT);
+    while (ref == null) {
+      try {
+        ref = store.beginContinuation(userId, conversationId, origin, planId, note, noteData, note);
+      } catch (com.jizza.engine.api.error.ConflictException busy) {
+        if (Instant.now().isAfter(giveUp)) throw busy;
+        try {
+          Thread.sleep(500);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw busy;
+        }
+      }
+    }
+    List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
+    // On the chat screen, so Jizza can put a question with one-tap answers to the user.
+    TurnSubmission s = new TurnSubmission(ref.conversationId(), null, note, "chat", false);
+    launch(userId, ref, s, history, true, new Continuation(origin, prepare, noteData));
+    return ref;
+  }
+
+  /** How long a continuation waits for a reply already running in its conversation. */
+  private static final Duration CONTINUATION_WAIT = Duration.ofMinutes(5);
+
+  private record Continuation(String origin, Supplier<String> prepare, ObjectNode noteData) {}
+
+  private CompletableFuture<AssistantReply> launch(UUID userId, TurnRef ref, TurnSubmission s,
+                                                   List<Msg> history, boolean persist,
+                                                   Continuation continuation) {
+    String origin = continuation != null ? continuation.origin() : persist ? "chat" : "incognito";
+    JobRecorder recorder = new JobRecorder(ref.jobId(), userId, ref.conversationId(), origin, persist,
+        events, eventTx, realtime.getIfAvailable());
+    CompletableFuture<AssistantReply> reply = new CompletableFuture<>();
+    active.put(ref.jobId(), new Active(userId, recorder, reply, !persist,
+        JobSummaries.title(s.text()), Instant.now()));
+
+    recorder.emit(event(ActivityTypes.JOB_STARTED, p -> {
+      p.put("title", JobSummaries.title(s.text()));
+      if (ref.userMessageId() != null) p.put("userMessageId", ref.userMessageId().toString());
+      if (ref.assistantMessageId() != null) p.put("assistantMessageId", ref.assistantMessageId().toString());
+      if (continuation != null) {
+        p.put("origin", continuation.origin()).put("note", s.text());
+        if (continuation.noteData() != null) p.set("noteData", continuation.noteData());
+      }
+    }));
+    runner.submit(() -> run(userId, ref, s, history, recorder, reply, continuation));
+    return reply;
+  }
+
+  private void run(UUID userId, TurnRef ref, TurnSubmission s, List<Msg> history,
+                   JobRecorder recorder, CompletableFuture<AssistantReply> reply,
+                   Continuation continuation) {
+    boolean persist = !ref.incognito();
+    Orchestrator.Turn turn = null;
+    try {
+      String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
+      turn = Activity.run(recorder, () -> orchestrator.respond(userId,
+          new Orchestrator.TurnInput(input, s.screen(), history, ref.userMessageId())));
+      Orchestrator.Turn done = turn;
+      AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
+          done.text(), contributors(done), done.actions());
+      String summary = JobSummaries.summarize(recorder.all());
+      // A reply that left a call waiting for the user's approval is done talking, not done working.
+      String status = recorder.all().stream()
+          .anyMatch(e -> ActivityTypes.APPROVAL_REQUIRED.equals(e.type()))
+          ? ChatJobEntity.AWAITING_USER : ChatJobEntity.COMPLETED;
+
+      // The closing event is written before the job row says it finished, so anyone who sees a
+      // finished job can also read how it ended.
+      recorder.emit(event(ActivityTypes.JOB_COMPLETED, p -> {
+        p.put("text", done.text());
+        p.put("summary", summary);
+        p.set("contributors", Json.toNode(answer.contributors()));
+        p.set("actions", Json.toNode(answer.actions()));
+        p.put("inputTokens", done.inputTokens()).put("outputTokens", done.outputTokens());
+        p.put("status", status);
+      }));
+      if (persist) {
+        store.finish(ref.jobId(), status, done.text(), metadata(ref, answer), summary, done);
+      }
+      if (persist) {
+        // Durable facts in what the user said, and in what the job fetched, are kept (off this
+        // thread unless configured otherwise). Bound to the job so what is saved shows under it.
+        // Incognito turns never reach here: they read memory but never write it.
+        Activity.run(recorder, () -> {
+          // A continuation's input is a system event, not the user's words: nothing to learn there.
+          if (continuation == null) {
+            learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
+                ref.userMessageId(), s.text(), done.text())));
+          }
+          List<OutputLearner.Finding> found = findings(recorder.all());
+          if (!found.isEmpty()) {
+            outputLearner.ifAvailable(l -> l.afterJob(new OutputLearner.JobOutput(userId,
+                ref.conversationId(), ref.jobId(), s.text(), found)));
+          }
+          // A title after the first exchange, and a summary once the chat outgrows the window.
+          upkeep.ifAvailable(u -> u.afterTurn(userId, ref.conversationId()));
+          return null;
+        });
+      }
+      reply.complete(answer);
+    } catch (JobCancelledException e) {
+      String partial = recorder.partialText();
+      String summary = JobSummaries.summarize(recorder.all()) + " Stopped by you.";
+      recorder.emit(event(ActivityTypes.JOB_CANCELLED, p -> p.put("text", partial).put("summary", summary)));
+      if (persist) store.finish(ref.jobId(), ChatJobEntity.CANCELLED, partial, null, summary, null);
+      audit.record(userId, ActorType.USER, userId, "chat.turn.cancel", ref.jobId().toString(), null);
+      reply.completeExceptionally(new JizzaException(org.springframework.http.HttpStatus.CONFLICT,
+          "turn-cancelled", "Stopped", "The turn was stopped before it finished"));
+    } catch (RuntimeException e) {
+      log.warn("Chat turn {} failed", ref.jobId(), e);
+      String title = e instanceof JizzaException je ? je.title() : "Something went wrong";
+      String detail = e.getMessage() == null ? "The turn failed" : e.getMessage();
+      String type = e instanceof JizzaException je ? je.type() : "turn-failed";
+      String summary = JobSummaries.summarize(recorder.all()) + " Stopped: " + detail;
+      recorder.emit(event(ActivityTypes.JOB_FAILED, p -> p.put("title", title).put("detail", detail)
+          .put("problemType", type)));
+      if (persist) {
+        try {
+          store.finish(ref.jobId(), ChatJobEntity.FAILED, detail, null, summary, null);
+        } catch (RuntimeException inner) {
+          log.warn("Could not record the failure of turn {}", ref.jobId(), inner);
+        }
+      }
+      reply.completeExceptionally(e);
+    } finally {
+      if (persist) active.remove(ref.jobId());
+    }
+  }
+
+  @Override
+  public JobDto job(UUID userId, UUID jobId, int afterSeq) {
+    Active running = active.get(jobId);
+    if (running != null && running.incognito()) {
+      if (!running.userId().equals(userId)) throw new NotFoundException("Job", jobId);
+      String status = !running.reply().isDone() ? ChatJobEntity.RUNNING
+          : running.reply().isCompletedExceptionally() ? ChatJobEntity.FAILED : ChatJobEntity.COMPLETED;
+      return new JobDto(jobId, null, "chat", running.title(), null, status, null, null,
+          running.startedAt(), null, running.recorder().keptAfter(afterSeq),
+          running.recorder().partialText());
+    }
+    ChatJobEntity job = store.job(userId, jobId);
+    List<JobEventDto> after = events.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, afterSeq).stream()
+        .map(e -> new JobEventDto(e.getSeq(), e.getType(), e.getAgentId(), e.getAgentName(),
+            e.getPayload(), e.getAt()))
+        .toList();
+    return toDto(job, after, running == null ? null : running.recorder().partialText());
+  }
+
+  @Override
+  public List<JobDto> jobs(UUID userId, UUID conversationId) {
+    return store.jobs(userId, conversationId).stream()
+        .map(j -> toDto(j, List.of(), null))
+        .toList();
+  }
+
+  @Override
+  public void cancel(UUID userId, UUID jobId) {
+    Active running = active.get(jobId);
+    if (running == null) {
+      if (!active.containsKey(jobId)) store.job(userId, jobId); // 404 for someone else's job
+      return;
+    }
+    if (!running.userId().equals(userId)) throw new NotFoundException("Job", jobId);
+    running.recorder().cancel();
+  }
+
+  private static JobDto toDto(ChatJobEntity j, List<JobEventDto> events, String partial) {
+    return new JobDto(j.getId(), j.getConversationId(), j.getOrigin(), j.getTitle(), j.getSummary(),
+        j.getStatus(), j.getUserMessageId(), j.getAssistantMessageId(), j.getStartedAt(),
+        j.getFinishedAt(), events, partial);
+  }
+
+  /** What the job fetched, as the summaries the Activity trail already shows, never raw payloads. */
+  static List<OutputLearner.Finding> findings(List<JobEventDto> events) {
+    List<OutputLearner.Finding> out = new java.util.ArrayList<>();
+    for (JobEventDto e : events) {
+      if (ActivityTypes.OUTPUT.equals(e.type())) {
+        out.add(new OutputLearner.Finding(e.agentId(), e.agentName(),
+            e.payload().path("service").asText(null), e.payload().path("text").asText("")));
+      } else if (ActivityTypes.AGENT_MESSAGE.equals(e.type())
+          && "answer".equals(e.payload().path("kind").asText())) {
+        String text = e.payload().path("text").asText("");
+        out.add(new OutputLearner.Finding(e.agentId(), e.agentName(), null,
+            text.length() <= 2000 ? text : text.substring(0, 2000)));
+      }
+    }
+    // Only what a service returned is new information; a specialist answering from memory is not.
+    return out.stream().anyMatch(f -> f.service() != null) ? out : List.of();
+  }
+
+  /** A reply already given, for a retried send that arrives after its turn finished. */
+  private AssistantReply replyFor(TurnRef ref) {
+    return new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
+        store.content(ref.assistantMessageId()), List.of());
+  }
+
+  private static List<AssistantReply.Contribution> contributors(Orchestrator.Turn turn) {
+    return turn.delegations().stream()
+        .map(d -> new AssistantReply.Contribution(d.agentId(), d.agentName(), d.task()))
+        .toList();
+  }
+
+  /** What the client needs to redraw this reply exactly as it looked live. */
+  private static ObjectNode metadata(TurnRef ref, AssistantReply answer) {
+    ObjectNode meta = Json.obj();
+    meta.put("jobId", ref.jobId().toString());
+    meta.set("contributors", Json.toNode(answer.contributors()));
+    ArrayNode actions = meta.putArray("actions");
+    for (UiAction action : answer.actions()) actions.add(Json.toNode(action));
+    return meta;
+  }
+
+  private static com.jizza.engine.api.activity.ActivityEvent event(
+      String type, java.util.function.Consumer<ObjectNode> payload) {
+    ObjectNode node = Json.obj();
+    payload.accept(node);
+    return new com.jizza.engine.api.activity.ActivityEvent(type, null, null, node);
+  }
+
+  private void purgeIncognito() {
+    Instant cutoff = Instant.now().minus(INCOGNITO_RETENTION);
+    active.entrySet().removeIf(e -> e.getValue().incognito() && e.getValue().reply().isDone()
+        && e.getValue().startedAt().isBefore(cutoff));
+  }
+
+  @jakarta.annotation.PreDestroy
+  void shutdown() {
+    runner.shutdown();
+  }
+}

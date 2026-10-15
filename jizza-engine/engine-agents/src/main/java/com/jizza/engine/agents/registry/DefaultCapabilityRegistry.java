@@ -1,6 +1,14 @@
 package com.jizza.engine.agents.registry;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.agent.ApprovedCall;
+import com.jizza.engine.api.dto.NotificationDto;
+import com.jizza.engine.api.enums.NotificationStatus;
+import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivityTypes;
+import com.jizza.engine.api.activity.JobCancelledException;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.autonomy.AutonomyGate;
@@ -92,6 +100,36 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
 
   @Override
   public ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous) {
+    return execute(agentId, call, autonomous, null);
+  }
+
+  @Override
+  public ApprovedCall runApproved(UUID userId, UUID notificationId) {
+    NotificationBus bus = notifications.getIfAvailable();
+    if (bus == null) throw new IllegalStateException("The notification bus is unavailable");
+    NotificationDto request = bus.get(notificationId);
+    if (request == null || !userId.equals(request.userId())
+        || request.kind() != NotificationKind.PERMISSION_REQUEST) {
+      throw new NotFoundException("Permission request", notificationId);
+    }
+    if (request.status() != NotificationStatus.APPROVED) {
+      throw new ValidationException("That request has not been approved");
+    }
+    String tool = request.context() == null ? null : request.context().path("tool").asText(null);
+    if (request.sourceAgentId() == null || tool == null) {
+      throw new ValidationException("That request does not hold a call to run");
+    }
+    JsonNode args = request.context().path("args");
+    // The call id doubles as the idempotency reference, so a side-effecting call runs once per
+    // approval however many times this is reached.
+    ToolCall call = new ToolCall("approval:" + notificationId, tool,
+        args.isObject() ? args.deepCopy() : Json.obj());
+    ToolResult result = execute(request.sourceAgentId(), call, false, notificationId);
+    return new ApprovedCall(notificationId, request.sourceAgentId(), request.sourceAgentName(), tool,
+        result);
+  }
+
+  private ToolResult execute(UUID agentId, ToolCall call, boolean autonomous, UUID approvedBy) {
     AgentEntity agent = agents.findById(agentId)
         .orElseThrow(() -> new NotFoundException("Agent", agentId));
 
@@ -122,22 +160,41 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     if (decision.denied()) {
       return refuse(agent, call, "policy-deny", decision.reason());
     }
-    if (decision.needsPermission()) {
+    if (decision.needsPermission() && approvedBy == null) {
       return requestPermission(agent, call, decision, provider.redactArguments(call.name()));
     }
 
+    ObjectNode detail = Json.obj().put("autonomous", autonomous)
+        .put("decision", approvedBy != null ? "APPROVED" : decision.rule().name());
+    if (approvedBy != null) detail.put("approval", approvedBy.toString());
     audit.record(agent.getUserId(), ActorType.AGENT, agentId, "tool.call", call.name(),
-        Json.obj().put("autonomous", autonomous)
-            .put("decision", decision.rule().name())
-            .set("args", provider.redactArguments(call.name())
-                ? Json.obj().put("redacted", true) : call.args()));
+        detail.set("args", provider.redactArguments(call.name())
+            ? Json.obj().put("redacted", true) : call.args()));
 
+    boolean shown = shownInActivity(call.name());
+    String stepId = call.id() != null ? call.id() : UUID.randomUUID().toString();
+    if (shown) {
+      Activity.emit(ActivityTypes.TOOL_CALL, agentId, agent.getName(), p -> p.put("id", stepId)
+          .put("tool", call.name()).put("label", label(call.name())).put("state", "started"));
+    }
+    long started = System.nanoTime();
     ToolResult result;
     try {
       result = provider.invoke(agentId, call);
+    } catch (JobCancelledException e) {
+      throw e;
     } catch (RuntimeException e) {
       log.warn("Tool {} failed for agent {}", call.name(), agentId, e);
       result = ToolResult.error(e.getMessage());
+    }
+    if (shown) {
+      long ms = (System.nanoTime() - started) / 1_000_000;
+      ToolResult finished = result;
+      Activity.emit(ActivityTypes.TOOL_CALL, agentId, agent.getName(), p -> {
+        p.put("id", stepId).put("tool", call.name()).put("label", label(call.name()))
+            .put("state", finished.ok() ? "done" : "failed").put("ms", ms);
+        if (!finished.ok()) p.put("error", abbreviate(finished.error()));
+      });
     }
 
     audit.record(agent.getUserId(), ActorType.AGENT, agentId,
@@ -178,6 +235,25 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     return providerFor(agentId, toolName) != null;
   }
 
+  /**
+   * Delegation is shown as the agents' own conversation, and app-control steps as UI actions, so
+   * listing them again as tool calls would only repeat the timeline.
+   */
+  private static boolean shownInActivity(String toolName) {
+    return !toolName.startsWith("delegate_to_") && !toolName.startsWith("app_");
+  }
+
+  /** "zerodha_get_holdings" reads as "Zerodha get holdings". */
+  static String label(String toolName) {
+    String words = toolName.replace('_', ' ').replace('-', ' ').trim();
+    return words.isEmpty() ? toolName : Character.toUpperCase(words.charAt(0)) + words.substring(1);
+  }
+
+  private static String abbreviate(String text) {
+    if (text == null) return null;
+    return text.length() <= 240 ? text : text.substring(0, 240) + "…";
+  }
+
   private ToolProvider providerFor(UUID agentId, String toolName) {
     for (ToolProvider provider : providers) {
       if (provider.supports(agentId, toolName)) return provider;
@@ -216,6 +292,9 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
         new NotificationContext(agent.getUserId(),
             agent.getName() + " needs approval to run " + call.name(), detail,
             null, null, null, null));
+    Activity.emit(ActivityTypes.APPROVAL_REQUIRED, agent.getId(), agent.getName(), p -> p
+        .put("notificationId", notification.id().toString()).put("tool", call.name())
+        .put("label", label(call.name())).put("reason", decision.reason()));
     return ToolResult.error(PERMISSION_REQUIRED + notification.id());
   }
 }

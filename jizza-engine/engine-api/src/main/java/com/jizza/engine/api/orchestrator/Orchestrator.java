@@ -1,26 +1,41 @@
 package com.jizza.engine.api.orchestrator;
 
+import com.jizza.engine.api.llm.Msg;
+import java.util.List;
 import java.util.UUID;
 
-/** Jizza. The only entry point for user messages (R18). */
+/**
+ * Jizza: the only agent a user message reaches (R18).
+ *
+ * <p>This is the reasoning only. It stores nothing; the chat module owns conversations, history
+ * and jobs, and hands Jizza the history it should see. When a job is current on the thread
+ * ({@code Activity}), Jizza's reply streams to it as it is written.
+ */
 public interface Orchestrator {
 
-  AssistantReply handle(UUID userId, String message);
-
-  AssistantReply handle(UUID userId, UUID conversationId, String message);
+  Turn respond(UUID userId, TurnInput input);
 
   /**
-   * A turn sent from inside the app. {@code screen} names the page the user is looking at so Jizza
-   * can act on it; it is context for this turn only and is not stored with the message.
+   * @param screen        the page the user is on when the message comes from inside the app; it is
+   *                      context for this turn only and is never stored
+   * @param userMessageId the stored message this turn answers, null for an incognito turn; memory
+   *                      reads are stamped with it
    */
-  default AssistantReply handle(UUID userId, UUID conversationId, String message, String screen) {
-    return handle(userId, conversationId, message);
+  record TurnInput(String message, String screen, List<Msg> history, UUID userMessageId) {
+    public TurnInput {
+      history = history == null ? List.of() : List.copyOf(history);
+    }
   }
 
-  /** Incognito turn: messages are not persisted. conversationId is always null on the reply. */
-  AssistantReply handleIncognito(UUID userId, String message);
-
-  default AssistantReply handleIncognito(UUID userId, String message, String screen) {
-    return handleIncognito(userId, message);
+  /** Jizza's reply and what went into it. */
+  record Turn(String text, List<Delegation> delegations, List<UiAction> actions,
+              int inputTokens, int outputTokens) {
+    public Turn {
+      delegations = delegations == null ? List.of() : List.copyOf(delegations);
+      actions = actions == null ? List.of() : List.copyOf(actions);
+    }
   }
+
+  /** A specialist Jizza consulted, the task it was given and what it answered. */
+  record Delegation(UUID fromAgentId, UUID agentId, String agentName, String task, String result) {}
 }

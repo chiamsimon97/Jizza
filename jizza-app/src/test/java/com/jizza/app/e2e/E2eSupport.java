@@ -65,6 +65,9 @@ public abstract class E2eSupport {
     registry.add("jizza.scheduler.enabled", () -> "false");
     registry.add("jizza.platform.queue.enabled", () -> "false");
     registry.add("jizza.notifications.sweep-interval", () -> "PT1H");
+    // A model-written title would replace the first words typed with the scripted model's reply;
+    // the test that covers titles turns it on for itself.
+    registry.add("jizza.chat.titles.enabled", () -> "false");
 
     // The stub connector runs on loopback over plain http, which the egress guard blocks by
     // default; these two lines are exactly the development escape hatch it provides.

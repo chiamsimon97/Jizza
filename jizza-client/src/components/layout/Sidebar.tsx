@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  MessageSquare, History, Bell, Bot, Brain, ListTodo,
+  MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, GitBranch, Shield, Activity, BarChart2,
   ChevronsLeft, ChevronsRight, LogOut, X,
 } from 'lucide-react'
@@ -15,7 +15,6 @@ const sections = [
     title: 'Workspace',
     items: [
       { to: '/chat',          icon: MessageSquare, label: 'Chat' },
-      { to: '/conversations', icon: History,       label: 'History' },
       { to: '/notifications', icon: Bell,          label: 'Notifications' },
     ],
   },

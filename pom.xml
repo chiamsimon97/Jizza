@@ -67,6 +67,9 @@
         <groupId>com.jizza</groupId><artifactId>engine-orchestrator</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.jizza</groupId><artifactId>engine-chat</artifactId><version>${project.version}</version>
+      </dependency>
+      <dependency>
         <groupId>com.jizza</groupId><artifactId>engine-connectors</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>

@@ -3,6 +3,10 @@ package com.jizza.engine.orchestrator.delegation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivitySink;
+import com.jizza.engine.api.activity.ActivityTypes;
+import com.jizza.engine.api.activity.JobCancelledException;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.cosmos.AccessContext;
@@ -122,7 +126,7 @@ public class DelegationToolProvider implements ToolProvider {
       return ToolResult.error(specialist.get().getName() + " is currently disabled, so that part "
           + "of the request cannot be handled.");
     }
-    Outcome outcome = run(specialist.get(), task, parentRun());
+    Outcome outcome = run(orchestrator, specialist.get(), task, parentRun());
     if (outcome.contribution() != null) recorder.record(outcome.contribution());
     return ToolResult.ok(outcome.node());
   }
@@ -140,8 +144,10 @@ public class DelegationToolProvider implements ToolProvider {
     }
 
     String trace = parentRun();
+    // The job the turn reports to, carried onto each fan-out thread.
+    ActivitySink activity = Activity.current().orElse(null);
     List<CompletableFuture<Outcome>> futures = jobs.stream()
-        .map(job -> CompletableFuture.supplyAsync(() -> {
+        .map(job -> CompletableFuture.supplyAsync(() -> Activity.run(activity, () -> {
           if (job.specialist() == null) {
             return Outcome.problem(job.requestedKey(), null, "no specialist with that key");
           }
@@ -149,8 +155,8 @@ public class DelegationToolProvider implements ToolProvider {
             return Outcome.problem(job.requestedKey(), job.specialist().getName(),
                 "this specialist is disabled");
           }
-          return run(job.specialist(), job.task(), trace);
-        }, fanOut))
+          return run(orchestrator, job.specialist(), job.task(), trace);
+        }), fanOut))
         .toList();
 
     ArrayNode results = Json.mapper().createArrayNode();
@@ -161,6 +167,10 @@ public class DelegationToolProvider implements ToolProvider {
         // Recorded here, on the turn's own thread: the recorder is turn-scoped and the fan-out
         // runs on separate threads, so contributions travel back rather than being written there.
         if (outcome.contribution() != null) recorder.record(outcome.contribution());
+      } catch (java.util.concurrent.CompletionException e) {
+        if (e.getCause() instanceof JobCancelledException cancelled) throw cancelled;
+        log.warn("A parallel delegation failed", e);
+        results.add(Json.obj().put("error", String.valueOf(e.getCause().getMessage())));
       } catch (RuntimeException e) {
         log.warn("A parallel delegation failed", e);
         ObjectNode error = Json.obj();
@@ -191,7 +201,12 @@ public class DelegationToolProvider implements ToolProvider {
     return AccessContext.current().map(AccessContext::toTrace).orElse(null);
   }
 
-  private Outcome run(AgentEntity specialist, String task, String trace) {
+  private Outcome run(AgentEntity orchestrator, AgentEntity specialist, String task, String trace) {
+    // The two agents' exchange is shown in the Activity panel as Jizza's work log. It never
+    // reaches the chat: only Jizza speaks there.
+    Activity.emit(ActivityTypes.AGENT_MESSAGE, orchestrator.getId(), orchestrator.getName(), p -> p
+        .put("toAgentId", specialist.getId().toString()).put("toAgentName", specialist.getName())
+        .put("text", task).put("kind", "task"));
     ObjectNode node = Json.obj();
     node.put("agent_key", specialist.getKey());
     node.put("agent_name", specialist.getName());
@@ -202,10 +217,18 @@ public class DelegationToolProvider implements ToolProvider {
       node.put("answer", result.text());
       if (result.truncatedByBudget()) node.put("truncated", true);
       summary = result.text();
+      Activity.emit(ActivityTypes.AGENT_MESSAGE, specialist.getId(), specialist.getName(), p -> p
+          .put("toAgentId", orchestrator.getId().toString()).put("toAgentName", orchestrator.getName())
+          .put("text", result.text() == null ? "" : result.text()).put("kind", "answer"));
+    } catch (JobCancelledException e) {
+      throw e;
     } catch (RuntimeException e) {
       log.warn("Specialist {} failed on a delegated task", specialist.getKey(), e);
       node.put("error", e.getMessage());
       summary = "failed: " + e.getMessage();
+      Activity.emit(ActivityTypes.AGENT_MESSAGE, specialist.getId(), specialist.getName(), p -> p
+          .put("toAgentId", orchestrator.getId().toString()).put("toAgentName", orchestrator.getName())
+          .put("text", "Could not finish: " + e.getMessage()).put("kind", "failed"));
     }
     return new Outcome(node, new DelegationRecorder.Contribution(specialist.getId(),
         specialist.getName(), task, summary));

@@ -139,8 +139,16 @@ public class DefaultToolExecutor implements ToolExecutor {
 
     String base = ServiceVariables.render(baseUrl(connection), vars);
     URI target = URI.create(base + path + queryString(query));
+    long started = System.nanoTime();
     GuardedHttpClient.Response response =
         http.send(tool.httpMethod(), target, headers, body, base);
+    long ms = (System.nanoTime() - started) / 1_000_000;
+    // The path template, not the rendered path: it names the endpoint without carrying argument
+    // values, and the query string (where an API key may sit) is never shown at all.
+    com.jizza.engine.api.activity.Activity.emit(com.jizza.engine.api.activity.ActivityTypes.TOOL_API,
+        null, null, p -> p.put("tool", tool.name()).put("service", connection.getServiceName())
+            .put("method", tool.httpMethod()).put("path", tool.pathTemplate())
+            .put("status", response.status()).put("ms", ms));
 
     ObjectNode output = Json.obj();
     output.put("status", response.status());
@@ -155,6 +163,15 @@ public class DefaultToolExecutor implements ToolExecutor {
       // The body can echo request headers back; scrub before it goes anywhere near a model or log.
       return ToolResult.error("The service replied " + response.status() + ": "
           + Redaction.scrub(abbreviate(response.body())));
+    }
+    // What came back, in the few values a person would want to see (the Memory panel's output).
+    ObjectNode summary = OutputSummary.of(response.json());
+    if (!summary.path("fields").isEmpty() || summary.has("items")) {
+      String label = tool.name().replace('_', ' ');
+      com.jizza.engine.api.activity.Activity.emit(com.jizza.engine.api.activity.ActivityTypes.OUTPUT,
+          null, null, p -> p.put("tool", tool.name()).put("service", connection.getServiceName())
+              .put("label", label).put("text", OutputSummary.line(connection.getServiceName(), label, summary))
+              .setAll(summary));
     }
     return ToolResult.ok(output);
   }

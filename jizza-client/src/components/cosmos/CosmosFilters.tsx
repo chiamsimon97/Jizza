@@ -4,7 +4,7 @@ import { fieldClass } from '@/components/ui/SlideOver'
 export interface CosmosAgentOption { id: string; key: string; name: string; domain?: string; bodyId: string }
 
 export const CATEGORIES: MemoryCategory[] =
-  ['PROFILE', 'PREFERENCE', 'RELATIONSHIP', 'FINANCE', 'HEALTH', 'PROFESSIONAL', 'PROJECT', 'TASK', 'GENERAL']
+  ['PROFILE', 'PREFERENCE', 'RELATIONSHIP', 'FINANCE', 'HEALTH', 'PROFESSIONAL', 'PROJECT', 'TASK', 'GENERAL', 'INSTRUCTION']
 const KINDS: NodeCategory[] = [...CATEGORIES.map(c => c.toLowerCase() as NodeCategory), 'note']
 const CLASSIFICATIONS: NodeClassification[] = ['none', 'pii', 'health', 'financial']
 const STATUSES: NodeStatus[] = ['active', 'pending', 'retired', 'superseded']

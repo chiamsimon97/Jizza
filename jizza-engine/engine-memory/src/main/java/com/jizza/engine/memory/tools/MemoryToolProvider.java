@@ -100,7 +100,9 @@ public class MemoryToolProvider implements ToolProvider {
             + "'key' replaces the old one.",
         JsonSchemas.object(new LinkedHashMap<>(Map.of(
             "content", JsonSchemas.string("The fact, e.g. 'Priya invests Rs 20,000 a month in a Nifty 50 index fund'"),
-            "category", enumSchema("What kind of fact", MemoryCategory.values()),
+            // Standing instructions have their own tool, which only acts on what the user typed.
+            "category", enumSchema("What kind of fact", java.util.Arrays.stream(MemoryCategory.values())
+                .filter(c -> c != MemoryCategory.INSTRUCTION).toArray(MemoryCategory[]::new)),
             "key", JsonSchemas.string("Optional attribute name this fact sets, e.g. 'risk_tolerance', 'monthly_sip'"),
             "about", about,
             "importance", number("0 to 1; 0.9+ for core facts every conversation should know"),

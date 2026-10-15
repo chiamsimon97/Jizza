@@ -109,7 +109,12 @@ public class ConversationMemoryLearner implements MemoryLearner {
   public void afterTurn(Turn turn) {
     if (!shouldLearn(turn)) return;
     if (props.getExtraction().isAsync()) {
-      executor.execute(() -> safely(turn));
+      // Carry the job along, so what gets saved still shows under the job that learned it.
+      var job = com.jizza.engine.api.activity.Activity.current().orElse(null);
+      executor.execute(() -> com.jizza.engine.api.activity.Activity.run(job, () -> {
+        safely(turn);
+        return null;
+      }));
     } else {
       safely(turn);
     }
@@ -156,7 +161,8 @@ public class ConversationMemoryLearner implements MemoryLearner {
       if (confidence < props.getExtraction().getMinConfidence()) continue;
       String content = fact.path("content").asText("").strip();
       MemoryCategory category = enumOr(MemoryCategory.class, fact.path("category").asText(), null);
-      if (content.isEmpty() || category == null) continue;
+      // Instructions are saved only when the user deliberately gives one (save_instruction).
+      if (content.isEmpty() || category == null || category == MemoryCategory.INSTRUCTION) continue;
 
       List<UUID> about = new ArrayList<>();
       for (JsonNode ref : fact.path("about")) {
@@ -261,7 +267,7 @@ public class ConversationMemoryLearner implements MemoryLearner {
     }
   }
 
-  private static <E extends Enum<E>> E enumOr(Class<E> type, String value, E fallback) {
+  static <E extends Enum<E>> E enumOr(Class<E> type, String value, E fallback) {
     if (value == null || value.isBlank()) return fallback;
     try {
       return Enum.valueOf(type, value.strip().toUpperCase(Locale.ROOT));

@@ -2,8 +2,11 @@ package com.jizza.engine.memory.store;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.cosmos.MemoryNode;
+import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.MemoryCategory;
 import com.jizza.engine.api.enums.MemorySource;
 import com.jizza.engine.api.enums.MemoryStatus;
@@ -130,6 +133,16 @@ public class DefaultMemoryStore implements MemoryStore {
   @Transactional
   public MemoryWrite remember(UUID userId, MemoryDraft draft, Actor actor) {
     if (draft.category() == null) throw new ValidationException("A memory needs a category");
+    // Incognito reads memory but never writes it, whoever asks.
+    if (Activity.current().map(a -> "incognito".equals(a.origin())).orElse(false)) {
+      throw new ValidationException("This is an incognito chat, so nothing is saved to memory");
+    }
+    // Standing instructions come only from what the user typed in a chat; never from an event,
+    // a schedule, or anything an agent read.
+    if (draft.category() == MemoryCategory.INSTRUCTION && actor.type() != ActorType.USER
+        && !Activity.fromUser()) {
+      throw new ValidationException("Only you can give Jizza a standing instruction");
+    }
     String content = validContent(draft.content());
     Set<UUID> about = ownedSubjects(userId, draft.subjectIds());
     MemorySource source = draft.source() == null ? sourceFor(actor) : draft.source();
@@ -200,6 +213,7 @@ public class DefaultMemoryStore implements MemoryStore {
     }
 
     auditChange(saved, actor, "memory.created", outcome.name().toLowerCase(Locale.ROOT));
+    announceSaved(saved, actor, outcome);
     return new MemoryWrite(MemoryMapping.toMemory(saved), outcome, affected);
   }
 
@@ -717,6 +731,24 @@ public class DefaultMemoryStore implements MemoryStore {
       default -> MemoryEvents.UPDATED;
     };
     events.changed(memory.getUserId(), kind, MemoryNode.FACT, memory.getId());
+  }
+
+  /**
+   * Tells the job that caused this write, if any, what it kept: the Memory panel's "Saved to
+   * memory". Writes outside a job (the user editing memory, a scheduled import) announce nothing.
+   */
+  private static void announceSaved(MemoryEntryEntity saved, Actor actor, MemoryWriteOutcome outcome) {
+    if (!Activity.active()) return;
+    Activity.emit(ActivityTypes.MEMORY_SAVED, actor.type() == ActorType.AGENT ? actor.id() : null, null,
+        p -> {
+          p.put("id", saved.getId().toString()).put("text", saved.getContent())
+              .put("category", saved.getCategory().name().toLowerCase(Locale.ROOT))
+              .put("source", saved.getSource().name().toLowerCase(Locale.ROOT))
+              .put("confirmed", saved.isConfirmed())
+              .put("status", saved.getStatus().name().toLowerCase(Locale.ROOT))
+              .put("outcome", outcome.name().toLowerCase(Locale.ROOT));
+          if (saved.getSourceRef() != null) p.put("sourceRef", saved.getSourceRef());
+        });
   }
 
   private static MemorySource sourceFor(Actor actor) {

@@ -16,6 +16,7 @@
     <module>engine-knowledge</module>
     <module>engine-memory</module>
     <module>engine-orchestrator</module>
+    <module>engine-chat</module>
     <module>engine-connectors</module>
     <module>engine-connectors-tools</module>
     <module>engine-scheduler</module>

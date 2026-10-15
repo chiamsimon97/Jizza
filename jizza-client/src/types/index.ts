@@ -56,7 +56,7 @@ export interface MemoryFile {
 // ── Memory Cosmos ─────────────────────────────────────────────────────────────
 export type BodyType = 'SUN' | 'AGENT' | 'SUBJECT' | 'NOTES' | 'FILE' | 'CONNECTOR' | 'WORKFLOW' | 'SKILL'
 export type MemoryCategory =
-  'PROFILE' | 'PREFERENCE' | 'RELATIONSHIP' | 'FINANCE' | 'HEALTH' | 'PROFESSIONAL' | 'PROJECT' | 'TASK' | 'GENERAL'
+  'PROFILE' | 'PREFERENCE' | 'RELATIONSHIP' | 'FINANCE' | 'HEALTH' | 'PROFESSIONAL' | 'PROJECT' | 'TASK' | 'GENERAL' | 'INSTRUCTION'
 export type MemoryStatus = 'ACTIVE' | 'PENDING' | 'SUPERSEDED' | 'RETIRED'
 export type Classification = 'NONE' | 'PII' | 'HEALTH' | 'FINANCIAL'
 export type ItemKind = 'fact' | 'note'
@@ -178,11 +178,78 @@ export interface ConversationDto {
   messages: MessageDto[]
 }
 
+/** A conversation as the conversation list shows it. */
+export interface ConversationSummary {
+  id: string
+  title?: string
+  preview?: string
+  createdAt: string
+  lastMessageAt?: string
+  pinned: boolean
+  archived: boolean
+  messageCount: number
+}
+
 export interface MessageDto {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'event'
   content: string
   createdAt: string
+  status?: 'streaming' | 'complete' | 'failed' | 'cancelled'
+  jobId?: string
+  /** What the reply looked like live: who helped and what it did on screen. */
+  metadata?: { contributors?: Contribution[]; actions?: UiAction[]; jobId?: string; notificationId?: string; parentJobId?: string; approved?: boolean }
+}
+
+// ── Jobs (the Activity panel) ─────────────────────────────────────────────────
+export type JobStatus = 'running' | 'awaiting_user' | 'completed' | 'failed' | 'cancelled'
+
+export type JobEventType =
+  | 'job.started' | 'job.completed' | 'job.failed' | 'job.cancelled'
+  | 'delta' | 'segment.preamble'
+  | 'agent.started' | 'agent.message'
+  | 'tool.call' | 'tool.api'
+  | 'memory.used' | 'memory.saved' | 'output'
+  | 'approval.required' | 'ui.action' | 'conversation.titled'
+
+export interface JobEvent {
+  seq: number
+  type: JobEventType
+  agentId?: string
+  agentName?: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload: Record<string, any>
+  at: string
+}
+
+export interface JobDto {
+  id: string
+  conversationId?: string
+  origin: string
+  title?: string
+  summary?: string
+  status: JobStatus
+  userMessageId?: string
+  assistantMessageId?: string
+  startedAt: string
+  finishedAt?: string
+  events: JobEvent[]
+  partialText?: string
+}
+
+/** What sending a message returns: the job to follow. */
+export interface TurnRef {
+  jobId: string
+  conversationId?: string
+  userMessageId?: string
+  assistantMessageId?: string
+  incognito: boolean
+}
+
+/** One event as it arrives on /user/queue/chat. */
+export interface ChatSocketEvent extends JobEvent {
+  jobId: string
+  conversationId?: string
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────

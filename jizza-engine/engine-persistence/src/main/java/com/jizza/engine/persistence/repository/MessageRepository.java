@@ -16,6 +16,23 @@ public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
 
   List<MessageEntity> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
 
+  /** The newest messages after a point, for the model's window. */
+  List<MessageEntity> findByConversationIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID conversationId,
+                                                                               Instant after,
+                                                                               Pageable pageable);
+
+  /** Everything not yet folded into the conversation's summary, oldest first. */
+  List<MessageEntity> findByConversationIdAndCreatedAtAfterOrderByCreatedAtAsc(UUID conversationId,
+                                                                              Instant after);
+
+  java.util.Optional<MessageEntity> findByConversationIdAndClientMessageId(UUID conversationId,
+                                                                           UUID clientMessageId);
+
+  /** Replies left mid-stream by a process that stopped. */
+  @Modifying
+  @Query("update MessageEntity m set m.status = 'failed' where m.status = 'streaming'")
+  int failAbandoned();
+
   @Modifying
   @Query("delete from MessageEntity m where m.createdAt < :cutoff")
   int pruneOlderThan(@Param("cutoff") Instant cutoff);
