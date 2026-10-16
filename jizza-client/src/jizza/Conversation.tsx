@@ -7,6 +7,7 @@ import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
 import { loadJob, useAssistantStore, type AssistantMessage } from './assistantStore'
 import { JizzaOrb } from './JizzaOrb'
+import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { useDictation } from './useSpeech'
 
 const SUGGESTIONS = [
@@ -26,10 +27,15 @@ interface ConversationProps {
   autoFocus?: boolean
   /** Opens a reply's job in the Activity panel ("See how this was done"). */
   onOpenJob?: (jobId: string) => void
+  /** Replaces the greeting shown before the first message, e.g. in the workflow planner. */
+  intro?: { title: string; text: string; suggestions: string[] }
+  placeholder?: string
+  /** Shows what Jizza and the specialists said to each other under each reply, in place. */
+  inlineDiscussion?: boolean
 }
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
-export function Conversation({ compact = false, autoFocus = false, onOpenJob }: ConversationProps) {
+export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
   const { messages, thinking, incognito, send, stop } = useAssistantStore()
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -69,16 +75,16 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob }: 
               <JizzaOrb size={compact ? 52 : 72} state={dictation.listening ? 'listening' : 'idle'} />
               <div>
                 <h3 className={`${compact ? 'text-lg' : 'text-2xl'} font-semibold tracking-tight text-gray-900 dark:text-gray-100`}>
-                  {incognito ? 'Nothing here is saved' : `${greeting()}. What shall we do?`}
+                  {intro?.title ?? (incognito ? 'Nothing here is saved' : `${greeting()}. What shall we do?`)}
                 </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {incognito
+                  {intro?.text ?? (incognito
                     ? 'Incognito chats are not stored in your history.'
-                    : 'Tell me what you need. I can open pages, draft workflows and tasks, and only stop when I need you.'}
+                    : 'Tell me what you need. I can open pages, draft workflows and tasks, and only stop when I need you.')}
                 </p>
               </div>
               <div className={`stagger grid w-full gap-2 ${compact ? '' : 'max-w-xl sm:grid-cols-2'}`}>
-                {SUGGESTIONS.map(text => (
+                {(intro?.suggestions ?? SUGGESTIONS).map(text => (
                   <button
                     key={text}
                     type="button"
@@ -93,7 +99,10 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob }: 
             </div>
           )}
 
-          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={t => void send(t)} onOpenJob={onOpenJob} />)}
+          {messages.map(msg => (
+            <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={t => void send(t)} onOpenJob={onOpenJob}
+              inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()} />
+          ))}
 
           {/* Between sending and the job starting there is no reply bubble yet to show progress in. */}
           {thinking && messages[messages.length - 1]?.role === 'user' && (
@@ -128,7 +137,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob }: 
             rows={1}
             value={dictation.listening ? dictation.interim : input}
             onChange={e => setInput(e.target.value)}
-            placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : 'Ask Jizza to do something…'}
+            placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : placeholder ?? 'Ask Jizza to do something…'}
             readOnly={dictation.listening}
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
@@ -153,8 +162,9 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob }: 
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise }: {
   msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
+  inlineDiscussion?: boolean; onRevise?: () => void
 }) {
   if (msg.role === 'event') {
     return (
@@ -199,8 +209,10 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob }: {
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
+        {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
         {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
-        {msg.jobId && onOpenJob && !msg.streaming && (
+        {msg.jobId && inlineDiscussion && !msg.streaming && <Discussion jobId={msg.jobId} />}
+        {msg.jobId && onOpenJob && !inlineDiscussion && !msg.streaming && (
           <button
             type="button"
             onClick={() => onOpenJob(msg.jobId!)}
@@ -286,6 +298,49 @@ function Approvals({ jobId }: { jobId: string }) {
           {error && <p className="ml-6 mt-1.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * What Jizza asked the specialists and what they answered for this reply, folded by default. In
+ * the workflow planner this is the discussion the plan came out of.
+ */
+function Discussion({ jobId }: { jobId: string }) {
+  const job = useAssistantStore(s => s.jobs[jobId])
+  const [open, setOpen] = useState(false)
+  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list(), staleTime: 300_000 })
+
+  useEffect(() => { if (open) void loadJob(jobId) }, [open, jobId])
+
+  const lines = job?.events.filter(e => e.type === 'agent.message') ?? []
+  if (job?.loaded && lines.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex w-fit items-center gap-0.5 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300"
+      >
+        {open ? 'Hide the discussion with the agents' : 'Show the discussion with the agents'}
+        <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <ul className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2.5 animate-fade-in dark:border-gray-800 dark:bg-gray-950">
+          {lines.length === 0 && <li className="text-xs text-gray-500 dark:text-gray-400">Loading…</li>}
+          {lines.map(e => (
+            <li key={e.seq} className="flex gap-2">
+              <span className="shrink-0"><AgentLogo agentKey={agents?.find(a => a.id === e.agentId)?.key ?? 'other'} size={18} /></span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                  {e.agentName ?? 'Agent'} to {e.payload.toAgentName ?? 'Agent'}{e.payload.kind === 'failed' ? ' · could not finish' : ''}
+                </p>
+                <p className="whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-400">{e.payload.text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

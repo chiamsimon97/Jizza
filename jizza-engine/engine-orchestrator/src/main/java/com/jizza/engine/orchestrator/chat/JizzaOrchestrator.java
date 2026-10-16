@@ -87,9 +87,30 @@ public class JizzaOrchestrator implements Orchestrator {
         actions, result.inputTokens(), result.outputTokens());
   }
 
+  /** The screen the Workflows page's "Plan with Jizza" panel sends from. */
+  static final String WORKFLOW_PLANNER = "workflow_planner";
+
+  /**
+   * How a planning conversation runs. The specialists are asked first because they carry the
+   * user's memory for their domain; only what they cannot settle goes back to the user.
+   */
+  static final String PLANNER_GUIDE = """
+      [App context: the user is planning a new workflow with you in the workflow planner.
+      1. Work out which specialists the request involves and ask them together with
+         delegate_to_specialists. Give each the user's request and ask what they already know
+         about the user that matters here (accounts, preferences, limits, past results), how they
+         would do their part, and what is unclear.
+      2. If anything only the user can decide is still open, ask it with app_ask_user: one
+         question at a time, with short options, and say briefly what the specialists found.
+      3. When nothing is left open, call app_propose_workflow with the plan. Mark each step that
+         changes something outside Jizza. List any defaults you picked as assumptions.
+      Never save the workflow yourself and never use app_open_form here. If the user asks for
+      changes after seeing a plan, revise it and propose it again.]""";
+
   /** Tells the model where the user is, for this turn only. */
   private static String withScreen(String message, String screen) {
     if (screen == null || screen.isBlank()) return message;
+    if (WORKFLOW_PLANNER.equals(screen)) return message + "\n\n" + PLANNER_GUIDE;
     String page = screen.length() > 40 ? screen.substring(0, 40) : screen;
     return message + "\n\n[App context: the user is on the '" + page + "' page of the Jizza app.]";
   }

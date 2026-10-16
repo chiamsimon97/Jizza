@@ -16,7 +16,7 @@ import { canSpeak, speak } from './useSpeech'
 export function JizzaDock() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { dockOpen, setDockOpen, thinking, voiceReplies, setVoiceReplies, newConversation, lastReplyId, messages } =
+  const { dockOpen, setDockOpen, thinking, voiceReplies, setVoiceReplies, newConversation, lastReplyId, messages, plannerOpen } =
     useAssistantStore()
   const onChatPage = location.pathname.startsWith('/chat')
   // A form slides in from the right; Jizza steps aside so the form's buttons stay reachable.
@@ -61,7 +61,8 @@ export function JizzaDock() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastReplyId])
 
-  if (onChatPage) return null
+  // The workflow planner is the same conversation in its own panel; one view of it at a time.
+  if (onChatPage || plannerOpen) return null
 
   return (
     <>

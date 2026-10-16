@@ -64,7 +64,7 @@ export function stepsFromGraph(graph: unknown): Record<string, unknown>[] | null
 }
 
 /** Turns the step list into the engine's graph: start, each step in order, end. */
-function toGraph(steps: Step[]) {
+export function toGraph(steps: Pick<Step, 'kind' | 'agentId' | 'instruction'>[]) {
   const nodes: unknown[] = [{ id: 'start', type: 'TRIGGER', label: 'Start', config: {} }]
   const edges: unknown[] = []
   let prev = 'start'

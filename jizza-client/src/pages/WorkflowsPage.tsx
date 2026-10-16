@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Workflow, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { Workflow, Plus, Sparkles } from 'lucide-react'
+import { WorkflowPlanner } from '@/jizza/WorkflowPlanner'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { WorkflowForm, stepsFromGraph } from '@/components/forms/WorkflowForm'
@@ -13,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
+  const [planning, setPlanning] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list(),
@@ -27,7 +30,11 @@ export function WorkflowsPage() {
   return (
     <div className="page">
       <WorkflowForm />
-      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<Button size="sm" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>} />
+      <WorkflowPlanner open={planning} onClose={() => setPlanning(false)} />
+      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<>
+        <Button size="sm" variant="secondary" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>
+        <Button size="sm" onClick={() => setPlanning(true)}><Sparkles className="h-4 w-4" />Plan with Jizza</Button>
+      </>} />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 

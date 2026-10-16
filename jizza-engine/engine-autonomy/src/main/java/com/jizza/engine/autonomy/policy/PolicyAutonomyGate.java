@@ -46,7 +46,7 @@ public class PolicyAutonomyGate implements AutonomyGate {
       "delegate_to_specialist", "delegate_to_specialists",
       "notify_user", "request_permission", "propose_workflow",
       // Jizza steering the user's own screen: opening pages and forms, asking, theming.
-      "app_navigate", "app_open_form", "app_ask_user", "app_set_theme",
+      "app_navigate", "app_open_form", "app_ask_user", "app_set_theme", "app_propose_workflow",
       // Plans and instructions only change Jizza's own records, and only from what the user typed;
       // a signal only reaches Jizza.
       "create_plan", "save_instruction", "raise_signal");
