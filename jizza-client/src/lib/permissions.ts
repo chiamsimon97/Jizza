@@ -11,6 +11,8 @@ export const PERMISSIONS = {
   MEMBERS_INVITE: 'members_invite',
   MEMBERS_MODIFY: 'members_modify',
   MEMBERS_REMOVE: 'members_remove',
+  GUARDRAILS_VIEW: 'guardrails_view',
+  GUARDRAILS_LOCK: 'guardrails_lock',
 } as const
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -25,6 +27,8 @@ export const PERMISSION_MODULE: Record<PermissionName, string> = {
   members_invite: 'members',
   members_modify: 'members',
   members_remove: 'members',
+  guardrails_view: 'guardrails',
+  guardrails_lock: 'guardrails',
 }
 
 export const ROLE_LABELS = {

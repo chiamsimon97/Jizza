@@ -40,7 +40,7 @@ const personalSections: NavSection[] = [
   {
     title: 'Governance',
     items: [
-      { to: '/autonomy', icon: Shield,    label: 'Autonomy' },
+      { to: '/guardrails', icon: Shield,  label: 'Guardrails' },
       { to: '/activity', icon: Activity,  label: 'Activity' },
       { to: '/usage',    icon: BarChart2, label: 'Usage' },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
@@ -55,6 +55,7 @@ const organizationSections: NavSection[] = [
     items: [
       { to: '/members',    icon: Users, label: 'Members',    permission: PERMISSIONS.MEMBERS_VIEW },
       { to: '/connectors', icon: Plug,  label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
+      { to: '/organization/guardrails', icon: Shield, label: 'Guardrails', permission: PERMISSIONS.GUARDRAILS_VIEW },
     ],
   },
   {

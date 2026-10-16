@@ -17,11 +17,14 @@ const GRANTS: Record<WorkspaceType, Record<WorkspaceRole, string[]>> = {
   },
   ORGANIZATION: {
     OWNER: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete',
-      'members_view', 'members_invite', 'members_modify', 'members_remove'],
+      'members_view', 'members_invite', 'members_modify', 'members_remove',
+      'guardrails_view', 'guardrails_lock'],
     ADMIN: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete',
-      'members_view', 'members_invite', 'members_modify', 'members_remove'],
-    DEVELOPER: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete', 'members_view'],
-    USER: ['members_view'],
+      'members_view', 'members_invite', 'members_modify', 'members_remove',
+      'guardrails_view', 'guardrails_lock'],
+    DEVELOPER: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete', 'members_view',
+      'guardrails_view'],
+    USER: ['members_view', 'guardrails_view'],
   },
 }
 

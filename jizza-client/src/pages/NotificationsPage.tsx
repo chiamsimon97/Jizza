@@ -37,10 +37,15 @@ export function NotificationsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant={n.status === 'READ' ? 'default' : 'info'}>{n.kind}</Badge>
+                    {n.priority === 'URGENT' && <Badge variant="danger">Urgent</Badge>}
                     <span className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</span>
                   </div>
-                  {n.sourceAgentId && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">from agent: {n.sourceAgentId}</p>
+                  {n.body && <p className="text-sm text-gray-800 dark:text-gray-200">{n.body}</p>}
+                  {typeof n.context?.reason === 'string' && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Why: {n.context.reason}</p>
+                  )}
+                  {(n.sourceAgentName || n.sourceAgentId) && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">from {n.sourceAgentName ?? n.sourceAgentId}</p>
                   )}
                 </div>
                 {n.status === 'PENDING' && (

@@ -11,7 +11,7 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   connections:   { path: '/connectors',    label: 'Connectors',    aliases: ['connectors', 'connector', 'services', 'connections', 'integrations', 'apps'] },
   workflows:     { path: '/workflows',     label: 'Workflows',     aliases: ['workflows', 'workflow', 'automations'] },
   procedures:    { path: '/procedures',    label: 'Procedures',    aliases: ['procedures', 'reviews', 'proposals'] },
-  autonomy:      { path: '/autonomy',      label: 'Autonomy',      aliases: ['autonomy', 'kill switch', 'rules', 'permissions'] },
+  guardrails:    { path: '/guardrails',    label: 'Guardrails',    aliases: ['guardrails', 'autonomy', 'kill switch', 'rules', 'permissions', 'approvals'] },
   activity:      { path: '/activity',      label: 'Activity',      aliases: ['activity', 'activity log', 'logs', 'audit'] },
   usage:         { path: '/usage',         label: 'Usage',         aliases: ['usage', 'cost', 'costs', 'spend', 'billing', 'tokens'] },
   members:       { path: '/members',       label: 'Members',       aliases: ['members', 'member', 'people', 'organization members', 'membership requests'] },

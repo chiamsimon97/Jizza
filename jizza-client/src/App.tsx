@@ -14,7 +14,8 @@ import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
-import { AutonomyPage } from '@/pages/AutonomyPage'
+import { GuardrailsPage } from '@/pages/GuardrailsPage'
+import { OrganizationGuardrailsPage } from '@/pages/OrganizationGuardrailsPage'
 import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { SecurityPage } from '@/pages/SecurityPage'
@@ -52,7 +53,8 @@ export default function App() {
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/workflows" element={<WorkflowsPage />} />
             <Route path="/procedures" element={<ProceduresPage />} />
-            <Route path="/autonomy" element={<AutonomyPage />} />
+            <Route path="/guardrails" element={<GuardrailsPage />} />
+            <Route path="/autonomy" element={<Navigate to="/guardrails" replace />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/usage" element={<UsagePage />} />
           </Route>
@@ -61,6 +63,9 @@ export default function App() {
           <Route path="/invitations" element={<InvitationsPage />} />
           <Route element={<RequirePermission permission={PERMISSIONS.MEMBERS_VIEW} />}>
             <Route path="/members" element={<MembersPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.GUARDRAILS_VIEW} />}>
+            <Route path="/organization/guardrails" element={<OrganizationGuardrailsPage />} />
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.CONNECTOR_VIEW} />}>
             <Route path="/connectors" element={<ConnectorsPage />} />

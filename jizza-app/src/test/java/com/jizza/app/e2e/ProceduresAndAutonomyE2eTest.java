@@ -482,7 +482,7 @@ class ProceduresAndAutonomyE2eTest extends E2eSupport {
         .put("run_at", Instant.now().plusSeconds(3600).toString())), true);
 
     assertThat(result.ok()).isFalse();
-    assertThat(result.error()).contains("forbids").contains("schedule_task");
+    assertThat(result.error()).contains("never").contains("schedule_task");
     assertThat(api.get("/api/tasks").json()).as("nothing was scheduled").isEmpty();
     assertThat(api.get("/api/activity?action=tool.blocked").json()).isNotEmpty();
   }

@@ -280,6 +280,10 @@ export interface NotificationDto {
   id: string
   kind: NotificationKind
   sourceAgentId?: string
+  sourceAgentName?: string
+  body?: string
+  /** URGENT reaches the user straight away; LOW is never chased. */
+  priority?: 'URGENT' | 'NORMAL' | 'LOW'
   context?: Record<string, unknown>
   status: NotificationStatus
   expiresAt?: string
@@ -497,14 +501,95 @@ export interface ProcedureHistoryEntry {
   createdAt: string
 }
 
-// ── Autonomy ──────────────────────────────────────────────────────────────────
+// ── Guardrails ────────────────────────────────────────────────────────────────
+/** Auto, Ask me, Let Jizza decide, Never. */
+export type GuardrailMode = 'ALLOW' | 'ASK' | 'JIZZA' | 'DENY'
+
+export type ActionType = 'READ' | 'DRAFT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'SEND' | 'MONEY'
+
+/** What a looser rule needs before it applies; anything unmet means the user is asked. */
+export interface GuardrailLimits {
+  maxValue?: number
+  field?: string
+  condition?: string
+  conditionLabel?: string
+  budget?: { max: number; per: string; field?: string }
+  maxCalls?: { count: number; per: string }
+  activeHours?: { days?: string[]; from: string; to: string; zone: string }
+  [key: string]: unknown
+}
+
 export interface AutonomyRuleDto {
   id?: string
-  agentId?: string
+  agentId?: string | null
   toolRef?: string
-  rule: 'ALLOW' | 'ASK' | 'DENY'
-  limits?: Record<string, unknown>
+  rule: GuardrailMode
+  limits?: GuardrailLimits | null
   precedence: number
+  workflowId?: string | null
+  workflowVersion?: number | null
+  nodeId?: string | null
+  locked?: boolean
+  workspaceId?: string | null
+}
+
+export interface GuardrailDecision {
+  rule: GuardrailMode
+  reason: string
+  matchedPolicy?: string
+  policyId?: string | null
+  actionType?: ActionType | null
+  budgeted?: boolean
+}
+
+export interface GuardrailCell {
+  rule: GuardrailMode
+  policyId?: string | null
+  matched?: string
+  locked: boolean
+}
+
+export interface AgentGuardrails {
+  id: string
+  key: string
+  name: string
+  orchestrator: boolean
+  enabled: boolean
+  modes: Record<ActionType, GuardrailCell>
+}
+
+export interface QuietHours {
+  start?: string | null
+  end?: string | null
+  timeZone?: string | null
+}
+
+export interface GuardrailsOverview {
+  rules: AutonomyRuleDto[]
+  agents: AgentGuardrails[]
+  defaultRule: string
+  paused: boolean
+  quietHours?: QuietHours | null
+}
+
+export interface GuardrailStep {
+  nodeId: string
+  label?: string
+  type: string
+  agentId?: string | null
+  agentName?: string | null
+  toolName?: string | null
+  actionType?: ActionType | null
+  decision?: GuardrailDecision | null
+}
+
+export interface WorkflowGuardrails {
+  workflowId: string
+  name: string
+  version: number
+  owningAgentId?: string | null
+  steps: GuardrailStep[]
+  rules: AutonomyRuleDto[]
 }
 
 // ── Activity / Audit ──────────────────────────────────────────────────────────

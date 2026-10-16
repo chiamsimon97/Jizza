@@ -48,9 +48,10 @@ import org.springframework.stereotype.Service;
  * for anything that changes the outside world, or {@code *} for everything.
  *
  * <p><b>Which rule decides.</b> The most specific scope wins: a workflow step, then the workflow,
- * then the agent, then the account. Within a scope the more specific tool reference wins, then the
- * higher precedence. So an agent's cautious default can be relaxed for one workflow the user
- * approved, and only there.
+ * then the agent, then the account. Within a scope the higher precedence wins, and between rules of
+ * equal precedence the more specific tool reference. So an agent's cautious default can be relaxed
+ * for one workflow the user approved, and only there, and a rule the user ranked higher is never
+ * beaten by a narrower default.
  *
  * <p><b>What can never be loosened.</b> A locked rule is a ceiling: whatever decides, the answer
  * is at least as strict as every locked rule that matches. A looser rule (auto, or let Jizza
@@ -158,8 +159,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
             .filter(policy -> policy.getWorkspaceId() == null)
             .filter(policy -> matches(policy, ctx, type))
             .sorted(Comparator.comparingInt(PolicyAutonomyGate::scopeTier)
-                .thenComparingInt(policy -> specificity(policy.getToolRef()))
                 .thenComparingInt(AutonomyPolicyEntity::getPrecedence)
+                .thenComparingInt(policy -> specificity(policy.getToolRef()))
                 .reversed())
             .toList();
 
