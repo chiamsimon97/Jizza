@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Workflow, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { Workflow, Plus, Sparkles } from 'lucide-react'
+import { WorkflowPlanner } from '@/jizza/WorkflowPlanner'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { WorkflowForm } from '@/components/forms/WorkflowForm'
+import { WorkflowForm, stepsFromGraph } from '@/components/forms/WorkflowForm'
+import type { WorkflowDto } from '@/types'
 import { useFormStore } from '@/jizza/formStore'
 import { workflowsApi } from '@/api/workflows'
 import { Card } from '@/components/ui/Card'
@@ -12,15 +15,26 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
+  const [planning, setPlanning] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list(),
   })
 
+  // A saved workflow opens in the same builder, with its graph read back into steps.
+  const openWorkflow = (wf: WorkflowDto) => {
+    const steps = stepsFromGraph(wf.graph)
+    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, ...(steps ? { steps } : {}) })
+  }
+
   return (
     <div className="page">
       <WorkflowForm />
-      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<Button size="sm" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>} />
+      <WorkflowPlanner open={planning} onClose={() => setPlanning(false)} />
+      <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<>
+        <Button size="sm" variant="secondary" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>
+        <Button size="sm" onClick={() => setPlanning(true)}><Sparkles className="h-4 w-4" />Plan with Jizza</Button>
+      </>} />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
@@ -31,7 +45,11 @@ export function WorkflowsPage() {
       {data && data.length > 0 && (
         <div className="stagger space-y-2">
           {data.map(wf => (
-            <Card key={wf.id} padding="md">
+            <Card key={wf.id} padding="md"
+              role="button" tabIndex={0} aria-label={`Open ${wf.name}`}
+              interactive className="cursor-pointer"
+              onClick={() => openWorkflow(wf)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openWorkflow(wf) } }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{wf.name}</p>

@@ -6,6 +6,7 @@ import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.WorkflowOrigin;
 import com.jizza.engine.api.enums.WorkflowStatus;
+import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
@@ -55,7 +56,16 @@ public class WorkflowUseCase {
                           JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
                           UUID owningAgentId) {
     boolean creating = workflowId == null;
-    if (!creating) ownedBy(userId, workflowId);
+    if (!creating) {
+      WorkflowDto existing = ownedBy(userId, workflowId);
+      // The builder saves in place over the current version's snapshot. That is fine for a draft,
+      // but on a reviewed workflow it would rewrite the very snapshot the binding check compares
+      // against, so anything past draft changes through review instead.
+      if (existing.status() != WorkflowStatus.DRAFT) {
+        throw new ConflictException("'%s' is %s, so it can't be edited here. Changes to it go through review."
+            .formatted(existing.name(), existing.status().name().toLowerCase().replace('_', ' ')));
+      }
+    }
 
     WorkflowDto saved = workflows.save(new WorkflowDto(workflowId, userId, name, description,
         graph, inputSchema, triggerConfig, WorkflowOrigin.USER_BUILT, WorkflowStatus.DRAFT,

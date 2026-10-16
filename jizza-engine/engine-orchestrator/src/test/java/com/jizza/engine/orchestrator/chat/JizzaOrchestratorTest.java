@@ -167,6 +167,21 @@ class JizzaOrchestratorTest {
   }
 
   @Test
+  void theWorkflowPlannerTellsJizzaToConsultTheSpecialistsAndProposeAPlan() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      assertThat(req.instruction()).startsWith("Check the gold rate every morning")
+          .contains("delegate_to_specialists", "app_ask_user", "app_propose_workflow")
+          .doesNotContain("page of the Jizza app");
+      assertThat(uiActions.active()).isTrue();
+      return AgentResult.of(jizza.getId(), "Jizza", "Let me check with Kai.");
+    });
+
+    orchestrator.respond(userId, new Orchestrator.TurnInput("Check the gold rate every morning",
+        JizzaOrchestrator.WORKFLOW_PLANNER, List.of(), UUID.randomUUID()));
+  }
+
+  @Test
   void opensNoScreenTurnWhenTheMessageDidNotComeFromTheApp() {
     when(baseAgent.run(any())).thenAnswer(inv -> {
       assertThat(uiActions.active()).isFalse();

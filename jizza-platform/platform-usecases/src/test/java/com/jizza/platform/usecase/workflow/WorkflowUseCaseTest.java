@@ -9,6 +9,7 @@ import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.enums.WorkflowOrigin;
 import com.jizza.engine.api.enums.WorkflowStatus;
+import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
@@ -93,6 +94,21 @@ class WorkflowUseCaseTest {
     assertThat(edited.name()).isEqualTo("Renamed");
     assertThat(edited.origin()).isEqualTo(created.origin());
     assertThat(edited.status()).isEqualTo(created.status());
+  }
+
+  @Test
+  void aWorkflowPastDraftCannotBeEditedInPlace() {
+    var created = useCase.save(userId, null, "My workflow", "desc", graph(), null, null, null);
+    var approved = new WorkflowDto(created.id(), userId, created.name(), created.description(),
+        created.graph(), null, null, created.origin(), WorkflowStatus.APPROVED, null, 1, null,
+        created.createdAt());
+    rows.removeIf(w -> w.id().equals(created.id()));
+    rows.add(approved);
+
+    assertThatThrownBy(() ->
+        useCase.save(userId, created.id(), "Sneaky", "desc", graph(), null, null, null))
+        .isInstanceOf(ConflictException.class);
+    assertThat(useCase.get(userId, created.id()).name()).isEqualTo("My workflow");
   }
 
   @Test
