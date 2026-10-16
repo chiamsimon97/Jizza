@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.api.connector.OAuthService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,6 +27,7 @@ public class OAuthCallbackController {
     this.oauth = oauth;
   }
 
+  @PublicEndpoint
   @GetMapping("/api/oauth/callback")
   public ResponseEntity<String> callback(@RequestParam(required = false) String state,
                                          @RequestParam(required = false) String code,

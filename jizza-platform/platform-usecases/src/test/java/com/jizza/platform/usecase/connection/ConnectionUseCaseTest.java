@@ -29,26 +29,31 @@ import org.junit.jupiter.api.Test;
 class ConnectionUseCaseTest {
 
   private final UUID userId = UUID.randomUUID();
+
+  /** Each person acting in their own account; the workspace id doubles as the user id here. */
+  private static com.jizza.engine.api.authz.Access access(UUID user) {
+    return new com.jizza.engine.api.authz.Access(user, user);
+  }
   private final List<ConnectionDto> saved = new ArrayList<>();
   private ConnectionUseCase useCase;
 
   /** Records what the use-case asked the engine to store, which is what the assertions read. */
   private final ConnectionStore store = new ConnectionStore() {
-    @Override public ConnectionDto create(UUID owner, ConnectionSettings s) {
-      ConnectionDto dto = dtoOf(UUID.randomUUID(), owner, s);
+    @Override public ConnectionDto create(UUID owner, UUID workspace, ConnectionSettings s) {
+      ConnectionDto dto = dtoOf(UUID.randomUUID(), owner, workspace, s);
       saved.add(dto);
       return dto;
     }
 
     @Override public ConnectionDto update(UUID id, ConnectionSettings s) {
       ConnectionDto existing = find(id).orElseThrow();
-      ConnectionDto dto = dtoOf(id, existing.userId(), s);
+      ConnectionDto dto = dtoOf(id, existing.userId(), existing.workspaceId(), s);
       saved.replaceAll(c -> c.id().equals(id) ? dto : c);
       return dto;
     }
 
-    @Override public List<ConnectionDto> list(UUID owner) {
-      return saved.stream().filter(c -> c.userId().equals(owner)).toList();
+    @Override public List<ConnectionDto> list(UUID workspace) {
+      return saved.stream().filter(c -> c.workspaceId().equals(workspace)).toList();
     }
 
     @Override public Optional<ConnectionDto> find(UUID id) {
@@ -60,8 +65,8 @@ class ConnectionUseCaseTest {
     }
   };
 
-  private static ConnectionDto dtoOf(UUID id, UUID owner, ConnectionSettings s) {
-    return new ConnectionDto(id, owner, s.serviceName(), s.authScheme(), s.clientId(),
+  private static ConnectionDto dtoOf(UUID id, UUID owner, UUID workspace, ConnectionSettings s) {
+    return new ConnectionDto(id, owner, workspace, s.serviceName(), s.authScheme(), s.clientId(),
         s.clientSecret() != null, s.authorizationUrl(), s.accessTokenUrl(), s.refreshTokenUrl(),
         s.scopes(), s.scopeSeparator(), Boolean.TRUE.equals(s.pkce()),
         Boolean.TRUE.equals(s.unifiedCallback()), s.tokenPlacement(), s.grantType(), null,
@@ -83,7 +88,7 @@ class ConnectionUseCaseTest {
 
   @Test
   void appliesTheDefaultsMostProvidersWantSoTheCommonCaseNeedsNoConfiguration() {
-    var dto = useCase.create(userId, oauth("s"));
+    var dto = useCase.create(access(userId), oauth("s"));
 
     assertThat(dto.grantType()).isEqualTo("authorization_code");
     assertThat(dto.scopeSeparator()).isEqualTo("space");
@@ -92,7 +97,7 @@ class ConnectionUseCaseTest {
 
   @Test
   void anExplicitSettingIsNotOverwrittenByADefault() {
-    var dto = useCase.create(userId, new ConnectionSettings("Example", AuthScheme.OAUTH2, "c", "s",
+    var dto = useCase.create(access(userId), new ConnectionSettings("Example", AuthScheme.OAUTH2, "c", "s",
         "https://a", "https://t", null, "read", "comma", null, null, TokenPlacement.QUERY,
         "client_credentials", null, null, null, null, null, null, null));
 
@@ -107,7 +112,7 @@ class ConnectionUseCaseTest {
         null, null, null, null, null, null, null, null, null, null, null,
         null, null, null, null, null);
 
-    assertThatThrownBy(() -> useCase.create(userId, incomplete))
+    assertThatThrownBy(() -> useCase.create(access(userId), incomplete))
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("authorization URL");
   }
@@ -118,7 +123,7 @@ class ConnectionUseCaseTest {
         "https://a", "https://t", null, null, null, null, null, null, null, null, null,
         null, null, null, null, null);
 
-    assertThatThrownBy(() -> useCase.create(userId, noClient))
+    assertThatThrownBy(() -> useCase.create(access(userId), noClient))
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("client id");
   }
@@ -129,7 +134,7 @@ class ConnectionUseCaseTest {
         null, null, null, null, null, null, null, null, null, "https://api.weather.test", null,
         null, null, null, null, null);
 
-    var dto = useCase.create(userId, apiKey);
+    var dto = useCase.create(access(userId), apiKey);
 
     assertThat(dto.authScheme()).isEqualTo(AuthScheme.API_KEY);
     assertThat(dto.clientSecretSet()).isTrue();
@@ -141,16 +146,16 @@ class ConnectionUseCaseTest {
         null, null, null, null, null, null, null, null, null, null, null, null, null, null,
         null, null);
 
-    assertThatThrownBy(() -> useCase.create(userId, nameless))
+    assertThatThrownBy(() -> useCase.create(access(userId), nameless))
         .isInstanceOf(ValidationException.class);
   }
 
   @Test
   void anEditDoesNotHaveToRepeatTheRulesThatOnlyApplyWhenCreating() {
-    var dto = useCase.create(userId, oauth("s"));
+    var dto = useCase.create(access(userId), oauth("s"));
 
     // Renaming alone: no service name, client id or URLs in the patch, and it is still accepted.
-    var renamed = useCase.update(userId, dto.id(), new ConnectionSettings("Renamed", null, null,
+    var renamed = useCase.update(access(userId), dto.id(), new ConnectionSettings("Renamed", null, null,
         null, null, null, null, null, null, null, null, null, null, null, null,
         null, null, null, null, null));
 
@@ -159,21 +164,21 @@ class ConnectionUseCaseTest {
 
   @Test
   void anotherUsersConnectionIsReportedMissingRatherThanForbidden() {
-    var dto = useCase.create(userId, oauth("s"));
+    var dto = useCase.create(access(userId), oauth("s"));
     UUID somebodyElse = UUID.randomUUID();
 
-    assertThatThrownBy(() -> useCase.get(somebodyElse, dto.id()))
+    assertThatThrownBy(() -> useCase.get(access(somebodyElse), dto.id()))
         .isInstanceOf(NotFoundException.class);
-    assertThatThrownBy(() -> useCase.delete(somebodyElse, dto.id()))
+    assertThatThrownBy(() -> useCase.delete(access(somebodyElse), dto.id()))
         .isInstanceOf(NotFoundException.class);
     assertThat(saved).as("and nothing was removed").hasSize(1);
   }
 
   @Test
   void listingOnlyReturnsTheCallersOwnConnections() {
-    useCase.create(userId, oauth("s"));
-    useCase.create(UUID.randomUUID(), oauth("s"));
+    useCase.create(access(userId), oauth("s"));
+    useCase.create(access(UUID.randomUUID()), oauth("s"));
 
-    assertThat(useCase.list(userId)).hasSize(1);
+    assertThat(useCase.list(access(userId))).hasSize(1);
   }
 }

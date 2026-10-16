@@ -1,0 +1,87 @@
+[
+  // ========== CONNECTOR PERMISSIONS BEGIN ==========
+  {
+    "name": "connector_view",
+    "label": "View connectors",
+    "description": "See connected services, their actions, triggers and run history.",
+    "category": "read",
+    "module": "connector",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_create",
+    "label": "Add connectors",
+    "description": "Connect new services, upload API docs and add actions, triggers and variables.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_modify",
+    "label": "Edit connectors",
+    "description": "Change, publish, test and assign connector actions to agents.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_delete",
+    "label": "Remove connectors",
+    "description": "Delete services and their parts, and revoke their access.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  // ========== CONNECTOR PERMISSIONS END ==========
+
+  // ========== MEMBERS PERMISSIONS BEGIN ==========
+  {
+    "name": "members_view",
+    "label": "View members",
+    "description": "See the organization's members, their roles and pending requests.",
+    "category": "read",
+    "module": "members",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "members_invite",
+    "label": "Add members",
+    "description": "Send membership requests and revoke pending ones.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  {
+    "name": "members_modify",
+    "label": "Change roles",
+    "description": "Change a member's role, within what your own role allows.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  {
+    "name": "members_remove",
+    "label": "Remove members",
+    "description": "Remove someone from the organization.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  }
+  // ========== MEMBERS PERMISSIONS END ==========
+]

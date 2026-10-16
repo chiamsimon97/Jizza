@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.connector.ConnectionSettings;
 import com.jizza.engine.api.connector.OAuthService;
 import com.jizza.engine.api.dto.ConnectionDto;
@@ -9,7 +10,10 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.connector.ToolCatalog;
 import com.jizza.engine.api.connector.ToolGenerator;
 import com.jizza.engine.infra.config.PlatformProperties;
+import com.jizza.engine.api.authz.Permissions;
+import com.jizza.engine.api.util.RequiresPermission;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.engine.security.session.CurrentWorkspace;
 import com.jizza.platform.usecase.connection.ConnectionUseCase;
 import com.jizza.platform.usecase.connection.GeneratedToolUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
@@ -38,6 +42,7 @@ import org.springframework.web.multipart.MultipartFile;
  * carry a step-up, which is exactly why the state is single-use, expiring and session-bound.
  */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/connections")
 public class ConnectionController {
 
@@ -59,20 +64,23 @@ public class ConnectionController {
     this.platform = platform;
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_VIEW)
   @GetMapping
   public List<ConnectionDto> list() {
-    return connections.list(CurrentUser.userId());
+    return connections.list(CurrentWorkspace.access());
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_VIEW)
   @GetMapping("/{id}")
   public ConnectionDto get(@PathVariable UUID id) {
     return owned(id);
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_CREATE)
   @PostMapping
   @com.jizza.engine.api.util.StepUpRequired
   public ConnectionDto create(@Valid @RequestBody Requests.Connection request) {
-    return connections.create(CurrentUser.userId(), new ConnectionSettings(
+    return connections.create(CurrentWorkspace.access(), new ConnectionSettings(
         request.serviceName(), request.authScheme(), request.clientId(), request.clientSecret(),
         request.authorizationUrl(), request.accessTokenUrl(), request.refreshTokenUrl(),
         request.scopes(), request.scopeSeparator(), request.pkce(), request.unifiedCallback(),
@@ -81,11 +89,12 @@ public class ConnectionController {
         request.extraFields()));
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_MODIFY)
   @PatchMapping("/{id}")
   @com.jizza.engine.api.util.StepUpRequired
   public ConnectionDto update(@PathVariable UUID id,
                               @Valid @RequestBody Requests.ConnectionPatch request) {
-    return connections.update(CurrentUser.userId(), id, new ConnectionSettings(request.serviceName(),
+    return connections.update(CurrentWorkspace.access(), id, new ConnectionSettings(request.serviceName(),
         request.authScheme(), request.clientId(), request.clientSecret(), request.authorizationUrl(),
         request.accessTokenUrl(), request.refreshTokenUrl(), request.scopes(),
         request.scopeSeparator(), request.pkce(), request.unifiedCallback(),
@@ -94,14 +103,16 @@ public class ConnectionController {
         request.extraFields()));
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_DELETE)
   @DeleteMapping("/{id}")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message delete(@PathVariable UUID id) {
-    connections.delete(CurrentUser.userId(), id);
+    connections.delete(CurrentWorkspace.access(), id);
     return new Responses.Message("Connection removed.");
   }
 
   /** Starts the handshake; the returned URL is where the browser must be sent. */
+  @RequiresPermission(Permissions.CONNECTOR_CREATE)
   @PostMapping("/{id}/authorize")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.AuthorizeUrl authorize(@PathVariable UUID id) {
@@ -110,6 +121,7 @@ public class ConnectionController {
         oauth.startAuth(id, CurrentUser.sessionId()).toString());
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_MODIFY)
   @PostMapping("/{id}/test")
   public Responses.TestConnection test(@PathVariable UUID id) {
     owned(id);
@@ -117,6 +129,7 @@ public class ConnectionController {
     return new Responses.TestConnection(result.ok(), result.httpStatus(), result.message());
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_DELETE)
   @PostMapping("/{id}/revoke")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message revoke(@PathVariable UUID id) {
@@ -125,6 +138,7 @@ public class ConnectionController {
     return new Responses.Message("Disconnected and tokens cleared.");
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_VIEW)
   @GetMapping("/{id}/tools")
   public List<GeneratedToolDto> tools(@PathVariable UUID id) {
     owned(id);
@@ -135,6 +149,7 @@ public class ConnectionController {
    * Attaching an API document generates one tool per endpoint. The document is untrusted content,
    * so it is size- and type-checked here before anything parses it (R47).
    */
+  @RequiresPermission(Permissions.CONNECTOR_CREATE)
   @PostMapping(value = "/{id}/apidoc", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @com.jizza.engine.api.util.StepUpRequired
   public List<GeneratedToolDto> attachApiDoc(@PathVariable UUID id,
@@ -150,11 +165,12 @@ public class ConnectionController {
     return toolGenerator.fromApiDoc(id, file.getBytes(), resolveFormat(format, file));
   }
 
+  @RequiresPermission(Permissions.CONNECTOR_MODIFY)
   @PostMapping("/tools/{toolId}/enabled")
   @com.jizza.engine.api.util.StepUpRequired
   public GeneratedToolDto setToolEnabled(@PathVariable UUID toolId,
                                          @RequestParam boolean enabled) {
-    return toolAdmin.setEnabled(CurrentUser.userId(), toolId, enabled);
+    return toolAdmin.setEnabled(CurrentWorkspace.access(), toolId, enabled);
   }
 
   private DocFormat resolveFormat(String requested, MultipartFile file) {
@@ -173,6 +189,6 @@ public class ConnectionController {
   }
 
   private ConnectionDto owned(UUID connectionId) {
-    return connections.get(CurrentUser.userId(), connectionId);
+    return connections.get(CurrentWorkspace.access(), connectionId);
   }
 }

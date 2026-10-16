@@ -19,6 +19,11 @@ import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
+import { MembersPage } from '@/pages/MembersPage'
+import { InvitationsPage } from '@/pages/InvitationsPage'
+import { RequirePermission } from '@/auth/RequirePermission'
+import { PersonalOnly } from '@/auth/PersonalOnly'
+import { PERMISSIONS } from '@/lib/permissions'
 
 export default function App() {
   return (
@@ -36,22 +41,32 @@ export default function App() {
       {/* Protected */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
-          <Route path="/chat" element={<ChatPage />} />
-          {/* Conversations live in the chat workspace's left column now. */}
-          <Route path="/conversations" element={<Navigate to="/chat" replace />} />
+          {/* The Individual account's own modules; an Organization account goes to its home. */}
+          <Route element={<PersonalOnly />}>
+            <Route path="/chat" element={<ChatPage />} />
+            {/* Conversations live in the chat workspace's left column now. */}
+            <Route path="/conversations" element={<Navigate to="/chat" replace />} />
+            <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/memory" element={<CosmosView />} />
+            <Route path="/memory/:agentId" element={<CosmosView />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/workflows" element={<WorkflowsPage />} />
+            <Route path="/procedures" element={<ProceduresPage />} />
+            <Route path="/autonomy" element={<AutonomyPage />} />
+            <Route path="/activity" element={<ActivityPage />} />
+            <Route path="/usage" element={<UsagePage />} />
+          </Route>
+
           <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/memory" element={<CosmosView />} />
-          <Route path="/memory/:agentId" element={<CosmosView />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/connectors" element={<ConnectorsPage />} />
-          <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />
+          <Route path="/invitations" element={<InvitationsPage />} />
+          <Route element={<RequirePermission permission={PERMISSIONS.MEMBERS_VIEW} />}>
+            <Route path="/members" element={<MembersPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.CONNECTOR_VIEW} />}>
+            <Route path="/connectors" element={<ConnectorsPage />} />
+            <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />
+          </Route>
           <Route path="/connections" element={<Navigate to="/connectors" replace />} />
-          <Route path="/workflows" element={<WorkflowsPage />} />
-          <Route path="/procedures" element={<ProceduresPage />} />
-          <Route path="/autonomy" element={<AutonomyPage />} />
-          <Route path="/activity" element={<ActivityPage />} />
-          <Route path="/usage" element={<UsagePage />} />
           <Route path="/settings/security" element={<SecurityPage />} />
           <Route path="/settings" element={<Navigate to="/settings/security" replace />} />
         </Route>

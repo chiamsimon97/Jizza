@@ -95,6 +95,9 @@ public final class ApiClient {
 
   public String sessionCookie() { return cookies.get("JIZZA_SESSION"); }
 
+  /** Presents a session token captured earlier, as a replaying attacker would. */
+  public void useSessionCookie(String token) { cookies.put("JIZZA_SESSION", token); }
+
   /** Headers of the most recent response. */
   public java.net.http.HttpHeaders lastHeaders() { return lastHeaders; }
 

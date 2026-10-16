@@ -17,6 +17,15 @@ class AuditHashTest {
     return AuditHash.compute(prev, user, ActorType.AGENT, user, action, "target", detail, at);
   }
 
+  /** jsonb hands keys back shortest-first, so the order a caller built them in must not matter. */
+  @Test
+  void keyOrderInTheDetailDoesNotChangeTheHash() {
+    var built = Json.obj().put("workspaceId", "w").put("type", "PERSONAL");
+    var readBack = Json.obj().put("type", "PERSONAL").put("workspaceId", "w");
+    assertThat(hash(AuditHash.GENESIS, "workspace.created", built))
+        .isEqualTo(hash(AuditHash.GENESIS, "workspace.created", readBack));
+  }
+
   @Test
   void isDeterministicForIdenticalContent() {
     assertThat(hash(AuditHash.GENESIS, "tool.call", null))

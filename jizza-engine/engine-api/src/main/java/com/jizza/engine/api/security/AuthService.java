@@ -12,7 +12,12 @@ import java.util.UUID;
 /** Registration, login, MFA, step-up, session lifecycle, recovery and lockout (R3 to R6). */
 public interface AuthService {
 
-  UUID register(String email, String password);
+  default UUID register(String email, String password) {
+    return register(RegistrationRequest.individual(email, password));
+  }
+
+  /** Creates the account, its personal workspace and, for an organization sign-up, the organization. */
+  UUID register(RegistrationRequest request);
 
   LoginResult login(String email, String password, String device, InetAddress ip, String clientKey);
 

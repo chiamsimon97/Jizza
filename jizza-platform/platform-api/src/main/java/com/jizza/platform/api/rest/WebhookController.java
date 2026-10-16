@@ -1,5 +1,7 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
+import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.api.webhook.WebhookRegistry;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.webhook.WebhookUseCase;
@@ -36,6 +38,7 @@ public class WebhookController {
     this.webhooks = webhooks;
   }
 
+  @PublicEndpoint
   @PostMapping("/api/webhooks/{token}")
   public ResponseEntity<Responses.Message> receive(@PathVariable String token,
                                                    @RequestBody(required = false) String rawBody,
@@ -53,6 +56,7 @@ public class WebhookController {
   }
 
   @RestController
+  @AuthenticatedOnly
   @RequestMapping("/api/webhook-endpoints")
   public static class Management {
 

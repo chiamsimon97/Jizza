@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.cosmos.CosmosSnapshot;
 import com.jizza.engine.api.cosmos.ItemPage;
 import com.jizza.engine.api.cosmos.MemorySearchHit;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * restricted item and forgetting all ask for a fresh step-up.
  */
 @RestController
+@AuthenticatedOnly
 public class CosmosController {
 
   private final CosmosUseCase cosmos;

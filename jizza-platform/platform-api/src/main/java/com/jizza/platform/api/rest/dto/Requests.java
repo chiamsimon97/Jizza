@@ -18,8 +18,24 @@ public final class Requests {
   private Requests() {}
 
   // Bounded so an oversized field cannot make the server spend Argon2 time on it.
+  /**
+   * {@code accountType} defaults to an Individual account. An Organization account needs
+   * {@code organizationName}. {@code invitationToken} comes from an emailed membership request.
+   */
   public record Register(@Email @NotBlank @Size(max = 320) String email,
-                         @NotBlank @Size(max = 256) String password) {}
+                         @NotBlank @Size(max = 256) String password,
+                         com.jizza.engine.api.enums.WorkspaceType accountType,
+                         @Size(max = 100) String organizationName,
+                         @Size(max = 128) String invitationToken) {}
+
+  public record InviteMember(@Email @NotBlank @Size(max = 320) String email,
+                             @NotNull com.jizza.engine.api.enums.WorkspaceRole role) {}
+
+  public record ChangeRole(@NotNull com.jizza.engine.api.enums.WorkspaceRole role) {}
+
+  public record SwitchWorkspace(@NotNull UUID workspaceId) {}
+
+  public record CreateOrganization(@NotBlank @Size(min = 2, max = 100) String name) {}
 
   public record Login(@Email @NotBlank @Size(max = 320) String email,
                       @NotBlank @Size(max = 256) String password) {}

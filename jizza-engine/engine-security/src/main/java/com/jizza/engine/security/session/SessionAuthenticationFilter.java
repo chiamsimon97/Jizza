@@ -21,10 +21,13 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 
   private final SessionCookies cookies;
   private final SessionService sessions;
+  private final com.jizza.engine.security.authz.ActiveWorkspaceResolver workspaces;
 
-  public SessionAuthenticationFilter(SessionCookies cookies, SessionService sessions) {
+  public SessionAuthenticationFilter(SessionCookies cookies, SessionService sessions,
+                                     com.jizza.engine.security.authz.ActiveWorkspaceResolver workspaces) {
     this.cookies = cookies;
     this.sessions = sessions;
+    this.workspaces = workspaces;
   }
 
   @Override
@@ -35,7 +38,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
           .flatMap(sessions::validateAndTouch)
           .ifPresent(session -> {
             var principal = new JizzaPrincipal(session.getUserId(), session.getId(),
-                session.getStepUpAt(), session.isMfaSatisfied());
+                session.getStepUpAt(), session.isMfaSatisfied(), workspaces.resolve(session));
             var auth = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority("ROLE_USER")));
             SecurityContextHolder.getContext().setAuthentication(auth);

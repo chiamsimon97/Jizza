@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.RunDto;
 import com.jizza.engine.api.dto.SkillDto;
 import com.jizza.engine.api.dto.WorkflowDto;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The workflow builder surface: save, version, save-as-skill, run and resume (R31-R33). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api")
 public class WorkflowController {
 

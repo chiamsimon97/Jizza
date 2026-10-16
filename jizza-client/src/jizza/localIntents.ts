@@ -1,5 +1,6 @@
 import type { UiAction } from '@/types'
-import { PAGES } from './pages'
+import { PAGES, pagesFor } from './pages'
+import { getCachedSnapshot } from '@/auth/useAuthorization'
 
 export interface LocalIntent {
   actions: UiAction[]
@@ -13,7 +14,7 @@ const CREATE = /^(?:please\s+)?(?:create|make|build|add|set up|start|draft|new)\
 
 function findPage(phrase: string): string | undefined {
   const p = phrase.toLowerCase().trim()
-  return Object.entries(PAGES).find(([key, page]) => key === p || page.aliases.includes(p))?.[0]
+  return Object.entries(pagesFor(getCachedSnapshot())).find(([key, page]) => key === p || page.aliases.includes(p))?.[0]
 }
 
 /**

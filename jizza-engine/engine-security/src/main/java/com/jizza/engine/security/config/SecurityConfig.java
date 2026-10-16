@@ -34,9 +34,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
   /** Endpoints reachable without a session. Everything else requires one. */
-  static final String[] PUBLIC_ENDPOINTS = {
+  public static final String[] PUBLIC_ENDPOINTS = {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
-      "/api/auth/recover", "/api/auth/recover/**",
+      "/api/auth/recover", "/api/auth/recover/**", "/api/auth/invitations/*",
       "/api/oauth/callback", "/api/webhooks/**",
       "/actuator/health", "/actuator/health/**", "/actuator/info"
   };

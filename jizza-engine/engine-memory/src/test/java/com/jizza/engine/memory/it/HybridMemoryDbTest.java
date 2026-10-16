@@ -96,8 +96,10 @@ class HybridMemoryDbTest {
     kai = insertAgent(user, "finance", "Kai", "finance", false);
     vita = insertAgent(user, "health", "Vita", "health", false);
     zerodha = (UUID) em.createNativeQuery("""
-        insert into connections (user_id, service_name, auth_scheme, slug, status)
-        values (:u, 'Zerodha', 'oauth2', 'zerodha_1', 'connected') returning id
+        with w as (insert into workspaces (type, name, created_by_user_id)
+                   values ('personal', 'Personal', :u) returning id)
+        insert into connections (user_id, workspace_id, service_name, auth_scheme, slug, status)
+        select :u, w.id, 'Zerodha', 'oauth2', 'zerodha_1', 'connected' from w returning id
         """).setParameter("u", user).getSingleResult();
 
     Actor me = Actor.user(user);

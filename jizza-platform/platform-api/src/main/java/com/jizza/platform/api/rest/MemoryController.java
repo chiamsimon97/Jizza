@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.enums.MemoryCategory;
 import com.jizza.engine.api.enums.MemoryStatus;
 import com.jizza.engine.api.memory.Memory;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * grouped around, consent settings, and a preview of what an agent would be given for a request.
  */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/memory")
 public class MemoryController {
 

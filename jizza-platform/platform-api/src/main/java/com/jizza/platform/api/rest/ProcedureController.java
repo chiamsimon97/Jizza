@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.procedure.ProcedureService;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * the routes that change that standing all require a fresh re-authentication.
  */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/procedures")
 public class ProcedureController {
 

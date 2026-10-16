@@ -1,0 +1,35 @@
+/**
+ * Permission names, mirroring the server's `Permissions` constants. Names only: what is granted
+ * always comes from the server's snapshot (`GET /api/me/context`), never from a role name.
+ */
+export const PERMISSIONS = {
+  CONNECTOR_VIEW: 'connector_view',
+  CONNECTOR_CREATE: 'connector_create',
+  CONNECTOR_MODIFY: 'connector_modify',
+  CONNECTOR_DELETE: 'connector_delete',
+  MEMBERS_VIEW: 'members_view',
+  MEMBERS_INVITE: 'members_invite',
+  MEMBERS_MODIFY: 'members_modify',
+  MEMBERS_REMOVE: 'members_remove',
+} as const
+
+export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
+
+/** Which area each permission belongs to, matching `module` in the server's permission file. */
+export const PERMISSION_MODULE: Record<PermissionName, string> = {
+  connector_view: 'connector',
+  connector_create: 'connector',
+  connector_modify: 'connector',
+  connector_delete: 'connector',
+  members_view: 'members',
+  members_invite: 'members',
+  members_modify: 'members',
+  members_remove: 'members',
+}
+
+export const ROLE_LABELS = {
+  OWNER: 'Owner',
+  ADMIN: 'Admin',
+  DEVELOPER: 'Developer',
+  USER: 'User',
+} as const

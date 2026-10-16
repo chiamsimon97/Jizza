@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.notification.Answer;
 import com.jizza.engine.security.session.CurrentUser;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Updates, approvals, procedure reviews and interventions, all relayed through Jizza (R37/R38). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/notifications")
 public class NotificationController {
 

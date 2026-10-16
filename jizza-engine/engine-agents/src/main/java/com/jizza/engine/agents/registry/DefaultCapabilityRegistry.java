@@ -78,16 +78,33 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     this.notifications = notifications;
   }
 
+  /**
+   * Account permissions for tools that belong to a workspace (connector tools). Optional so the
+   * registry still works where no access control is wired, such as isolated tests.
+   */
+  private ObjectProvider<com.jizza.engine.api.authz.PermissionEvaluator> permissions;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public void setPermissions(ObjectProvider<com.jizza.engine.api.authz.PermissionEvaluator> permissions) {
+    this.permissions = permissions;
+  }
+
   @Override
   public List<ToolSpec> toolsFor(UUID agentId) {
     Map<String, ToolSpec> byName = new LinkedHashMap<>();
+    Map<String, ToolProvider> owner = new LinkedHashMap<>();
     providers.forEach(provider -> {
-      for (ToolSpec spec : provider.toolsFor(agentId)) byName.putIfAbsent(spec.name(), spec);
+      for (ToolSpec spec : provider.toolsFor(agentId)) {
+        if (byName.putIfAbsent(spec.name(), spec) == null) owner.put(spec.name(), provider);
+      }
     });
     // A denied tool is withheld entirely rather than offered and then refused: the model should
-    // not be able to plan around a capability it will never be granted.
+    // not be able to plan around a capability it will never be granted. The same goes for a
+    // connector tool in an account where the agent's owner has no connector access.
+    UUID ownerId = agents.findById(agentId).map(AgentEntity::getUserId).orElse(null);
     List<ToolSpec> visible = new ArrayList<>();
     for (ToolSpec spec : byName.values()) {
+      if (!accountAllows(ownerId, agentId, owner.get(spec.name()), spec.name())) continue;
       if (!autonomyGate.evaluate(agentId, spec.name(), null).denied()) visible.add(spec);
     }
     return visible;
@@ -129,6 +146,17 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
         result);
   }
 
+  /** True unless the tool belongs to a workspace where the agent's owner lacks its permission. */
+  private boolean accountAllows(UUID ownerId, UUID agentId, ToolProvider provider, String toolName) {
+    if (provider == null || permissions == null) return true;
+    var evaluator = permissions.getIfAvailable();
+    if (evaluator == null) return true;
+    var workspace = provider.workspaceOf(agentId, toolName);
+    if (workspace.isEmpty()) return true;
+    return ownerId != null
+        && evaluator.isAllowed(ownerId, workspace.get(), provider.requiredPermission(toolName));
+  }
+
   private ToolResult execute(UUID agentId, ToolCall call, boolean autonomous, UUID approvedBy) {
     AgentEntity agent = agents.findById(agentId)
         .orElseThrow(() -> new NotFoundException("Agent", agentId));
@@ -154,6 +182,12 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
         return refuse(agent, call, "schema", "Arguments did not match the tool schema: "
             + validation.message());
       }
+    }
+
+    // Account permissions come before autonomy: someone whose role has no access to a connector
+    // gets a plain refusal, never an approval request for something they could not do anyway.
+    if (!accountAllows(agent.getUserId(), agentId, provider, call.name())) {
+      return refuse(agent, call, "no-access", "You don't have access to this connector");
     }
 
     Decision decision = autonomyGate.evaluate(agentId, call.name(), call.args());

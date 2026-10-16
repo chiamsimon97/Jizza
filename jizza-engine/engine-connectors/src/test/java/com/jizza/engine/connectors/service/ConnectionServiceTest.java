@@ -64,7 +64,7 @@ class ConnectionServiceTest {
 
   @Test
   void storesTheClientSecretEncryptedAndNeverReturnsIt() {
-    var dto = service.create(userId, oauthSettings("super-secret"));
+    var dto = service.create(userId, userId, oauthSettings("super-secret"));
 
     assertThat(dto.clientSecretSet()).isTrue();
     assertThat(Json.write(dto)).doesNotContain("super-secret");
@@ -76,7 +76,7 @@ class ConnectionServiceTest {
 
   @Test
   void anUpdateWithoutASecretLeavesTheStoredOneAlone() {
-    var dto = service.create(userId, oauthSettings("super-secret"));
+    var dto = service.create(userId, userId, oauthSettings("super-secret"));
 
     service.update(dto.id(), new ConnectionSettings("Example renamed", null, null,
         null, null, null, null, null, null, null, null, null, null, null, null,
@@ -89,14 +89,14 @@ class ConnectionServiceTest {
 
   @Test
   void aNewConnectionStartsUnconnected() {
-    var dto = service.create(userId, oauthSettings("s"));
+    var dto = service.create(userId, userId, oauthSettings("s"));
     assertThat(dto.status()).isEqualTo(com.jizza.engine.api.enums.ConnectionStatus.NEW);
     assertThat(dto.tokenPresent()).isFalse();
   }
 
   @Test
   void aConnectionIsFoundByIdAndListedForItsOwner() {
-    var dto = service.create(userId, oauthSettings("s"));
+    var dto = service.create(userId, userId, oauthSettings("s"));
     assertThat(service.find(dto.id())).isPresent();
     assertThat(service.find(UUID.randomUUID())).isEmpty();
   }

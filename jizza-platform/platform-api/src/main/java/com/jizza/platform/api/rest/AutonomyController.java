@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.platform.usecase.autonomy.AutonomyUseCase;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
 import com.jizza.engine.security.session.CurrentUser;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * them require a fresh re-authentication.
  */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/autonomy")
 @com.jizza.engine.api.util.StepUpRequired
 public class AutonomyController {

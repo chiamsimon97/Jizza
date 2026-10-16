@@ -31,9 +31,12 @@ public class GeneratedToolProvider implements ToolProvider {
   private final GeneratedToolRepository tools;
   private final AgentRepository agents;
   private final ToolExecutor executor;
+  private final com.jizza.engine.persistence.repository.ConnectionRepository connections;
 
   public GeneratedToolProvider(AgentCapabilityRepository capabilities, GeneratedToolRepository tools,
-                               AgentRepository agents, ToolExecutor executor) {
+                               AgentRepository agents, ToolExecutor executor,
+                               com.jizza.engine.persistence.repository.ConnectionRepository connections) {
+    this.connections = connections;
     this.capabilities = capabilities;
     this.tools = tools;
     this.agents = agents;
@@ -79,6 +82,15 @@ public class GeneratedToolProvider implements ToolProvider {
       }
     }
     return executor.execute(dto, call.args(), key);
+  }
+
+  /** A generated tool belongs to its connection's workspace. */
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<UUID> workspaceOf(UUID agentId, String toolName) {
+    return find(agentId, toolName)
+        .flatMap(t -> connections.findById(t.getConnectionId()))
+        .map(com.jizza.engine.persistence.entity.ConnectionEntity::getWorkspaceId);
   }
 
   private Optional<GeneratedToolEntity> find(UUID agentId, String toolName) {

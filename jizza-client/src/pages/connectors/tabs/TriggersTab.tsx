@@ -9,6 +9,8 @@ import { servicesApi } from '@/api/services'
 import type { ServiceTrigger } from '@/types'
 import { Empty, JsonBlock, SectionHeader, Table, errorText, toMachineName } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** Events in the service, found by polling a list API for items not seen before. */
 export function TriggersTab({ detail, refresh }: TabProps) {
@@ -24,7 +26,7 @@ export function TriggersTab({ detail, refresh }: TabProps) {
   return (
     <div>
       <SectionHeader title="Triggers" description="Jizza checks each trigger's API on its interval while the service is Live, and records new items in History. The first check only takes a baseline."
-        action={<Button size="sm" disabled={detail.apis.length === 0} onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New trigger</Button>} />
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" disabled={detail.apis.length === 0} onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New trigger</Button></Can>} />
       {detail.apis.length === 0 && <Empty>Add a polling API first, one that lists items such as recent bills.</Empty>}
       {detail.apis.length > 0 && detail.triggers.length === 0 && <Empty>No triggers yet.</Empty>}
       {detail.triggers.length > 0 && (
@@ -39,12 +41,12 @@ export function TriggersTab({ detail, refresh }: TabProps) {
               <td className="px-4 py-3 text-xs">{t.pollIntervalMinutes} min</td>
               <td className="px-4 py-3 text-xs text-gray-500">{t.lastPolledAt ? new Date(t.lastPolledAt).toLocaleString() : 'Not yet'}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" aria-label={`Test ${t.label}`} loading={test.isPending && tested === t.id}
-                  onClick={() => { setTested(t.id); test.mutate(t.id, { onSettled: refresh }) }}><FlaskConical className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Edit ${t.label}`} onClick={() => setEditing(t)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Delete ${t.label}`} onClick={() => {
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Test ${t.label}`} loading={test.isPending && tested === t.id}
+                  onClick={() => { setTested(t.id); test.mutate(t.id, { onSettled: refresh }) }}><FlaskConical className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Edit ${t.label}`} onClick={() => setEditing(t)}><Pencil className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" aria-label={`Delete ${t.label}`} onClick={() => {
                   if (window.confirm(`Delete ${t.label}?`)) remove.mutate(t.id)
-                }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                }}><Trash2 className="h-3.5 w-3.5" /></Button></Can>
               </td>
             </tr>
           ))}

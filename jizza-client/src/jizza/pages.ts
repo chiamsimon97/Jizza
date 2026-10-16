@@ -1,3 +1,5 @@
+import type { AuthorizationSnapshot } from '@/types'
+
 /** The pages Jizza can open, keyed the way the backend's app_navigate tool names them. */
 export const PAGES: Record<string, { path: string; label: string; aliases: string[] }> = {
   chat:          { path: '/chat',          label: 'Chat',          aliases: ['chat', 'home'] },
@@ -12,6 +14,33 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   autonomy:      { path: '/autonomy',      label: 'Autonomy',      aliases: ['autonomy', 'kill switch', 'rules', 'permissions'] },
   activity:      { path: '/activity',      label: 'Activity',      aliases: ['activity', 'activity log', 'logs', 'audit'] },
   usage:         { path: '/usage',         label: 'Usage',         aliases: ['usage', 'cost', 'costs', 'spend', 'billing', 'tokens'] },
+  members:       { path: '/members',       label: 'Members',       aliases: ['members', 'member', 'people', 'organization members', 'membership requests'] },
+}
+
+/** Pages that need a permission before they can be opened. */
+const PAGE_PERMISSION: Record<string, string> = {
+  connections: 'connector_view',
+  members: 'members_view',
+}
+
+/** The only pages an Organization account has; the rest belong to the Individual account. */
+const ORGANIZATION_PAGES = new Set(['members', 'connections', 'notifications'])
+
+/**
+ * Whether Jizza may open this page for the active account and role. Without a snapshot yet, only
+ * personal pages that need no permission are allowed; the server still checks every request.
+ */
+export function canOpenPage(key: string, snapshot: AuthorizationSnapshot | undefined): boolean {
+  if (!PAGES[key]) return false
+  const isOrg = snapshot?.activeWorkspace.type === 'ORGANIZATION'
+  if (isOrg ? !ORGANIZATION_PAGES.has(key) : key === 'members') return false
+  const needed = PAGE_PERMISSION[key]
+  return !needed || (snapshot?.permissions.includes(needed) ?? false)
+}
+
+/** {@link PAGES} narrowed to what the active account and role can open. */
+export function pagesFor(snapshot: AuthorizationSnapshot | undefined): Record<string, (typeof PAGES)[string]> {
+  return Object.fromEntries(Object.entries(PAGES).filter(([key]) => canOpenPage(key, snapshot)))
 }
 
 /** Which page a form lives on, so opening a form also brings its page up. */

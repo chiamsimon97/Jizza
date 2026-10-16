@@ -13,25 +13,29 @@ import { SlideOver, Field, fieldClass } from '@/components/ui/SlideOver'
 import { servicesApi } from '@/api/services'
 import type { AuthScheme, ServiceInfo } from '@/types'
 import { AUTH_LABELS, ServiceStatusBadge } from './shared'
+import { Can } from '@/auth/Can'
+import { usePermission } from '@/auth/usePermission'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** Connectors: the services Jizza's agents can work with, each one defined here. */
 export function ConnectorsPage() {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const { data, isLoading } = useQuery({ queryKey: ['services'], queryFn: () => servicesApi.list() })
+  const canCreate = usePermission(PERMISSIONS.CONNECTOR_CREATE)
 
   return (
     <div className="page">
       <PageHeader icon={Plug} title="Connectors"
         description="Services your agents can work with. Define how to sign in, then the actions and triggers they offer."
-        actions={<Button size="sm" onClick={() => setCreating(true)}><Plus className="h-4 w-4" />New service</Button>} />
+        actions={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" onClick={() => setCreating(true)}><Plus className="h-4 w-4" />New service</Button></Can>} />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
       {!isLoading && (!data || data.length === 0) && (
         <EmptyState icon={Plug} title="No services yet"
           description="Create a service for any app with an HTTP API, then give your agents its actions."
-          action={{ label: 'New service', onClick: () => setCreating(true) }} />
+          action={canCreate ? { label: 'New service', onClick: () => setCreating(true) } : undefined} />
       )}
 
       {data && data.length > 0 && (

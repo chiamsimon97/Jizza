@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.AuditEntryDto;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.api.rest.dto.Responses;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The activity view: what the agents actually did, read from the audit log (R14/R56). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/activity")
 public class ActivityController {
 

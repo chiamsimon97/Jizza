@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.connection;
 
+import com.jizza.engine.api.authz.Access;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.connector.ConnectionSettings;
 import com.jizza.engine.api.connector.ConnectionStore;
@@ -35,50 +36,53 @@ public class ConnectionUseCase {
   }
 
   @Transactional
-  public ConnectionDto create(UUID userId, ConnectionSettings requested) {
+  public ConnectionDto create(Access access, ConnectionSettings requested) {
     validate(requested, true);
-    ConnectionDto created = connections.create(userId, withDefaults(requested));
+    ConnectionDto created = connections.create(access.userId(), access.workspaceId(),
+        withDefaults(requested));
 
-    audit.record(userId, ActorType.USER, null, "connection.created", created.serviceName(),
+    audit.record(access.userId(), ActorType.USER, null, "connection.created", created.serviceName(),
         Json.obj().put("connectionId", created.id().toString())
             .put("authScheme", String.valueOf(created.authScheme())));
     return created;
   }
 
   @Transactional
-  public ConnectionDto update(UUID userId, UUID connectionId, ConnectionSettings requested) {
-    ConnectionDto existing = ownedBy(userId, connectionId);
+  public ConnectionDto update(Access access, UUID connectionId, ConnectionSettings requested) {
+    ConnectionDto existing = ownedBy(access, connectionId);
     validate(requested, false);
 
     ConnectionDto updated = connections.update(connectionId, requested);
-    audit.record(userId, ActorType.USER, null, "connection.updated", existing.serviceName(), null);
+    audit.record(access.userId(), ActorType.USER, null, "connection.updated",
+        existing.serviceName(), null);
     return updated;
   }
 
   @Transactional(readOnly = true)
-  public List<ConnectionDto> list(UUID userId) {
-    return connections.list(userId);
+  public List<ConnectionDto> list(Access access) {
+    return connections.list(access.workspaceId());
   }
 
   @Transactional(readOnly = true)
-  public ConnectionDto get(UUID userId, UUID connectionId) {
-    return ownedBy(userId, connectionId);
+  public ConnectionDto get(Access access, UUID connectionId) {
+    return ownedBy(access, connectionId);
   }
 
   @Transactional
-  public void delete(UUID userId, UUID connectionId) {
-    ConnectionDto existing = ownedBy(userId, connectionId);
+  public void delete(Access access, UUID connectionId) {
+    ConnectionDto existing = ownedBy(access, connectionId);
     connections.delete(connectionId);
-    audit.record(userId, ActorType.USER, null, "connection.deleted", existing.serviceName(), null);
+    audit.record(access.userId(), ActorType.USER, null, "connection.deleted",
+        existing.serviceName(), null);
   }
 
   /**
-   * A connection belonging to somebody else is reported as missing rather than forbidden, so the
-   * API cannot be used to discover that an id exists.
+   * A connection owned by another account is reported as missing rather than forbidden, so the
+   * API cannot be used to discover that an id exists in someone else's workspace.
    */
-  public ConnectionDto ownedBy(UUID userId, UUID connectionId) {
+  public ConnectionDto ownedBy(Access access, UUID connectionId) {
     return connections.find(connectionId)
-        .filter(connection -> connection.userId().equals(userId))
+        .filter(connection -> connection.workspaceId().equals(access.workspaceId()))
         .orElseThrow(() -> new NotFoundException("Connection", connectionId));
   }
 

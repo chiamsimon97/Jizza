@@ -1,9 +1,19 @@
 import { api } from '@/lib/api'
-import type { LoginResult, MfaSetup, SecurityStatus, SessionDto } from '@/types'
+import type { LoginResult, MfaSetup, SecurityStatus, SessionDto, WorkspaceType } from '@/types'
 
 export const authApi = {
-  register: (body: { email: string; password: string; name?: string }) =>
+  register: (body: {
+    email: string
+    password: string
+    accountType: WorkspaceType
+    organizationName?: string
+    invitationToken?: string
+  }) =>
     api.post<{ message: string }>('/api/auth/register', body),
+
+  /** What an invitation sign-up link is for. Public; 404 when the link is unknown or used. */
+  invitation: (token: string) =>
+    api.get<{ email: string; workspaceName: string }>(`/api/auth/invitations/${encodeURIComponent(token)}`),
 
   login: (body: { email: string; password: string }) =>
     api.post<LoginResult>('/api/auth/login', body),

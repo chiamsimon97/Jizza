@@ -3,11 +3,17 @@ package com.jizza.platform.api.rest;
 import com.jizza.engine.api.dto.LoginResult;
 import com.jizza.engine.api.dto.SecurityStatus;
 import com.jizza.engine.api.dto.SessionDto;
+import com.jizza.engine.api.enums.WorkspaceType;
+import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.security.AuthService;
+import com.jizza.engine.api.security.RegistrationRequest;
+import com.jizza.engine.api.util.AuthenticatedOnly;
+import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.engine.security.session.SessionCookies;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
+import com.jizza.platform.usecase.workspace.MembershipUseCase;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.InetAddress;
@@ -43,29 +49,49 @@ public class AuthController {
   private final AuthService auth;
   private final SessionCookies cookies;
   private final ObjectProvider<com.jizza.engine.api.mail.MailSender> mail;
+  private final MembershipUseCase memberships;
 
   public AuthController(AuthService auth, SessionCookies cookies,
-                        ObjectProvider<com.jizza.engine.api.mail.MailSender> mail) {
+                        ObjectProvider<com.jizza.engine.api.mail.MailSender> mail,
+                        MembershipUseCase memberships) {
     this.auth = auth;
     this.cookies = cookies;
     this.mail = mail;
+    this.memberships = memberships;
   }
 
   /**
    * Issues the XSRF-TOKEN cookie to a browser that has none yet. CsrfCookieFilter writes the cookie
    * on any response; this endpoint just gives a fresh page something public to call first.
    */
+  @PublicEndpoint
   @GetMapping("/csrf")
   public ResponseEntity<Void> csrf() {
     return ResponseEntity.noContent().build();
   }
 
+  @PublicEndpoint
   @PostMapping("/register")
   public Responses.Message register(@Valid @RequestBody Requests.Register request) {
-    auth.register(request.email(), request.password());
+    auth.register(new RegistrationRequest(request.email(), request.password(),
+        request.accountType() == null ? WorkspaceType.PERSONAL : request.accountType(),
+        request.organizationName(), request.invitationToken()));
     return new Responses.Message("Account created. Sign in to continue.");
   }
 
+  /**
+   * What an emailed sign-up link is for: the invited address and the organization's name. An
+   * unknown, used or expired token is simply not found.
+   */
+  @PublicEndpoint
+  @GetMapping("/invitations/{token}")
+  public Responses.InvitationPreview invitation(@PathVariable String token) {
+    return memberships.bySignupToken(token)
+        .map(i -> new Responses.InvitationPreview(i.email(), i.workspaceName()))
+        .orElseThrow(() -> new NotFoundException("Invitation", token));
+  }
+
+  @PublicEndpoint
   @PostMapping("/login")
   public ResponseEntity<Responses.LoginResult> login(@Valid @RequestBody Requests.Login request,
                                                      HttpServletRequest http) {
@@ -74,6 +100,7 @@ public class AuthController {
     return withSession(result);
   }
 
+  @PublicEndpoint
   @PostMapping("/mfa/verify")
   public ResponseEntity<Responses.LoginResult> verifyMfa(@Valid @RequestBody Requests.MfaVerify request,
                                                          HttpServletRequest http) {
@@ -94,6 +121,7 @@ public class AuthController {
   }
 
   /** The signed-in account's protection: two-step status, whether setup is still owed, codes left. */
+  @AuthenticatedOnly
   @GetMapping("/me")
   public SecurityStatus me() {
     var principal = CurrentUser.require();
@@ -101,6 +129,7 @@ public class AuthController {
   }
 
   /** Enrolment is a security change, so it needs a fresh re-authentication first. */
+  @AuthenticatedOnly
   @PostMapping("/mfa/setup")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.MfaSetup setupMfa() {
@@ -108,6 +137,7 @@ public class AuthController {
     return new Responses.MfaSetup(setup.secret(), setup.provisioningUri());
   }
 
+  @AuthenticatedOnly
   @PostMapping("/mfa/confirm")
   public Responses.RecoveryCodes confirmMfa(@Valid @RequestBody Requests.MfaConfirm request) {
     var principal = CurrentUser.require();
@@ -116,6 +146,7 @@ public class AuthController {
   }
 
   /** New recovery codes replace the old ones. Needs a fresh step-up and a current code. */
+  @AuthenticatedOnly
   @PostMapping("/mfa/recovery-codes")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.RecoveryCodes regenerateRecoveryCodes(
@@ -124,6 +155,7 @@ public class AuthController {
         auth.regenerateRecoveryCodes(CurrentUser.userId(), request.code()));
   }
 
+  @AuthenticatedOnly
   @PostMapping("/mfa/disable")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message disableMfa(@Valid @RequestBody Requests.MfaCode request) {
@@ -131,6 +163,7 @@ public class AuthController {
     return new Responses.Message("Two-step sign-in is off.");
   }
 
+  @AuthenticatedOnly
   @PostMapping("/step-up")
   public Responses.Message stepUp(@Valid @RequestBody Requests.StepUp request) {
     var principal = CurrentUser.require();
@@ -138,6 +171,7 @@ public class AuthController {
     return new Responses.Message("Re-authenticated. High-risk actions are unlocked briefly.");
   }
 
+  @AuthenticatedOnly
   @PostMapping("/logout")
   public ResponseEntity<Responses.Message> logout() {
     var principal = CurrentUser.require();
@@ -147,6 +181,7 @@ public class AuthController {
         .body(new Responses.Message("Signed out."));
   }
 
+  @AuthenticatedOnly
   @PostMapping("/logout-everywhere")
   public ResponseEntity<Responses.Message> logoutEverywhere() {
     auth.logoutEverywhere(CurrentUser.userId());
@@ -155,12 +190,14 @@ public class AuthController {
         .body(new Responses.Message("Signed out on every device."));
   }
 
+  @AuthenticatedOnly
   @GetMapping("/sessions")
   public List<SessionDto> sessions() {
     var principal = CurrentUser.require();
     return auth.sessions(principal.userId(), principal.sessionId());
   }
 
+  @AuthenticatedOnly
   @DeleteMapping("/sessions/{id}")
   public Responses.Message revokeSession(@PathVariable UUID id) {
     auth.revokeSession(CurrentUser.userId(), id);
@@ -171,6 +208,7 @@ public class AuthController {
    * Always answers the same way, whether or not the address is registered: a differing response
    * would turn this endpoint into an account-enumeration oracle.
    */
+  @PublicEndpoint
   @PostMapping("/recover")
   public Responses.Message requestRecovery(@Valid @RequestBody Requests.RecoverRequest request,
                                            HttpServletRequest http) {
@@ -187,12 +225,14 @@ public class AuthController {
         "If that address has an account, a reset link is on its way.");
   }
 
+  @PublicEndpoint
   @PostMapping("/recover/complete")
   public Responses.Message completeRecovery(@Valid @RequestBody Requests.RecoverComplete request) {
     auth.resetPassword(request.token(), request.newPassword());
     return new Responses.Message("Password changed. Sign in again.");
   }
 
+  @AuthenticatedOnly
   @PostMapping("/password")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message changePassword(@Valid @RequestBody Requests.ChangePassword request) {

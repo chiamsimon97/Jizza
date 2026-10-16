@@ -28,6 +28,10 @@ public class ConnectionEntity {
   @Column(nullable = false)
   private UUID userId;
 
+  /** The account that owns the connection; {@code userId} is who created it. */
+  @Column(nullable = false)
+  private UUID workspaceId;
+
   @Column(nullable = false)
   private String serviceName;
 
@@ -118,6 +122,9 @@ public class ConnectionEntity {
 
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
+
+  public UUID getWorkspaceId() { return workspaceId; }
+  public void setWorkspaceId(UUID workspaceId) { this.workspaceId = workspaceId; }
 
   public UUID getUserId() { return userId; }
   public void setUserId(UUID userId) { this.userId = userId; }

@@ -9,6 +9,8 @@ import { servicesApi } from '@/api/services'
 import type { ServiceApi } from '@/types'
 import { Empty, SectionHeader, Table, errorText, toMachineName } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 type ParamIn = 'path' | 'query' | 'header' | 'body'
 interface Param { name: string; in: ParamIn; type: string; required: boolean; description: string }
@@ -34,7 +36,7 @@ export function ApisTab({ detail, refresh }: TabProps) {
   return (
     <div>
       <SectionHeader title="APIs" description="Raw requests to the service. Paths are called on the base URL; use {param} for path inputs and {{var.name}} for variables."
-        action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New API</Button>} />
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New API</Button></Can>} />
       {detail.apis.length === 0 ? <Empty>No APIs yet. Add one for each request your actions and triggers need.</Empty> : (
         <Table head={['Name', 'Request', 'Kind', 'Used by', '']}>
           {detail.apis.map(a => (
@@ -53,11 +55,11 @@ export function ApisTab({ detail, refresh }: TabProps) {
               </td>
               <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{usedBy(a.id).join(', ') || '—'}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" aria-label={`Edit ${a.label}`} onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Delete ${a.label}`} onClick={() => {
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Edit ${a.label}`} onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" aria-label={`Delete ${a.label}`} onClick={() => {
                   const users = usedBy(a.id)
                   if (window.confirm(users.length ? `Deleting ${a.label} also deletes ${users.join(', ')}. Continue?` : `Delete ${a.label}?`)) remove.mutate(a.id)
-                }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                }}><Trash2 className="h-3.5 w-3.5" /></Button></Can>
               </td>
             </tr>
           ))}
