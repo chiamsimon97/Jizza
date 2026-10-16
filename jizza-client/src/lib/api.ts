@@ -1,5 +1,6 @@
 import type { ProblemDetail } from '@/types'
 import { useAuthStore } from '@/store/authStore'
+import { endLocalSession } from '@/lib/session'
 
 export class ApiError extends Error {
   constructor(
@@ -25,11 +26,16 @@ export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'blob' = 'json', retried = false): Promise<T> {
+  // Only ever this app's own API: the session cookie and CSRF token must never ride along to
+  // another origin, whatever string ends up in `path`.
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    throw new Error(`Refusing to call a non-local URL: ${path}`)
+  }
   const mutating = init.method != null && init.method !== 'GET'
   // A fresh browser has no XSRF-TOKEN cookie until the server sets one, so fetch it before the
   // first mutating call (e.g. register or login) rather than letting that call be rejected.
   if (mutating && !getCsrfToken()) {
-    await fetch('/api/auth/csrf', { credentials: 'include' })
+    await fetch('/api/auth/csrf', { credentials: 'same-origin' })
   }
   const csrf = getCsrfToken()
   const headers = new Headers(init.headers)
@@ -41,7 +47,7 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
     headers.set('X-XSRF-TOKEN', csrf)
   }
 
-  const res = await fetch(path, { ...init, credentials: 'include', headers })
+  const res = await fetch(path, { ...init, credentials: 'same-origin', headers })
 
   if (res.ok) {
     if (res.status === 204 || res.headers.get('Content-Length') === '0') {
@@ -60,7 +66,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
   // The session expired or was revoked. Forget the stale login so the app goes back to sign-in,
   // instead of every page showing its own "couldn't load" error. Auth calls report their own 401s.
   if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated) {
-    useAuthStore.getState().clear()
+    endLocalSession()
+  }
+  // Two-step sign-in is required and this session has not set it up: the app routes to setup.
+  if (res.status === 403 && String(problem.type ?? '').endsWith('mfa-enrollment-required')) {
+    useAuthStore.getState().setEnrollmentRequired(true)
   }
   if (res.status === 403 && !retried && stepUpHandler && String(problem.type ?? '').endsWith('step-up-required')) {
     if (await stepUpHandler()) return request<T>(path, init, as, true)

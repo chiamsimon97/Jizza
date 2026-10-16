@@ -133,8 +133,9 @@ implementation had to resolve a gap in the Architecture Contract.
 
 ```
 POST   /api/auth/register  login  logout  logout-everywhere  step-up  password
-POST   /api/auth/mfa/setup  mfa/verify  mfa/confirm
+POST   /api/auth/mfa/setup  mfa/verify  mfa/confirm  mfa/recovery-codes  mfa/disable
 POST   /api/auth/recover  recover/complete
+GET    /api/auth/me                  (two-step status, recovery codes left)
 GET    /api/auth/sessions            DELETE /api/auth/sessions/{id}
 
 GET    /api/agents                   PATCH  /api/agents/{id}          (rename, enable/disable)
@@ -191,6 +192,15 @@ service, changing autonomy or security settings, approving a procedure, exportin
 code if MFA is on) within the last five minutes, or they answer `403` with
 `type: …/step-up-required`.
 
+Two-step sign-in is **required** by default (`JIZZA_MFA_REQUIRED`, default `true`). A session
+signed in with only a password can reach `/api/auth/**` and nothing else (`403` with
+`type: …/mfa-enrollment-required`) until it sets up an authenticator; the client routes to
+`/setup-2fa` for that. `/api/auth/mfa/verify` accepts either the 6-digit code or one of the
+one-time recovery codes issued at setup.
+
+Registration closes once the owner's account exists (`JIZZA_ALLOW_ADDITIONAL_USERS`, default
+`false`).
+
 Errors are RFC 9457 `application/problem+json` throughout.
 
 ## Tests
@@ -205,6 +215,21 @@ Tests named `*DbTest` or `*E2eTest` need a Docker daemon: they run against the r
 in-memory stand-in. Without Docker they skip rather than pretending to pass.
 
 ## Security notes worth knowing before you extend this
+
+* **Sign-in is two-step and hard to replay.** Argon2id passwords, then a TOTP code that is accepted
+  once only (the last used time step is stored). Recovery codes are hashed one by one and spent on
+  use. Re-running setup stages the new authenticator, so the old one keeps protecting the account
+  until a code from the new one is proven. Turning it on signs every other session out.
+* **The session cookie is an opaque 256-bit token, and only its SHA-256 is stored.** It is
+  `HttpOnly`, `SameSite=Strict`, and `__Host-` prefixed when served over TLS
+  (`JIZZA_COOKIE_SECURE=true`). Changing the password signs out every other session; five wrong
+  step-up answers in a row revoke the session that gave them.
+* **The owner hears about it.** A sign-in from a new device, a spent recovery code, a password
+  change or two-step being switched off raises an in-app notification and, when mail is set up,
+  an email.
+* **The client cleans up after itself.** It signs out after 15 minutes without activity
+  (`VITE_IDLE_SIGN_OUT_MINUTES`), wipes its query cache on sign-out, and signs out every open tab
+  together.
 
 * **The Capability Registry is the only path that executes a tool.** It checks the agent is
   enabled, the kill switch is off, the arguments match the schema and the autonomy policy allows

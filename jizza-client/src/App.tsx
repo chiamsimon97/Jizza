@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
-import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
+import { EnrollmentRoute, ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { MfaPage } from '@/pages/MfaPage'
@@ -17,6 +17,8 @@ import { ProceduresPage } from '@/pages/ProceduresPage'
 import { AutonomyPage } from '@/pages/AutonomyPage'
 import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
+import { SecurityPage } from '@/pages/SecurityPage'
+import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 
 export default function App() {
   return (
@@ -26,6 +28,10 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/mfa" element={<MfaPage />} />
       <Route path="/recover" element={<RecoverPage />} />
+
+      <Route element={<EnrollmentRoute />}>
+        <Route path="/setup-2fa" element={<SetupTwoStepPage />} />
+      </Route>
 
       {/* Protected */}
       <Route element={<ProtectedRoute />}>
@@ -46,7 +52,8 @@ export default function App() {
           <Route path="/autonomy" element={<AutonomyPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/usage" element={<UsagePage />} />
-          <Route path="/settings" element={<Navigate to="/chat" replace />} />
+          <Route path="/settings/security" element={<SecurityPage />} />
+          <Route path="/settings" element={<Navigate to="/settings/security" replace />} />
         </Route>
       </Route>
 

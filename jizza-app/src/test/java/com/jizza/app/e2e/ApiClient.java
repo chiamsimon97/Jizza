@@ -24,6 +24,7 @@ public final class ApiClient {
       .followRedirects(HttpClient.Redirect.NEVER)
       .build();
   private final Map<String, String> cookies = new HashMap<>();
+  private java.net.http.HttpHeaders lastHeaders;
 
   public ApiClient(int port) {
     this.baseUrl = "http://localhost:" + port;
@@ -75,6 +76,7 @@ public final class ApiClient {
             + response.headers().allValues("set-cookie"));
       }
       captureCookies(response);
+      lastHeaders = response.headers();
       return new Result(response.statusCode(), response.body());
     } catch (Exception e) {
       throw new IllegalStateException(method + " " + path + " failed", e);
@@ -90,6 +92,11 @@ public final class ApiClient {
   public boolean hasSession() { return cookies.containsKey("JIZZA_SESSION"); }
 
   public void forgetSession() { cookies.remove("JIZZA_SESSION"); }
+
+  public String sessionCookie() { return cookies.get("JIZZA_SESSION"); }
+
+  /** Headers of the most recent response. */
+  public java.net.http.HttpHeaders lastHeaders() { return lastHeaders; }
 
   private void captureCookies(HttpResponse<String> response) {
     List<String> setCookies = response.headers().allValues("set-cookie");

@@ -17,6 +17,12 @@ public interface SessionRepository extends JpaRepository<SessionEntity, UUID> {
   @Query("update SessionEntity s set s.revoked = true where s.userId = :userId")
   int revokeAllForUser(@Param("userId") UUID userId);
 
+  java.util.Optional<SessionEntity> findByTokenHash(String tokenHash);
+
+  @Modifying
+  @Query("update SessionEntity s set s.revoked = true where s.userId = :userId and s.id <> :keep")
+  int revokeAllForUserExcept(@Param("userId") UUID userId, @Param("keep") UUID keep);
+
   @Modifying
   @Query("delete from SessionEntity s where s.absoluteExpiresAt < :cutoff")
   int deleteExpired(@Param("cutoff") Instant cutoff);

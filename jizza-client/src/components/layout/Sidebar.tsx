@@ -2,10 +2,10 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, GitBranch, Shield, Activity, BarChart2,
-  ChevronsLeft, ChevronsRight, LogOut, X,
+  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
-import { useAuthStore } from '@/store/authStore'
+import { endLocalSession } from '@/lib/session'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
 import { JizzaLogo } from '@/components/brand/JizzaLogo'
 import { useAssistantStore } from '@/jizza/assistantStore'
@@ -35,6 +35,7 @@ const sections = [
       { to: '/autonomy', icon: Shield,    label: 'Autonomy' },
       { to: '/activity', icon: Activity,  label: 'Activity' },
       { to: '/usage',    icon: BarChart2, label: 'Usage' },
+      { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },
 ]
@@ -53,11 +54,9 @@ export function Logo({ collapsed = false }: { collapsed?: boolean }) {
 
 export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps) {
   const navigate = useNavigate()
-  const clear = useAuthStore(s => s.clear)
-
   async function signOut() {
     try { await authApi.logout() } catch { /* session may already be gone */ }
-    clear()
+    endLocalSession()
     navigate('/login')
   }
 

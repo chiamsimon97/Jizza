@@ -44,6 +44,12 @@ public class UserEntity {
 
   private Instant lastLoginAt;
 
+  private byte[] mfaPendingSecret;
+
+  private Long mfaLastStep;
+
+  private Instant mfaEnabledAt;
+
   private Instant createdAt;
 
   private Instant updatedAt;
@@ -68,6 +74,15 @@ public class UserEntity {
 
   public UserStatus getStatus() { return status; }
   public void setStatus(UserStatus status) { this.status = status; }
+
+  public byte[] getMfaPendingSecret() { return mfaPendingSecret; }
+  public void setMfaPendingSecret(byte[] mfaPendingSecret) { this.mfaPendingSecret = mfaPendingSecret; }
+
+  public Long getMfaLastStep() { return mfaLastStep; }
+  public void setMfaLastStep(Long mfaLastStep) { this.mfaLastStep = mfaLastStep; }
+
+  public Instant getMfaEnabledAt() { return mfaEnabledAt; }
+  public void setMfaEnabledAt(Instant mfaEnabledAt) { this.mfaEnabledAt = mfaEnabledAt; }
 
   public int getFailedLogins() { return failedLogins; }
   public void setFailedLogins(int failedLogins) { this.failedLogins = failedLogins; }

@@ -1,5 +1,6 @@
 package com.jizza.engine.security.config;
 
+import com.jizza.engine.security.session.MfaEnrollmentFilter;
 import com.jizza.engine.security.session.SessionAuthenticationFilter;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -80,7 +81,18 @@ public class SecurityConfig {
                     + "base-uri 'self'; form-action 'self'"))
             .referrerPolicy(referrer -> referrer.policy(
                 org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
-                    .ReferrerPolicy.SAME_ORIGIN)))
+                    .ReferrerPolicy.SAME_ORIGIN))
+            // Only the microphone is used (voice input). Nothing else may be reached, even by
+            // injected script.
+            .permissionsPolicyHeader(permissions -> permissions.policy(
+                "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), "
+                    + "interest-cohort=()"))
+            .crossOriginOpenerPolicy(coop -> coop.policy(
+                org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter
+                    .CrossOriginOpenerPolicy.SAME_ORIGIN))
+            .crossOriginResourcePolicy(corp -> corp.policy(
+                org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter
+                    .CrossOriginResourcePolicy.SAME_ORIGIN)))
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
@@ -93,6 +105,7 @@ public class SecurityConfig {
             .accessDeniedHandler((request, response, denied) ->
                 writeProblem(response, 403, "forbidden", "Forbidden", denied.getMessage())))
         .addFilterBefore(sessionFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(new MfaEnrollmentFilter(props), SessionAuthenticationFilter.class)
         .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class);
 
     return http.build();

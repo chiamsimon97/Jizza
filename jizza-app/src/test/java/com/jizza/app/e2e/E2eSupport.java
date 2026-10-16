@@ -75,7 +75,11 @@ public abstract class E2eSupport {
     registry.add("jizza.connectors.egress.allow-plain-http", () -> "true");
     registry.add("jizza.connectors.callback-base-url", () -> "http://localhost:8080");
 
-    registry.add("jizza.security.cookie-secure", () -> "false");
+    registry.add("jizza.security.session.cookie-secure", () -> "false");
+    // Every suite registers its own throwaway users and signs in with a password alone. The auth
+    // suite switches two-step enforcement on where that is what it is testing.
+    registry.add("jizza.security.registration.allow-additional-users", () -> "true");
+    registry.add("jizza.security.mfa.required", () -> "false");
     // Every test in the suite calls from 127.0.0.1, so the per-address auth rate limit would
     // trip on cross-test traffic rather than on anything the tests are asserting. Per-account
     // lockout is left at its real value, which is what the lockout test exercises.

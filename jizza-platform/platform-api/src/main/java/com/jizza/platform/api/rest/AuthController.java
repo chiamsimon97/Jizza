@@ -1,6 +1,7 @@
 package com.jizza.platform.api.rest;
 
 import com.jizza.engine.api.dto.LoginResult;
+import com.jizza.engine.api.dto.SecurityStatus;
 import com.jizza.engine.api.dto.SessionDto;
 import com.jizza.engine.api.security.AuthService;
 import com.jizza.engine.security.session.CurrentUser;
@@ -82,11 +83,21 @@ public class AuthController {
   }
 
   private ResponseEntity<Responses.LoginResult> withSession(LoginResult result) {
-    var body = new Responses.LoginResult(result.mfaRequired(), result.mfaToken(), result.userId());
-    if (result.sessionId() == null) return ResponseEntity.ok(body);
+    if (result.sessionToken() == null) {
+      return ResponseEntity.ok(new Responses.LoginResult(result.mfaRequired(), result.mfaToken(),
+          result.userId(), false));
+    }
+    boolean enroll = auth.status(result.userId(), result.sessionId()).enrollmentRequired();
     return ResponseEntity.ok()
-        .header(HttpHeaders.SET_COOKIE, cookies.issue(result.sessionId()).toString())
-        .body(body);
+        .header(HttpHeaders.SET_COOKIE, cookies.issue(result.sessionToken()).toString())
+        .body(new Responses.LoginResult(false, null, result.userId(), enroll));
+  }
+
+  /** The signed-in account's protection: two-step status, whether setup is still owed, codes left. */
+  @GetMapping("/me")
+  public SecurityStatus me() {
+    var principal = CurrentUser.require();
+    return auth.status(principal.userId(), principal.sessionId());
   }
 
   /** Enrolment is a security change, so it needs a fresh re-authentication first. */
@@ -99,7 +110,25 @@ public class AuthController {
 
   @PostMapping("/mfa/confirm")
   public Responses.RecoveryCodes confirmMfa(@Valid @RequestBody Requests.MfaConfirm request) {
-    return new Responses.RecoveryCodes(auth.confirmMfa(CurrentUser.userId(), request.code()));
+    var principal = CurrentUser.require();
+    return new Responses.RecoveryCodes(
+        auth.confirmMfa(principal.userId(), principal.sessionId(), request.code()));
+  }
+
+  /** New recovery codes replace the old ones. Needs a fresh step-up and a current code. */
+  @PostMapping("/mfa/recovery-codes")
+  @com.jizza.engine.api.util.StepUpRequired
+  public Responses.RecoveryCodes regenerateRecoveryCodes(
+      @Valid @RequestBody Requests.MfaCode request) {
+    return new Responses.RecoveryCodes(
+        auth.regenerateRecoveryCodes(CurrentUser.userId(), request.code()));
+  }
+
+  @PostMapping("/mfa/disable")
+  @com.jizza.engine.api.util.StepUpRequired
+  public Responses.Message disableMfa(@Valid @RequestBody Requests.MfaCode request) {
+    auth.disableMfa(CurrentUser.userId(), request.code());
+    return new Responses.Message("Two-step sign-in is off.");
   }
 
   @PostMapping("/step-up")
@@ -167,8 +196,10 @@ public class AuthController {
   @PostMapping("/password")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message changePassword(@Valid @RequestBody Requests.ChangePassword request) {
-    auth.changePassword(CurrentUser.userId(), request.currentPassword(), request.newPassword());
-    return new Responses.Message("Password changed.");
+    var principal = CurrentUser.require();
+    auth.changePassword(principal.userId(), principal.sessionId(), request.currentPassword(),
+        request.newPassword());
+    return new Responses.Message("Password changed. Other devices were signed out.");
   }
 
   private String deviceOf(HttpServletRequest request) {

@@ -33,6 +33,8 @@ class AuthAndSecurityE2eTest extends E2eSupport {
   @Autowired private UserRepository users;
   @Autowired private ConnectionRepository connections;
   @Autowired private E2eSupport.ScriptedLlmClient model;
+  @Autowired private com.jizza.engine.security.config.SecurityProperties securityProps;
+  @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
   private ApiClient api;
   private String email;
@@ -59,6 +61,52 @@ class AuthAndSecurityE2eTest extends E2eSupport {
   private void stepUp() {
     var result = api.post("/api/auth/step-up", Map.of("password", PASSWORD));
     assertThat(result.ok()).as("step-up: %s", result.body()).isTrue();
+  }
+
+  /**
+   * A valid code the account has not used yet. Each code works once, so after one is spent the
+   * next must come from a later 30-second step (one step ahead is inside the accepted drift).
+   */
+  private String freshCode(String secret) {
+    while (true) {
+      Long last = users.findByEmailIgnoreCase(email).orElseThrow().getMfaLastStep();
+      long now = Instant.now().getEpochSecond() / 30;
+      for (long step = now - 1; step <= now + 1; step++) {
+        if (last == null || step > last) return totp.code(secret, step * 30);
+      }
+      try {
+        Thread.sleep(1_000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+
+  /** Turns on two-step sign-in for the signed-in {@code api} client; returns the seed. */
+  private String enrol() {
+    stepUp();
+    var setup = api.post("/api/auth/mfa/setup", null);
+    assertThat(setup.ok()).as("mfa/setup: %s", setup.body()).isTrue();
+    String secret = setup.json().path("secret").asText();
+    var confirmed = api.post("/api/auth/mfa/confirm", Map.of("code", freshCode(secret)));
+    assertThat(confirmed.ok()).as("mfa/confirm: %s", confirmed.body()).isTrue();
+    lastRecoveryCodes = new java.util.ArrayList<>();
+    confirmed.json().path("codes").forEach(node -> lastRecoveryCodes.add(node.asText()));
+    return secret;
+  }
+
+  private java.util.List<String> lastRecoveryCodes = new java.util.ArrayList<>();
+
+  /** Signs in a new client with the password and a second factor. */
+  private ApiClient signInWithSecondFactor(String code) {
+    ApiClient client = new ApiClient(port);
+    client.prime();
+    String token = client.post("/api/auth/login", Map.of("email", email, "password", PASSWORD))
+        .json().path("mfaToken").asText();
+    var verified = client.post("/api/auth/mfa/verify", Map.of("mfaToken", token, "code", code));
+    assertThat(verified.ok()).as("mfa/verify: %s", verified.body()).isTrue();
+    return client;
   }
 
   @Test
@@ -107,8 +155,7 @@ class AuthAndSecurityE2eTest extends E2eSupport {
     String secret = setup.json().path("secret").asText();
     assertThat(setup.json().path("provisioningUri").asText()).startsWith("otpauth://totp/Jizza:");
 
-    var codes = api.post("/api/auth/mfa/confirm",
-        Map.of("code", totp.code(secret, Instant.now().getEpochSecond())));
+    var codes = api.post("/api/auth/mfa/confirm", Map.of("code", freshCode(secret)));
     assertThat(codes.ok()).isTrue();
     assertThat(codes.json().path("codes")).hasSize(8);
 
@@ -131,10 +178,219 @@ class AuthAndSecurityE2eTest extends E2eSupport {
     String token = second.post("/api/auth/login", Map.of("email", email, "password", PASSWORD))
         .json().path("mfaToken").asText();
     var verified = second.post("/api/auth/mfa/verify",
-        Map.of("mfaToken", token, "code", totp.code(secret, Instant.now().getEpochSecond())));
+        Map.of("mfaToken", token, "code", freshCode(secret)));
 
     assertThat(verified.ok()).isTrue();
     assertThat(second.get("/api/agents").ok()).isTrue();
+  }
+
+  // ── two-step sign-in hardening ───────────────────────────────────────────
+
+  @Test
+  void whenTwoStepIsRequiredAPasswordOnlySessionCanOnlySetItUp() {
+    securityProps.getMfa().setRequired(true);
+    try {
+      register();
+      var login = api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+      assertThat(login.json().path("enrollmentRequired").asBoolean()).isTrue();
+
+      var blocked = api.get("/api/agents");
+      assertThat(blocked.status()).isEqualTo(403);
+      assertThat(blocked.problemType()).endsWith("mfa-enrollment-required");
+      assertThat(api.get("/api/auth/me").json().path("enrollmentRequired").asBoolean()).isTrue();
+
+      ApiClient other = new ApiClient(port);
+      other.prime();
+      other.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+
+      String secret = enrol();
+      assertThat(api.get("/api/agents").ok()).as("setup finished in this session").isTrue();
+      var me = api.get("/api/auth/me").json();
+      assertThat(me.path("mfaEnabled").asBoolean()).isTrue();
+      assertThat(me.path("enrollmentRequired").asBoolean()).isFalse();
+      assertThat(me.path("recoveryCodesRemaining").asInt()).isEqualTo(8);
+      assertThat(other.get("/api/auth/me").status())
+          .as("a session that never passed the second factor is signed out").isEqualTo(401);
+
+      assertThat(api.post("/api/auth/mfa/disable", Map.of("code", freshCode(secret))).status())
+          .as("cannot be switched off while required").isIn(403);
+    } finally {
+      securityProps.getMfa().setRequired(false);
+    }
+  }
+
+  @Test
+  void anAuthenticatorCodeCannotBeReplayed() {
+    register();
+    login();
+    String secret = enrol();
+
+    String code = freshCode(secret);
+    signInWithSecondFactor(code);
+
+    ApiClient attacker = new ApiClient(port);
+    attacker.prime();
+    String token = attacker.post("/api/auth/login", Map.of("email", email, "password", PASSWORD))
+        .json().path("mfaToken").asText();
+    assertThat(attacker.post("/api/auth/mfa/verify", Map.of("mfaToken", token, "code", code))
+        .status()).isEqualTo(401);
+    assertThat(attacker.hasSession()).isFalse();
+  }
+
+  @Test
+  void aRecoveryCodeSignsInExactlyOnce() {
+    register();
+    login();
+    enrol();
+    assertThat(lastRecoveryCodes).hasSize(8);
+    String recovery = lastRecoveryCodes.get(0);
+
+    ApiClient phoneLost = signInWithSecondFactor(recovery);
+    assertThat(phoneLost.get("/api/agents").ok()).isTrue();
+    assertThat(phoneLost.get("/api/auth/me").json().path("recoveryCodesRemaining").asInt())
+        .isEqualTo(7);
+
+    ApiClient again = new ApiClient(port);
+    again.prime();
+    String token = again.post("/api/auth/login", Map.of("email", email, "password", PASSWORD))
+        .json().path("mfaToken").asText();
+    assertThat(again.post("/api/auth/mfa/verify", Map.of("mfaToken", token, "code", recovery))
+        .status()).isEqualTo(401);
+
+    var stored = jdbc.queryForList("select code_hash from mfa_recovery_codes c join users u "
+        + "on u.id = c.user_id where u.email = ?", String.class, email);
+    assertThat(stored).hasSize(8).noneMatch(hash -> lastRecoveryCodes.contains(hash));
+  }
+
+  @Test
+  void regeneratingRecoveryCodesRetiresTheOldOnes() {
+    register();
+    login();
+    String secret = enrol();
+    String old = lastRecoveryCodes.get(0);
+
+    var fresh = api.post("/api/auth/mfa/recovery-codes", Map.of("code", freshCode(secret)));
+    assertThat(fresh.ok()).as("regenerate: %s", fresh.body()).isTrue();
+    assertThat(fresh.json().path("codes")).hasSize(8);
+
+    ApiClient client = new ApiClient(port);
+    client.prime();
+    String token = client.post("/api/auth/login", Map.of("email", email, "password", PASSWORD))
+        .json().path("mfaToken").asText();
+    assertThat(client.post("/api/auth/mfa/verify", Map.of("mfaToken", token, "code", old))
+        .status()).isEqualTo(401);
+  }
+
+  @Test
+  void theSessionCookieIsAnOpaqueTokenThatIsNotStored() {
+    register();
+    login();
+    String cookie = api.sessionCookie();
+
+    var sessions = api.get("/api/auth/sessions").json().findValuesAsText("id");
+    assertThat(sessions).doesNotContain(cookie);
+    assertThat(cookie).hasSizeGreaterThanOrEqualTo(43);
+    Integer matches = jdbc.queryForObject(
+        "select count(*) from sessions where token_hash = ? or id::text = ?", Integer.class,
+        cookie, cookie);
+    assertThat(matches).as("only the hash is kept").isZero();
+  }
+
+  @Test
+  void aStolenSessionThatKeepsGuessingThePasswordIsRevoked() {
+    register();
+    login();
+    int limit = securityProps.getStepUp().getMaxFailures();
+    for (int attempt = 0; attempt < limit; attempt++) {
+      assertThat(api.post("/api/auth/step-up", Map.of("password", "guess-" + attempt)).status())
+          .isEqualTo(401);
+    }
+    assertThat(api.get("/api/agents").status()).isEqualTo(401);
+  }
+
+  @Test
+  void changingThePasswordSignsOutOtherDevices() {
+    register();
+    login();
+    ApiClient other = new ApiClient(port);
+    other.prime();
+    other.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+
+    stepUp();
+    var changed = api.post("/api/auth/password",
+        Map.of("currentPassword", PASSWORD, "newPassword", "Another-Strong-92"));
+    assertThat(changed.ok()).as("change password: %s", changed.body()).isTrue();
+    assertThat(api.get("/api/agents").ok()).isTrue();
+    assertThat(other.get("/api/agents").status()).isEqualTo(401);
+  }
+
+  @Test
+  void aSessionOfAnotherUserCannotBeRevoked() {
+    register();
+    login();
+    UUID mine = UUID.fromString(api.get("/api/auth/sessions").json().get(0).path("id").asText());
+
+    String otherEmail = "other-" + UUID.randomUUID() + "@jizza.local";
+    ApiClient other = new ApiClient(port);
+    other.prime();
+    other.post("/api/auth/register", Map.of("email", otherEmail, "password", PASSWORD));
+    other.post("/api/auth/login", Map.of("email", otherEmail, "password", PASSWORD));
+
+    assertThat(other.delete("/api/auth/sessions/" + mine).status()).isEqualTo(404);
+    assertThat(api.get("/api/agents").ok()).isTrue();
+  }
+
+  @Test
+  void aSignInFromANewDeviceIsFlaggedToTheOwner() {
+    register();
+    login();
+    api.get("/api/agents");
+
+    // Every client in the suite sends the same user agent, so make the one already seen look like a
+    // different browser; the next sign-in is then from a device this account has never used.
+    jdbc.update("update user_devices set fingerprint = 'another-browser' "
+        + "where user_id = (select id from users where email = ?)", email);
+    ApiClient elsewhere = new ApiClient(port);
+    elsewhere.prime();
+    elsewhere.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+
+    var activity = api.get("/api/activity?limit=100");
+    assertThat(activity.json().findValuesAsText("action")).contains("auth.login.new_device");
+    var notifications = api.get("/api/notifications").body();
+    assertThat(notifications).contains("new device");
+  }
+
+  @Test
+  void registrationClosesOnceTheOwnerExists() {
+    securityProps.getRegistration().setAllowAdditionalUsers(false);
+    try {
+      var refused = api.post("/api/auth/register", Map.of("email", email, "password", PASSWORD));
+      assertThat(refused.status()).isEqualTo(403);
+      assertThat(refused.problemType()).endsWith("registration-closed");
+    } finally {
+      securityProps.getRegistration().setAllowAdditionalUsers(true);
+    }
+  }
+
+  @Test
+  void responsesCarryTheBrowserHardeningHeaders() {
+    api.get("/api/auth/csrf");
+    var headers = api.lastHeaders();
+    assertThat(headers.firstValue("content-security-policy").orElse(""))
+        .contains("frame-ancestors 'none'");
+    assertThat(headers.firstValue("x-content-type-options")).hasValue("nosniff");
+    assertThat(headers.firstValue("permissions-policy").orElse("")).contains("camera=()");
+    assertThat(headers.firstValue("cross-origin-opener-policy")).hasValue("same-origin");
+    assertThat(headers.firstValue("cache-control").orElse("")).contains("no-store");
+  }
+
+  @Test
+  void theSessionCookieIsStrictAndHttpOnly() {
+    register();
+    api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+    String setCookie = api.lastHeaders().allValues("set-cookie").stream()
+        .filter(h -> h.startsWith("JIZZA_SESSION=")).findFirst().orElseThrow();
+    assertThat(setCookie).contains("HttpOnly").contains("SameSite=Strict");
   }
 
   @Test

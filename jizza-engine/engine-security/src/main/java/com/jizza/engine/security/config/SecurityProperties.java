@@ -26,13 +26,16 @@ public class SecurityProperties {
   private final Lockout lockout = new Lockout();
   private final Totp totp = new Totp();
   private final Cors cors = new Cors();
+  private final Mfa mfa = new Mfa();
+  private final Registration registration = new Registration();
 
   public static class Session {
     private Duration idleTimeout = Duration.ofMinutes(30);
     private Duration absoluteTimeout = Duration.ofHours(12);
     private String cookieName = "JIZZA_SESSION";
     private boolean cookieSecure = true;
-    private String sameSite = "Lax";
+    /** Strict: the session cookie is never sent on a request another site started. */
+    private String sameSite = "Strict";
 
     public Duration getIdleTimeout() { return idleTimeout; }
     public void setIdleTimeout(Duration v) { this.idleTimeout = v; }
@@ -49,8 +52,39 @@ public class SecurityProperties {
   public static class StepUp {
     /** How recently the user must have re-authenticated for a high-risk route to proceed. */
     private Duration freshness = Duration.ofMinutes(5);
+    /**
+     * Wrong step-up answers a session may give in a row before it is revoked. Someone holding a
+     * stolen session cookie cannot sit and guess the password behind it.
+     */
+    private int maxFailures = 5;
     public Duration getFreshness() { return freshness; }
     public void setFreshness(Duration v) { this.freshness = v; }
+    public int getMaxFailures() { return maxFailures; }
+    public void setMaxFailures(int v) { this.maxFailures = v; }
+  }
+
+  public static class Mfa {
+    /**
+     * Every account must use two-step sign-in. Until it is set up, a session can reach only the
+     * setup endpoints. Jizza holds memory, personal data and live credentials, so this is on.
+     */
+    private boolean required = true;
+    /** How many one-time recovery codes are issued at a time. */
+    private int recoveryCodes = 8;
+    public boolean isRequired() { return required; }
+    public void setRequired(boolean v) { this.required = v; }
+    public int getRecoveryCodes() { return recoveryCodes; }
+    public void setRecoveryCodes(int v) { this.recoveryCodes = v; }
+  }
+
+  public static class Registration {
+    /**
+     * Jizza is single-user: once the owner's account exists, nobody else can register. Turn this
+     * on only for a deliberately shared instance or a test suite.
+     */
+    private boolean allowAdditionalUsers = false;
+    public boolean isAllowAdditionalUsers() { return allowAdditionalUsers; }
+    public void setAllowAdditionalUsers(boolean v) { this.allowAdditionalUsers = v; }
   }
 
   public static class Lockout {
@@ -108,4 +142,6 @@ public class SecurityProperties {
   public Lockout getLockout() { return lockout; }
   public Totp getTotp() { return totp; }
   public Cors getCors() { return cors; }
+  public Mfa getMfa() { return mfa; }
+  public Registration getRegistration() { return registration; }
 }

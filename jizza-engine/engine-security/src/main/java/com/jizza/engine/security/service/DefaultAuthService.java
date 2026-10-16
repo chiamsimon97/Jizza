@@ -4,6 +4,7 @@ import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.crypto.EncryptionService;
 import com.jizza.engine.api.dto.LoginResult;
 import com.jizza.engine.api.dto.MfaSetup;
+import com.jizza.engine.api.dto.SecurityStatus;
 import com.jizza.engine.api.dto.SessionDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.UserStatus;
@@ -16,9 +17,12 @@ import com.jizza.engine.persistence.entity.PasswordResetTokenEntity;
 import com.jizza.engine.persistence.entity.UserEntity;
 import com.jizza.engine.persistence.repository.PasswordResetTokenRepository;
 import com.jizza.engine.persistence.repository.UserRepository;
+import com.jizza.engine.security.alerts.SecurityAlerts;
 import com.jizza.engine.security.config.SecurityProperties;
+import com.jizza.engine.security.mfa.RecoveryCodes;
 import com.jizza.engine.security.mfa.TotpService;
 import com.jizza.engine.security.password.PasswordPolicy;
+import com.jizza.engine.security.session.IssuedSession;
 import com.jizza.engine.security.session.PendingMfaStore;
 import com.jizza.engine.security.session.SessionService;
 import com.jizza.engine.security.throttle.LoginThrottle;
@@ -61,6 +65,8 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
   private final ApplicationEventPublisher events;
   private final LoginAttempts attempts;
   private final TransactionTemplate transactions;
+  private final RecoveryCodes recoveryCodes;
+  private final SecurityAlerts alerts;
   private final SecureRandom random = new SecureRandom();
 
   public DefaultAuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
@@ -69,7 +75,8 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
                      LoginThrottle throttle, EncryptionService encryption, AuditLog audit,
                      SecurityProperties props, ApplicationEventPublisher events,
                      LoginAttempts attempts,
-                     org.springframework.transaction.PlatformTransactionManager txManager) {
+                     org.springframework.transaction.PlatformTransactionManager txManager,
+                     RecoveryCodes recoveryCodes, SecurityAlerts alerts) {
     this.users = users;
     this.resetTokens = resetTokens;
     this.passwordEncoder = passwordEncoder;
@@ -84,6 +91,8 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     this.events = events;
     this.attempts = attempts;
     this.transactions = new TransactionTemplate(txManager);
+    this.recoveryCodes = recoveryCodes;
+    this.alerts = alerts;
   }
 
   /**
@@ -94,6 +103,13 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
   @Override
   public UUID register(String email, String password) {
     if (email == null || !email.contains("@")) throw new ValidationException("A valid email is required");
+    // Jizza is one person's assistant: once the owner exists, the door is shut. Checked before the
+    // password policy so a closed instance says nothing about what it would have accepted.
+    if (!props.getRegistration().isAllowAdditionalUsers() && users.count() > 0) {
+      throw new com.jizza.engine.api.error.JizzaException(
+          org.springframework.http.HttpStatus.FORBIDDEN, "registration-closed",
+          "Registration is closed", "This Jizza already has its owner. Sign in instead.");
+    }
     passwordPolicy.validate(password);
     if (users.existsByEmailIgnoreCase(email)) {
       throw new com.jizza.engine.api.error.ConflictException("That email is already registered");
@@ -153,13 +169,16 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
 
     if (user.isMfaEnabled()) {
       audit.record(user.getId(), ActorType.USER, user.getId(), "auth.login.password_ok", email, null);
-      return new LoginResult(true, pendingMfa.open(user.getId()), null, user.getId());
+      return new LoginResult(true, pendingMfa.open(user.getId()), null, null, user.getId());
     }
 
-    var session = sessions.create(user.getId(), device, ip);
+    // Without a second factor on the account, this session has not passed one. When two-step
+    // sign-in is required it can only reach the setup endpoints (MfaEnrollmentFilter).
+    IssuedSession issued = sessions.create(user.getId(), device, ip, false);
     audit.record(user.getId(), ActorType.USER, user.getId(), "auth.login.success", email,
-        Json.obj().put("sessionId", session.getId().toString()));
-    return new LoginResult(false, null, session.getId(), user.getId());
+        Json.obj().put("sessionId", issued.session().getId().toString()));
+    alerts.signedIn(user.getId(), user.getEmail(), device, ip);
+    return new LoginResult(false, null, issued.session().getId(), issued.token(), user.getId());
   }
 
   @Override
@@ -171,15 +190,55 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
         .orElseThrow(() -> new AuthException("That sign-in attempt expired; sign in again"));
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
 
-    if (!totp.verify(secretOf(user), code, Instant.now().getEpochSecond())) {
+    if (isLockedOut(user)) {
+      attempts.recordRefusal(userId, "auth.login.locked_out", user.getEmail());
+      throw new AuthException("account-locked",
+          "Too many failed attempts. Try again after " + user.getLockedUntil());
+    }
+    boolean usedRecoveryCode = RecoveryCodes.looksLikeRecoveryCode(code);
+    if (!secondFactorOk(user, code)) {
       attempts.recordFailure(userId);
       attempts.recordRefusal(userId, "auth.mfa.failed", user.getEmail());
       throw new AuthException("That verification code is not valid");
     }
-    var session = sessions.create(userId, device, ip);
+    IssuedSession issued = sessions.create(userId, device, ip, true);
     audit.record(userId, ActorType.USER, userId, "auth.mfa.verified", user.getEmail(),
-        Json.obj().put("sessionId", session.getId().toString()));
-    return new LoginResult(false, null, session.getId(), userId);
+        Json.obj().put("sessionId", issued.session().getId().toString())
+            .put("recoveryCode", usedRecoveryCode));
+    alerts.signedIn(userId, user.getEmail(), device, ip);
+    if (usedRecoveryCode) recoveryCodeSpent(user);
+    return new LoginResult(false, null, issued.session().getId(), issued.token(), userId);
+  }
+
+  /**
+   * Checks a TOTP code -- once only, the same code cannot be replayed inside its window -- or, if
+   * the submission looks like one, spends a recovery code.
+   */
+  private boolean secondFactorOk(UserEntity user, String code) {
+    if (RecoveryCodes.looksLikeRecoveryCode(code)) {
+      return recoveryCodes.consume(user.getId(), code);
+    }
+    return totpOk(user, secretOf(user), code);
+  }
+
+  private boolean totpOk(UserEntity user, String secret, String code) {
+    var step = totp.matchingStep(secret, code, Instant.now().getEpochSecond());
+    if (step.isEmpty()) return false;
+    Long last = user.getMfaLastStep();
+    if (last != null && step.getAsLong() <= last) return false;
+    user.setMfaLastStep(step.getAsLong());
+    users.save(user);
+    return true;
+  }
+
+  private void recoveryCodeSpent(UserEntity user) {
+    long left = recoveryCodes.remaining(user.getId());
+    audit.record(user.getId(), ActorType.USER, user.getId(), "auth.mfa.recovery_code_used",
+        user.getEmail(), Json.obj().put("remaining", left));
+    alerts.alert(user.getId(), user.getEmail(), "A Jizza recovery code was used",
+        "A one-time recovery code was just used to confirm it's you. " + left
+            + " remain. If this was not you, sign out everywhere, change your password and "
+            + "make new recovery codes.");
   }
 
   /**
@@ -191,8 +250,9 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
   public MfaSetup setupMfa(UUID userId) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     String secret = totp.newSecret();
-    user.setMfaSecret(encryption.encryptString(secret));
-    user.setMfaEnabled(false);
+    // Staged, not swapped in: an authenticator already protecting the account stays in force until
+    // a code from the new one is proven.
+    user.setMfaPendingSecret(encryption.encryptString(secret));
     users.save(user);
     audit.record(userId, ActorType.USER, userId, "auth.mfa.setup_started", user.getEmail(), null);
     return new MfaSetup(secret, totp.provisioningUri(secret, user.getEmail()));
@@ -200,35 +260,125 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
 
   @Override
   @Transactional
-  public List<String> confirmMfa(UUID userId, String code) {
+  public List<String> confirmMfa(UUID userId, UUID sessionId, String code) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
-    if (user.getMfaSecret() == null) throw new ValidationException("Start MFA setup first");
-    if (!totp.verify(secretOf(user), code, Instant.now().getEpochSecond())) {
+    if (user.getMfaPendingSecret() == null) throw new ValidationException("Start MFA setup first");
+    String pending = encryption.decryptString(user.getMfaPendingSecret());
+    // The step counter belongs to the old secret; the new one starts fresh.
+    user.setMfaLastStep(null);
+    if (!totpOk(user, pending, code)) {
       throw new AuthException("That verification code is not valid");
     }
-    List<String> recoveryCodes = newRecoveryCodes();
+    boolean replacing = user.isMfaEnabled();
+    user.setMfaSecret(user.getMfaPendingSecret());
+    user.setMfaPendingSecret(null);
     user.setMfaEnabled(true);
-    user.setRecoveryHash(Hashing.sha256Hex(String.join(",", recoveryCodes)));
+    user.setMfaEnabledAt(Instant.now());
     users.save(user);
-    audit.record(userId, ActorType.USER, userId, "auth.mfa.enabled", user.getEmail(), null);
-    return recoveryCodes;
+    List<String> codes = recoveryCodes.issue(userId);
+
+    // This session just proved the new factor. Every other one signed in without it (or with the
+    // authenticator being replaced), so they are signed out.
+    if (sessionId != null) {
+      sessions.markMfaSatisfied(sessionId);
+      sessions.revokeAllExcept(userId, sessionId);
+    }
+    audit.record(userId, ActorType.USER, userId,
+        replacing ? "auth.mfa.replaced" : "auth.mfa.enabled", user.getEmail(), null);
+    alerts.alert(userId, user.getEmail(), "Two-step sign-in is on",
+        (replacing ? "Your Jizza authenticator was replaced." : "Two-step sign-in is now on for Jizza.")
+            + " Other devices were signed out. If this was not you, contact whoever runs "
+            + "this Jizza and reset your password.");
+    return codes;
+  }
+
+  @Override
+  @Transactional
+  public List<String> regenerateRecoveryCodes(UUID userId, String code) {
+    UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+    if (!user.isMfaEnabled()) throw new ValidationException("Turn on two-step sign-in first");
+    if (!totpOk(user, secretOf(user), code)) {
+      attempts.recordRefusal(userId, "auth.mfa.recovery_codes.refused", user.getEmail());
+      throw new AuthException("That verification code is not valid");
+    }
+    List<String> codes = recoveryCodes.issue(userId);
+    audit.record(userId, ActorType.USER, userId, "auth.mfa.recovery_codes.regenerated",
+        user.getEmail(), null);
+    alerts.alert(userId, user.getEmail(), "New Jizza recovery codes",
+        "Your Jizza recovery codes were replaced; the old ones no longer work.");
+    return codes;
+  }
+
+  @Override
+  @Transactional
+  public void disableMfa(UUID userId, String code) {
+    if (props.getMfa().isRequired()) {
+      throw new com.jizza.engine.api.error.JizzaException(
+          org.springframework.http.HttpStatus.FORBIDDEN, "mfa-required",
+          "Two-step sign-in is required", "This Jizza requires two-step sign-in for every account.");
+    }
+    UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+    if (!user.isMfaEnabled()) return;
+    if (!secondFactorOk(user, code)) {
+      attempts.recordRefusal(userId, "auth.mfa.disable.refused", user.getEmail());
+      throw new AuthException("That verification code is not valid");
+    }
+    user.setMfaEnabled(false);
+    user.setMfaSecret(null);
+    user.setMfaPendingSecret(null);
+    user.setMfaLastStep(null);
+    user.setMfaEnabledAt(null);
+    users.save(user);
+    recoveryCodes.revokeAll(userId);
+    audit.record(userId, ActorType.USER, userId, "auth.mfa.disabled", user.getEmail(), null);
+    alerts.alert(userId, user.getEmail(), "Two-step sign-in was turned off",
+        "Two-step sign-in was just turned off for your Jizza account. If this was not you, "
+            + "sign out everywhere and change your password now.");
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public SecurityStatus status(UUID userId, UUID sessionId) {
+    UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+    boolean required = props.getMfa().isRequired();
+    return new SecurityStatus(userId, user.getEmail(), user.isMfaEnabled(), user.getMfaEnabledAt(),
+        required, required && !sessions.mfaSatisfied(sessionId),
+        user.isMfaEnabled() ? recoveryCodes.remaining(userId) : 0);
   }
 
   /** Re-authenticate inside an existing session to unlock a high-risk route (R4). */
   @Override
   @Transactional
   public void stepUp(UUID userId, UUID sessionId, String password, String code) {
+    throttle.check("step-up:" + sessionId);
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
-      attempts.recordRefusal(userId, "auth.step_up.failed", user.getEmail());
+      stepUpFailed(user, sessionId);
       throw new AuthException("Password is not correct");
     }
-    if (user.isMfaEnabled() && !totp.verify(secretOf(user), code, Instant.now().getEpochSecond())) {
-      attempts.recordRefusal(userId, "auth.step_up.failed", user.getEmail());
+    boolean usedRecoveryCode = user.isMfaEnabled() && RecoveryCodes.looksLikeRecoveryCode(code);
+    if (user.isMfaEnabled() && !secondFactorOk(user, code)) {
+      stepUpFailed(user, sessionId);
       throw new AuthException("That verification code is not valid");
     }
     sessions.markStepUp(sessionId);
     audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(), null);
+    if (usedRecoveryCode) recoveryCodeSpent(user);
+  }
+
+  /**
+   * A wrong step-up answer. Too many in a row and the session itself is revoked: whoever holds it
+   * evidently does not know the password behind it.
+   */
+  private void stepUpFailed(UserEntity user, UUID sessionId) {
+    attempts.recordRefusal(user.getId(), "auth.step_up.failed", user.getEmail());
+    if (sessions.recordStepUpFailure(sessionId)) {
+      attempts.recordRefusal(user.getId(), "auth.session.revoked_after_step_up_failures",
+          sessionId.toString());
+      alerts.alert(user.getId(), user.getEmail(), "A Jizza session was signed out",
+          "A signed-in Jizza session failed to confirm your password several times in a row, so it "
+              + "was signed out. If this was not you, change your password now.");
+    }
   }
 
   @Override
@@ -244,12 +394,15 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     int revoked = sessions.revokeAll(userId);
     audit.record(userId, ActorType.USER, userId, "auth.logout_everywhere", null,
         Json.obj().put("sessionsRevoked", revoked));
+    users.findById(userId).ifPresent(user -> alerts.alert(userId, user.getEmail(),
+        "Signed out of Jizza everywhere",
+        "Every Jizza session on every device was just signed out."));
   }
 
   @Override
   @Transactional
   public void revokeSession(UUID userId, UUID sessionId) {
-    sessions.revoke(sessionId);
+    if (!sessions.revoke(userId, sessionId)) throw new NotFoundException("Session", sessionId);
     audit.record(userId, ActorType.USER, userId, "auth.session.revoked", sessionId.toString(), null);
   }
 
@@ -310,11 +463,15 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     sessions.revokeAll(user.getId());
     audit.record(user.getId(), ActorType.USER, user.getId(), "auth.password_reset.completed",
         user.getEmail(), null);
+    alerts.alert(user.getId(), user.getEmail(), "Your Jizza password was reset",
+        "Your Jizza password was reset and every session was signed out. If this was not you, "
+            + "reset it again right away.");
   }
 
   @Override
   @Transactional
-  public void changePassword(UUID userId, String currentPassword, String newPassword) {
+  public void changePassword(UUID userId, UUID sessionId, String currentPassword,
+                             String newPassword) {
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword,
         user.getPasswordHash())) {
@@ -323,7 +480,14 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     passwordPolicy.validate(newPassword);
     user.setPasswordHash(passwordEncoder.encode(newPassword));
     users.save(user);
-    audit.record(userId, ActorType.USER, userId, "auth.password.changed", user.getEmail(), null);
+    // Anyone who knew the old password and signed in with it is signed out with it.
+    int revoked = sessionId == null ? sessions.revokeAll(userId)
+        : sessions.revokeAllExcept(userId, sessionId);
+    audit.record(userId, ActorType.USER, userId, "auth.password.changed", user.getEmail(),
+        Json.obj().put("otherSessionsRevoked", revoked));
+    alerts.alert(userId, user.getEmail(), "Your Jizza password was changed",
+        "Your Jizza password was changed and other devices were signed out. If this was not you, "
+            + "reset your password right away.");
   }
 
   private boolean isLockedOut(UserEntity user) {
@@ -341,15 +505,5 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
 
   private String secretOf(UserEntity user) {
     return user.getMfaSecret() == null ? null : encryption.decryptString(user.getMfaSecret());
-  }
-
-  private List<String> newRecoveryCodes() {
-    return java.util.stream.IntStream.range(0, 8)
-        .mapToObj(i -> {
-          byte[] bytes = new byte[8];
-          random.nextBytes(bytes);
-          return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        })
-        .toList();
   }
 }
