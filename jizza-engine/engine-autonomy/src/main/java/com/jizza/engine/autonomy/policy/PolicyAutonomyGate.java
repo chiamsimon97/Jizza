@@ -149,9 +149,13 @@ public class PolicyAutonomyGate implements AutonomyGate {
     }
     if (ctx.toolRef() == null) return Decision.allow("no-tool");
 
-    ActionType type = actionTypeOf(agent, ctx.toolRef(), ctx.knownActionType());
+    Resolved resolved = resolve(agent, ctx.toolRef(), ctx.knownActionType());
+    ActionType type = resolved.type();
     List<AutonomyPolicyEntity> candidates =
         policies.findByUserIdOrderByPrecedenceDesc(agent.getUserId()).stream()
+            // An organization's ceilings are stored with the admin who set them; they bind
+            // through the organization's connectors below, never as that admin's own rules.
+            .filter(policy -> policy.getWorkspaceId() == null)
             .filter(policy -> matches(policy, ctx, type))
             .sorted(Comparator.comparingInt(PolicyAutonomyGate::scopeTier)
                 .thenComparingInt(policy -> specificity(policy.getToolRef()))
@@ -164,6 +168,14 @@ public class PolicyAutonomyGate implements AutonomyGate {
     for (AutonomyPolicyEntity policy : candidates) {
       if (policy.isLocked() && (ceiling == null
           || policy.getRule().strictness() > ceiling.strictness())) {
+        ceiling = policy.getRule();
+        ceilingLabel = describe(policy);
+      }
+    }
+    UUID connectionId = ctx.connectionId() != null ? ctx.connectionId() : resolved.connectionId();
+    for (AutonomyPolicyEntity policy : organizationRules(connectionId)) {
+      if (!toolMatches(policy.getToolRef(), ctx.toolRef(), type)) continue;
+      if (ceiling == null || policy.getRule().strictness() > ceiling.strictness()) {
         ceiling = policy.getRule();
         ceilingLabel = describe(policy);
       }
@@ -227,34 +239,53 @@ public class PolicyAutonomyGate implements AutonomyGate {
   }
 
   ActionType actionTypeOf(AgentEntity agent, String toolRef, ActionType known) {
-    ActionType builtin = BUILTINS.get(toolRef);
-    if (builtin != null) return builtin;
-    // A skill runs a whole workflow, which may do anything; its own steps are judged as they run.
-    if (toolRef.startsWith("skill_")) return ActionType.CREATE;
-    if (known != null) return known;
+    return resolve(agent, toolRef, known).type();
+  }
 
-    Optional<ActionType> granted = grantedTool(agent, toolRef);
-    if (granted.isPresent()) return granted.get();
+  /** What a tool does, and whose connector it runs on when it is one. */
+  record Resolved(ActionType type, UUID connectionId) {}
+
+  private Resolved resolve(AgentEntity agent, String toolRef, ActionType known) {
+    ActionType builtin = BUILTINS.get(toolRef);
+    if (builtin != null) return new Resolved(builtin, null);
+    // A skill runs a whole workflow, which may do anything; its own steps are judged as they run.
+    if (toolRef.startsWith("skill_")) return new Resolved(ActionType.CREATE, null);
+
+    Optional<Resolved> granted = grantedTool(agent, toolRef);
+    if (granted.isPresent()) {
+      return known == null ? granted.get() : new Resolved(known, granted.get().connectionId());
+    }
+    if (known != null) return new Resolved(known, null);
 
     return tools.findEnabledForUser(agent.getUserId()).stream()
         .filter(tool -> tool.getName().equals(toolRef))
         .findFirst()
-        .map(GeneratedToolEntity::effectiveActionType)
+        .map(tool -> new Resolved(tool.effectiveActionType(), tool.getConnectionId()))
         // An unknown tool is treated as the most consequential kind: unrecognised is not the same
         // as harmless.
-        .orElse(ActionType.MONEY);
+        .orElse(new Resolved(ActionType.MONEY, null));
+  }
+
+  /** The locked rules of the organization that owns a connector, if any. */
+  private List<AutonomyPolicyEntity> organizationRules(UUID connectionId) {
+    if (connectionId == null || connections == null) return List.of();
+    UUID workspaceId = connections.findById(connectionId)
+        .map(ConnectionEntity::getWorkspaceId).orElse(null);
+    if (workspaceId == null) return List.of();
+    return policies.findByWorkspaceId(workspaceId);
   }
 
   /** A connector tool or service action the agent holds, by the name the model sees. */
-  private Optional<ActionType> grantedTool(AgentEntity agent, String toolRef) {
+  private Optional<Resolved> grantedTool(AgentEntity agent, String toolRef) {
     if (capabilities == null) return Optional.empty();
     List<UUID> toolIds = capabilities
         .findByAgentIdAndCapabilityType(agent.getId(), CapabilityType.GENERATED_TOOL).stream()
         .map(AgentCapabilityEntity::getCapabilityRef).toList();
     if (!toolIds.isEmpty()) {
-      Optional<ActionType> direct = tools.findAllById(toolIds).stream()
+      Optional<Resolved> direct = tools.findAllById(toolIds).stream()
           .filter(tool -> tool.getName().equals(toolRef))
-          .findFirst().map(GeneratedToolEntity::effectiveActionType);
+          .findFirst()
+          .map(tool -> new Resolved(tool.effectiveActionType(), tool.getConnectionId()));
       if (direct.isPresent()) return direct;
     }
     if (actions == null || connections == null || !toolRef.contains("__")) return Optional.empty();
@@ -266,8 +297,9 @@ public class PolicyAutonomyGate implements AutonomyGate {
       ConnectionEntity service = connections.findById(action.getConnectionId()).orElse(null);
       if (service == null) continue;
       if (!serviceToolName(service.getSlug(), action.getName()).equals(toolRef)) continue;
-      return tools.findById(action.getApiId()).map(GeneratedToolEntity::effectiveActionType)
-          .or(() -> Optional.of(ActionType.MONEY));
+      ActionType actionType = tools.findById(action.getApiId())
+          .map(GeneratedToolEntity::effectiveActionType).orElse(ActionType.MONEY);
+      return Optional.of(new Resolved(actionType, service.getId()));
     }
     return Optional.empty();
   }
@@ -419,7 +451,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
   }
 
   static String describe(AutonomyPolicyEntity policy) {
-    String scope = policy.getNodeId() != null ? "step"
+    String scope = policy.getWorkspaceId() != null ? "organization"
+        : policy.getNodeId() != null ? "step"
         : policy.getWorkflowId() != null ? "workflow"
         : policy.getAgentId() != null ? "agent" : "global";
     return scope + ":" + (policy.getToolRef() == null ? ANY : policy.getToolRef());

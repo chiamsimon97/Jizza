@@ -48,6 +48,8 @@ public class AutonomyPolicyEntity {
   @Column(nullable = false)
   private boolean locked;
 
+  private UUID workspaceId;
+
   @Column(insertable = false, updatable = false)
   private Instant createdAt;
 
@@ -88,6 +90,9 @@ public class AutonomyPolicyEntity {
 
   public String getNodeId() { return nodeId; }
   public void setNodeId(String nodeId) { this.nodeId = nodeId; }
+
+  public UUID getWorkspaceId() { return workspaceId; }
+  public void setWorkspaceId(UUID workspaceId) { this.workspaceId = workspaceId; }
 
   public boolean isLocked() { return locked; }
   public void setLocked(boolean locked) { this.locked = locked; }

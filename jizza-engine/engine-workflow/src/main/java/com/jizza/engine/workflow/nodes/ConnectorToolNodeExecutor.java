@@ -110,6 +110,7 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
             entity.effectiveActionType())
         : GuardrailContext.inWorkflow(actor, entity.getName(), args, execution.workflowId(),
             execution.workflowVersion(), execution.node().id(), entity.effectiveActionType());
+    guardrail = guardrail.withConnection(entity.getConnectionId());
     boolean approved = execution.context().approved(execution.node().id());
     // Once the user approved this step, a second evaluation would only ask the same question
     // again; a never rule still stops it, and nothing is spent from Jizza's say or a budget.

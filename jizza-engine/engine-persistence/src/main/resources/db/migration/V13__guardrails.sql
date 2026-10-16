@@ -12,6 +12,9 @@ alter table autonomy_policies
   add column workflow_version int,
   add column node_id varchar,
   add column locked boolean not null default false,
+  -- An organization's ceiling: applies to every member's agents when they use that
+  -- organization's connectors, and is always locked.
+  add column workspace_id uuid references workspaces(id) on delete cascade,
   add column created_at timestamptz not null default now(),
   add column updated_at timestamptz not null default now();
 
@@ -24,6 +27,11 @@ alter table autonomy_policies
 create index if not exists autonomy_policies_user on autonomy_policies (user_id);
 create index autonomy_policies_workflow on autonomy_policies (workflow_id)
   where workflow_id is not null;
+create index autonomy_policies_workspace on autonomy_policies (workspace_id)
+  where workspace_id is not null;
+alter table autonomy_policies
+  add constraint autonomy_policies_workspace_check
+  check (workspace_id is null or (locked and agent_id is null and workflow_id is null));
 
 -- ── What each connector action does ───────────────────────────────────────────
 alter table generated_tools

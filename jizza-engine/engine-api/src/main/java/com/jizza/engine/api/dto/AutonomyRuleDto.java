@@ -16,14 +16,23 @@ import java.util.UUID;
  * @param workflowVersion when set too, only inside runs of that approved version
  * @param nodeId          when set too, only to that one step
  * @param locked          a ceiling: nothing more specific may be looser than it
+ * @param workspaceId     an organization's ceiling, applying to every member's agents when they
+ *                        use that organization's connectors; always locked
  */
 public record AutonomyRuleDto(UUID id, UUID userId, UUID agentId, String toolRef,
                               AutonomyRule rule, JsonNode limits, int precedence,
                               UUID workflowId, Integer workflowVersion, String nodeId,
-                              boolean locked) {
+                              boolean locked, UUID workspaceId) {
 
   public AutonomyRuleDto(UUID id, UUID userId, UUID agentId, String toolRef, AutonomyRule rule,
                          JsonNode limits, int precedence) {
-    this(id, userId, agentId, toolRef, rule, limits, precedence, null, null, null, false);
+    this(id, userId, agentId, toolRef, rule, limits, precedence, null, null, null, false, null);
+  }
+
+  public AutonomyRuleDto(UUID id, UUID userId, UUID agentId, String toolRef, AutonomyRule rule,
+                         JsonNode limits, int precedence, UUID workflowId, Integer workflowVersion,
+                         String nodeId, boolean locked) {
+    this(id, userId, agentId, toolRef, rule, limits, precedence, workflowId, workflowVersion,
+        nodeId, locked, null);
   }
 }

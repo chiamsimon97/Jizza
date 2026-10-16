@@ -17,10 +17,23 @@ import java.util.UUID;
  *                        yet. A probe never authorises a call.
  * @param knownActionType what the engine itself already knows the tool does, when it called the
  *                        tool by id rather than by a name a model chose; null to look it up
+ * @param connectionId    the connector behind the tool, when the engine already knows it
  */
 public record GuardrailContext(UUID agentId, String toolRef, JsonNode args, UUID workflowId,
                                Integer workflowVersion, String nodeId, boolean probe,
-                               ActionType knownActionType) {
+                               ActionType knownActionType, UUID connectionId) {
+
+  public GuardrailContext(UUID agentId, String toolRef, JsonNode args, UUID workflowId,
+                          Integer workflowVersion, String nodeId, boolean probe,
+                          ActionType knownActionType) {
+    this(agentId, toolRef, args, workflowId, workflowVersion, nodeId, probe, knownActionType, null);
+  }
+
+  /** The same call with the connector behind it named, from a caller that called it by id. */
+  public GuardrailContext withConnection(UUID newConnectionId) {
+    return new GuardrailContext(agentId, toolRef, args, workflowId, workflowVersion, nodeId, probe,
+        knownActionType, newConnectionId);
+  }
 
   public static GuardrailContext of(UUID agentId, String toolRef, JsonNode args) {
     GuardrailScope.Frame frame = GuardrailScope.current();
@@ -48,6 +61,6 @@ public record GuardrailContext(UUID agentId, String toolRef, JsonNode args, UUID
   /** The same call judged without the arguments being known, for "what would happen?". */
   public GuardrailContext withArgs(JsonNode newArgs) {
     return new GuardrailContext(agentId, toolRef, newArgs, workflowId, workflowVersion, nodeId,
-        probe, knownActionType);
+        probe, knownActionType, connectionId);
   }
 }

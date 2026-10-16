@@ -25,6 +25,7 @@ import com.jizza.engine.autonomy.guardrail.GuardrailLedger;
 import com.jizza.engine.autonomy.policy.PolicyAutonomyGate;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.AutonomyPolicyEntity;
+import com.jizza.engine.persistence.entity.ConnectionEntity;
 import com.jizza.engine.persistence.entity.GeneratedToolEntity;
 import com.jizza.engine.persistence.entity.GuardrailUsageEntity;
 import com.jizza.engine.persistence.repository.AgentCapabilityRepository;
@@ -62,6 +63,8 @@ class GuardrailsTest {
   private PolicyAutonomyGate gate;
   private JizzaReviewer reviewer;
   private AuditLog audit;
+  private AutonomyPolicyRepository policies;
+  private ConnectionRepository connections;
 
   private AgentEntity agent(String key, String name, boolean orchestrator) {
     AgentEntity a = new AgentEntity();
@@ -100,7 +103,7 @@ class GuardrailsTest {
       when(agents.findById(a.getId())).thenReturn(Optional.of(a));
     }
 
-    AutonomyPolicyRepository policies = mock(AutonomyPolicyRepository.class);
+    policies = mock(AutonomyPolicyRepository.class);
     when(policies.findByUserIdOrderByPrecedenceDesc(userId)).thenAnswer(inv -> List.copyOf(rows));
     when(policies.lockById(any())).thenAnswer(inv -> rows.stream()
         .filter(r -> r.getId().equals(inv.getArgument(0))).findFirst());
@@ -131,8 +134,9 @@ class GuardrailsTest {
     audit = mock(AuditLog.class);
 
     AgentCapabilityRepository capabilities = mock(AgentCapabilityRepository.class);
+    connections = mock(ConnectionRepository.class);
     gate = new PolicyAutonomyGate(policies, agents, tools, new GuardrailConditions(),
-        capabilities, mock(ServiceActionRepository.class), mock(ConnectionRepository.class),
+        capabilities, mock(ServiceActionRepository.class), connections,
         new GuardrailLedger(policies, usageRepo), reviewers, audit);
 
     // The defaults a new account gets.
@@ -372,6 +376,41 @@ class GuardrailsTest {
     AutonomyPolicyEntity lock = rule(null, "*", AutonomyRule.ALLOW, 0, null);
     lock.setLocked(true);
     assertThat(gate.evaluate(kai.getId(), "broker_cancel_order", null).denied()).isTrue();
+  }
+
+  @Test
+  void anOrganizationsCeilingBindsItsConnectorsButNothingElse() {
+    UUID workspaceId = UUID.randomUUID();
+    ConnectionEntity shared = new ConnectionEntity();
+    shared.setId(UUID.randomUUID());
+    shared.setWorkspaceId(workspaceId);
+    when(connections.findById(shared.getId())).thenReturn(Optional.of(shared));
+    AutonomyPolicyEntity ceiling = new AutonomyPolicyEntity();
+    ceiling.setId(UUID.randomUUID());
+    ceiling.setUserId(UUID.randomUUID());
+    ceiling.setWorkspaceId(workspaceId);
+    ceiling.setToolRef("*:send");
+    ceiling.setRule(AutonomyRule.DENY);
+    ceiling.setLocked(true);
+    when(policies.findByWorkspaceId(workspaceId)).thenReturn(List.of(ceiling));
+    rule(vita.getId(), "gmail_send", AutonomyRule.ALLOW, 0, null);
+
+    GuardrailContext viaOrganization = GuardrailContext.of(vita.getId(), "gmail_send", null)
+        .withConnection(shared.getId());
+    Decision d = gate.evaluate(viaOrganization);
+    assertThat(d.denied()).isTrue();
+    assertThat(d.matchedPolicy()).isEqualTo("organization:*:send");
+
+    // The same tool on the user's own connector is theirs to decide.
+    assertThat(gate.evaluate(vita.getId(), "gmail_send", null).allowed()).isTrue();
+  }
+
+  @Test
+  void anOrganizationsCeilingIsNotItsAdminsPersonalRule() {
+    AutonomyPolicyEntity ceiling = rule(null, "*", AutonomyRule.DENY, 0, null);
+    ceiling.setLocked(true);
+    ceiling.setWorkspaceId(UUID.randomUUID());
+    assertThat(gate.evaluate(kai.getId(), "broker_holdings", null).allowed()).isTrue();
   }
 
   // ── let Jizza decide ─────────────────────────────────────────────────────

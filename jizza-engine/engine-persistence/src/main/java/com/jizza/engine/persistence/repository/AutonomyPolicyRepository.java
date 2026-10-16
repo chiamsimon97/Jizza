@@ -15,6 +15,8 @@ public interface AutonomyPolicyRepository extends JpaRepository<AutonomyPolicyEn
 
   List<AutonomyPolicyEntity> findByWorkflowId(UUID workflowId);
 
+  List<AutonomyPolicyEntity> findByWorkspaceId(UUID workspaceId);
+
   void deleteByUserId(UUID userId);
 
   /** Held while a budgeted call is counted, so two calls cannot both fit under the same budget. */
