@@ -9,10 +9,14 @@ interface SlideOverProps {
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** Room for a canvas rather than a form. */
+  wide?: boolean
+  /** Controls shown in the header, beside the close button. */
+  headerExtra?: ReactNode
 }
 
 /** A panel that slides in from the right for create and edit forms. */
-export function SlideOver({ open, title, description, onClose, children, footer }: SlideOverProps) {
+export function SlideOver({ open, title, description, onClose, children, footer, wide = false, headerExtra }: SlideOverProps) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -29,13 +33,14 @@ export function SlideOver({ open, title, description, onClose, children, footer 
       <section
         role="dialog"
         aria-label={title}
-        className="relative flex h-full w-full max-w-xl flex-col bg-white shadow-2xl animate-slide-in-right dark:bg-gray-900"
+        className={`relative flex h-full w-full ${wide ? 'max-w-7xl' : 'max-w-xl'} flex-col bg-white shadow-2xl animate-slide-in-right transition-[max-width] duration-300 dark:bg-gray-900`}
       >
         <header className="flex items-start gap-3 border-b border-gray-200 px-6 py-4 dark:border-gray-800">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
             {description && <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">{description}</p>}
           </div>
+          {headerExtra}
           <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100">
             <X className="h-4 w-4" />
           </button>

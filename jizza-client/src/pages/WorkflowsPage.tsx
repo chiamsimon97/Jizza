@@ -24,7 +24,7 @@ export function WorkflowsPage() {
   // A saved workflow opens in the same builder, with its graph read back into steps.
   const openWorkflow = (wf: WorkflowDto) => {
     const steps = stepsFromGraph(wf.graph)
-    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, ...(steps ? { steps } : {}) })
+    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, ...(steps ? { steps } : {}) })
   }
 
   return (
