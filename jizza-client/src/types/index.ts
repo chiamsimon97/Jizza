@@ -497,14 +497,26 @@ export interface WorkflowDto {
   createdAt: string
 }
 
+export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'DONE' | 'FAILED' | 'CANCELLED'
+
+export interface RunStepDto {
+  id: string
+  nodeId: string
+  status: 'DONE' | 'FAILED' | 'SKIPPED'
+  output?: unknown
+  attempts: number
+  finishedAt?: string
+}
+
 export interface RunDto {
   id: string
   workflowId: string
-  workflowVersion: number
-  status: string
+  version: number
+  status: RunStatus
   currentNode?: string
-  startedAt: string
+  createdAt: string
   updatedAt: string
+  steps?: RunStepDto[]
 }
 
 export interface SkillDto {

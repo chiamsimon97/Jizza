@@ -14,6 +14,9 @@ export const workflowsApi = {
   runs: (id: string) =>
     api.get<RunDto[]>(`/api/workflows/${id}/runs`),
 
+  getRun: (runId: string) =>
+    api.get<RunDto>(`/api/runs/${runId}`),
+
   cancelRun: (runId: string) =>
     api.post<void>(`/api/runs/${runId}/cancel`),
 

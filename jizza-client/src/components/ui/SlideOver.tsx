@@ -19,7 +19,8 @@ interface SlideOverProps {
 export function SlideOver({ open, title, description, onClose, children, footer, wide = false, headerExtra }: SlideOverProps) {
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Something inside the panel (a menu, the canvas) can claim Escape for itself first.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])

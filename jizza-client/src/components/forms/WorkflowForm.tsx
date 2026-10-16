@@ -104,6 +104,20 @@ export function WorkflowForm() {
   const readOnly = !!workflowId && status !== 'DRAFT'
   // Branches, service actions and the like only exist on the canvas; such a workflow can't be
   // shown as a simple list of steps.
+  // The run shown on the canvas: the one started here, else the workflow's latest.
+  const [runId, setRunId] = useState<string | null>(null)
+  const { data: runs } = useQuery({
+    queryKey: ['workflow-runs', workflowId],
+    queryFn: () => workflowsApi.runs(workflowId!),
+    enabled: !!workflowId && mode === 'canvas',
+  })
+  const latestRunId = runId ?? [...(runs ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.id ?? null
+  const { data: shownRun } = useQuery({
+    queryKey: ['run', latestRunId],
+    queryFn: () => workflowsApi.getRun(latestRunId!),
+    enabled: !!latestRunId && mode === 'canvas',
+    refetchInterval: q => (q.state.data?.status === 'RUNNING' ? 1500 : false),
+  })
   const canvasSteps = mode === 'canvas' ? stepsFromGraph(canvasToGraph(canvas)) : null
   const stepsAvailable = mode === 'steps' || canvasSteps !== null
 
@@ -132,7 +146,9 @@ export function WorkflowForm() {
     setSteps(stepsFrom(request.fields.steps, agents))
     setError('')
     setNotice('')
-  }, [request?.nonce, agents]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [request?.nonce, agents])
+
+  useEffect(() => { setRunId(null) }, [request?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Which editor to open in: a saved graph the step list can't show opens on the canvas.
   useEffect(() => {
@@ -159,7 +175,10 @@ export function WorkflowForm() {
 
   const run = useMutation({
     mutationFn: () => workflowsApi.run(workflowId!),
-    onSuccess: (r) => setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). You'll see it in Activity and Notifications.`),
+    onSuccess: (r) => {
+      if (r?.id) setRunId(r.id)
+      setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). ${mode === 'canvas' ? 'Its progress shows on the canvas.' : "You'll see it in Activity and Notifications."}`)
+    },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not start the run'),
   })
 
@@ -275,7 +294,7 @@ export function WorkflowForm() {
           <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Need branches or service actions? Switch to Canvas at the top.</p>
         </div>}
         </fieldset>
-        {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} />}
+        {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} />}
         {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>

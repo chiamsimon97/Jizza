@@ -113,6 +113,61 @@ function autoLayout(ids: string[], edges: CanvasEdge[], start?: string): Map<str
   return out
 }
 
+/** Re-arranges every node left to right ("Tidy up"). */
+export function tidy(graph: CanvasGraph): CanvasGraph {
+  const at = autoLayout(graph.nodes.map(n => n.id), graph.edges, graph.nodes.find(n => n.type === 'TRIGGER')?.id)
+  return { ...graph, nodes: graph.nodes.map(n => ({ ...n, ...(at.get(n.id) ?? {}) })) }
+}
+
+/** The nearest spot at or below (x, y) where a new step would not sit on top of another. */
+export function freeSpot(graph: CanvasGraph, x: number, y: number): { x: number; y: number } {
+  const clashes = (ty: number) => graph.nodes.some(n => Math.abs(n.x - x) < NODE_W && Math.abs(n.y - ty) < NODE_H)
+  for (let i = 0; i < 50; i++) {
+    for (const ty of i === 0 ? [y] : [y + i * ROW_H, y - i * ROW_H]) if (ty >= 0 && !clashes(ty)) return { x, y: ty }
+  }
+  return { x, y }
+}
+
+/** Puts a new step on an existing connection: from → new → to, keeping the from side's exit. */
+export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeType): { graph: CanvasGraph; id: string } {
+  const from = graph.nodes.find(n => n.id === edge.from)
+  const to = graph.nodes.find(n => n.id === edge.to)
+  const at = freeSpot(graph, from && to ? Math.round((from.x + to.x) / 2) : 0, from && to ? Math.round((from.y + to.y) / 2) + ROW_H : 0)
+  const node = newNode(type, at.x, at.y)
+  const edges = graph.edges.filter(e => !(e.from === edge.from && e.to === edge.to && e.branch === edge.branch))
+  edges.push({ from: edge.from, to: node.id, branch: edge.branch })
+  // A branch's onward path leaves from its "yes" exit; everything else has one exit.
+  if (type !== 'END') edges.push({ from: node.id, to: edge.to, branch: type === 'BRANCH' ? 'true' : null })
+  return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
+}
+
+/** Adds a step on a given exit of a node, replacing whatever that exit pointed at before. */
+export function addAfter(graph: CanvasGraph, from: string, branch: 'true' | 'false' | null, type: NodeType): { graph: CanvasGraph; id: string } {
+  const source = graph.nodes.find(n => n.id === from)
+  const siblings = graph.edges.filter(e => e.from === from).length
+  const at = freeSpot(graph, (source?.x ?? 0) + COL_W, (source?.y ?? 0) + (branch === 'false' ? ROW_H : branch === 'true' && siblings ? -ROW_H : 0))
+  const node = newNode(type, at.x, at.y)
+  const withNode = { ...graph, nodes: [...graph.nodes, node] }
+  return { graph: setNext(withNode, from, branch, node.id), id: node.id }
+}
+
+/**
+ * Copies nodes (with the connections between them) to new ids, offset so the copy is visible.
+ * Start is never copied: a workflow has exactly one.
+ */
+export function cloneNodes(graph: CanvasGraph, ids: string[], source: CanvasGraph = graph, offset = 40): { graph: CanvasGraph; ids: string[] } {
+  const picked = source.nodes.filter(n => ids.includes(n.id) && n.type !== 'TRIGGER')
+  const map = new Map(picked.map(n => [n.id, newId(n.type)]))
+  const nodes = picked.map(n => ({ ...n, id: map.get(n.id)!, config: structuredClone(n.config), x: n.x + offset, y: n.y + offset }))
+  const edges = source.edges.filter(e => map.has(e.from) && map.has(e.to)).map(e => ({ ...e, from: map.get(e.from)!, to: map.get(e.to)! }))
+  return { graph: { nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }, ids: nodes.map(n => n.id) }
+}
+
+/** Steps further up the flow, whose results a step can read as nodes.<id>. */
+export function upstreamOf(graph: CanvasGraph, id: string): CanvasNode[] {
+  return graph.nodes.filter(n => n.id !== id && n.type !== 'END' && reaches(graph, n.id, id))
+}
+
 /** Writes the engine graph, keeping each node's canvas position in its config. */
 export function toGraph(graph: CanvasGraph) {
   return {
@@ -177,54 +232,43 @@ export function updateNode(graph: CanvasGraph, id: string, patch: Partial<Canvas
   return { ...graph, nodes: graph.nodes.map(n => (n.id === id ? { ...n, ...patch } : n)) }
 }
 
-/**
- * Edges run from a node's right side to the next node's left side. One that would pass behind the
- * nodes in between (a long hop along the same row) dips below them instead.
- */
-export function edgePath(from: CanvasNode, to: CanvasNode): string {
-  const x1 = from.x + NODE_W
-  const y1 = from.y + NODE_H / 2
-  const x2 = to.x
-  const y2 = to.y + NODE_H / 2
-  if (Math.abs(y2 - y1) < NODE_H && x2 - x1 > NODE_W) {
-    const dip = Math.max(y1, y2) + NODE_H * 0.9
-    return `M${x1},${y1} C${x1 + 60},${y1} ${x1 + 40},${dip} ${x1 + 100},${dip} L${x2 - 100},${dip} C${x2 - 40},${dip} ${x2 - 60},${y2} ${x2},${y2}`
-  }
-  const bend = Math.max(40, Math.abs(x2 - x1) / 2)
-  return `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`
-}
-
-/** Where a branch's yes/no label sits: just after it leaves the branch, so it reads as that exit. */
-export function edgeLabelAt(from: CanvasNode, to: CanvasNode): { x: number; y: number } {
-  const y1 = from.y + NODE_H / 2
-  const y2 = to.y + NODE_H / 2
-  const dips = Math.abs(y2 - y1) < NODE_H && to.x - (from.x + NODE_W) > NODE_W
-  return { x: from.x + NODE_W + 14, y: dips ? y1 + 22 : y1 + (y2 - y1) * 0.2 - 18 }
-}
-
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+
+/** One thing wrong with the graph, tied to the step it is about when there is one. */
+export interface Issue { nodeId?: string; message: string }
 
 /**
  * What would stop the engine accepting this graph, in the user's words, so the canvas can say so
- * before saving. The server checks again regardless.
+ * before saving and mark the step it is about. The server checks again regardless.
  */
-export function problems(graph: CanvasGraph, label: (n: CanvasNode) => string = n => n.label): string[] {
-  const out: string[] = []
+export function issues(graph: CanvasGraph, label: (n: CanvasNode) => string = n => n.label): Issue[] {
+  const out: Issue[] = []
   const starts = graph.nodes.filter(n => n.type === 'TRIGGER')
-  if (starts.length !== 1) out.push('The workflow needs exactly one Start.')
-  if (!graph.nodes.some(n => n.type !== 'TRIGGER' && n.type !== 'END')) out.push('Add at least one step after Start.')
+  if (starts.length !== 1) out.push({ message: 'The workflow needs exactly one Start.' })
+  if (!graph.nodes.some(n => n.type !== 'TRIGGER' && n.type !== 'END')) out.push({ message: 'Add at least one step after Start.' })
   for (const n of graph.nodes) {
     const name = `"${label(n)}"`
-    if (n.type === 'AGENT_STEP' && !text(n.config.agentId)) out.push(`${name} needs an agent.`)
-    if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) out.push(`${name} needs an instruction.`)
-    if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) out.push(`${name} needs a service action.`)
-    if (n.type === 'TRANSFORM' && !text(n.config.expression)) out.push(`${name} needs an expression.`)
+    const add = (message: string) => out.push({ nodeId: n.id, message })
+    if (n.type === 'AGENT_STEP' && !text(n.config.agentId)) add(`${name} needs an agent.`)
+    if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) add(`${name} needs an instruction.`)
+    if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add(`${name} needs a service action.`)
+    if (n.type === 'TRANSFORM' && !text(n.config.expression)) add(`${name} needs an expression.`)
     if (n.type === 'BRANCH') {
-      if (!text(n.config.condition)) out.push(`${name} needs a condition.`)
+      if (!text(n.config.condition)) add(`${name} needs a condition.`)
       for (const b of ['true', 'false'] as const) {
-        if (!graph.edges.some(e => e.from === n.id && e.branch === b)) out.push(`${name} needs a step for "${b === 'true' ? 'yes' : 'no'}".`)
+        if (!graph.edges.some(e => e.from === n.id && e.branch === b)) add(`${name} needs a step for "${b === 'true' ? 'yes' : 'no'}".`)
       }
     }
   }
   return out
+}
+
+export function problems(graph: CanvasGraph, label?: (n: CanvasNode) => string): string[] {
+  return issues(graph, label).map(i => i.message)
+}
+
+/** Steps nothing leads to from Start. They are allowed, but they will never run. */
+export function unreachable(graph: CanvasGraph): Set<string> {
+  const start = graph.nodes.find(n => n.type === 'TRIGGER')
+  return new Set(graph.nodes.filter(n => n.type !== 'TRIGGER' && !(start && reaches(graph, start.id, n.id))).map(n => n.id))
 }
