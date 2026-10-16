@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Workflow, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { WorkflowForm } from '@/components/forms/WorkflowForm'
+import { WorkflowForm, stepsFromGraph } from '@/components/forms/WorkflowForm'
+import type { WorkflowDto } from '@/types'
 import { useFormStore } from '@/jizza/formStore'
 import { workflowsApi } from '@/api/workflows'
 import { Card } from '@/components/ui/Card'
@@ -16,6 +17,12 @@ export function WorkflowsPage() {
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list(),
   })
+
+  // A saved workflow opens in the same builder, with its graph read back into steps.
+  const openWorkflow = (wf: WorkflowDto) => {
+    const steps = stepsFromGraph(wf.graph)
+    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, ...(steps ? { steps } : {}) })
+  }
 
   return (
     <div className="page">
@@ -31,7 +38,11 @@ export function WorkflowsPage() {
       {data && data.length > 0 && (
         <div className="stagger space-y-2">
           {data.map(wf => (
-            <Card key={wf.id} padding="md">
+            <Card key={wf.id} padding="md"
+              role="button" tabIndex={0} aria-label={`Open ${wf.name}`}
+              interactive className="cursor-pointer"
+              onClick={() => openWorkflow(wf)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openWorkflow(wf) } }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{wf.name}</p>

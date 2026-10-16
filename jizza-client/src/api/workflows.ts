@@ -21,7 +21,7 @@ export const workflowsApi = {
     api.post<void>(`/api/runs/${runId}/resume`, { instruction, approved }),
 
   saveAsSkill: (id: string, name: string, description?: string) =>
-    api.post<SkillDto>(`/api/workflows/${id}/skill`, { name, description }),
+    api.post<SkillDto>(`/api/workflows/${id}/save-skill`, { name, description }),
 
   skills: () =>
     api.get<SkillDto[]>('/api/skills'),

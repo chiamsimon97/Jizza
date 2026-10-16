@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Bot, Hand, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Hand, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { workflowsApi } from '@/api/workflows'
 import { Button } from '@/components/ui/Button'
@@ -29,6 +29,38 @@ function stepsFrom(raw: unknown, agents: AgentDto[] | undefined): Step[] {
     agentId: matchAgent(agents, s?.agent_key ?? s?.agent)?.id ?? '',
     instruction: str(s?.instruction),
   }))
+}
+
+/**
+ * Reads a saved graph back into the builder's steps. Only a straight line of agent and "ask me"
+ * steps fits the builder; anything else (branches, connector or transform nodes) returns null and
+ * the workflow is shown read-only.
+ */
+export function stepsFromGraph(graph: unknown): Record<string, unknown>[] | null {
+  const g = graph as { nodes?: Array<{ id: string; type: string; config?: Record<string, unknown> }>; edges?: Array<{ from: string; to: string }> } | null
+  if (!g || !Array.isArray(g.nodes) || !Array.isArray(g.edges)) return null
+  const byId = new Map(g.nodes.map(n => [n.id, n]))
+  const next = new Map<string, string>()
+  for (const e of g.edges) {
+    if (next.has(e.from)) return null
+    next.set(e.from, e.to)
+  }
+  const start = g.nodes.find(n => n.type === 'TRIGGER')
+  if (!start) return null
+  const steps: Record<string, unknown>[] = []
+  const seen = new Set<string>([start.id])
+  let cur = next.get(start.id)
+  while (cur) {
+    const node = byId.get(cur)
+    if (!node || seen.has(cur)) return null
+    seen.add(cur)
+    if (node.type === 'END') break
+    if (node.type === 'AGENT_STEP') steps.push({ kind: 'agent', agent: node.config?.agentId, instruction: node.config?.instruction })
+    else if (node.type === 'HUMAN_INTERVENTION') steps.push({ kind: 'ask', instruction: node.config?.prompt })
+    else return null
+    cur = next.get(cur)
+  }
+  return seen.size === g.nodes.length ? steps : null
 }
 
 /** Turns the step list into the engine's graph: start, each step in order, end. */
@@ -60,6 +92,13 @@ export function WorkflowForm() {
   const [description, setDescription] = useState('')
   const [steps, setSteps] = useState<Step[]>([])
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  // Opened from a saved row: editing that workflow rather than starting a new one.
+  const workflowId = str(request?.fields.id) || undefined
+  const status = str(request?.fields.status) || 'DRAFT'
+  const fitsBuilder = !workflowId || Array.isArray(request?.fields.steps)
+  const readOnly = !!workflowId && (status !== 'DRAFT' || !fitsBuilder)
 
   // Load whatever Jizza (or a button) opened the form with; re-runs when agents arrive so
   // agent names in Jizza's draft resolve.
@@ -69,20 +108,28 @@ export function WorkflowForm() {
     setDescription(str(request.fields.description))
     setSteps(stepsFrom(request.fields.steps, agents))
     setError('')
+    setNotice('')
   }, [request?.nonce, agents]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useMutation({
-    mutationFn: () => workflowsApi.save({ name: name.trim(), description: description.trim() || undefined, graph: toGraph(steps) }),
+    mutationFn: () => workflowsApi.save({ id: workflowId, name: name.trim(), description: description.trim() || undefined, graph: toGraph(steps) }),
     onSuccess: (wf) => {
       void qc.invalidateQueries({ queryKey: ['workflows'] })
-      if (request?.byJizza) note(`Saved "${wf?.name ?? name}" as a draft workflow. Want me to run it or turn it into a skill?`)
+      if (request?.byJizza && !workflowId) note(`Saved "${wf?.name ?? name}" as a draft workflow. Want me to run it or turn it into a skill?`)
       close()
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not save the workflow'),
   })
 
+  const run = useMutation({
+    mutationFn: () => workflowsApi.run(workflowId!),
+    onSuccess: (r) => setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). You'll see it in Activity and Notifications.`),
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not start the run'),
+  })
+
   function submit(e: FormEvent) {
     e.preventDefault()
+    if (readOnly) return
     if (!name.trim()) return setError('Give the workflow a name.')
     if (steps.length === 0) return setError('Add at least one step.')
     const bad = steps.findIndex(s => !s.instruction.trim() || (s.kind === 'agent' && !s.agentId))
@@ -108,15 +155,23 @@ export function WorkflowForm() {
   return (
     <SlideOver
       open={!!request}
-      title="New workflow"
-      description="Steps run in order. A draft does nothing until you run it."
+      title={workflowId ? name || 'Workflow' : 'New workflow'}
+      description={readOnly
+        ? `This workflow is ${status.toLowerCase().replace(/_/g, ' ')}, so it is shown read-only here.`
+        : 'Steps run in order. A draft does nothing until you run it.'}
       onClose={close}
       footer={<>
-        <Button variant="secondary" onClick={close}>Cancel</Button>
-        <Button type="submit" form="workflow-form" loading={save.isPending}>Save workflow</Button>
+        <Button variant="secondary" onClick={close}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        {workflowId && (
+          <Button type="button" variant="secondary" onClick={() => { setError(''); run.mutate() }} loading={run.isPending}>
+            <Play className="h-4 w-4" />Run now
+          </Button>
+        )}
+        {!readOnly && <Button type="submit" form="workflow-form" loading={save.isPending}>{workflowId ? 'Save changes' : 'Save workflow'}</Button>}
       </>}
     >
       <form id="workflow-form" onSubmit={submit} className="flex flex-col gap-5">
+        <fieldset disabled={readOnly} className="contents">
         {hi && (
           <div className="flex items-start gap-2.5 rounded-xl border border-brand-300 bg-brand-50 px-3 py-2.5 text-sm text-brand-800 animate-fade-in dark:border-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
@@ -170,6 +225,11 @@ export function WorkflowForm() {
             <Button type="button" size="sm" variant="secondary" onClick={() => add('ask')}><Hand className="h-4 w-4" />Ask me</Button>
           </div>
         </div>
+        </fieldset>
+        {readOnly && !fitsBuilder && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">This workflow has steps the builder can't show yet, such as branches or connector tools.</p>
+        )}
+        {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
     </SlideOver>
