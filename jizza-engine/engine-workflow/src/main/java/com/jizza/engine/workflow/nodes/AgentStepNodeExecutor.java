@@ -1,5 +1,6 @@
 package com.jizza.engine.workflow.nodes;
 
+import com.jizza.engine.api.autonomy.GuardrailScope;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
@@ -65,7 +66,10 @@ public class AgentStepNodeExecutor implements NodeExecutor {
         ? ModelTier.valueOf(config.path("tier").asText().toUpperCase(java.util.Locale.ROOT))
         : ModelTier.STANDARD;
 
-    try {
+    // Tool calls the agent makes during this step are judged by this workflow's guardrails.
+    try (GuardrailScope.Handle ignored = execution.workflowId() == null ? () -> { }
+        : GuardrailScope.open(execution.workflowId(), execution.workflowVersion(),
+            execution.node().id())) {
       AgentResult result = baseAgent.run(new AgentRequest(execution.userId(), agentId, instruction,
           execution.context().input(), List.of(), tier, true, execution.runId().toString()));
       if (!result.ok()) return Outcome.retryable(result.error());

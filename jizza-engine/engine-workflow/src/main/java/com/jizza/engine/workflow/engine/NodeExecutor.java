@@ -17,9 +17,17 @@ public interface NodeExecutor {
    * @param node     the node being executed
    * @param context  the saga state, already carrying every earlier node's output
    * @param attempt  1 for the first try; retries increment it
+   * @param workflowId      the workflow being run, so its own guardrails apply to its steps
+   * @param workflowVersion the version of it being run
    */
   record Execution(UUID runId, UUID userId, UUID owningAgentId, WorkflowNode node,
-                   RunContext context, int attempt) {}
+                   RunContext context, int attempt, UUID workflowId, int workflowVersion) {
+
+    public Execution(UUID runId, UUID userId, UUID owningAgentId, WorkflowNode node,
+                     RunContext context, int attempt) {
+      this(runId, userId, owningAgentId, node, context, attempt, null, 0);
+    }
+  }
 
   /**
    * What a node execution produced.

@@ -99,6 +99,7 @@ public final class AgentTestFixtures {
       return switch (rule) {
         case ALLOW -> Decision.allow("test");
         case ASK -> Decision.ask("needs approval", "test");
+        case JIZZA -> new Decision(AutonomyRule.JIZZA, "Jizza decides", "test");
         case DENY -> Decision.deny("blocked by policy", "test");
       };
     }

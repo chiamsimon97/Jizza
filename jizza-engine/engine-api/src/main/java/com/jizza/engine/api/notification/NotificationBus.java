@@ -27,4 +27,13 @@ public interface NotificationBus {
    * @return true when approved
    */
   boolean awaitPermission(UUID notificationId, java.time.Duration timeout);
+
+  /** Whether the same item from the same agent was already raised since then, to avoid repeats. */
+  default boolean raisedSince(UUID userId, UUID sourceAgentId, NotificationKind kind, String body,
+                              java.time.Instant since) {
+    return list(userId, false).stream()
+        .anyMatch(n -> n.kind() == kind && java.util.Objects.equals(n.sourceAgentId(), sourceAgentId)
+            && java.util.Objects.equals(n.body(), body)
+            && n.createdAt() != null && n.createdAt().isAfter(since));
+  }
 }

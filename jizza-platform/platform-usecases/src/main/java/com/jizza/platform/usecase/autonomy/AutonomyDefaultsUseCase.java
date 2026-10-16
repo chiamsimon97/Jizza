@@ -5,6 +5,7 @@ import com.jizza.engine.api.autonomy.AutonomyGate;
 import com.jizza.engine.api.autonomy.AutonomyPolicyStore;
 import com.jizza.engine.api.dto.AgentDto;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
+import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.enums.AutonomyRule;
 import com.jizza.engine.api.event.UserRegistered;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
@@ -52,16 +53,23 @@ public class AutonomyDefaultsUseCase {
   public void seedFor(UUID userId) {
     if (!policies.list(userId).isEmpty()) return;
 
+    // The account-wide baseline: reading is automatic, changing anything outside Jizza asks, and
+    // no agent moves money unless it is one that has been allowed to.
     policy(userId, null, AutonomyGate.ANY_READ, AutonomyRule.ALLOW, 0, null);
     policy(userId, null, AutonomyGate.ANY_SIDE_EFFECTING, AutonomyRule.ASK, 0, null);
-
-    // Finance may read freely but never move money unattended, whatever else is configured.
+    policy(userId, null, ActionType.MONEY.token(), AutonomyRule.DENY, 0,
+        Json.obj().put("note", "No agent moves money unless you allow it"));
+    // Kai, the finance agent, may read freely. It asks before moving money or changing anything,
+    // and never deletes. A workflow you approve can relax this for that workflow only.
     agents.byKey(userId, "finance").ifPresent(finance -> {
       policy(userId, finance.id(), AutonomyGate.ANY_READ, AutonomyRule.ALLOW, 10, null);
-      policy(userId, finance.id(), AutonomyGate.ANY_SIDE_EFFECTING, AutonomyRule.ASK, 10,
+      policy(userId, finance.id(), AutonomyGate.ANY_SIDE_EFFECTING, AutonomyRule.ASK, 10, null);
+      policy(userId, finance.id(), ActionType.MONEY.token(), AutonomyRule.ASK, 10,
           Json.obj().put("note", "Money movement always asks"));
+      policy(userId, finance.id(), ActionType.DELETE.token(), AutonomyRule.DENY, 10, null);
     });
-    // Health and Professional may read and draft unattended; sending still asks.
+    // Health and Professional may read and draft unattended; sending or changing still asks, and
+    // moving money is never theirs to do (the account-wide rule).
     for (String key : new String[] {"health", "professional"}) {
       agents.byKey(userId, key).map(AgentDto::id).ifPresent(agentId -> {
         policy(userId, agentId, AutonomyGate.ANY_READ, AutonomyRule.ALLOW, 10, null);

@@ -19,7 +19,8 @@ import java.util.Map;
  *   "instructions": { "nodeId": "text" }, // answers to intervention nodes
  *   "branch":       { "nodeId": "true" }, // which outlet a branch took
  *   "pausedFor":    "instruction",        // or "permission"
- *   "pausedNode":   "nodeId"
+ *   "pausedNode":   "nodeId",
+ *   "approvals":    { "nodeId": true }  // steps the user approved after a pause
  * }
  * </pre>
  */
@@ -77,6 +78,20 @@ public final class RunContext {
   public void pause(String reason, String nodeId) {
     root.put("pausedFor", reason);
     root.put("pausedNode", nodeId);
+  }
+
+  /**
+   * Records that the user approved the action this step paused for, so running the step again
+   * goes ahead instead of asking a second time. It covers this step of this run only.
+   */
+  public void recordApproval(String nodeId) {
+    ObjectNode approvals = root.has("approvals") && root.get("approvals").isObject()
+        ? (ObjectNode) root.get("approvals") : root.putObject("approvals");
+    approvals.put(nodeId, true);
+  }
+
+  public boolean approved(String nodeId) {
+    return root.path("approvals").path(nodeId).asBoolean(false);
   }
 
   public void clearPause() {

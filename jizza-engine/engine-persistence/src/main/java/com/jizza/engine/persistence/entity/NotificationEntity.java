@@ -3,6 +3,7 @@ package com.jizza.engine.persistence.entity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.enums.EscalationState;
 import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.NotificationPriority;
 import com.jizza.engine.api.enums.NotificationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -63,6 +64,9 @@ public class NotificationEntity {
 
   private Instant answeredAt;
 
+  @Column(nullable = false)
+  private NotificationPriority priority = NotificationPriority.NORMAL;
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -119,4 +123,7 @@ public class NotificationEntity {
     Instant now = Instant.now();
     if (createdAt == null) createdAt = now;
   }
+
+  public NotificationPriority getPriority() { return priority; }
+  public void setPriority(NotificationPriority priority) { this.priority = priority; }
 }

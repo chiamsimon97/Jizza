@@ -1,5 +1,6 @@
 package com.jizza.engine.persistence.repository;
 
+import com.jizza.engine.api.enums.NotificationKind;
 import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.persistence.entity.NotificationEntity;
 import java.time.Instant;
@@ -16,6 +17,9 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
   List<NotificationEntity> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, NotificationStatus status);
 
   List<NotificationEntity> findByRunId(UUID runId);
+
+  boolean existsByUserIdAndSourceAgentIdAndKindAndBodyAndCreatedAtAfter(
+      UUID userId, UUID sourceAgentId, NotificationKind kind, String body, Instant since);
 
   /** Blocking items that are still open — the input to reminders, escalation and auto-cancel. */
   @Query("""

@@ -18,4 +18,9 @@ public interface AutonomyPolicyStore {
   AutonomyRuleDto upsert(UUID userId, AutonomyRuleDto rule);
 
   void delete(UUID userId, UUID policyId);
+
+  /** One rule, only if it belongs to this user. */
+  default java.util.Optional<AutonomyRuleDto> get(UUID userId, UUID policyId) {
+    return list(userId).stream().filter(rule -> policyId.equals(rule.id())).findFirst();
+  }
 }

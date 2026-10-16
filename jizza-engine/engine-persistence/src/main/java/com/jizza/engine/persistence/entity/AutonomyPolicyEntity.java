@@ -7,7 +7,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -36,6 +39,26 @@ public class AutonomyPolicyEntity {
 
   private int precedence;
 
+  private UUID workflowId;
+
+  private Integer workflowVersion;
+
+  private String nodeId;
+
+  @Column(nullable = false)
+  private boolean locked;
+
+  @Column(insertable = false, updatable = false)
+  private Instant createdAt;
+
+  private Instant updatedAt;
+
+  @PrePersist
+  @PreUpdate
+  void touch() {
+    updatedAt = Instant.now();
+  }
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -56,5 +79,21 @@ public class AutonomyPolicyEntity {
 
   public int getPrecedence() { return precedence; }
   public void setPrecedence(int precedence) { this.precedence = precedence; }
+
+  public UUID getWorkflowId() { return workflowId; }
+  public void setWorkflowId(UUID workflowId) { this.workflowId = workflowId; }
+
+  public Integer getWorkflowVersion() { return workflowVersion; }
+  public void setWorkflowVersion(Integer workflowVersion) { this.workflowVersion = workflowVersion; }
+
+  public String getNodeId() { return nodeId; }
+  public void setNodeId(String nodeId) { this.nodeId = nodeId; }
+
+  public boolean isLocked() { return locked; }
+  public void setLocked(boolean locked) { this.locked = locked; }
+
+  public Instant getCreatedAt() { return createdAt; }
+
+  public Instant getUpdatedAt() { return updatedAt; }
 
 }

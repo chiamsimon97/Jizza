@@ -2,6 +2,7 @@ package com.jizza.engine.workflow.nodes;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.autonomy.Decision;
+import com.jizza.engine.api.autonomy.GuardrailContext;
 import com.jizza.engine.api.connector.IdempotencyKey;
 import com.jizza.engine.api.connector.ToolExecutor;
 import com.jizza.engine.api.dto.GeneratedToolDto;
@@ -96,15 +97,31 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
           + e.getMessage());
     }
 
-    if (execution.owningAgentId() != null) {
-      Decision decision = autonomyGate.evaluate(execution.owningAgentId(), entity.getName(), args);
-      if (decision.denied()) {
-        return Outcome.permanentFailure("Blocked by autonomy policy: " + decision.reason());
-      }
-      if (decision.needsPermission()) {
-        return Outcome.awaitPermission(
-            "This step needs your approval before it runs " + entity.getName() + ".");
-      }
+    // Every connector step is judged by the guardrails, whoever owns the workflow. One with no
+    // owning agent runs as Jizza, so it can never slip past the rules by having no agent.
+    UUID actor = execution.owningAgentId() != null ? execution.owningAgentId()
+        : orchestratorOf(execution.userId());
+    if (actor == null) {
+      return Outcome.permanentFailure("No agent is available to run " + entity.getName()
+          + " under your guardrails");
+    }
+    GuardrailContext guardrail = execution.workflowId() == null
+        ? new GuardrailContext(actor, entity.getName(), args, null, null, null, false,
+            entity.effectiveActionType())
+        : GuardrailContext.inWorkflow(actor, entity.getName(), args, execution.workflowId(),
+            execution.workflowVersion(), execution.node().id(), entity.effectiveActionType());
+    boolean approved = execution.context().approved(execution.node().id());
+    // Once the user approved this step, a second evaluation would only ask the same question
+    // again; a never rule still stops it, and nothing is spent from Jizza's say or a budget.
+    Decision decision = approved ? autonomyGate.evaluate(guardrail)
+        : autonomyGate.decide(guardrail);
+    if (decision.denied()) {
+      return Outcome.permanentFailure("Blocked by your guardrails: " + decision.reason());
+    }
+    if (!approved && (decision.needsPermission() || decision.needsJizza())) {
+      return Outcome.awaitPermission(
+          "This step needs your approval before it runs " + entity.getName() + ". "
+              + decision.reason() + ".");
     }
 
     IdempotencyKey key = entity.isSideEffecting()
@@ -124,6 +141,20 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
     return isRetryable(result.error())
         ? Outcome.retryable(result.error())
         : Outcome.permanentFailure(result.error());
+  }
+
+  private com.jizza.engine.persistence.repository.AgentRepository agents;
+
+  /** Optional so the engine harness can run without agents; without it an agentless step fails. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setAgents(com.jizza.engine.persistence.repository.AgentRepository agents) {
+    this.agents = agents;
+  }
+
+  private UUID orchestratorOf(UUID userId) {
+    if (agents == null || userId == null) return null;
+    return agents.findByUserIdAndIsOrchestratorTrue(userId)
+        .map(com.jizza.engine.persistence.entity.AgentEntity::getId).orElse(null);
   }
 
   private boolean accountAllows(UUID userId, UUID connectionId) {

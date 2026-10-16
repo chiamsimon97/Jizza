@@ -143,8 +143,10 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         failRun(run, node, "The user declined to approve this step");
         return toDto(run);
       }
-      // Approving does not skip the node: it clears the pause so the node runs for real.
+      // Approving does not skip the node: it clears the pause so the node runs for real, and
+      // records the approval so the node does not stop to ask the same question again.
       context.clearPause();
+      context.recordApproval(node);
       run.setContext(context.toJson());
       run.setStatus(RunStatus.RUNNING);
       run.setCurrentNode(node);
@@ -255,7 +257,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       NodeExecutor.Outcome outcome;
       try {
         outcome = executor.execute(new NodeExecutor.Execution(runId, run.getUserId(),
-            owningAgentOf(run), node, context, attempt));
+            owningAgentOf(run), node, context, attempt, run.getWorkflowId(), run.getVersion()));
       } catch (RuntimeException e) {
         log.warn("Node {} of run {} threw", nodeId, runId, e);
         outcome = NodeExecutor.Outcome.retryable(String.valueOf(e.getMessage()));

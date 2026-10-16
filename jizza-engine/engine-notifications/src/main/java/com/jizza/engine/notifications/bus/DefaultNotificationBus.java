@@ -5,6 +5,7 @@ import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.EscalationState;
 import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.NotificationPriority;
 import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
@@ -97,6 +98,7 @@ public class DefaultNotificationBus implements NotificationBus {
     entity.setRunId(ctx.runId());
     entity.setStatus(NotificationStatus.UNREAD);
     entity.setEscalationState(EscalationState.NONE);
+    entity.setPriority(ctx.priority() == null ? NotificationPriority.NORMAL : ctx.priority());
     // Only blocking items expire: an informational note has nothing to hold up.
     if (kind.blocking()) {
       Duration ttl = ctx.expiresIn() == null ? props.expiryFor(kind) : ctx.expiresIn();
@@ -110,6 +112,11 @@ public class DefaultNotificationBus implements NotificationBus {
         Json.obj().put("notificationId", entity.getId().toString()));
 
     publishRaised(kind, dto);
+    // Something urgent is not left for the next reminder sweep: it is nudged out of the app as
+    // soon as the work that raised it commits.
+    if (entity.getPriority() == NotificationPriority.URGENT) {
+      events.publishEvent(new UrgentNotificationRaised(entity.getId()));
+    }
     // Pushed immediately so a paused run surfaces the moment it stops, not at the next poll (R43).
     realtime.ifAvailable(gateway -> gateway.publish(ctx.userId(), "notifications", dto));
     return dto;
@@ -234,6 +241,17 @@ public class DefaultNotificationBus implements NotificationBus {
 
   @Override
   @Transactional(readOnly = true)
+  public boolean raisedSince(UUID userId, UUID sourceAgentId, NotificationKind kind, String body,
+                             Instant since) {
+    return notifications.existsByUserIdAndSourceAgentIdAndKindAndBodyAndCreatedAtAfter(
+        userId, sourceAgentId, kind, body, since);
+  }
+
+  /** Raised in the transaction that created an urgent item; delivered once that commits. */
+  public record UrgentNotificationRaised(UUID notificationId) {}
+
+  @Override
+  @Transactional(readOnly = true)
   public NotificationDto get(UUID notificationId) {
     return toDto(require(notificationId));
   }
@@ -295,6 +313,7 @@ public class DefaultNotificationBus implements NotificationBus {
     return new NotificationDto(n.getId(), n.getUserId(), n.getSourceAgentId(), agentName,
         n.getKind(), n.getBody(), n.getContext(), n.getTaskId(), n.getWorkflowId(), n.getRunId(),
         n.getStatus(), n.getSubmittedInstruction(), n.getExpiresAt(), n.getEscalationState(),
-        n.getCreatedAt(), n.getAnsweredAt());
+        n.getCreatedAt(), n.getAnsweredAt(),
+        n.getPriority() == null ? NotificationPriority.NORMAL : n.getPriority());
   }
 }

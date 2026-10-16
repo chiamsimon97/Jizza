@@ -4,9 +4,12 @@ import com.jizza.engine.api.autonomy.AutonomyPolicyStore;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
 import com.jizza.engine.api.enums.AutonomyRule;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.autonomy.guardrail.GuardrailConditions;
 import com.jizza.engine.persistence.entity.AutonomyPolicyEntity;
 import com.jizza.engine.persistence.repository.AutonomyPolicyRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,9 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class AutonomyPolicyService implements AutonomyPolicyStore {
 
   private final AutonomyPolicyRepository policies;
+  private final GuardrailConditions conditions;
 
-  public AutonomyPolicyService(AutonomyPolicyRepository policies) {
+  public AutonomyPolicyService(AutonomyPolicyRepository policies, GuardrailConditions conditions) {
     this.policies = policies;
+    this.conditions = conditions;
   }
 
   @Override
@@ -37,17 +42,32 @@ public class AutonomyPolicyService implements AutonomyPolicyStore {
   @Override
   @Transactional
   public AutonomyRuleDto upsert(UUID userId, AutonomyRuleDto rule) {
+    if (rule.rule() == null) throw new ValidationException("A guardrail needs a mode");
+    if (rule.nodeId() != null && rule.workflowId() == null) {
+      throw new ValidationException("A rule for one step must name its workflow");
+    }
+    if (rule.workflowVersion() != null && rule.workflowId() == null) {
+      throw new ValidationException("A rule for one workflow version must name its workflow");
+    }
+    conditions.validate(rule.limits());
+
     AutonomyPolicyEntity entity = rule.id() == null
         ? new AutonomyPolicyEntity()
         : policies.findById(rule.id())
+            // Someone else's rule is reported as missing, never quietly taken over.
+            .filter(existing -> existing.getUserId().equals(userId))
             .orElseThrow(() -> new NotFoundException("Autonomy policy", rule.id()));
     entity.setUserId(userId);
     entity.setAgentId(rule.agentId());
     entity.setToolRef(rule.toolRef() == null || rule.toolRef().isBlank()
-        ? PolicyAutonomyGate.ANY : rule.toolRef());
+        ? PolicyAutonomyGate.ANY : rule.toolRef().trim());
     entity.setRule(rule.rule());
-    entity.setLimits(rule.limits());
+    entity.setLimits(rule.limits() == null || rule.limits().isNull() ? null : rule.limits());
     entity.setPrecedence(rule.precedence());
+    entity.setWorkflowId(rule.workflowId());
+    entity.setWorkflowVersion(rule.workflowVersion());
+    entity.setNodeId(rule.nodeId() == null || rule.nodeId().isBlank() ? null : rule.nodeId());
+    entity.setLocked(rule.locked());
     policies.save(entity);
     return toDto(entity);
   }
@@ -60,15 +80,24 @@ public class AutonomyPolicyService implements AutonomyPolicyStore {
         .ifPresent(policies::delete);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<AutonomyRuleDto> get(UUID userId, UUID policyId) {
+    return policies.findById(policyId)
+        .filter(policy -> policy.getUserId().equals(userId))
+        .map(AutonomyPolicyService::toDto);
+  }
+
   public static AutonomyRuleDto toDto(AutonomyPolicyEntity p) {
     return new AutonomyRuleDto(p.getId(), p.getUserId(), p.getAgentId(), p.getToolRef(),
-        p.getRule(), p.getLimits(), p.getPrecedence());
+        p.getRule(), p.getLimits(), p.getPrecedence(), p.getWorkflowId(), p.getWorkflowVersion(),
+        p.getNodeId(), p.isLocked());
   }
 
   /** The rule that applies when no row matches, exposed so the UI can show it honestly. */
   public static String defaultRuleDescription() {
-    return "Reading and informing run automatically; anything that sends, pays, creates, deletes "
-        + "or otherwise changes something outside Jizza asks you first.";
+    return "Reading and keeping Jizza's own notes run automatically; anything that sends, pays, "
+        + "creates, changes or deletes something outside Jizza asks you first.";
   }
 
   public static AutonomyRule defaultFor(boolean sideEffecting) {

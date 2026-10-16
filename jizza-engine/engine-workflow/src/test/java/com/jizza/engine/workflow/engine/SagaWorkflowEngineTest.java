@@ -147,11 +147,42 @@ class SagaWorkflowEngineTest {
     assertThat(harness.raised).extracting(com.jizza.engine.api.dto.NotificationDto::kind)
         .contains(NotificationKind.PERMISSION_REQUEST);
 
-    harness.toolRule = AutonomyRule.ALLOW;
+    // The rule still says ask: approving must be enough on its own, without asking again.
     var resumed = harness.engine.resume(run.id(), Json.obj().put("approved", true));
 
     assertThat(resumed.status()).isEqualTo(RunStatus.DONE);
     assertThat(harness.toolInvocations).isEqualTo(1);
+    assertThat(harness.raised).extracting(com.jizza.engine.api.dto.NotificationDto::kind)
+        .as("approving must not raise a second request for the same step")
+        .containsOnlyOnce(NotificationKind.PERMISSION_REQUEST);
+  }
+
+  @Test
+  void anApprovalDoesNotOverrideANeverRule() {
+    EngineHarness harness = sideEffectHarness();
+    harness.toolRule = AutonomyRule.ASK;
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    // The user tightened the rule to never while the step was waiting.
+    harness.toolRule = AutonomyRule.DENY;
+    var resumed = harness.engine.resume(run.id(), Json.obj().put("approved", true));
+
+    // The step fails rather than running, and the run stops to ask what to do next.
+    assertThat(resumed.status()).isNotEqualTo(RunStatus.DONE);
+    assertThat(harness.toolInvocations).isZero();
+    assertThat(harness.raised).extracting(com.jizza.engine.api.dto.NotificationDto::kind)
+        .contains(NotificationKind.INSTRUCTION_REQUIRED);
+  }
+
+  @Test
+  void aStepLeftToJizzaPausesWhenNoReviewerApprovesIt() {
+    EngineHarness harness = sideEffectHarness();
+    harness.toolRule = AutonomyRule.JIZZA;
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(harness.toolInvocations).isZero();
   }
 
   @Test

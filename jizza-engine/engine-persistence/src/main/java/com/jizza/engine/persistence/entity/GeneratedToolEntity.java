@@ -1,6 +1,7 @@
 package com.jizza.engine.persistence.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.enums.ActionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -48,6 +49,9 @@ public class GeneratedToolEntity {
 
   private boolean sideEffecting;
 
+  /** What the action does; null on rows that predate it, which derive it from the method. */
+  private ActionType actionType;
+
   private boolean enabled;
 
   /** Display name in the service editor; {@code name} stays the machine name. */
@@ -92,6 +96,19 @@ public class GeneratedToolEntity {
 
   public boolean isSideEffecting() { return sideEffecting; }
   public void setSideEffecting(boolean sideEffecting) { this.sideEffecting = sideEffecting; }
+
+  public ActionType getActionType() { return actionType; }
+  public void setActionType(ActionType actionType) { this.actionType = actionType; }
+
+  /**
+   * The action type the guardrails judge this tool by: what was stored, or what its method and
+   * side-effect flag imply. A tool marked as changing nothing is a read whatever its method.
+   */
+  public ActionType effectiveActionType() {
+    if (actionType != null) return actionType;
+    return sideEffecting ? ActionType.riskier(ActionType.CREATE,
+        ActionType.fromHttpMethod(httpMethod)) : ActionType.READ;
+  }
 
   public boolean isEnabled() { return enabled; }
   public void setEnabled(boolean enabled) { this.enabled = enabled; }

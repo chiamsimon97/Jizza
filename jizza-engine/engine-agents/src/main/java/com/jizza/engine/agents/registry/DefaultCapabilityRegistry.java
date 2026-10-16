@@ -13,6 +13,11 @@ import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.autonomy.AutonomyGate;
 import com.jizza.engine.api.autonomy.Decision;
+import com.jizza.engine.api.autonomy.GuardrailContext;
+import com.jizza.engine.api.enums.NotificationPriority;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Locale;
 import com.jizza.engine.api.autonomy.KillSwitch;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.CapabilityType;
@@ -105,7 +110,9 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     List<ToolSpec> visible = new ArrayList<>();
     for (ToolSpec spec : byName.values()) {
       if (!accountAllows(ownerId, agentId, owner.get(spec.name()), spec.name())) continue;
-      if (!autonomyGate.evaluate(agentId, spec.name(), null).denied()) visible.add(spec);
+      if (!autonomyGate.evaluate(GuardrailContext.probe(agentId, spec.name())).denied()) {
+        visible.add(spec);
+      }
     }
     return visible;
   }
@@ -190,12 +197,25 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
       return refuse(agent, call, "no-access", "You don't have access to this connector");
     }
 
-    Decision decision = autonomyGate.evaluate(agentId, call.name(), call.args());
+    // An approved call has had its answer: it is evaluated only so a never rule still stops it,
+    // and neither Jizza nor a budget is consulted again.
+    GuardrailContext guardrail = GuardrailContext.of(agentId, call.name(), call.args());
+    Decision decision = approvedBy != null ? autonomyGate.evaluate(guardrail)
+        : autonomyGate.decide(guardrail);
     if (decision.denied()) {
+      reportNever(agent, call, decision);
       return refuse(agent, call, "policy-deny", decision.reason());
     }
-    if (decision.needsPermission() && approvedBy == null) {
-      return requestPermission(agent, call, decision, provider.redactArguments(call.name()));
+    if ((decision.needsPermission() || decision.needsJizza()) && approvedBy == null) {
+      return requestPermission(agent, call, decision, provider.redactArguments(call.name()),
+          autonomous);
+    }
+    if (decision.allowed() && approvedBy == null && decision.reason() != null
+        && decision.reason().startsWith("Jizza approved")) {
+      String reason = decision.reason();
+      Activity.emit(ActivityTypes.GUARDRAIL_DECIDED, agentId, agent.getName(), p -> p
+          .put("tool", call.name()).put("label", label(call.name()))
+          .put("outcome", "jizza-approved").put("reason", reason));
     }
 
     ObjectNode detail = Json.obj().put("autonomous", autonomous)
@@ -310,8 +330,36 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
    * An {@code ask} rule does not execute and does not silently drop: it raises a permission request
    * attributed to this agent and reports back that the work is waiting on the user (R37/R41).
    */
+  /**
+   * A never rule stopped a specialist: Jizza tells the user what it wanted to do, once a day per
+   * tool, so a missed opportunity is not silent and a persistent agent is not noisy. Jizza's own
+   * blocked calls need no report, since Jizza is already the one talking to the user.
+   */
+  private void reportNever(AgentEntity agent, ToolCall call, Decision decision) {
+    Activity.emit(ActivityTypes.GUARDRAIL_DECIDED, agent.getId(), agent.getName(), p -> p
+        .put("tool", call.name()).put("label", label(call.name()))
+        .put("outcome", "never").put("reason", decision.reason()));
+    if (agent.isOrchestrator()) return;
+    NotificationBus bus = notifications.getIfAvailable();
+    if (bus == null) return;
+    try {
+      String body = agent.getName() + " wanted to " + label(call.name()).toLowerCase(Locale.ROOT)
+          + ", but your guardrails never allow that, so it didn't.";
+      if (bus.raisedSince(agent.getUserId(), agent.getId(), NotificationKind.INFO, body,
+          Instant.now().minus(Duration.ofDays(1)))) {
+        return;
+      }
+      bus.raise(NotificationKind.INFO, agent.getId(),
+          new NotificationContext(agent.getUserId(), body,
+              Json.obj().put("tool", call.name()).put("guardrail", decision.matchedPolicy()),
+              null, null, null, null, NotificationPriority.LOW));
+    } catch (RuntimeException e) {
+      log.warn("Could not report a blocked call by {}", agent.getName(), e);
+    }
+  }
+
   private ToolResult requestPermission(AgentEntity agent, ToolCall call, Decision decision,
-                                       boolean redact) {
+                                       boolean redact, boolean autonomous) {
     NotificationBus bus = notifications.getIfAvailable();
     audit.record(agent.getUserId(), ActorType.AGENT, agent.getId(), "tool.permission_requested",
         call.name(), Json.obj().put("policy", decision.matchedPolicy())
@@ -321,11 +369,18 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
       return ToolResult.error("Tool '" + call.name() + "' needs your approval, but the notification "
           + "bus is unavailable, so nothing was run.");
     }
-    JsonNode detail = Json.obj().put("tool", call.name()).set("args", call.args());
+    ObjectNode detail = Json.obj().put("tool", call.name())
+        .put("reason", decision.reason())
+        .put("guardrail", decision.matchedPolicy());
+    if (decision.actionType() != null) {
+      detail.put("actionType", decision.actionType().name().toLowerCase(Locale.ROOT));
+    }
+    detail.set("args", call.args());
     var notification = bus.raise(NotificationKind.PERMISSION_REQUEST, agent.getId(),
         new NotificationContext(agent.getUserId(),
             agent.getName() + " needs approval to run " + call.name(), detail,
-            null, null, null, null));
+            null, null, null, null,
+            NotificationPriority.forApproval(decision.actionType(), autonomous)));
     Activity.emit(ActivityTypes.APPROVAL_REQUIRED, agent.getId(), agent.getName(), p -> p
         .put("notificationId", notification.id().toString()).put("tool", call.name())
         .put("label", label(call.name())).put("reason", decision.reason()));
