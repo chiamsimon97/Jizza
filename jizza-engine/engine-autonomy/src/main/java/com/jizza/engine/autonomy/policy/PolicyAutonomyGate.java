@@ -232,6 +232,7 @@ public class PolicyAutonomyGate implements AutonomyGate {
   }
 
   /** What a tool does, as the guardrails judge it. Public so settings screens can show it. */
+  @Override
   public ActionType actionTypeOf(UUID agentId, String toolRef) {
     return agents.findById(agentId)
         .map(agent -> actionTypeOf(agent, toolRef, null))

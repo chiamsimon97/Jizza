@@ -19,7 +19,11 @@ public final class Permissions {
   public static final String MEMBERS_MODIFY = "members_modify";
   public static final String MEMBERS_REMOVE = "members_remove";
 
+  public static final String GUARDRAILS_VIEW = "guardrails_view";
+  public static final String GUARDRAILS_LOCK = "guardrails_lock";
+
   public static final java.util.List<String> ALL = java.util.List.of(
       CONNECTOR_VIEW, CONNECTOR_CREATE, CONNECTOR_MODIFY, CONNECTOR_DELETE,
-      MEMBERS_VIEW, MEMBERS_INVITE, MEMBERS_MODIFY, MEMBERS_REMOVE);
+      MEMBERS_VIEW, MEMBERS_INVITE, MEMBERS_MODIFY, MEMBERS_REMOVE,
+      GUARDRAILS_VIEW, GUARDRAILS_LOCK);
 }

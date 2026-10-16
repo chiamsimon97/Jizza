@@ -82,6 +82,29 @@
     "dependencies": ["members_view"],
     "permittedAccountTypes": ["organization"],
     "permittedRoles": ["owner", "admin"]
-  }
+  },
   // ========== MEMBERS PERMISSIONS END ==========
+
+  // ========== GUARDRAILS PERMISSIONS START ==========
+  {
+    "name": "guardrails_view",
+    "label": "View organization guardrails",
+    "description": "See the locks the organization puts on what agents may do with its connectors.",
+    "category": "read",
+    "module": "guardrails",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "guardrails_lock",
+    "label": "Lock organization guardrails",
+    "description": "Require approval for, or forbid, what any member's agents do with the organization's connectors.",
+    "category": "read_and_write",
+    "module": "guardrails",
+    "dependencies": ["guardrails_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  }
+  // ========== GUARDRAILS PERMISSIONS END ==========
 ]

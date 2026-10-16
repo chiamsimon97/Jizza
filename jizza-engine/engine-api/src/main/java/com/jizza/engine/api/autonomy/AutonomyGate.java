@@ -1,6 +1,7 @@
 package com.jizza.engine.api.autonomy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.enums.ActionType;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,12 @@ public interface AutonomyGate {
 
   /** Outside any workflow, or inside the one the current thread's scope names. */
   Decision evaluate(UUID agentId, String toolRef, JsonNode args);
+
+  /** What a tool does, as the guardrails judge it; unknown tools count as moving money. */
+  default ActionType actionTypeOf(UUID agentId, String toolRef) {
+    ActionType type = evaluate(GuardrailContext.probe(agentId, toolRef)).actionType();
+    return type == null ? ActionType.MONEY : type;
+  }
 
   /** Whether an individual agent is enabled at all (R40). */
   boolean agentEnabled(UUID agentId);

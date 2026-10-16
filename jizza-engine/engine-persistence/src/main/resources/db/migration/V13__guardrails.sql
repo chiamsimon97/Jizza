@@ -7,16 +7,17 @@ alter table autonomy_policies drop constraint if exists autonomy_policies_rule_c
 alter table autonomy_policies
   add constraint autonomy_policies_rule_check check (rule in ('allow','ask','jizza','deny'));
 
+-- One column per statement, so the schema check can read each of them.
+alter table autonomy_policies add column workflow_id uuid references workflows(id) on delete cascade;
+alter table autonomy_policies add column workflow_version int;
+alter table autonomy_policies add column node_id varchar;
+alter table autonomy_policies add column locked boolean not null default false;
+-- An organization's ceiling: applies to every member's agents when they use that organization's
+-- connectors, and is always locked.
 alter table autonomy_policies
-  add column workflow_id uuid references workflows(id) on delete cascade,
-  add column workflow_version int,
-  add column node_id varchar,
-  add column locked boolean not null default false,
-  -- An organization's ceiling: applies to every member's agents when they use that
-  -- organization's connectors, and is always locked.
-  add column workspace_id uuid references workspaces(id) on delete cascade,
-  add column created_at timestamptz not null default now(),
-  add column updated_at timestamptz not null default now();
+  add column workspace_id uuid references workspaces(id) on delete cascade;
+alter table autonomy_policies add column created_at timestamptz not null default now();
+alter table autonomy_policies add column updated_at timestamptz not null default now();
 
 -- A step rule always belongs to a workflow, and a version only means something with one.
 alter table autonomy_policies

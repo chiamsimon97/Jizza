@@ -51,7 +51,13 @@ public class AutonomyUseCase {
     audit.record(userId, ActorType.USER, null, "autonomy.policy_changed", saved.toolRef(),
         Json.obj().put("agentId", String.valueOf(saved.agentId()))
             .put("rule", saved.rule().name().toLowerCase(Locale.ROOT))
-            .put("precedence", saved.precedence()));
+            .put("precedence", saved.precedence())
+            .put("workflowId", saved.workflowId() == null ? null : saved.workflowId().toString())
+            .put("workflowVersion", saved.workflowVersion())
+            .put("nodeId", saved.nodeId())
+            .put("locked", saved.locked())
+            // The conditions themselves, so a loosened rule can be traced to exactly what it allows.
+            .set("limits", saved.limits()));
     return saved;
   }
 
@@ -72,8 +78,9 @@ public class AutonomyUseCase {
    * the truth rather than shown an empty list.
    */
   public String defaultRuleDescription() {
-    return "Reading and informing run automatically; anything that sends, pays, creates, deletes "
-        + "or otherwise changes something outside Jizza asks you first.";
+    return "Reading and keeping Jizza's own notes run automatically; anything that sends, pays, "
+        + "creates, changes or deletes something outside Jizza asks you first. No agent moves "
+        + "money unless you allow it.";
   }
 
   public void setPaused(UUID userId, boolean paused) {
