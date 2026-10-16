@@ -10,6 +10,7 @@ export function MfaPage() {
   const navigate = useNavigate()
   const { mfaToken, setAuthenticated, clear } = useAuthStore()
   const [code, setCode] = useState('')
+  const [useRecovery, setUseRecovery] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -19,13 +20,15 @@ export function MfaPage() {
     setError('')
     setLoading(true)
     try {
-      const result = await authApi.verifyMfa({ mfaToken: mfaToken, code })
+      const result = await authApi.verifyMfa({ mfaToken: mfaToken, code: code.trim() })
       if (result.userId) {
-        setAuthenticated(result.userId)
+        setAuthenticated(result.userId, result.enrollmentRequired)
         navigate('/chat', { replace: true })
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Invalid code')
+      // A wrong code spends the sign-in attempt, so the password is needed again.
+      clear()
+      navigate('/login', { replace: true, state: { notice: err instanceof Error ? `${err.message}. Sign in again.` : 'Sign in again.' } })
     } finally {
       setLoading(false)
     }
@@ -34,21 +37,48 @@ export function MfaPage() {
   return (
     <AuthLayout>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Two-factor auth</h1>
-      <p className="mb-8 text-center text-sm text-gray-500">Enter the 6-digit code from your authenticator app.</p>
+      <p className="mb-8 text-center text-sm text-gray-500">
+        {useRecovery
+          ? 'Enter one of the recovery codes you saved. Each one works once.'
+          : 'Enter the 6-digit code from your authenticator app.'}
+      </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Input
-          label="Code"
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]{6}"
-          maxLength={6}
-          autoComplete="one-time-code"
-          required
-          value={code}
-          onChange={e => setCode(e.target.value)}
-        />
+        {useRecovery ? (
+          <Input
+            key="recovery"
+            label="Recovery code"
+            type="text"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="xxxx-xxxx-xxxx"
+            maxLength={20}
+            required
+            autoFocus
+            value={code}
+            onChange={e => setCode(e.target.value)}
+          />
+        ) : (
+          <Input
+            key="totp"
+            label="Code"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            autoComplete="one-time-code"
+            required
+            autoFocus
+            value={code}
+            onChange={e => setCode(e.target.value)}
+          />
+        )}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <Button type="submit" loading={loading}>Verify</Button>
+        <button type="button" className="text-sm text-brand-600 hover:underline dark:text-brand-400"
+          onClick={() => { setUseRecovery(r => !r); setCode('') }}>
+          {useRecovery ? 'Use my authenticator app instead' : 'Lost your phone? Use a recovery code'}
+        </button>
         <Button type="button" variant="ghost" onClick={() => { clear(); navigate('/login') }}>
           Back to login
         </Button>

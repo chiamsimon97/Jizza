@@ -58,14 +58,28 @@ public class TotpService {
 
   /** Constant-time comparison across the configured drift window. */
   public boolean verify(String base32Secret, String submitted, long epochSeconds) {
-    if (base32Secret == null || submitted == null) return false;
-    String candidate = submitted.trim();
-    boolean match = false;
+    return matchingStep(base32Secret, submitted, epochSeconds).isPresent();
+  }
+
+  /**
+   * The time step the submitted code belongs to, if it matches any step in the drift window. The
+   * caller records it so the same code cannot be used twice (RFC 6238 section 5.2).
+   */
+  public java.util.OptionalLong matchingStep(String base32Secret, String submitted,
+                                             long epochSeconds) {
+    if (base32Secret == null || submitted == null) return java.util.OptionalLong.empty();
+    String candidate = submitted.replaceAll("\\s", "");
+    long base = epochSeconds / props.getTotp().getPeriodSeconds();
+    long matched = Long.MIN_VALUE;
     int skew = props.getTotp().getSkewSteps();
+    // Every offset is compared, matched or not, so timing does not reveal which one hit.
     for (int offset = -skew; offset <= skew; offset++) {
-      match |= constantTimeEquals(code(base32Secret, epochSeconds, offset), candidate);
+      if (constantTimeEquals(code(base32Secret, epochSeconds, offset), candidate)) {
+        matched = base + offset;
+      }
     }
-    return match;
+    return matched == Long.MIN_VALUE ? java.util.OptionalLong.empty()
+        : java.util.OptionalLong.of(matched);
   }
 
   private static boolean constantTimeEquals(String a, String b) {

@@ -8,6 +8,7 @@ import com.jizza.engine.api.enums.TokenPlacement;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -16,21 +17,30 @@ public final class Requests {
 
   private Requests() {}
 
-  public record Register(@Email @NotBlank String email, @NotBlank String password) {}
+  // Bounded so an oversized field cannot make the server spend Argon2 time on it.
+  public record Register(@Email @NotBlank @Size(max = 320) String email,
+                         @NotBlank @Size(max = 256) String password) {}
 
-  public record Login(@Email @NotBlank String email, @NotBlank String password) {}
+  public record Login(@Email @NotBlank @Size(max = 320) String email,
+                      @NotBlank @Size(max = 256) String password) {}
 
-  public record MfaVerify(@NotBlank String mfaToken, @NotBlank String code) {}
+  /** {@code code} is a 6-digit authenticator code or a one-time recovery code. */
+  public record MfaVerify(@NotBlank @Size(max = 128) String mfaToken,
+                          @NotBlank @Size(max = 32) String code) {}
 
-  public record MfaConfirm(@NotBlank String code) {}
+  public record MfaConfirm(@NotBlank @Size(max = 32) String code) {}
 
-  public record StepUp(@NotBlank String password, String code) {}
+  public record MfaCode(@NotBlank @Size(max = 32) String code) {}
 
-  public record RecoverRequest(@Email @NotBlank String email) {}
+  public record StepUp(@NotBlank @Size(max = 256) String password, @Size(max = 32) String code) {}
 
-  public record RecoverComplete(@NotBlank String token, @NotBlank String newPassword) {}
+  public record RecoverRequest(@Email @NotBlank @Size(max = 320) String email) {}
 
-  public record ChangePassword(@NotBlank String currentPassword, @NotBlank String newPassword) {}
+  public record RecoverComplete(@NotBlank @Size(max = 128) String token,
+                                @NotBlank @Size(max = 256) String newPassword) {}
+
+  public record ChangePassword(@NotBlank @Size(max = 256) String currentPassword,
+                               @NotBlank @Size(max = 256) String newPassword) {}
 
   /** {@code screen} is the app page the message was sent from, when it came from the app. */
   public record Chat(@NotBlank String message, UUID conversationId, String screen) {}

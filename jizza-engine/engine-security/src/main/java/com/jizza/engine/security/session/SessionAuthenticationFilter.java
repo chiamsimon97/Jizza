@@ -35,7 +35,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
           .flatMap(sessions::validateAndTouch)
           .ifPresent(session -> {
             var principal = new JizzaPrincipal(session.getUserId(), session.getId(),
-                session.getStepUpAt());
+                session.getStepUpAt(), session.isMfaSatisfied());
             var auth = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority("ROLE_USER")));
             SecurityContextHolder.getContext().setAuthentication(auth);

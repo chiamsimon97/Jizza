@@ -8,8 +8,12 @@ public final class Responses {
 
   private Responses() {}
 
-  /** @param mfaRequired when true the client must call {@code /api/auth/mfa/verify} next. */
-  public record LoginResult(boolean mfaRequired, String mfaToken, UUID userId) {}
+  /**
+   * @param mfaRequired when true the client must call {@code /api/auth/mfa/verify} next.
+   * @param enrollmentRequired signed in, but two-step sign-in must be set up before anything else.
+   */
+  public record LoginResult(boolean mfaRequired, String mfaToken, UUID userId,
+                            boolean enrollmentRequired) {}
 
   public record MfaSetup(String secret, String provisioningUri) {}
 

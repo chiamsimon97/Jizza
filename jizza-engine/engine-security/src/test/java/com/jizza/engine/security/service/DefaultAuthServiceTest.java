@@ -51,6 +51,12 @@ class DefaultAuthServiceTest {
   @Mock private SessionService sessions;
   @Mock private AuditLog audit;
   @Mock private org.springframework.context.ApplicationEventPublisher events;
+  @Mock private com.jizza.engine.persistence.repository.MfaRecoveryCodeRepository codeRepository;
+  @Mock private com.jizza.engine.security.alerts.SecurityAlerts alerts;
+
+  /** What the mocked recovery-code repository holds. */
+  private final java.util.List<com.jizza.engine.persistence.entity.MfaRecoveryCodeEntity> storedCodes =
+      new java.util.ArrayList<>();
 
   private DefaultAuthService auth;
   private SecurityProperties props;
@@ -93,7 +99,23 @@ class DefaultAuthServiceTest {
 
     auth = new DefaultAuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
         totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
-        events, new LoginAttempts(users, audit, props), transactionManager());
+        events, new LoginAttempts(users, audit, props), transactionManager(),
+        new com.jizza.engine.security.mfa.RecoveryCodes(codeRepository, props), alerts);
+
+    when(codeRepository.save(any())).thenAnswer(inv -> {
+      storedCodes.add(inv.getArgument(0));
+      return inv.getArgument(0);
+    });
+    when(codeRepository.deleteAllForUser(any())).thenAnswer(inv -> {
+      storedCodes.clear();
+      return 0;
+    });
+    when(codeRepository.findByUserIdAndCodeHashAndUsedAtIsNull(any(), any())).thenAnswer(inv ->
+        storedCodes.stream()
+            .filter(c -> c.getCodeHash().equals(inv.getArgument(1)) && c.getUsedAt() == null)
+            .findFirst());
+    when(codeRepository.countByUserIdAndUsedAtIsNull(any())).thenAnswer(inv ->
+        storedCodes.stream().filter(c -> c.getUsedAt() == null).count());
 
     user = new UserEntity();
     user.setId(UUID.randomUUID());
@@ -104,12 +126,14 @@ class DefaultAuthServiceTest {
     when(users.findByEmailIgnoreCase("owner@jizza.local")).thenReturn(Optional.of(user));
     when(users.findById(user.getId())).thenReturn(Optional.of(user));
     when(users.save(any(UserEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-    when(sessions.create(any(), any(), any())).thenAnswer(inv -> {
-      SessionEntity s = new SessionEntity();
-      s.setId(UUID.randomUUID());
-      s.setUserId(inv.getArgument(0));
-      return s;
-    });
+    when(sessions.create(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+        .thenAnswer(inv -> {
+          SessionEntity s = new SessionEntity();
+          s.setId(UUID.randomUUID());
+          s.setUserId(inv.getArgument(0));
+          s.setMfaSatisfied(inv.getArgument(3));
+          return new com.jizza.engine.security.session.IssuedSession(s, "token-" + s.getId());
+        });
   }
 
   @Test
@@ -151,7 +175,7 @@ class DefaultAuthServiceTest {
     assertThat(result.mfaRequired()).isTrue();
     assertThat(result.sessionId()).isNull();
     assertThat(result.mfaToken()).isNotBlank();
-    verify(sessions, never()).create(any(), any(), any());
+    verify(sessions, never()).create(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
   }
 
   @Test
@@ -238,13 +262,126 @@ class DefaultAuthServiceTest {
     assertThat(user.isMfaEnabled()).isFalse();
     assertThat(setup.provisioningUri()).contains("otpauth://totp/");
 
-    assertThatThrownBy(() -> auth.confirmMfa(user.getId(), "000000")).isInstanceOf(AuthException.class);
+    UUID sessionId = UUID.randomUUID();
+    assertThatThrownBy(() -> auth.confirmMfa(user.getId(), sessionId, "000000"))
+        .isInstanceOf(AuthException.class);
     assertThat(user.isMfaEnabled()).isFalse();
 
-    var codes = auth.confirmMfa(user.getId(),
+    var codes = auth.confirmMfa(user.getId(), sessionId,
         totp.code(setup.secret(), Instant.now().getEpochSecond()));
     assertThat(user.isMfaEnabled()).isTrue();
-    assertThat(codes).hasSize(8);
+    assertThat(codes).hasSize(8).allMatch(c -> c.matches("[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}"));
+    // The session that proved the code keeps going; every other one is signed out.
+    verify(sessions).markMfaSatisfied(sessionId);
+    verify(sessions).revokeAllExcept(user.getId(), sessionId);
+  }
+
+  @Test
+  void startingSetupAgainKeepsTheCurrentAuthenticatorUntilTheNewOneIsProven() {
+    String original = enableMfa();
+    auth.setupMfa(user.getId());
+
+    assertThat(user.isMfaEnabled()).isTrue();
+    assertThat(new String(user.getMfaSecret(), StandardCharsets.UTF_8)).isEqualTo(original);
+    var pending = auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    assertThat(pending.mfaRequired()).as("still protected mid-setup").isTrue();
+  }
+
+  @Test
+  void aTotpCodeOnlyWorksOnce() {
+    String secret = enableMfa();
+    String code = totp.code(secret, Instant.now().getEpochSecond());
+
+    var first = auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    assertThat(auth.verifyMfa(first.mfaToken(), code, "Firefox", null, "1.2.3.4").sessionToken())
+        .isNotNull();
+
+    var second = auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    assertThatThrownBy(() -> auth.verifyMfa(second.mfaToken(), code, "Firefox", null, "1.2.3.4"))
+        .as("replaying the code someone just used").isInstanceOf(AuthException.class);
+  }
+
+  @Test
+  void aRecoveryCodeSignsInOnceAndThenIsSpent() {
+    var setup = auth.setupMfa(user.getId());
+    var codes = auth.confirmMfa(user.getId(), UUID.randomUUID(),
+        totp.code(setup.secret(), Instant.now().getEpochSecond()));
+    String recovery = codes.get(0).toUpperCase(java.util.Locale.ROOT);
+
+    var first = auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    var signedIn = auth.verifyMfa(first.mfaToken(), recovery, "Firefox", null, "1.2.3.4");
+    assertThat(signedIn.sessionToken()).isNotNull();
+    verify(alerts).alert(eq(user.getId()), any(), eq("A Jizza recovery code was used"), any());
+    assertThat(storedCodes.stream().filter(c -> c.getUsedAt() == null)).hasSize(7);
+
+    var second = auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    assertThatThrownBy(() -> auth.verifyMfa(second.mfaToken(), recovery, "Firefox", null, "1.2.3.4"))
+        .isInstanceOf(AuthException.class);
+  }
+
+  @Test
+  void recoveryCodesAreStoredOnlyAsHashes() {
+    var setup = auth.setupMfa(user.getId());
+    var codes = auth.confirmMfa(user.getId(), UUID.randomUUID(),
+        totp.code(setup.secret(), Instant.now().getEpochSecond()));
+    assertThat(storedCodes).hasSize(8);
+    assertThat(storedCodes).noneMatch(c -> codes.stream().anyMatch(c.getCodeHash()::contains));
+  }
+
+  @Test
+  void twoStepCannotBeTurnedOffWhenItIsRequired() {
+    String secret = enableMfa();
+    props.getMfa().setRequired(true);
+    assertThatThrownBy(() -> auth.disableMfa(user.getId(),
+        totp.code(secret, Instant.now().getEpochSecond())))
+        .hasMessageContaining("requires two-step");
+    assertThat(user.isMfaEnabled()).isTrue();
+
+    props.getMfa().setRequired(false);
+    auth.disableMfa(user.getId(), totp.code(secret, Instant.now().getEpochSecond()));
+    assertThat(user.isMfaEnabled()).isFalse();
+    assertThat(user.getMfaSecret()).isNull();
+  }
+
+  @Test
+  void registrationClosesOnceTheOwnerExists() {
+    when(users.count()).thenReturn(1L);
+    assertThatThrownBy(() -> auth.register("intruder@jizza.local", "Correct-Horse-92"))
+        .isInstanceOf(com.jizza.engine.api.error.JizzaException.class)
+        .hasMessageContaining("already has its owner");
+    verify(users, never()).save(any());
+
+    props.getRegistration().setAllowAdditionalUsers(true);
+    when(users.existsByEmailIgnoreCase(any())).thenReturn(false);
+    when(users.save(any(UserEntity.class))).thenAnswer(inv -> {
+      UserEntity saved = inv.getArgument(0);
+      saved.setId(UUID.randomUUID());
+      return saved;
+    });
+    assertThat(auth.register("second@jizza.local", "Correct-Horse-92")).isNotNull();
+  }
+
+  @Test
+  void aStepUpFailureIsCountedAgainstTheSession() {
+    UUID sessionId = UUID.randomUUID();
+    when(sessions.recordStepUpFailure(sessionId)).thenReturn(true);
+    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong", null))
+        .isInstanceOf(AuthException.class);
+    verify(sessions).recordStepUpFailure(sessionId);
+    verify(alerts).alert(eq(user.getId()), any(), eq("A Jizza session was signed out"), any());
+  }
+
+  @Test
+  void changingThePasswordSignsOutEveryOtherSession() {
+    UUID sessionId = UUID.randomUUID();
+    auth.changePassword(user.getId(), sessionId, PASSWORD, "Another-Strong-1");
+    verify(sessions).revokeAllExcept(user.getId(), sessionId);
+  }
+
+  @Test
+  void signingInTellsTheDeviceTrackerAboutIt() {
+    auth.login("owner@jizza.local", PASSWORD, "Firefox", null, "1.2.3.4");
+    verify(alerts).signedIn(user.getId(), "owner@jizza.local", "Firefox", null);
   }
 
   @Test

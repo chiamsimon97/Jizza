@@ -44,6 +44,14 @@ public class SessionEntity {
 
   private Instant lastSeenAt;
 
+  /** SHA-256 of the cookie token; the token itself is never stored. */
+  @Column(columnDefinition = "text")
+  private String tokenHash;
+
+  private boolean mfaSatisfied;
+
+  private int stepUpFailures;
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -73,6 +81,15 @@ public class SessionEntity {
 
   public Instant getLastSeenAt() { return lastSeenAt; }
   public void setLastSeenAt(Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }
+
+  public String getTokenHash() { return tokenHash; }
+  public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
+
+  public boolean isMfaSatisfied() { return mfaSatisfied; }
+  public void setMfaSatisfied(boolean mfaSatisfied) { this.mfaSatisfied = mfaSatisfied; }
+
+  public int getStepUpFailures() { return stepUpFailures; }
+  public void setStepUpFailures(int stepUpFailures) { this.stepUpFailures = stepUpFailures; }
 
   @PrePersist
   void onCreate() {

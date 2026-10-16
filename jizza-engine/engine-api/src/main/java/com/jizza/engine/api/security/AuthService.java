@@ -2,6 +2,7 @@ package com.jizza.engine.api.security;
 
 import com.jizza.engine.api.dto.LoginResult;
 import com.jizza.engine.api.dto.MfaSetup;
+import com.jizza.engine.api.dto.SecurityStatus;
 import com.jizza.engine.api.dto.SessionDto;
 import java.net.InetAddress;
 import java.util.List;
@@ -19,7 +20,21 @@ public interface AuthService {
 
   MfaSetup setupMfa(UUID userId);
 
-  List<String> confirmMfa(UUID userId, String code);
+  /**
+   * Prove a code from the staged authenticator and switch two-step sign-in on. The session that did
+   * it counts as having passed the second factor; every other session is signed out.
+   *
+   * @return fresh one-time recovery codes, shown once
+   */
+  List<String> confirmMfa(UUID userId, UUID sessionId, String code);
+
+  /** Replace every recovery code with a new set. Old ones stop working at once. */
+  List<String> regenerateRecoveryCodes(UUID userId, String code);
+
+  /** Turn two-step sign-in off. Refused when the deployment requires it. */
+  void disableMfa(UUID userId, String code);
+
+  SecurityStatus status(UUID userId, UUID sessionId);
 
   void stepUp(UUID userId, UUID sessionId, String password, String code);
 
@@ -35,5 +50,6 @@ public interface AuthService {
 
   void resetPassword(String token, String newPassword);
 
-  void changePassword(UUID userId, String currentPassword, String newPassword);
+  /** Change the password and sign out every other session, keeping {@code sessionId}. */
+  void changePassword(UUID userId, UUID sessionId, String currentPassword, String newPassword);
 }

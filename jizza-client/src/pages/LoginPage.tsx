@@ -28,8 +28,8 @@ export function LoginPage() {
         setPendingMfa(result.mfaToken)
         navigate('/mfa')
       } else if (result.userId) {
-        setAuthenticated(result.userId)
-        navigate(from, { replace: true })
+        setAuthenticated(result.userId, result.enrollmentRequired)
+        navigate(result.enrollmentRequired ? '/setup-2fa' : from, { replace: true })
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')

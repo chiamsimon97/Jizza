@@ -2,8 +2,21 @@
 export interface LoginResult {
   mfaRequired: boolean
   mfaToken?: string
-  sessionId?: string
   userId?: string
+  /** Signed in, but two-step sign-in has to be set up before anything else works. */
+  enrollmentRequired?: boolean
+}
+
+export interface SecurityStatus {
+  userId: string
+  email: string
+  mfaEnabled: boolean
+  mfaEnabledAt?: string
+  /** This Jizza requires two-step sign-in for every account. */
+  mfaRequired: boolean
+  /** This session can only reach the two-step setup until it is finished. */
+  enrollmentRequired: boolean
+  recoveryCodesRemaining: number
 }
 
 export interface MfaSetup {
@@ -14,9 +27,11 @@ export interface MfaSetup {
 export interface SessionDto {
   id: string
   device?: string
+  ip?: string
   issuedAt: string
-  lastSeenAt: string
-  expiresAt: string
+  idleExpiresAt: string
+  absoluteExpiresAt: string
+  revoked: boolean
   current: boolean
 }
 

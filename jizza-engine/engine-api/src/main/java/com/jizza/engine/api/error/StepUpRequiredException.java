@@ -6,6 +6,6 @@ import org.springframework.http.HttpStatus;
 public class StepUpRequiredException extends JizzaException {
   public StepUpRequiredException() {
     super(HttpStatus.FORBIDDEN, "step-up-required", "Step-up re-authentication required",
-        "This action requires a fresh re-authentication. Call POST /api/auth/step-up first.");
+        "Confirm your password to continue (POST /api/auth/step-up).");
   }
 }

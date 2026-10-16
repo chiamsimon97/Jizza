@@ -91,9 +91,18 @@ jizza:
       absolute-timeout: 12h
       cookie-name: JIZZA_SESSION
       cookie-secure: ${JIZZA_COOKIE_SECURE:false}   # true wherever TLS terminates in front
-      same-site: Lax
+      same-site: Strict
     step-up:
       freshness: 5m
+      max-failures: 5                 # wrong step-up answers in a row before the session is revoked
+    mfa:
+      # Jizza holds memory, personal data and live credentials, so every account must use an
+      # authenticator app. Until it is set up, a signed-in session can only reach the setup screens.
+      required: ${JIZZA_MFA_REQUIRED:true}
+      recovery-codes: 8
+    registration:
+      # Single-user: once the owner's account exists, nobody else can register.
+      allow-additional-users: ${JIZZA_ALLOW_ADDITIONAL_USERS:false}
     lockout:
       max-failed-attempts: 5
       lockout-duration: 15m

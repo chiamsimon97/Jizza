@@ -3,13 +3,20 @@ package com.jizza.engine.security.session;
 import com.jizza.engine.security.config.SecurityProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
-import java.util.UUID;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
-/** httpOnly + Secure + SameSite session cookie handling (R5). */
+/**
+ * httpOnly + Secure + SameSite session cookie handling (R5).
+ *
+ * <p>The cookie carries an opaque random token, never the session's row id. When the cookie is
+ * Secure it also takes the {@code __Host-} prefix, which browsers only accept from a secure origin,
+ * on path {@code /} and without a Domain, so a sibling subdomain cannot plant or overwrite it.
+ */
 @Component
 public class SessionCookies {
+
+  private static final int MAX_TOKEN_LENGTH = 128;
 
   private final SecurityProperties props;
 
@@ -17,10 +24,13 @@ public class SessionCookies {
     this.props = props;
   }
 
-  public String cookieName() { return props.getSession().getCookieName(); }
+  public String cookieName() {
+    String name = props.getSession().getCookieName();
+    return props.getSession().isCookieSecure() ? "__Host-" + name : name;
+  }
 
-  public ResponseCookie issue(UUID sessionId) {
-    return base(sessionId.toString())
+  public ResponseCookie issue(String token) {
+    return base(token)
         .maxAge(props.getSession().getAbsoluteTimeout())
         .build();
   }
@@ -37,16 +47,15 @@ public class SessionCookies {
         .path("/");
   }
 
-  public Optional<UUID> read(HttpServletRequest request) {
+  public Optional<String> read(HttpServletRequest request) {
     if (request.getCookies() == null) return Optional.empty();
     for (var cookie : request.getCookies()) {
-      if (cookieName().equals(cookie.getName()) && cookie.getValue() != null
-          && !cookie.getValue().isBlank()) {
-        try {
-          return Optional.of(UUID.fromString(cookie.getValue()));
-        } catch (IllegalArgumentException e) {
+      if (cookieName().equals(cookie.getName())) {
+        String value = cookie.getValue();
+        if (value == null || value.isBlank() || value.length() > MAX_TOKEN_LENGTH) {
           return Optional.empty();
         }
+        return Optional.of(value);
       }
     }
     return Optional.empty();

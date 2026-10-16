@@ -5,6 +5,7 @@ import { Sidebar, Logo } from './Sidebar'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
 import { JizzaDock } from '@/jizza/JizzaDock'
 import { StepUpDialog } from './StepUpDialog'
+import { IdleSignOut } from '@/components/security/IdleSignOut'
 
 const COLLAPSED_KEY = 'jizza-sidebar-collapsed'
 
@@ -33,6 +34,7 @@ export function AppShell() {
   return (
     <div className="app-bg flex h-screen overflow-hidden">
       <StepUpDialog />
+      <IdleSignOut />
       {/* Desktop sidebar */}
       <div className="hidden md:block">
         <Sidebar collapsed={collapsed} onToggleCollapsed={() => setCollapsed(c => !c)} />

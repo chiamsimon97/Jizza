@@ -40,7 +40,7 @@ export function StepUpDialog() {
     setBusy(true)
     setError('')
     try {
-      await authApi.stepUp(password, code || undefined)
+      await authApi.stepUp(password, code.trim() || undefined)
       finish(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work')
@@ -65,8 +65,8 @@ export function StepUpDialog() {
         <div className="flex flex-col gap-3">
           <Input label="Password" type="password" autoFocus required autoComplete="current-password"
             value={password} onChange={e => setPassword(e.target.value)} />
-          <Input label="Authenticator code" hint="Only if you turned on two-factor sign-in"
-            inputMode="numeric" value={code} onChange={e => setCode(e.target.value)} />
+          <Input label="Authenticator code" hint="Needed once two-step sign-in is on. A recovery code works too."
+            autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} />
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="mt-1 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => finish(false)}>Cancel</Button>
