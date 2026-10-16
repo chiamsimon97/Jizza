@@ -11,6 +11,8 @@ import { servicesApi } from '@/api/services'
 import type { AuthScheme } from '@/types'
 import { AUTH_LABELS, SectionHeader, errorText } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** How the service signs in, and this account's connection to it. */
 export function AuthenticationTab({ detail, refresh }: TabProps) {
@@ -81,16 +83,16 @@ export function AuthenticationTab({ detail, refresh }: TabProps) {
               ? conn.tokenPresent ? `Token${conn.tokenExpiresAt ? ` expires ${new Date(conn.tokenExpiresAt).toLocaleString()}` : ' stored'}` : 'Not signed in yet'
               : conn.clientSecretSet ? 'Credential stored (encrypted)' : conn.authScheme === 'NO_AUTH' ? 'No credential needed' : 'No credential yet'}
           </span>
-          {conn.authScheme === 'OAUTH2' && <Button size="sm" loading={connect.isPending} onClick={() => connect.mutate()}>Sign in</Button>}
-          <Button size="sm" variant="secondary" loading={test.isPending} onClick={() => test.mutate()}>Test</Button>
-          <Button size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate()}>Disconnect</Button>
+          {conn.authScheme === 'OAUTH2' && <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" loading={connect.isPending} onClick={() => connect.mutate()}>Sign in</Button></Can>}
+          <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="secondary" loading={test.isPending} onClick={() => test.mutate()}>Test</Button></Can>
+          <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate()}>Disconnect</Button></Can>
         </Card>
         {test.data && <p className={`mt-2 text-sm ${test.data.ok ? 'text-green-600' : 'text-red-500'}`}>{test.data.ok ? 'Test call succeeded.' : `Test failed: ${test.data.message ?? test.data.httpStatus}`}</p>}
         {(test.error || connect.error || revoke.error) && <p className="mt-2 text-sm text-red-500">{errorText(test.error || connect.error || revoke.error)}</p>}
       </div>
 
       <form onSubmit={submit}>
-        <SectionHeader title="Authentication scheme" action={<Button size="sm" type="submit" loading={save.isPending}>Save</Button>} />
+        <SectionHeader title="Authentication scheme" action={<Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" type="submit" loading={save.isPending}>Save</Button></Can>} />
         <Card className="flex flex-col gap-4">
           <div role="radiogroup" aria-label="Authentication scheme" className="flex flex-wrap gap-2">
             {(Object.keys(AUTH_LABELS) as AuthScheme[]).map(k => (

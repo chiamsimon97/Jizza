@@ -11,6 +11,8 @@ import { servicesApi } from '@/api/services'
 import type { ServiceAction, ServiceApi } from '@/types'
 import { Empty, JsonBlock, SectionHeader, Table, errorText, toMachineName } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** What agents can do with the service. Each action runs one API and is handed to chosen agents. */
 export function ActionsTab({ detail, refresh }: TabProps) {
@@ -28,7 +30,7 @@ export function ActionsTab({ detail, refresh }: TabProps) {
   return (
     <div>
       <SectionHeader title="Actions" description="Helper actions your agents can run. Agents only see them when the service is Live and the action is given to them."
-        action={<Button size="sm" disabled={detail.apis.length === 0} onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New action</Button>} />
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" disabled={detail.apis.length === 0} onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New action</Button></Can>} />
       {detail.apis.length === 0 && <Empty>Add an API first; every action runs one.</Empty>}
       {detail.apis.length > 0 && detail.actions.length === 0 && <Empty>No actions yet.</Empty>}
       {detail.actions.length > 0 && (
@@ -45,12 +47,12 @@ export function ActionsTab({ detail, refresh }: TabProps) {
               <td className="px-4 py-3 font-mono text-xs">{apiOf(a.apiId) ? `${apiOf(a.apiId)!.httpMethod} ${apiOf(a.apiId)!.pathTemplate}` : '—'}</td>
               <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">{agentNames(a.agentIds).join(', ') || 'None yet'}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" aria-label={`Choose agents for ${a.label}`} onClick={() => setAssigning(a)}><Users className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Test ${a.label}`} onClick={() => setTesting(a)}><FlaskConical className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Edit ${a.label}`} onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Delete ${a.label}`} onClick={() => {
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Choose agents for ${a.label}`} onClick={() => setAssigning(a)}><Users className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Test ${a.label}`} onClick={() => setTesting(a)}><FlaskConical className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Edit ${a.label}`} onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" aria-label={`Delete ${a.label}`} onClick={() => {
                   if (window.confirm(`Delete ${a.label}? Agents that have it lose it.`)) remove.mutate(a.id)
-                }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                }}><Trash2 className="h-3.5 w-3.5" /></Button></Can>
               </td>
             </tr>
           ))}

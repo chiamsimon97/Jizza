@@ -67,6 +67,7 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
   private final TransactionTemplate transactions;
   private final RecoveryCodes recoveryCodes;
   private final SecurityAlerts alerts;
+  private final com.jizza.engine.api.workspace.WorkspaceDirectory workspaces;
   private final SecureRandom random = new SecureRandom();
 
   public DefaultAuthService(UserRepository users, PasswordResetTokenRepository resetTokens,
@@ -76,7 +77,8 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
                      SecurityProperties props, ApplicationEventPublisher events,
                      LoginAttempts attempts,
                      org.springframework.transaction.PlatformTransactionManager txManager,
-                     RecoveryCodes recoveryCodes, SecurityAlerts alerts) {
+                     RecoveryCodes recoveryCodes, SecurityAlerts alerts,
+                     com.jizza.engine.api.workspace.WorkspaceDirectory workspaces) {
     this.users = users;
     this.resetTokens = resetTokens;
     this.passwordEncoder = passwordEncoder;
@@ -93,6 +95,7 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     this.transactions = new TransactionTemplate(txManager);
     this.recoveryCodes = recoveryCodes;
     this.alerts = alerts;
+    this.workspaces = workspaces;
   }
 
   /**
@@ -101,11 +104,24 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
    * {@code users}, so they run after the transaction that creates it, not inside it.
    */
   @Override
-  public UUID register(String email, String password) {
+  public UUID register(com.jizza.engine.api.security.RegistrationRequest request) {
+    String email = request.email() == null ? null : request.email().trim();
+    String password = request.password();
+    var accountType = request.accountType() == null
+        ? com.jizza.engine.api.enums.WorkspaceType.PERSONAL : request.accountType();
     if (email == null || !email.contains("@")) throw new ValidationException("A valid email is required");
-    // Jizza is one person's assistant: once the owner exists, the door is shut. Checked before the
+    String organizationName = null;
+    if (accountType == com.jizza.engine.api.enums.WorkspaceType.ORGANIZATION) {
+      organizationName = request.organizationName() == null ? "" : request.organizationName().trim();
+      if (organizationName.length() < 2 || organizationName.length() > 100) {
+        throw new ValidationException("The organization name must be 2 to 100 characters");
+      }
+    }
+    // Jizza is one person's assistant: once the owner exists, the door is shut -- except for an
+    // email someone was invited with, arriving through that invitation's link. Checked before the
     // password policy so a closed instance says nothing about what it would have accepted.
-    if (!props.getRegistration().isAllowAdditionalUsers() && users.count() > 0) {
+    if (!props.getRegistration().isAllowAdditionalUsers() && users.count() > 0
+        && !invitedThroughLink(email, request.invitationToken())) {
       throw new com.jizza.engine.api.error.JizzaException(
           org.springframework.http.HttpStatus.FORBIDDEN, "registration-closed",
           "Registration is closed", "This Jizza already has its owner. Sign in instead.");
@@ -124,7 +140,23 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
       return users.save(user).getId();
     });
 
-    audit.record(userId, ActorType.USER, userId, "auth.register", email, null);
+    // Every person has their own account; an organization sign-up also creates the organization
+    // and starts them in it. Runs after the user row commits, like the audit write below.
+    String orgName = organizationName;
+    UUID startIn = transactions.execute(status -> {
+      UUID personal = workspaces.personalWorkspaceOf(userId);
+      UUID start = personal;
+      if (orgName != null) start = workspaces.createOrganization(userId, orgName).id();
+      workspaces.rememberActiveWorkspace(userId, start);
+      workspaces.linkPendingInvitations(email, userId);
+      return start;
+    });
+
+    audit.record(userId, ActorType.USER, userId, "auth.register", email,
+        Json.obj().put("accountType", accountType.name()));
+    audit.record(userId, ActorType.USER, userId, "workspace.created",
+        orgName == null ? "Personal" : orgName,
+        Json.obj().put("workspaceId", startIn.toString()).put("type", accountType.name()));
     // Agent seeding, the kill-switch row and the default autonomy policies hang off this.
     events.publishEvent(new com.jizza.engine.api.event.UserRegistered(userId, email));
     return userId;
@@ -174,7 +206,8 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
 
     // Without a second factor on the account, this session has not passed one. When two-step
     // sign-in is required it can only reach the setup endpoints (MfaEnrollmentFilter).
-    IssuedSession issued = sessions.create(user.getId(), device, ip, false);
+    IssuedSession issued = sessions.create(user.getId(), device, ip, false,
+        startingWorkspace(user.getId()));
     audit.record(user.getId(), ActorType.USER, user.getId(), "auth.login.success", email,
         Json.obj().put("sessionId", issued.session().getId().toString()));
     alerts.signedIn(user.getId(), user.getEmail(), device, ip);
@@ -201,7 +234,7 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
       attempts.recordRefusal(userId, "auth.mfa.failed", user.getEmail());
       throw new AuthException("That verification code is not valid");
     }
-    IssuedSession issued = sessions.create(userId, device, ip, true);
+    IssuedSession issued = sessions.create(userId, device, ip, true, startingWorkspace(userId));
     audit.record(userId, ActorType.USER, userId, "auth.mfa.verified", user.getEmail(),
         Json.obj().put("sessionId", issued.session().getId().toString())
             .put("recoveryCode", usedRecoveryCode));
@@ -488,6 +521,26 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     alerts.alert(userId, user.getEmail(), "Your Jizza password was changed",
         "Your Jizza password was changed and other devices were signed out. If this was not you, "
             + "reset your password right away.");
+  }
+
+  /**
+   * Whether an email may register while registration is closed: only with the sign-up token of a
+   * pending, unexpired membership request sent to that same address.
+   */
+  private boolean invitedThroughLink(String email, String token) {
+    if (token == null || token.isBlank()) return false;
+    throttle.check("invite-token:" + email.toLowerCase(java.util.Locale.ROOT));
+    return workspaces.pendingInvitationBySignupToken(Hashing.sha256Hex(token))
+        .filter(i -> i.email().equalsIgnoreCase(email))
+        .filter(i -> !i.expired(Instant.now()))
+        .isPresent();
+  }
+
+  /** The account a new session starts in: the last one used, if still a member, else personal. */
+  private UUID startingWorkspace(UUID userId) {
+    return workspaces.lastActiveWorkspace(userId)
+        .filter(ws -> workspaces.membership(ws, userId).filter(m -> m.active()).isPresent())
+        .orElseGet(() -> workspaces.personalWorkspaceOf(userId));
   }
 
   private boolean isLockedOut(UserEntity user) {

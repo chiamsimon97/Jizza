@@ -23,6 +23,13 @@ public interface SessionRepository extends JpaRepository<SessionEntity, UUID> {
   @Query("update SessionEntity s set s.revoked = true where s.userId = :userId and s.id <> :keep")
   int revokeAllForUserExcept(@Param("userId") UUID userId, @Param("keep") UUID keep);
 
+  /** Moves a person's sessions out of a workspace they no longer belong to. */
+  @Modifying
+  @Query("update SessionEntity s set s.activeWorkspaceId = :fallback "
+      + "where s.userId = :userId and s.activeWorkspaceId = :workspaceId")
+  int moveOffWorkspace(@Param("userId") UUID userId, @Param("workspaceId") UUID workspaceId,
+                       @Param("fallback") UUID fallback);
+
   @Modifying
   @Query("delete from SessionEntity s where s.absoluteExpiresAt < :cutoff")
   int deleteExpired(@Param("cutoff") Instant cutoff);

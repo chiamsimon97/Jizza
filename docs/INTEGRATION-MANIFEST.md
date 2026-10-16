@@ -165,6 +165,25 @@ module.
     change, the server sent to `/topic/{userId}` while the client listened on `/user/queue`, and
     the topic name was guessable.
 
+20. **Accounts, members and roles (`V12__workspaces_and_rbac.sql`).** Jizza was one person per
+    instance, with every row keyed by `user_id`. It now has workspaces: each person has one
+    `personal` workspace (backfilled for existing users) and may own or join `organization`
+    workspaces through `workspace_members` and `workspace_invitations`. Only connectors moved:
+    `connections.workspace_id` (slug unique per workspace), so `ConnectionStore.list`,
+    `ServiceDefinitions.list` and the connector use cases now take an `Access(userId, workspaceId)`
+    instead of a user id. Everything else is still personal and is marked `@AuthenticatedOnly`.
+    The active workspace lives on the session (`sessions.active_workspace_id`); switching replaces
+    the session. Permissions are not a table: `security/permissions.json` is parsed and validated
+    by `JsonPermissionCatalog` at startup, `PermissionInterceptor` enforces `@RequiresPermission`
+    before `StepUpInterceptor`, and `EndpointAuthorizationCoverageVerifier` fails startup if a
+    handler carries no authorization annotation or the public paths drift from `SecurityConfig`.
+    Tools from an organization connector are only usable by an agent while its owner holds
+    `connector_view` there: `ToolProvider.workspaceOf` lets `DefaultCapabilityRegistry` and
+    `ConnectorToolNodeExecutor` check that before the autonomy gate, and
+    `POST /api/agents/{id}/capabilities` refuses the grant. The audit hash now canonicalises the
+    detail's key order to jsonb's, because a multi-key detail read back from jsonb hashed
+    differently from how it was written.
+
 ## Acceptance suite
 
 `jizza-app/src/test/java/com/jizza/app/e2e` — 107 tests, the whole application booted against a real
@@ -180,6 +199,7 @@ scripted, and the background pollers are switched off so tests drive them determ
 | `ProceduresAndAutonomyE2eTest` | 19 | repetitive job → proposal → review → approve binds → exact execution, deviation → intervention, edit re-review, rollback, kill switch halting and resuming, `deny` blocked, `ask` routed to permission, per-agent disable |
 | `MemoryE2eTest` | 5 | a question about the user's wife reaching Kai with her plan, risk tolerance and Connector already in context (and nothing from health), Jizza seeing only the shared layer, preview/search/correct/forget, user isolation, learning from chat and withdrawing consent, export |
 | `CosmosE2eTest` | 8 | the wife under Jizza and her account under Kai linked to her and the Connector, one read stamp by Kai for the turn that used her plan, sharing with Cato reaching Cato but not Vita and unsharing undoing it, a restricted fact locked for agents and revealed only after step-up, move and forget needing step-up with a content-free audit trail, a note moved or promoted but never shared, a new memory pushed to an open Cosmos with ids only, another user unable to see or change any of it |
+| `WorkspacesAndRbacE2eTest` | 11 | organization sign-up, invite → pending request → accept → switch (new cookie, old one dead), connectors scoped to the account, User role refused connectors with `permission-denied`, permission checked before step-up, role change and removal moving the member back to their own account, leaving, creating an organization |
 | `PlatformE2eTest` | 19 | blocking items chased then expired, realtime push to the user's own STOMP queue (and never to another user's socket), health and metrics, verified webhook firing a workflow, export without credentials, hard delete, audit chain verification and the activity view |
 
 Run: `mvn test` (DB-backed tests skip) or, with a PostgreSQL,

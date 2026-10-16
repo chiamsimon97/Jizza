@@ -93,6 +93,13 @@ public class ServiceActionToolProvider implements ToolProvider {
     return runner.runAction(u.service().getId(), u.action().getId(), call.args(), "agent", key);
   }
 
+  /** A service action belongs to its service's workspace. */
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<UUID> workspaceOf(UUID agentId, String toolName) {
+    return find(agentId, toolName).map(u -> u.service().getWorkspaceId());
+  }
+
   private Optional<Usable> find(UUID agentId, String toolName) {
     return usable(agentId).stream().filter(u -> u.toolName().equals(toolName)).findFirst();
   }

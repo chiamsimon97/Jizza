@@ -52,6 +52,9 @@ public class SessionEntity {
 
   private int stepUpFailures;
 
+  /** The account this session is acting in. */
+  private UUID activeWorkspaceId;
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -87,6 +90,9 @@ public class SessionEntity {
 
   public boolean isMfaSatisfied() { return mfaSatisfied; }
   public void setMfaSatisfied(boolean mfaSatisfied) { this.mfaSatisfied = mfaSatisfied; }
+
+  public UUID getActiveWorkspaceId() { return activeWorkspaceId; }
+  public void setActiveWorkspaceId(UUID activeWorkspaceId) { this.activeWorkspaceId = activeWorkspaceId; }
 
   public int getStepUpFailures() { return stepUpFailures; }
   public void setStepUpFailures(int stepUpFailures) { this.stepUpFailures = stepUpFailures; }

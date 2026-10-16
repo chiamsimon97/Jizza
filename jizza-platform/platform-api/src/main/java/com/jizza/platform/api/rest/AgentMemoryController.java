@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.knowledge.MemoryFile;
 import com.jizza.engine.security.session.CurrentUser;
@@ -25,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 /** Each agent's memory: what it knows about the user, and the files the user gave it. */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/agents/{agentId}/memory")
 public class AgentMemoryController {
 

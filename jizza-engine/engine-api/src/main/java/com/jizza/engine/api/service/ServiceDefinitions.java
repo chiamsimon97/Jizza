@@ -24,7 +24,8 @@ import java.util.UUID;
  */
 public interface ServiceDefinitions {
 
-  List<Info> list(UUID userId);
+  /** The services owned by a workspace. */
+  List<Info> list(UUID workspaceId);
 
   Optional<Info> find(UUID serviceId);
 

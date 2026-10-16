@@ -2,15 +2,23 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, GitBranch, Shield, Activity, BarChart2,
-  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck,
+  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { endLocalSession } from '@/lib/session'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
 import { JizzaLogo } from '@/components/brand/JizzaLogo'
 import { useAssistantStore } from '@/jizza/assistantStore'
+import { useAuthorization } from '@/auth/useAuthorization'
+import { PERMISSIONS } from '@/lib/permissions'
+import type { AuthorizationSnapshot } from '@/types'
+import { AccountSwitcher } from './AccountSwitcher'
 
-const sections = [
+interface NavItem { to: string; icon: LucideIcon; label: string; permission?: string }
+interface NavSection { title: string; items: NavItem[] }
+
+/** The Individual account's sections. Connectors appear only with `connector_view`. */
+const personalSections: NavSection[] = [
   {
     title: 'Workspace',
     items: [
@@ -26,7 +34,7 @@ const sections = [
       { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
       { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
       { to: '/procedures',  icon: GitBranch, label: 'Procedures' },
-      { to: '/connectors',  icon: Plug,      label: 'Connectors' },
+      { to: '/connectors',  icon: Plug,      label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
     ],
   },
   {
@@ -39,6 +47,33 @@ const sections = [
     ],
   },
 ]
+
+/** An Organization account shows only what is workspace-scoped, plus the person's own settings. */
+const organizationSections: NavSection[] = [
+  {
+    title: 'Organization',
+    items: [
+      { to: '/members',    icon: Users, label: 'Members',    permission: PERMISSIONS.MEMBERS_VIEW },
+      { to: '/connectors', icon: Plug,  label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { to: '/notifications',     icon: Bell,        label: 'Notifications' },
+      { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
+    ],
+  },
+]
+
+/** The sidebar's sections for the active account, with items the role can't open left out. */
+export function sectionsFor(snapshot: AuthorizationSnapshot): NavSection[] {
+  const granted = new Set(snapshot.permissions)
+  const base = snapshot.activeWorkspace.type === 'ORGANIZATION' ? organizationSections : personalSections
+  return base
+    .map(section => ({ ...section, items: section.items.filter(i => !i.permission || granted.has(i.permission)) }))
+    .filter(section => section.items.length > 0)
+}
 
 interface SidebarProps {
   collapsed: boolean
@@ -54,6 +89,10 @@ export function Logo({ collapsed = false }: { collapsed?: boolean }) {
 
 export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps) {
   const navigate = useNavigate()
+  const { data: snapshot, isError } = useAuthorization()
+  // Until the account is known, show nothing rather than the wrong account's sections. If it can't
+  // be loaded at all, fall back to the personal sections; the server still checks every request.
+  const sections = snapshot ? sectionsFor(snapshot) : isError ? personalSections : []
   async function signOut() {
     try { await authApi.logout() } catch { /* session may already be gone */ }
     endLocalSession()
@@ -78,6 +117,8 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
           </button>
         )}
       </div>
+
+      <AccountSwitcher collapsed={collapsed} onNavigate={onClose} />
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {sections.map(section => (

@@ -1,13 +1,16 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { AuthLayout } from '@/components/layout/AuthLayout'
+import { destinationAfterSignIn } from '@/auth/signIn'
 
 export function MfaPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: string } | null)?.from
   const { mfaToken, setAuthenticated, clear } = useAuthStore()
   const [code, setCode] = useState('')
   const [useRecovery, setUseRecovery] = useState(false)
@@ -23,7 +26,12 @@ export function MfaPage() {
       const result = await authApi.verifyMfa({ mfaToken: mfaToken, code: code.trim() })
       if (result.userId) {
         setAuthenticated(result.userId, result.enrollmentRequired)
-        navigate('/chat', { replace: true })
+        if (result.enrollmentRequired) {
+          navigate('/setup-2fa', { replace: true })
+        } else {
+          const { to, state } = await destinationAfterSignIn(from)
+          navigate(to, { replace: true, state })
+        }
       }
     } catch (err: unknown) {
       // A wrong code spends the sign-in attempt, so the password is needed again.

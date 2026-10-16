@@ -8,6 +8,8 @@ import { servicesApi } from '@/api/services'
 import type { ServiceVariable } from '@/types'
 import { Empty, SectionHeader, Table, errorText } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** Service-wide values the APIs reference as {{var.name}}. */
 export function VariablesTab({ detail, refresh }: TabProps) {
@@ -20,7 +22,7 @@ export function VariablesTab({ detail, refresh }: TabProps) {
   return (
     <div>
       <SectionHeader title="Variables" description="Use them in the base URL, API paths and fixed headers as {{var.name}}. Secret values are encrypted and never shown again."
-        action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New variable</Button>} />
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New variable</Button></Can>} />
       {detail.variables.length === 0 ? <Empty>No variables yet. Typical ones are an organisation id, a region or a data centre.</Empty> : (
         <Table head={['Name', 'Value', 'Description', '']}>
           {detail.variables.map(v => (
@@ -31,10 +33,10 @@ export function VariablesTab({ detail, refresh }: TabProps) {
               </td>
               <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{v.description ?? ''}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" aria-label={`Edit ${v.name}`} onClick={() => setEditing(v)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Delete ${v.name}`} onClick={() => {
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Edit ${v.name}`} onClick={() => setEditing(v)}><Pencil className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" aria-label={`Delete ${v.name}`} onClick={() => {
                   if (window.confirm(`Delete ${v.name}? APIs that use it will stop working.`)) remove.mutate(v.id)
-                }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                }}><Trash2 className="h-3.5 w-3.5" /></Button></Can>
               </td>
             </tr>
           ))}

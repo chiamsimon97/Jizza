@@ -131,9 +131,13 @@ class CosmosDbTest {
     vita = insertAgent(user, "health", "Vita", "health", false);
     cato = insertAgent(user, "professional", "Cato", "professional", false);
     zerodha = jdbc.queryForObject("""
-        insert into connections (user_id, service_name, auth_scheme, slug, status, access_token)
-        values (?, 'Zerodha', 'oauth2', ?, 'connected', 'secret-token'::bytea) returning id
-        """, UUID.class, user, "zerodha_" + user.toString().substring(0, 6));
+        with w as (insert into workspaces (type, name, created_by_user_id)
+                   values ('personal', 'Personal', ?) returning id)
+        insert into connections (user_id, workspace_id, service_name, auth_scheme, slug, status,
+                                 access_token)
+        select ?, w.id, 'Zerodha', 'oauth2', ?, 'connected', 'secret-token'::bytea from w
+        returning id
+        """, UUID.class, user, user, "zerodha_" + user.toString().substring(0, 6));
     Providers.CONNECTOR_FOR_AGENT.put(kai, zerodha);
 
     Actor me = Actor.user(user);

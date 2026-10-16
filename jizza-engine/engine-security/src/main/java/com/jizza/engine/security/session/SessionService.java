@@ -40,6 +40,13 @@ public class SessionService {
    */
   @Transactional
   public IssuedSession create(UUID userId, String device, InetAddress ip, boolean mfaSatisfied) {
+    return create(userId, device, ip, mfaSatisfied, null);
+  }
+
+  /** Opens a session acting in {@code activeWorkspaceId}. */
+  @Transactional
+  public IssuedSession create(UUID userId, String device, InetAddress ip, boolean mfaSatisfied,
+                              UUID activeWorkspaceId) {
     byte[] raw = new byte[32];
     random.nextBytes(raw);
     String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
@@ -56,7 +63,41 @@ public class SessionService {
     s.setRevoked(false);
     s.setTokenHash(Hashing.sha256Hex(token));
     s.setMfaSatisfied(mfaSatisfied);
+    s.setActiveWorkspaceId(activeWorkspaceId);
     return new IssuedSession(sessions.save(s), token);
+  }
+
+  /**
+   * Switches accounts by replacing the session: a new token acting in {@code workspaceId}, with the
+   * same person, device and second-factor state, and the old session revoked. A fresh token on every
+   * change of account is the same defence against session fixation as on sign-in; step-up freshness
+   * deliberately does not carry over.
+   */
+  @Transactional
+  public IssuedSession switchWorkspace(UUID sessionId, UUID workspaceId) {
+    SessionEntity old = sessions.findById(sessionId)
+        .filter(s -> !s.isRevoked())
+        .orElseThrow(() -> new com.jizza.engine.api.error.AuthException("Not authenticated"));
+    IssuedSession issued = create(old.getUserId(), old.getDevice(), old.getIp(),
+        old.isMfaSatisfied(), workspaceId);
+    old.setRevoked(true);
+    sessions.save(old);
+    return issued;
+  }
+
+  /** Points a session at another account without reissuing it (fallback after losing access). */
+  @Transactional
+  public void setActiveWorkspace(UUID sessionId, UUID workspaceId) {
+    sessions.findById(sessionId).ifPresent(s -> {
+      s.setActiveWorkspaceId(workspaceId);
+      sessions.save(s);
+    });
+  }
+
+  /** Moves a person's sessions acting in {@code workspaceId} to {@code fallback}. */
+  @Transactional
+  public int moveOffWorkspace(UUID userId, UUID workspaceId, UUID fallback) {
+    return sessions.moveOffWorkspace(userId, workspaceId, fallback);
   }
 
   /**

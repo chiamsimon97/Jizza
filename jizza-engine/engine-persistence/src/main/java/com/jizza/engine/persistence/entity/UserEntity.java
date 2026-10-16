@@ -1,5 +1,6 @@
 package com.jizza.engine.persistence.entity;
 
+import com.jizza.engine.api.enums.PlatformRole;
 import com.jizza.engine.api.enums.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -50,6 +51,12 @@ public class UserEntity {
 
   private Instant mfaEnabledAt;
 
+  /** Set only by configuration at startup; no request can change it. */
+  @Column(nullable = false)
+  private PlatformRole platformRole = PlatformRole.NONE;
+
+  private UUID lastActiveWorkspaceId;
+
   private Instant createdAt;
 
   private Instant updatedAt;
@@ -83,6 +90,12 @@ public class UserEntity {
 
   public Instant getMfaEnabledAt() { return mfaEnabledAt; }
   public void setMfaEnabledAt(Instant mfaEnabledAt) { this.mfaEnabledAt = mfaEnabledAt; }
+
+  public PlatformRole getPlatformRole() { return platformRole; }
+  public void setPlatformRole(PlatformRole platformRole) { this.platformRole = platformRole; }
+
+  public UUID getLastActiveWorkspaceId() { return lastActiveWorkspaceId; }
+  public void setLastActiveWorkspaceId(UUID lastActiveWorkspaceId) { this.lastActiveWorkspaceId = lastActiveWorkspaceId; }
 
   public int getFailedLogins() { return failedLogins; }
   public void setFailedLogins(int failedLogins) { this.failedLogins = failedLogins; }

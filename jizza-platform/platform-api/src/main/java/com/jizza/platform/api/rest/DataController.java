@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.lifecycle.DataLifecycleService;
 import com.jizza.engine.security.session.CurrentUser;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Export and "forget everything" (R48). Both are step-up guarded; the second is irreversible. */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/data")
 @com.jizza.engine.api.util.StepUpRequired
 public class DataController {

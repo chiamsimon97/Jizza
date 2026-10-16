@@ -42,6 +42,22 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
     this.sandbox = sandbox;
   }
 
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.authz.PermissionEvaluator> permissions;
+  private com.jizza.engine.persistence.repository.ConnectionRepository connections;
+
+  /**
+   * Account permissions: this node calls the executor directly rather than through the Capability
+   * Registry, so it repeats the registry's check that the run's owner may use the connector in the
+   * account that owns it. Optional so the engine harness can run without access control.
+   */
+  @org.springframework.beans.factory.annotation.Autowired
+  public void setAccessControl(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.authz.PermissionEvaluator> permissions,
+      com.jizza.engine.persistence.repository.ConnectionRepository connections) {
+    this.permissions = permissions;
+    this.connections = connections;
+  }
+
   @Override
   public NodeType type() { return NodeType.CONNECTOR_TOOL; }
 
@@ -65,6 +81,11 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
     }
     if (!entity.isEnabled()) {
       return Outcome.permanentFailure("The tool '" + entity.getName() + "' is disabled");
+    }
+
+    if (!accountAllows(execution.userId(), entity.getConnectionId())) {
+      return Outcome.permanentFailure("You don't have access to the connector behind '"
+          + entity.getName() + "'");
     }
 
     JsonNode args;
@@ -103,6 +124,16 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
     return isRetryable(result.error())
         ? Outcome.retryable(result.error())
         : Outcome.permanentFailure(result.error());
+  }
+
+  private boolean accountAllows(UUID userId, UUID connectionId) {
+    if (permissions == null || connections == null) return true;
+    var evaluator = permissions.getIfAvailable();
+    if (evaluator == null) return true;
+    return connections.findById(connectionId)
+        .map(c -> evaluator.isAllowed(userId, c.getWorkspaceId(),
+            com.jizza.engine.api.authz.Permissions.CONNECTOR_VIEW))
+        .orElse(false);
   }
 
   /**

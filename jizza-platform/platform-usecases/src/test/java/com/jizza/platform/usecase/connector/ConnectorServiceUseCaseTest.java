@@ -36,6 +36,8 @@ import org.junit.jupiter.api.Test;
 class ConnectorServiceUseCaseTest {
 
   private final UUID userId = UUID.randomUUID();
+  private final com.jizza.engine.api.authz.Access access =
+      new com.jizza.engine.api.authz.Access(userId, userId);
   private final UUID serviceId = UUID.randomUUID();
   private ServiceDefinitions definitions;
   private CapabilityRegistry capabilities;
@@ -55,6 +57,7 @@ class ConnectorServiceUseCaseTest {
     ConnectionStore store = mock(ConnectionStore.class);
     ConnectionDto connection = mock(ConnectionDto.class);
     when(connection.userId()).thenReturn(userId);
+    when(connection.workspaceId()).thenReturn(userId);
     when(store.find(serviceId)).thenReturn(Optional.of(connection));
     useCase = new ConnectorServiceUseCase(definitions, mock(ServiceRunner.class),
         new ConnectionUseCase(store, mock(AuditLog.class)), capabilities, agents,
@@ -64,7 +67,7 @@ class ConnectorServiceUseCaseTest {
   @Test
   void publishingListsEverythingStillMissing() {
     when(definitions.find(serviceId)).thenReturn(Optional.of(info(null, AuthScheme.API_KEY, false)));
-    assertThatThrownBy(() -> useCase.publish(userId, serviceId))
+    assertThatThrownBy(() -> useCase.publish(access, serviceId))
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("base URL")
         .hasMessageContaining("credential")
@@ -79,7 +82,7 @@ class ConnectorServiceUseCaseTest {
     when(definitions.actions(serviceId)).thenReturn(List.of(action(List.of())));
     when(definitions.setVersionStatus(serviceId, "live"))
         .thenReturn(info("https://api.test", AuthScheme.NO_AUTH, false));
-    useCase.publish(userId, serviceId);
+    useCase.publish(access, serviceId);
     verify(definitions).setVersionStatus(serviceId, "live");
   }
 
@@ -93,7 +96,7 @@ class ConnectorServiceUseCaseTest {
         .thenReturn(Optional.of(info("https://api.test", AuthScheme.NO_AUTH, false)));
     when(definitions.action(action.id())).thenReturn(Optional.of(action));
 
-    useCase.assignAgents(userId, serviceId, action.id(), List.of(keep, add));
+    useCase.assignAgents(access, serviceId, action.id(), List.of(keep, add));
 
     verify(capabilities).grant(add, CapabilityType.SERVICE_ACTION, action.id());
     verify(capabilities).revoke(drop, CapabilityType.SERVICE_ACTION, action.id());
@@ -109,7 +112,7 @@ class ConnectorServiceUseCaseTest {
     when(definitions.find(serviceId))
         .thenReturn(Optional.of(info("https://api.test", AuthScheme.NO_AUTH, false)));
     when(definitions.action(action.id())).thenReturn(Optional.of(action));
-    assertThatThrownBy(() -> useCase.assignAgents(userId, serviceId, action.id(), List.of(stranger)))
+    assertThatThrownBy(() -> useCase.assignAgents(access, serviceId, action.id(), List.of(stranger)))
         .isInstanceOf(NotFoundException.class);
   }
 
@@ -117,20 +120,22 @@ class ConnectorServiceUseCaseTest {
   void apisAreValidatedBeforeTheyAreStored() {
     when(definitions.find(serviceId))
         .thenReturn(Optional.of(info("https://api.test", AuthScheme.NO_AUTH, false)));
-    assertThatThrownBy(() -> useCase.saveApi(userId, serviceId, null, new ApiInput("Bad Name",
+    assertThatThrownBy(() -> useCase.saveApi(access, serviceId, null, new ApiInput("Bad Name",
         "List", null, null, "GET", "/x", null, null, null)))
         .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> useCase.saveApi(userId, serviceId, null, new ApiInput("list",
+    assertThatThrownBy(() -> useCase.saveApi(access, serviceId, null, new ApiInput("list",
         "List", null, null, "GET", "https://evil.test/x", null, null, null)))
         .isInstanceOf(ValidationException.class).hasMessageContaining("base URL");
-    assertThatThrownBy(() -> useCase.saveApi(userId, serviceId, null, new ApiInput("list",
+    assertThatThrownBy(() -> useCase.saveApi(access, serviceId, null, new ApiInput("list",
         "List", null, null, "TRACE", "/x", null, null, null)))
         .isInstanceOf(ValidationException.class);
   }
 
   @Test
   void someoneElsesServiceIsNotFound() {
-    assertThatThrownBy(() -> useCase.detail(UUID.randomUUID(), serviceId))
+    UUID other = UUID.randomUUID();
+    assertThatThrownBy(() -> useCase.detail(new com.jizza.engine.api.authz.Access(other, other),
+        serviceId))
         .isInstanceOf(NotFoundException.class);
   }
 

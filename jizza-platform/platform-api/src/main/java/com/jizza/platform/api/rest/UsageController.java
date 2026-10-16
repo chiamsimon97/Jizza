@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.UsageEntryDto;
 import com.jizza.engine.api.llm.UsageStore;
 import com.jizza.engine.security.session.CurrentUser;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** LLM token and cost visibility for the user (R49). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/usage")
 public class UsageController {
 

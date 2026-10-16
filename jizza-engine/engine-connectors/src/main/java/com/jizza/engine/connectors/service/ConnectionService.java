@@ -38,9 +38,10 @@ public class ConnectionService implements ConnectionStore {
 
   @Override
   @Transactional
-  public ConnectionDto create(UUID userId, ConnectionSettings settings) {
+  public ConnectionDto create(UUID userId, UUID workspaceId, ConnectionSettings settings) {
     ConnectionEntity entity = new ConnectionEntity();
     entity.setUserId(userId);
+    entity.setWorkspaceId(workspaceId);
     entity.setStatus(ConnectionStatus.NEW);
     entity.setAutoRefresh(true);
     apply(entity, settings);
@@ -59,8 +60,8 @@ public class ConnectionService implements ConnectionStore {
 
   @Override
   @Transactional(readOnly = true)
-  public List<ConnectionDto> list(UUID userId) {
-    return connections.findByUserIdOrderByServiceNameAsc(userId).stream()
+  public List<ConnectionDto> list(UUID workspaceId) {
+    return connections.findByWorkspaceIdOrderByServiceNameAsc(workspaceId).stream()
         .map(ConnectionService::toDto).toList();
   }
 
@@ -115,7 +116,7 @@ public class ConnectionService implements ConnectionStore {
 
   /** Maps to the client view. Note that no branch of this method can emit secret material. */
   public static ConnectionDto toDto(ConnectionEntity e) {
-    return new ConnectionDto(e.getId(), e.getUserId(), e.getServiceName(), e.getAuthScheme(),
+    return new ConnectionDto(e.getId(), e.getUserId(), e.getWorkspaceId(), e.getServiceName(), e.getAuthScheme(),
         e.getClientId(), e.getClientSecret() != null,
         e.getAuthorizationUrl(), e.getAccessTokenUrl(), e.getRefreshTokenUrl(),
         e.getScopes(), e.getScopeSeparator(), e.isPkce(), e.isUnifiedCallback(),

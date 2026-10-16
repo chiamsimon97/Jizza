@@ -15,11 +15,13 @@ import java.util.UUID;
  */
 public interface ConnectionStore {
 
-  ConnectionDto create(UUID userId, ConnectionSettings settings);
+  /** {@code userId} is who created it; {@code workspaceId} is the account that owns it. */
+  ConnectionDto create(UUID userId, UUID workspaceId, ConnectionSettings settings);
 
   ConnectionDto update(UUID connectionId, ConnectionSettings settings);
 
-  List<ConnectionDto> list(UUID userId);
+  /** Every connection owned by the workspace. */
+  List<ConnectionDto> list(UUID workspaceId);
 
   Optional<ConnectionDto> find(UUID connectionId);
 

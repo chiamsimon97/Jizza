@@ -28,6 +28,8 @@ public class SecurityProperties {
   private final Cors cors = new Cors();
   private final Mfa mfa = new Mfa();
   private final Registration registration = new Registration();
+  private final SuperAdmin superAdmin = new SuperAdmin();
+  private final Invitations invitations = new Invitations();
 
   public static class Session {
     private Duration idleTimeout = Duration.ofMinutes(30);
@@ -87,6 +89,30 @@ public class SecurityProperties {
     public void setAllowAdditionalUsers(boolean v) { this.allowAdditionalUsers = v; }
   }
 
+  public static class SuperAdmin {
+    /**
+     * The product owner's account email. At startup that account (if it exists) becomes the super
+     * admin, and any other account loses the role. Blank means nobody holds it. No API can set it.
+     */
+    private String email = "";
+    public String getEmail() { return email; }
+    public void setEmail(String v) { this.email = v == null ? "" : v; }
+  }
+
+  public static class Invitations {
+    /** How long a membership request stays open. */
+    private Duration expiry = Duration.ofDays(7);
+    /** Requests one organization may send per hour, to keep Add Member from being used as a mailer. */
+    private int perWorkspacePerHour = 20;
+    private String clientBaseUrl = "http://localhost:5173";
+    public String getClientBaseUrl() { return clientBaseUrl; }
+    public void setClientBaseUrl(String v) { this.clientBaseUrl = v; }
+    public Duration getExpiry() { return expiry; }
+    public void setExpiry(Duration v) { this.expiry = v; }
+    public int getPerWorkspacePerHour() { return perWorkspacePerHour; }
+    public void setPerWorkspacePerHour(int v) { this.perWorkspacePerHour = v; }
+  }
+
   public static class Lockout {
     private int maxFailedAttempts = 5;
     private Duration lockoutDuration = Duration.ofMinutes(15);
@@ -144,4 +170,6 @@ public class SecurityProperties {
   public Cors getCors() { return cors; }
   public Mfa getMfa() { return mfa; }
   public Registration getRegistration() { return registration; }
+  public SuperAdmin getSuperAdmin() { return superAdmin; }
+  public Invitations getInvitations() { return invitations; }
 }

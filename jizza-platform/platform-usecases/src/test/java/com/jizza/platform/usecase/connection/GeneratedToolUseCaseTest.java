@@ -23,6 +23,11 @@ import org.junit.jupiter.api.Test;
 class GeneratedToolUseCaseTest {
 
   private final UUID userId = UUID.randomUUID();
+
+  /** Each person acting in their own account; the workspace id doubles as the user id here. */
+  private static com.jizza.engine.api.authz.Access access(UUID user) {
+    return new com.jizza.engine.api.authz.Access(user, user);
+  }
   private final UUID connectionId = UUID.randomUUID();
   private final UUID toolId = UUID.randomUUID();
   private ToolCatalog tools;
@@ -44,22 +49,22 @@ class GeneratedToolUseCaseTest {
 
   @Test
   void enablingAToolOnAnOwnedConnectionDelegatesToTheEngine() {
-    when(connections.ownedBy(userId, connectionId)).thenReturn(mock(ConnectionDto.class));
+    when(connections.ownedBy(access(userId), connectionId)).thenReturn(mock(ConnectionDto.class));
     when(tools.setEnabled(toolId, false)).thenReturn(tool());
 
-    useCase.setEnabled(userId, toolId, false);
+    useCase.setEnabled(access(userId), toolId, false);
 
-    verify(connections).ownedBy(userId, connectionId);
+    verify(connections).ownedBy(access(userId), connectionId);
     verify(tools).setEnabled(toolId, false);
   }
 
   @Test
   void aToolOnAnotherUsersConnectionCannotBeToggled() {
     UUID somebodyElse = UUID.randomUUID();
-    when(connections.ownedBy(somebodyElse, connectionId))
+    when(connections.ownedBy(access(somebodyElse), connectionId))
         .thenThrow(new NotFoundException("Connection", connectionId));
 
-    assertThatThrownBy(() -> useCase.setEnabled(somebodyElse, toolId, true))
+    assertThatThrownBy(() -> useCase.setEnabled(access(somebodyElse), toolId, true))
         .isInstanceOf(NotFoundException.class);
 
     verify(tools, never()).setEnabled(toolId, true);
@@ -69,7 +74,7 @@ class GeneratedToolUseCaseTest {
   void anUnknownToolIsReportedMissing() {
     when(tools.find(toolId)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> useCase.setEnabled(userId, toolId, true))
+    assertThatThrownBy(() -> useCase.setEnabled(access(userId), toolId, true))
         .isInstanceOf(NotFoundException.class);
   }
 }

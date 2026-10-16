@@ -1,6 +1,15 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
+import com.jizza.engine.api.authz.PermissionEvaluator;
+import com.jizza.engine.api.authz.Permissions;
+import com.jizza.engine.api.connector.ConnectionStore;
+import com.jizza.engine.api.connector.ToolCatalog;
 import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.dto.ConnectionDto;
+import com.jizza.engine.api.dto.GeneratedToolDto;
+import com.jizza.engine.api.error.PermissionDeniedException;
+import com.jizza.engine.api.service.ServiceDefinitions;
 import com.jizza.engine.api.enums.CapabilityType;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.agent.CapabilityRegistry;
@@ -23,18 +32,29 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The agent roster: rename, enable/disable, and capability assignment (R21/R28). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/agents")
 public class AgentController {
 
   private final AgentDirectory directory;
   private final AgentAdminUseCase admin;
   private final CapabilityRegistry capabilities;
+  private final ToolCatalog tools;
+  private final ServiceDefinitions services;
+  private final ConnectionStore connections;
+  private final PermissionEvaluator permissions;
 
   public AgentController(AgentDirectory directory, AgentAdminUseCase admin,
-                         CapabilityRegistry capabilities) {
+                         CapabilityRegistry capabilities, ToolCatalog tools,
+                         ServiceDefinitions services, ConnectionStore connections,
+                         PermissionEvaluator permissions) {
     this.directory = directory;
     this.admin = admin;
     this.capabilities = capabilities;
+    this.tools = tools;
+    this.services = services;
+    this.connections = connections;
+    this.permissions = permissions;
   }
 
   @GetMapping
@@ -70,6 +90,7 @@ public class AgentController {
   public Responses.Message grant(@PathVariable UUID id,
                                  @Valid @RequestBody Requests.CapabilityGrant grant) {
     owned(id);
+    requireConnectorAccess(grant.type(), grant.capabilityRef());
     capabilities.grant(id, grant.type(), grant.capabilityRef());
     return new Responses.Message("Capability assigned.");
   }
@@ -81,6 +102,24 @@ public class AgentController {
     owned(id);
     capabilities.revoke(id, type, ref);
     return new Responses.Message("Capability removed.");
+  }
+
+  /**
+   * Agents are personal, but may be handed a tool from an organization's connector. That is only
+   * allowed while the agent's owner (the caller) can see connectors in that organization.
+   */
+  private void requireConnectorAccess(CapabilityType type, UUID ref) {
+    UUID connectionId = switch (type) {
+      case GENERATED_TOOL -> tools.find(ref).map(GeneratedToolDto::connectionId).orElse(null);
+      case SERVICE_ACTION -> services.action(ref).map(a -> a.serviceId()).orElse(null);
+      default -> null;
+    };
+    if (connectionId == null) return;
+    UUID workspaceId = connections.find(connectionId).map(ConnectionDto::workspaceId).orElse(null);
+    if (workspaceId == null
+        || !permissions.isAllowed(CurrentUser.userId(), workspaceId, Permissions.CONNECTOR_VIEW)) {
+      throw new PermissionDeniedException(Permissions.CONNECTOR_VIEW, "connectors");
+    }
   }
 
   /** Every lookup is scoped to the signed-in user; another user's agent is simply not found. */

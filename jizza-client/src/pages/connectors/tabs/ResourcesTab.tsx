@@ -8,6 +8,8 @@ import { servicesApi } from '@/api/services'
 import type { ResourceField, ServiceResource } from '@/types'
 import { Empty, SectionHeader, Table, errorText, toMachineName } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 /** The entities the service deals in, such as Invoice or Contact, and their fields. */
 export function ResourcesTab({ detail, refresh }: TabProps) {
@@ -20,7 +22,7 @@ export function ResourcesTab({ detail, refresh }: TabProps) {
   return (
     <div>
       <SectionHeader title="Resources" description="What the service's data looks like. Actions and triggers say which resource they work on."
-        action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New resource</Button>} />
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" onClick={() => setEditing('new')}><Plus className="h-4 w-4" />New resource</Button></Can>} />
       {detail.resources.length === 0 ? <Empty>No resources yet.</Empty> : (
         <Table head={['Resource', 'Fields', 'Id field', '']}>
           {detail.resources.map(r => (
@@ -32,10 +34,10 @@ export function ResourcesTab({ detail, refresh }: TabProps) {
               <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">{r.fields.map(f => f.key).join(', ') || '—'}</td>
               <td className="px-4 py-3 font-mono text-xs">{r.idField ?? '—'}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" aria-label={`Edit ${r.label}`} onClick={() => setEditing(r)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Delete ${r.label}`} onClick={() => {
+                <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" variant="ghost" aria-label={`Edit ${r.label}`} onClick={() => setEditing(r)}><Pencil className="h-3.5 w-3.5" /></Button></Can>
+                <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable"><Button size="sm" variant="ghost" aria-label={`Delete ${r.label}`} onClick={() => {
                   if (window.confirm(`Delete ${r.label}?`)) remove.mutate(r.id)
-                }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                }}><Trash2 className="h-3.5 w-3.5" /></Button></Can>
               </td>
             </tr>
           ))}

@@ -103,6 +103,15 @@ jizza:
     registration:
       # Single-user: once the owner's account exists, nobody else can register.
       allow-additional-users: ${JIZZA_ALLOW_ADDITIONAL_USERS:false}
+    super-admin:
+      # The product owner's account. At startup it gets the super admin role (full access in every
+      # account, every use audited); everyone else loses it. Blank: nobody holds it.
+      email: ${JIZZA_SUPER_ADMIN_EMAIL:}
+    invitations:
+      expiry: 7d                      # how long a membership request stays open
+      per-workspace-per-hour: 20
+      # Where the app is served, for the sign-up link in invitation emails.
+      client-base-url: ${JIZZA_CLIENT_BASE_URL:http://localhost:5173}
     lockout:
       max-failed-attempts: 5
       lockout-duration: 15m

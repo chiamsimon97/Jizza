@@ -8,5 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ConnectionRepository extends JpaRepository<ConnectionEntity, UUID> {
   List<ConnectionEntity> findByUserIdOrderByServiceNameAsc(UUID userId);
+  List<ConnectionEntity> findByWorkspaceIdOrderByServiceNameAsc(UUID workspaceId);
   List<ConnectionEntity> findByStatusAndAutoRefreshTrue(ConnectionStatus status);
 }

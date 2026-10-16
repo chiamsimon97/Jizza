@@ -8,6 +8,8 @@ import { Field, fieldClass } from '@/components/ui/SlideOver'
 import { servicesApi } from '@/api/services'
 import { SectionHeader, errorText } from '../shared'
 import type { TabProps } from '../ServiceEditorPage'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 export function OverviewTab({ detail, refresh }: TabProps) {
   const { service } = detail
@@ -52,7 +54,7 @@ export function OverviewTab({ detail, refresh }: TabProps) {
       </div>
 
       <form onSubmit={submit}>
-        <SectionHeader title="Details" action={<Button size="sm" type="submit" loading={save.isPending}>Save</Button>} />
+        <SectionHeader title="Details" action={<Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable"><Button size="sm" type="submit" loading={save.isPending}>Save</Button></Can>} />
         <Card className="flex flex-col gap-4">
           <Input label="Name" required value={name} onChange={e => setName(e.target.value)} />
           <Field label="Description" hint="Agents read this to decide when to use the service.">

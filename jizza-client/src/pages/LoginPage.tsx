@@ -5,6 +5,8 @@ import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { AuthLayout } from '@/components/layout/AuthLayout'
+import { destinationAfterSignIn } from '@/auth/signIn'
+import { resetSignInFlags } from '@/lib/session'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -15,21 +17,27 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/chat'
+  const from = (location.state as { from?: Location })?.from?.pathname
   const notice = (location.state as { notice?: string })?.notice
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
+    resetSignInFlags()
     try {
       const result = await authApi.login({ email, password })
       if (result.mfaRequired && result.mfaToken) {
         setPendingMfa(result.mfaToken)
-        navigate('/mfa')
+        navigate('/mfa', { state: { from } })
       } else if (result.userId) {
         setAuthenticated(result.userId, result.enrollmentRequired)
-        navigate(result.enrollmentRequired ? '/setup-2fa' : from, { replace: true })
+        if (result.enrollmentRequired) {
+          navigate('/setup-2fa', { replace: true })
+        } else {
+          const { to, state } = await destinationAfterSignIn(from)
+          navigate(to, { replace: true, state })
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')

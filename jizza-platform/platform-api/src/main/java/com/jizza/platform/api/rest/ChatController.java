@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.chat.JobDto;
 import com.jizza.engine.api.chat.TurnRef;
 import com.jizza.engine.api.chat.TurnSubmission;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * specialist: every message goes to Jizza, and every reply comes back from Jizza.
  */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/chat")
 public class ChatController {
 

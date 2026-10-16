@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.connector;
 
+import com.jizza.engine.api.authz.Access;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
@@ -92,12 +93,12 @@ public class ConnectorServiceUseCase {
 
   // ── Services ──────────────────────────────────────────────────────────────
 
-  public List<Info> list(UUID userId) {
-    return definitions.list(userId);
+  public List<Info> list(Access access) {
+    return definitions.list(access.workspaceId());
   }
 
-  public ServiceDetail detail(UUID userId, UUID serviceId) {
-    Info info = owned(userId, serviceId);
+  public ServiceDetail detail(Access access, UUID serviceId) {
+    Info info = owned(access, serviceId);
     return new ServiceDetail(info, definitions.apis(serviceId), definitions.resources(serviceId),
         definitions.actions(serviceId), definitions.triggers(serviceId),
         definitions.variables(serviceId), oauthRedirectUri);
@@ -105,7 +106,7 @@ public class ConnectorServiceUseCase {
 
   /** A new service starts as a draft with the chosen auth scheme; credentials come later. */
   @Transactional
-  public Info create(UUID userId, NewService in) {
+  public Info create(Access access, NewService in) {
     String name = required(in.name(), "A service needs a name");
     AuthScheme scheme = in.authScheme() == null ? AuthScheme.NO_AUTH : in.authScheme();
     if (scheme == AuthScheme.OAUTH2) {
@@ -113,19 +114,20 @@ public class ConnectorServiceUseCase {
       // Authentication tab, so the service starts without auth and is switched over there.
       scheme = AuthScheme.NO_AUTH;
     }
-    var created = connections.create(userId, new ConnectionSettings(name, scheme, null, null, null,
+    var created = connections.create(access,
+        new ConnectionSettings(name, scheme, null, null, null,
         null, null, null, null, null, null, null, null, blankToNull(in.baseUrl()), null, null, null,
         null, null, null));
     Info info = definitions.update(created.id(), new InfoPatch(null,
         blankToNull(in.description()), blankToNull(in.category()), null));
-    audit.record(userId, ActorType.USER, null, "service.created", name,
+    audit.record(access.userId(), ActorType.USER, null, "service.created", name,
         Json.obj().put("serviceId", info.id().toString()));
     return info;
   }
 
   @Transactional
-  public Info update(UUID userId, UUID serviceId, InfoPatch patch) {
-    owned(userId, serviceId);
+  public Info update(Access access, UUID serviceId, InfoPatch patch) {
+    owned(access, serviceId);
     if (patch.name() != null) required(patch.name(), "A service needs a name");
     if (patch.baseUrl() != null && !patch.baseUrl().isBlank()
         && !patch.baseUrl().startsWith("https://") && !patch.baseUrl().startsWith("{{")) {
@@ -135,12 +137,12 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void delete(UUID userId, UUID serviceId) {
-    owned(userId, serviceId);
+  public void delete(Access access, UUID serviceId) {
+    owned(access, serviceId);
     for (Action action : definitions.actions(serviceId)) {
       definitions.deleteAction(serviceId, action.id());
     }
-    connections.delete(userId, serviceId);
+    connections.delete(access, serviceId);
   }
 
   /**
@@ -148,8 +150,8 @@ public class ConnectorServiceUseCase {
    * its triggers polling. It is refused while anything that would make it fail is missing.
    */
   @Transactional
-  public Info publish(UUID userId, UUID serviceId) {
-    Info info = owned(userId, serviceId);
+  public Info publish(Access access, UUID serviceId) {
+    Info info = owned(access, serviceId);
     List<String> problems = new ArrayList<>();
     if (info.baseUrl() == null || info.baseUrl().isBlank()) problems.add("set a base URL");
     if (info.authScheme() != AuthScheme.NO_AUTH && info.authScheme() != AuthScheme.CUSTOM
@@ -163,23 +165,23 @@ public class ConnectorServiceUseCase {
       throw new ValidationException("Before publishing, " + String.join("; ", problems) + ".");
     }
     Info live = definitions.setVersionStatus(serviceId, ServiceModel.LIVE);
-    audit.record(userId, ActorType.USER, null, "service.published", info.name(),
+    audit.record(access.userId(), ActorType.USER, null, "service.published", info.name(),
         Json.obj().put("serviceId", serviceId.toString()).put("version", live.liveVersion()));
     return live;
   }
 
   @Transactional
-  public Info unpublish(UUID userId, UUID serviceId) {
-    Info info = owned(userId, serviceId);
-    audit.record(userId, ActorType.USER, null, "service.unpublished", info.name(), null);
+  public Info unpublish(Access access, UUID serviceId) {
+    Info info = owned(access, serviceId);
+    audit.record(access.userId(), ActorType.USER, null, "service.unpublished", info.name(), null);
     return definitions.setVersionStatus(serviceId, ServiceModel.DRAFT);
   }
 
   // ── APIs ──────────────────────────────────────────────────────────────────
 
   @Transactional
-  public Api saveApi(UUID userId, UUID serviceId, UUID apiId, ApiInput in) {
-    owned(userId, serviceId);
+  public Api saveApi(Access access, UUID serviceId, UUID apiId, ApiInput in) {
+    owned(access, serviceId);
     machineName(in.name(), "API");
     label(in.label());
     String method = in.httpMethod() == null ? "" : in.httpMethod().toUpperCase(Locale.ROOT);
@@ -202,16 +204,16 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void deleteApi(UUID userId, UUID serviceId, UUID apiId) {
-    owned(userId, serviceId);
+  public void deleteApi(Access access, UUID serviceId, UUID apiId) {
+    owned(access, serviceId);
     definitions.deleteApi(serviceId, apiId);
   }
 
   // ── Resources ─────────────────────────────────────────────────────────────
 
   @Transactional
-  public Resource saveResource(UUID userId, UUID serviceId, UUID resourceId, ResourceInput in) {
-    owned(userId, serviceId);
+  public Resource saveResource(Access access, UUID serviceId, UUID resourceId, ResourceInput in) {
+    owned(access, serviceId);
     machineName(in.name(), "resource");
     label(in.label());
     JsonNode fields = in.fields() == null ? Json.mapper().createArrayNode() : in.fields();
@@ -227,16 +229,16 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void deleteResource(UUID userId, UUID serviceId, UUID resourceId) {
-    owned(userId, serviceId);
+  public void deleteResource(Access access, UUID serviceId, UUID resourceId) {
+    owned(access, serviceId);
     definitions.deleteResource(serviceId, resourceId);
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
   @Transactional
-  public Action saveAction(UUID userId, UUID serviceId, UUID actionId, ActionInput in) {
-    owned(userId, serviceId);
+  public Action saveAction(Access access, UUID serviceId, UUID actionId, ActionInput in) {
+    owned(access, serviceId);
     machineName(in.name(), "action");
     label(in.label());
     if (in.apiId() == null) throw new ValidationException("An action must be built on an API");
@@ -245,19 +247,19 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void deleteAction(UUID userId, UUID serviceId, UUID actionId) {
-    owned(userId, serviceId);
+  public void deleteAction(Access access, UUID serviceId, UUID actionId) {
+    owned(access, serviceId);
     definitions.deleteAction(serviceId, actionId);
   }
 
   /** Sets exactly which of the user's agents may use an action. */
   @Transactional
-  public Action assignAgents(UUID userId, UUID serviceId, UUID actionId, List<UUID> agentIds) {
-    owned(userId, serviceId);
+  public Action assignAgents(Access access, UUID serviceId, UUID actionId, List<UUID> agentIds) {
+    owned(access, serviceId);
     Action action = actionOf(serviceId, actionId);
     Set<UUID> wanted = new HashSet<>(agentIds == null ? List.of() : agentIds);
     for (UUID agentId : wanted) {
-      agents.byId(agentId).filter(a -> a.userId().equals(userId))
+      agents.byId(agentId).filter(a -> a.userId().equals(access.userId()))
           .orElseThrow(() -> new NotFoundException("Agent", agentId));
     }
     for (UUID agentId : wanted) {
@@ -274,8 +276,8 @@ public class ConnectorServiceUseCase {
   }
 
   /** Runs an action once from the editor, against the real service, and records it in history. */
-  public ToolResult testAction(UUID userId, UUID serviceId, UUID actionId, JsonNode input) {
-    owned(userId, serviceId);
+  public ToolResult testAction(Access access, UUID serviceId, UUID actionId, JsonNode input) {
+    owned(access, serviceId);
     actionOf(serviceId, actionId);
     return runner.runAction(serviceId, actionId, input, "test", null);
   }
@@ -283,8 +285,8 @@ public class ConnectorServiceUseCase {
   // ── Triggers ──────────────────────────────────────────────────────────────
 
   @Transactional
-  public Trigger saveTrigger(UUID userId, UUID serviceId, UUID triggerId, TriggerInput in) {
-    owned(userId, serviceId);
+  public Trigger saveTrigger(Access access, UUID serviceId, UUID triggerId, TriggerInput in) {
+    owned(access, serviceId);
     machineName(in.name(), "trigger");
     label(in.label());
     if (in.apiId() == null) throw new ValidationException("A trigger must poll an API");
@@ -299,21 +301,21 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void deleteTrigger(UUID userId, UUID serviceId, UUID triggerId) {
-    owned(userId, serviceId);
+  public void deleteTrigger(Access access, UUID serviceId, UUID triggerId) {
+    owned(access, serviceId);
     definitions.deleteTrigger(serviceId, triggerId);
   }
 
-  public TriggerSample testTrigger(UUID userId, UUID serviceId, UUID triggerId) {
-    owned(userId, serviceId);
+  public TriggerSample testTrigger(Access access, UUID serviceId, UUID triggerId) {
+    owned(access, serviceId);
     return runner.testTrigger(serviceId, triggerId);
   }
 
   // ── Variables ─────────────────────────────────────────────────────────────
 
   @Transactional
-  public Variable saveVariable(UUID userId, UUID serviceId, UUID variableId, VariableInput in) {
-    owned(userId, serviceId);
+  public Variable saveVariable(Access access, UUID serviceId, UUID variableId, VariableInput in) {
+    owned(access, serviceId);
     if (in.name() == null || !VARIABLE_NAME.matcher(in.name()).matches()) {
       throw new ValidationException("Variable names start with a letter and use letters, digits "
           + "and underscores");
@@ -327,22 +329,22 @@ public class ConnectorServiceUseCase {
   }
 
   @Transactional
-  public void deleteVariable(UUID userId, UUID serviceId, UUID variableId) {
-    owned(userId, serviceId);
+  public void deleteVariable(Access access, UUID serviceId, UUID variableId) {
+    owned(access, serviceId);
     definitions.deleteVariable(serviceId, variableId);
   }
 
   // ── History ───────────────────────────────────────────────────────────────
 
-  public List<Run> history(UUID userId, UUID serviceId, int limit) {
-    owned(userId, serviceId);
+  public List<Run> history(Access access, UUID serviceId, int limit) {
+    owned(access, serviceId);
     return definitions.runs(serviceId, limit);
   }
 
   // ── Rules ─────────────────────────────────────────────────────────────────
 
-  private Info owned(UUID userId, UUID serviceId) {
-    connections.ownedBy(userId, serviceId);
+  private Info owned(Access access, UUID serviceId) {
+    connections.ownedBy(access, serviceId);
     return definitions.find(serviceId).orElseThrow(() -> new NotFoundException("Service", serviceId));
   }
 

@@ -83,8 +83,8 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
 
   @Override
   @Transactional(readOnly = true)
-  public List<Info> list(UUID userId) {
-    return services.findByUserIdOrderByServiceNameAsc(userId).stream().map(this::info).toList();
+  public List<Info> list(UUID workspaceId) {
+    return services.findByWorkspaceIdOrderByServiceNameAsc(workspaceId).stream().map(this::info).toList();
   }
 
   @Override

@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.TaskDto;
 import com.jizza.engine.api.scheduler.SchedulerService;
 import com.jizza.engine.api.scheduler.TaskSpec;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** One-time and recurring tasks, including marking one repetitive so it can be learned (R29/R34). */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/tasks")
 public class TaskController {
 

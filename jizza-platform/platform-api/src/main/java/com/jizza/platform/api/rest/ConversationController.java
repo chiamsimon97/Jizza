@@ -1,5 +1,6 @@
 package com.jizza.platform.api.rest;
 
+import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.chat.JobDto;
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The user's conversations and the jobs each one ran. */
 @RestController
+@AuthenticatedOnly
 @RequestMapping("/api/conversations")
 public class ConversationController {
 

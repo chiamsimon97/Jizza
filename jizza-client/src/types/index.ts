@@ -562,4 +562,80 @@ export interface ProblemDetail {
   title: string
   status: number
   detail?: string
+  /** On `permission-denied`: the permission that was missing, and its area. */
+  permission?: string
+  module?: string
+}
+
+// ── Accounts, members and access ──────────────────────────────────────────────
+export type WorkspaceType = 'PERSONAL' | 'ORGANIZATION'
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'DEVELOPER' | 'USER'
+
+export interface WorkspaceSummary {
+  id: string
+  type: WorkspaceType
+  name: string
+  role: WorkspaceRole
+}
+
+/** Who the signed-in person is in the active account, and what they may do there. */
+export interface AuthorizationSnapshot {
+  userId: string
+  email: string
+  platformRole: 'NONE' | 'SUPER_ADMIN'
+  activeWorkspace: WorkspaceSummary
+  /** The caller's role in the active account. */
+  role: WorkspaceRole | null
+  /** Granted permission names in the active account. */
+  permissions: string[]
+  /** Roles the caller may invite or assign in the active account. */
+  assignableRoles: WorkspaceRole[]
+  /** Personal first, then organizations by name. */
+  workspaces: WorkspaceSummary[]
+  pendingInvitationCount: number
+  permissionsVersion: string
+}
+
+export interface PermissionDefinition {
+  name: string
+  label: string
+  description: string
+  category: 'read' | 'read_and_write'
+  module: string
+  dependencies: string[]
+}
+
+export interface Member {
+  id: string
+  userId: string
+  email: string
+  role: WorkspaceRole
+  status: 'ACTIVE' | 'SUSPENDED'
+  joinedAt: string
+  you: boolean
+}
+
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED' | 'EXPIRED'
+
+/** A membership request as the organization sees it. */
+export interface Invitation {
+  id: string
+  email: string
+  role: WorkspaceRole
+  status: InvitationStatus
+  invitedByEmail: string
+  createdAt: string
+  expiresAt: string
+  respondedAt: string | null
+}
+
+/** A membership request as the invited person sees it. */
+export interface ReceivedInvitation {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  role: WorkspaceRole
+  invitedByEmail: string
+  createdAt: string
+  expiresAt: string
 }

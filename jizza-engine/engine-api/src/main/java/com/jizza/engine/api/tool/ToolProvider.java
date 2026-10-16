@@ -24,4 +24,18 @@ public interface ToolProvider {
    * log is append-only, so anything written there could never be forgotten.
    */
   default boolean redactArguments(String toolName) { return false; }
+
+  /**
+   * The workspace that owns the resource behind a tool (a connector's workspace), when the tool
+   * belongs to one. The Capability Registry then requires the agent's owner to hold that
+   * permission there before the call runs. Empty for tools that act only on the agent's own data.
+   */
+  default java.util.Optional<java.util.UUID> workspaceOf(java.util.UUID agentId, String toolName) {
+    return java.util.Optional.empty();
+  }
+
+  /** The permission {@link #workspaceOf} requires; connector tools need connector_view. */
+  default String requiredPermission(String toolName) {
+    return com.jizza.engine.api.authz.Permissions.CONNECTOR_VIEW;
+  }
 }

@@ -137,6 +137,14 @@ POST   /api/auth/mfa/setup  mfa/verify  mfa/confirm  mfa/recovery-codes  mfa/dis
 POST   /api/auth/recover  recover/complete
 GET    /api/auth/me                  (two-step status, recovery codes left)
 GET    /api/auth/sessions            DELETE /api/auth/sessions/{id}
+GET    /api/auth/invitations/{token} (public: the email and organization a sign-up link is for)
+
+GET    /api/me/context               POST   /api/me/active-workspace  (switch account; new cookie)
+GET    /api/me/invitations           POST   /api/me/invitations/{id}/accept  decline
+POST   /api/workspaces               DELETE /api/workspaces/current/membership  (create / leave)
+GET    /api/workspaces/current/members      PATCH/DELETE …/members/{memberId}
+GET    /api/workspaces/current/invitations  POST …/invitations   POST …/invitations/{id}/revoke
+GET    /api/permissions              (labels from security/permissions.json)
 
 GET    /api/agents                   PATCH  /api/agents/{id}          (rename, enable/disable)
 GET    /api/agents/{id}/tools        POST   /api/agents/{id}/capabilities
@@ -185,7 +193,7 @@ GET    /api/data/export              DELETE /api/data?confirm=DELETE%20EVERYTHIN
 GET    /actuator/health  info  metrics  prometheus
 ```
 
-Everything except `/api/auth/{register,login,mfa/verify,recover}`, `/api/oauth/callback`,
+Everything except `/api/auth/{register,login,mfa/verify,recover,invitations/*}`, `/api/oauth/callback`,
 `/api/webhooks/**` and the health endpoints requires a session. High-risk routes — connecting a
 service, changing autonomy or security settings, approving a procedure, exporting or deleting data
 — additionally require a **step-up**: call `POST /api/auth/step-up` with your password (and TOTP
@@ -200,6 +208,28 @@ one-time recovery codes issued at setup.
 
 Registration closes once the owner's account exists (`JIZZA_ALLOW_ADDITIONAL_USERS`, default
 `false`).
+
+### Accounts, members and roles
+
+Every person has an **Individual** account. Signing up with `accountType: ORGANIZATION` and an
+`organizationName` also creates an **Organization** account they own, and anyone can create more
+later. The session acts in one account at a time; `POST /api/me/active-workspace` switches by
+issuing a new session cookie and revoking the old one. Connectors belong to the account they were
+created in; agents, chat, memory and the rest stay personal.
+
+An organization's owner or admins invite people from the Members tab with a role (Admin, Developer,
+User). Someone who already has an account sees the request under Pending requests when they sign
+in; someone who does not is emailed a sign-up link, which also lets them register on an instance
+whose registration is otherwise closed. Requests expire after `jizza.security.invitations.expiry`
+(7 days).
+
+Who may do what is defined in
+[`security/permissions.json`](jizza-engine/engine-security/src/main/resources/security/permissions.json),
+read once at startup; a malformed file stops the server. Every handler must carry
+`@RequiresPermission`, `@AuthenticatedOnly` or `@PublicEndpoint`, or the server refuses to start.
+A missing permission answers `403` with `type: …/permission-denied` and the `permission` and
+`module` that were needed. `JIZZA_SUPER_ADMIN_EMAIL` names a platform super admin who can enter any
+account (only from a two-step session, and always audited).
 
 Errors are RFC 9457 `application/problem+json` throughout.
 

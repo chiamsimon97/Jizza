@@ -5,7 +5,8 @@ import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
 import type { ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, UiAction } from '@/types'
-import { FORM_PAGE, PAGES } from './pages'
+import { FORM_PAGE, PAGES, canOpenPage } from './pages'
+import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
 import { matchLocalIntent } from './localIntents'
 
@@ -107,13 +108,15 @@ function execute(actions: UiAction[], run = true): { steps: Step[]; question?: A
     switch (action.type) {
       case 'navigate': {
         const page = PAGES[action.payload.page]
-        if (!page) continue
+        // Never open a page this role can't read or that isn't part of the active account.
+        if (!page || !canOpenPage(action.payload.page, getCachedSnapshot())) continue
         if (run) navigator?.go(page.path)
         break
       }
       case 'open_form': {
         const form = action.payload.form as JizzaForm
         const page = PAGES[FORM_PAGE[form]]
+        if (FORM_PAGE[form] && !canOpenPage(FORM_PAGE[form], getCachedSnapshot())) continue
         if (run) {
           if (page && navigator?.currentPage() !== FORM_PAGE[form]) navigator?.go(page.path)
           useFormStore.getState().open(form, action.payload.fields ?? {}, true)

@@ -53,6 +53,7 @@ class DefaultAuthServiceTest {
   @Mock private org.springframework.context.ApplicationEventPublisher events;
   @Mock private com.jizza.engine.persistence.repository.MfaRecoveryCodeRepository codeRepository;
   @Mock private com.jizza.engine.security.alerts.SecurityAlerts alerts;
+  @Mock private com.jizza.engine.api.workspace.WorkspaceDirectory workspaces;
 
   /** What the mocked recovery-code repository holds. */
   private final java.util.List<com.jizza.engine.persistence.entity.MfaRecoveryCodeEntity> storedCodes =
@@ -100,7 +101,7 @@ class DefaultAuthServiceTest {
     auth = new DefaultAuthService(users, resetTokens, ENCODER, new PasswordPolicy(new BreachedPasswordChecker()),
         totp, sessions, new PendingMfaStore(), new LoginThrottle(props), PLAIN, audit, props,
         events, new LoginAttempts(users, audit, props), transactionManager(),
-        new com.jizza.engine.security.mfa.RecoveryCodes(codeRepository, props), alerts);
+        new com.jizza.engine.security.mfa.RecoveryCodes(codeRepository, props), alerts, workspaces);
 
     when(codeRepository.save(any())).thenAnswer(inv -> {
       storedCodes.add(inv.getArgument(0));
@@ -126,7 +127,8 @@ class DefaultAuthServiceTest {
     when(users.findByEmailIgnoreCase("owner@jizza.local")).thenReturn(Optional.of(user));
     when(users.findById(user.getId())).thenReturn(Optional.of(user));
     when(users.save(any(UserEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-    when(sessions.create(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+    when(workspaces.personalWorkspaceOf(any())).thenReturn(UUID.randomUUID());
+    when(sessions.create(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any()))
         .thenAnswer(inv -> {
           SessionEntity s = new SessionEntity();
           s.setId(UUID.randomUUID());

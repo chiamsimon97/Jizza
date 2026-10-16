@@ -32,4 +32,28 @@ public final class Responses {
   public record ChainVerification(boolean intact, UUID firstBrokenEntryId, long entries) {}
 
   public record WebhookEndpoint(UUID id, String url, UUID workflowId, boolean enabled) {}
+
+  /** What a sign-up link's invitation shows before the account exists. */
+  public record InvitationPreview(String email, String workspaceName) {}
+
+  public record Member(UUID id, UUID userId, String email,
+                       com.jizza.engine.api.enums.WorkspaceRole role,
+                       com.jizza.engine.api.enums.MembershipStatus status,
+                       java.time.Instant joinedAt, boolean you) {}
+
+  /** A membership request as the organization sees it. */
+  public record Invitation(UUID id, String email, com.jizza.engine.api.enums.WorkspaceRole role,
+                           com.jizza.engine.api.enums.InvitationStatus status,
+                           String invitedByEmail, java.time.Instant createdAt,
+                           java.time.Instant expiresAt, java.time.Instant respondedAt) {}
+
+  /** A membership request as the invited person sees it. */
+  public record ReceivedInvitation(UUID id, UUID workspaceId, String workspaceName,
+                                   com.jizza.engine.api.enums.WorkspaceRole role,
+                                   String invitedByEmail, java.time.Instant createdAt,
+                                   java.time.Instant expiresAt) {}
+
+  /** A permission's metadata from permissions.json, without who it is granted to. */
+  public record Permission(String name, String label, String description, String category,
+                           String module, List<String> dependencies) {}
 }

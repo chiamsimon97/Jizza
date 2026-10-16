@@ -16,6 +16,8 @@ import { ActionsTab } from './tabs/ActionsTab'
 import { TriggersTab } from './tabs/TriggersTab'
 import { VariablesTab } from './tabs/VariablesTab'
 import { HistoryTab } from './tabs/HistoryTab'
+import { Can } from '@/auth/Can'
+import { PERMISSIONS } from '@/lib/permissions'
 
 const TABS = [
   { key: 'overview',       label: 'Overview',       icon: LayoutGrid },
@@ -87,12 +89,16 @@ export function ServiceEditorPage() {
           <p className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">{service.slug}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant={live ? 'secondary' : 'primary'} loading={publish.isPending} onClick={() => publish.mutate()}>
-            <Rocket className="h-4 w-4" /> {live ? 'Move to draft' : 'Publish'}
-          </Button>
-          <Button size="sm" variant="ghost" aria-label="Delete service" onClick={() => {
-            if (window.confirm(`Delete ${service.name}, its APIs, actions, triggers and connection?`)) remove.mutate()
-          }}><Trash2 className="h-4 w-4" /></Button>
+          <Can permission={PERMISSIONS.CONNECTOR_MODIFY} mode="disable">
+            <Button size="sm" variant={live ? 'secondary' : 'primary'} loading={publish.isPending} onClick={() => publish.mutate()}>
+              <Rocket className="h-4 w-4" /> {live ? 'Move to draft' : 'Publish'}
+            </Button>
+          </Can>
+          <Can permission={PERMISSIONS.CONNECTOR_DELETE} mode="disable">
+            <Button size="sm" variant="ghost" aria-label="Delete service" onClick={() => {
+              if (window.confirm(`Delete ${service.name}, its APIs, actions, triggers and connection?`)) remove.mutate()
+            }}><Trash2 className="h-4 w-4" /></Button>
+          </Can>
         </div>
       </div>
       {publish.error && <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-300">{errorText(publish.error)}</p>}

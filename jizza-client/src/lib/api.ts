@@ -1,6 +1,7 @@
 import type { ProblemDetail } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import { endLocalSession } from '@/lib/session'
+import { queryClient } from '@/lib/queryClient'
 
 export class ApiError extends Error {
   constructor(
@@ -71,6 +72,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
   // Two-step sign-in is required and this session has not set it up: the app routes to setup.
   if (res.status === 403 && String(problem.type ?? '').endsWith('mfa-enrollment-required')) {
     useAuthStore.getState().setEnrollmentRequired(true)
+  }
+  // The server refused an action this role or account can't take. What the app believes the user may
+  // do is out of date (a role change, a removal), so fetch it again; the caller still sees the error.
+  if (res.status === 403 && String(problem.type ?? '').endsWith('permission-denied')) {
+    void queryClient.invalidateQueries({ queryKey: ['me', 'context'] })
   }
   if (res.status === 403 && !retried && stepUpHandler && String(problem.type ?? '').endsWith('step-up-required')) {
     if (await stepUpHandler()) return request<T>(path, init, as, true)

@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.connection;
 
+import com.jizza.engine.api.authz.Access;
 import com.jizza.engine.api.connector.ToolCatalog;
 import com.jizza.engine.api.dto.GeneratedToolDto;
 import com.jizza.engine.api.error.NotFoundException;
@@ -27,11 +28,11 @@ public class GeneratedToolUseCase {
   }
 
   @Transactional
-  public GeneratedToolDto setEnabled(UUID userId, UUID toolId, boolean enabled) {
+  public GeneratedToolDto setEnabled(Access access, UUID toolId, boolean enabled) {
     GeneratedToolDto tool = tools.find(toolId)
         .orElseThrow(() -> new NotFoundException("Generated tool", toolId));
     // Throws NotFoundException itself if the connection is not this user's.
-    connections.ownedBy(userId, tool.connectionId());
+    connections.ownedBy(access, tool.connectionId());
     return tools.setEnabled(toolId, enabled);
   }
 }
