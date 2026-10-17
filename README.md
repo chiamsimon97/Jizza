@@ -49,8 +49,12 @@ which key wrapped it, so adding a new key does not invalidate old rows.
 ### 3. Run
 
 ```bash
-mvn -pl jizza-app -am spring-boot:run
+mvn -DskipTests install          # build every module once, after each pull
+mvn -pl jizza-app spring-boot:run
 ```
+
+Run `spring-boot:run` on `jizza-app` alone: adding `-am` makes Maven try to run every module,
+starting with the parent pom, which has no main class.
 
 One process serves the API **and** runs the worker: scheduled tasks fire, workflows resume and
 notifications escalate with no browser open. Flyway migrates the schema on startup.
