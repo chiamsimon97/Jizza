@@ -9,6 +9,10 @@
     <dependency><groupId>com.jizza</groupId><artifactId>platform-api</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+    <!-- Traces of agent runs, model calls and tool calls, in OpenTelemetry's format. Nothing is
+         exported until management.otlp.tracing.endpoint is set: local-first by default. -->
+    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-tracing-bridge-otel</artifactId></dependency>
+    <dependency><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-exporter-otlp</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-devtools</artifactId><optional>true</optional></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-testcontainers</artifactId><scope>test</scope></dependency>

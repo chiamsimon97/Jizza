@@ -94,6 +94,17 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     this.permissions = permissions;
   }
 
+  /** Tracing, when the application has it. Records the tool's name and outcome, never its data. */
+  private io.micrometer.observation.ObservationRegistry observations =
+      io.micrometer.observation.ObservationRegistry.NOOP;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setObservations(
+      ObjectProvider<io.micrometer.observation.ObservationRegistry> registry) {
+    var available = registry.getIfAvailable();
+    if (available != null) this.observations = available;
+  }
+
   @Override
   public List<ToolSpec> toolsFor(UUID agentId) {
     Map<String, ToolSpec> byName = new LinkedHashMap<>();
@@ -257,15 +268,26 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
           .put("tool", call.name()).put("label", label(call.name())).put("state", "started"));
     }
     long started = System.nanoTime();
+    var observation = io.micrometer.observation.Observation
+        .createNotStarted("jizza.tool.call", observations)
+        .contextualName("tool " + call.name())
+        .lowCardinalityKeyValue("tool", call.name())
+        .lowCardinalityKeyValue("decision", approvedBy != null ? "APPROVED" : decision.rule().name())
+        .lowCardinalityKeyValue("autonomous", String.valueOf(autonomous))
+        .start();
     ToolResult result;
-    try {
+    try (var scope = observation.openScope()) {
       result = provider.invoke(agentId, call);
     } catch (JobCancelledException e) {
+      observation.error(e);
+      observation.stop();
       throw e;
     } catch (RuntimeException e) {
       log.warn("Tool {} failed for agent {}", call.name(), agentId, e);
+      observation.error(e);
       result = ToolResult.error(e.getMessage());
     }
+    observation.lowCardinalityKeyValue("outcome", result.ok() ? "ok" : "error").stop();
     if (shown) {
       long ms = (System.nanoTime() - started) / 1_000_000;
       ToolResult finished = result;

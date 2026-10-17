@@ -36,6 +36,21 @@ class DefaultCostAccountantTest {
   }
 
   @Test
+  void pricesCacheReadsAndWritesAtTheirOwnRates() {
+    // 1M input tokens of which 800k read from the cache and 100k written to it: 100k at the full
+    // $3, 800k at a tenth of it, 100k at a quarter more than it.
+    assertThat(accountant.cost("priced-model", 1_000_000, 0, 800_000, 100_000))
+        .isEqualByComparingTo(new BigDecimal("0.3").add(new BigDecimal("0.24"))
+            .add(new BigDecimal("0.375")));
+  }
+
+  @Test
+  void aCallWithoutCacheFiguresCostsWhatItAlwaysDid() {
+    assertThat(accountant.cost("priced-model", 1_000_000, 100_000, 0, 0))
+        .isEqualByComparingTo(accountant.cost("priced-model", 1_000_000, 100_000));
+  }
+
+  @Test
   void treatsAnUnpricedModelAsZeroRatherThanGuessing() {
     assertThat(accountant.cost("some-new-model", 1_000_000, 1_000_000))
         .isEqualByComparingTo(BigDecimal.ZERO);

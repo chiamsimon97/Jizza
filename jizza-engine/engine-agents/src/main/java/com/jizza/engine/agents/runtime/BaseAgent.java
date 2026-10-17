@@ -28,6 +28,8 @@ import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -45,7 +47,13 @@ import org.springframework.stereotype.Service;
  *
  * <p>Before the first model call, the user's memory relevant to this request -- limited to what
  * this agent may see -- is placed in the system prompt, so every agent, including a specialist
- * handed a delegated task, starts the turn knowing what the user already told Jizza.
+ * handed a delegated task, starts the turn knowing what the user already told Jizza. It goes in a
+ * system block of its own after the agent's instructions, so the instructions stay a stable prefix
+ * the provider can cache while what is remembered changes from request to request.
+ *
+ * <p>Each run, each model call and (in the Capability Registry) each tool call is an observation,
+ * so a trace shows where a slow or costly turn spent its time. Only names, tiers, counts and
+ * outcomes are recorded: never a prompt, an argument or a reply.
  */
 @Service
 public class BaseAgent implements Agent {
@@ -61,6 +69,7 @@ public class BaseAgent implements Agent {
   private final AuditLog audit;
   private final AgentProperties props;
   private final ObjectProvider<MemoryContextProvider> memory;
+  private ObservationRegistry observations = ObservationRegistry.NOOP;
 
   public BaseAgent(AgentRepository agents, LlmClient llm, CapabilityRegistry capabilities,
                    CostAccountant costs, AutonomyGate autonomyGate, KillSwitch killSwitch,
@@ -75,6 +84,13 @@ public class BaseAgent implements Agent {
     this.audit = audit;
     this.props = props;
     this.memory = memory;
+  }
+
+  /** Tracing, when the application has it; runs untraced otherwise. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setObservations(ObjectProvider<ObservationRegistry> registry) {
+    ObservationRegistry available = registry.getIfAvailable();
+    if (available != null) this.observations = available;
   }
 
   @Override
@@ -111,13 +127,32 @@ public class BaseAgent implements Agent {
               + "jizza.agents.budget.per-window-units or wait for the window to roll over.");
     }
 
+    Observation run = Observation.createNotStarted("jizza.agent.run", observations)
+        .contextualName("agent " + agent.getKey())
+        .lowCardinalityKeyValue("agent.key", agent.getKey())
+        .lowCardinalityKeyValue("autonomous", String.valueOf(req.autonomous()))
+        .lowCardinalityKeyValue("dry_run", String.valueOf(req.dryRun()))
+        .start();
+    try (Observation.Scope scope = run.openScope()) {
+      AgentResult result = loop(req, agent, run);
+      run.lowCardinalityKeyValue("outcome", result.truncatedByBudget() ? "budget" : "done");
+      return result;
+    } catch (RuntimeException e) {
+      run.error(e);
+      throw e;
+    } finally {
+      run.stop();
+    }
+  }
+
+  private AgentResult loop(AgentRequest req, AgentEntity agent, Observation run) {
     MemoryContextProvider.MemoryContext remembered = recall(req);
     String systemPrompt = AgentPrompts.systemPrompt(agent.getSystemPrompt(), agent.getName(),
         agent.isOrchestrator());
-    if (!remembered.isEmpty()) systemPrompt = systemPrompt + "\n\n" + remembered.rendered();
 
     List<Msg> messages = new ArrayList<>();
     messages.add(Msg.system(systemPrompt));
+    if (!remembered.isEmpty()) messages.add(Msg.system(remembered.rendered()));
     messages.addAll(req.history());
     messages.add(Msg.user(userTurn(req)));
 
@@ -129,6 +164,7 @@ public class BaseAgent implements Agent {
     ModelTier tier = "deep".equalsIgnoreCase(agent.getModelTier()) && req.tier() != ModelTier.DEEP
         ? ModelTier.DEEP : req.tier();
     String model = llm.modelFor(tier);
+    run.lowCardinalityKeyValue("tier", tier.name()).lowCardinalityKeyValue("model", model);
     int inputTokens = 0;
     int outputTokens = 0;
     String lastText = "";
@@ -159,17 +195,10 @@ public class BaseAgent implements Agent {
         Activity.checkCancelled();
         budget.nextIteration();
         int segment = budget.iterations();
-        LlmResponse response = streams
-            ? llm.stream(model, messages, tools, piece -> {
-                Activity.checkCancelled();
-                Activity.emit(ActivityTypes.DELTA, agent.getId(), agent.getName(),
-                    p -> p.put("text", piece).put("segment", segment));
-              })
-            : llm.complete(model, messages, tools);
+        LlmResponse response = call(model, messages, tools, segment, streams, agent);
         inputTokens += response.inputTokens();
         outputTokens += response.outputTokens();
-        costs.record(req.userId(), response.model() == null ? model : response.model(),
-            response.inputTokens(), response.outputTokens(), "agent:" + agent.getKey());
+        costs.record(req.userId(), model, response, "agent:" + agent.getKey());
         budget.addTokens(response.inputTokens(), response.outputTokens());
         // A stop pressed while the model was thinking wins over whatever it came back with.
         Activity.checkCancelled();
@@ -187,7 +216,9 @@ public class BaseAgent implements Agent {
           Activity.emit(ActivityTypes.SEGMENT_PREAMBLE, agent.getId(), agent.getName(),
               p -> p.put("segment", segment).put("text", response.text()));
         }
-        messages.add(Msg.assistantToolCalls(response.text(), response.toolCalls()));
+        // The model's turn exactly as it came back, thinking included, so the history the next
+        // round sends only ever grows at the end.
+        messages.add(Msg.assistantTurn(response));
         List<Msg.ToolResultRef> results = new ArrayList<>();
         for (ToolCall call : response.toolCalls()) {
           Activity.checkCancelled();
@@ -209,6 +240,38 @@ public class BaseAgent implements Agent {
           : lastText;
       return new AgentResult(agent.getId(), agent.getName(), text, callsMade, true,
           inputTokens, outputTokens, null);
+    }
+  }
+
+  /** One model call, observed: which model, which round, and what it cost in tokens. */
+  private LlmResponse call(String model, List<Msg> messages, List<ToolSpec> tools, int segment,
+                           boolean streams, AgentEntity agent) {
+    Observation observation = Observation.createNotStarted("jizza.llm.call", observations)
+        .contextualName("llm " + model)
+        .lowCardinalityKeyValue("model", model)
+        .lowCardinalityKeyValue("agent.key", agent.getKey())
+        .lowCardinalityKeyValue("stream", String.valueOf(streams))
+        .highCardinalityKeyValue("round", String.valueOf(segment))
+        .start();
+    try (Observation.Scope scope = observation.openScope()) {
+      LlmResponse response = streams
+          ? llm.stream(model, messages, tools, piece -> {
+              Activity.checkCancelled();
+              Activity.emit(ActivityTypes.DELTA, agent.getId(), agent.getName(),
+                  p -> p.put("text", piece).put("segment", segment));
+            })
+          : llm.complete(model, messages, tools);
+      observation.lowCardinalityKeyValue("wants_tools", String.valueOf(response.wantsTools()))
+          .highCardinalityKeyValue("tokens.input", String.valueOf(response.inputTokens()))
+          .highCardinalityKeyValue("tokens.output", String.valueOf(response.outputTokens()))
+          .highCardinalityKeyValue("tokens.cache_read", String.valueOf(response.cacheReadTokens()))
+          .highCardinalityKeyValue("tokens.cache_write", String.valueOf(response.cacheWriteTokens()));
+      return response;
+    } catch (RuntimeException e) {
+      observation.error(e);
+      throw e;
+    } finally {
+      observation.stop();
     }
   }
 

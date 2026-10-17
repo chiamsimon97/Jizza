@@ -31,7 +31,11 @@ public class AgentProperties {
     private String version = "2023-06-01";
     private Duration timeout = Duration.ofSeconds(120);
     private int maxOutputTokens = 4096;
+    private final Retry retry = new Retry();
+    private final Caching caching = new Caching();
 
+    public Retry getRetry() { return retry; }
+    public Caching getCaching() { return caching; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String v) { this.baseUrl = v; }
     public String getApiKey() { return apiKey; }
@@ -42,6 +46,42 @@ public class AgentProperties {
     public void setTimeout(Duration v) { this.timeout = v; }
     public int getMaxOutputTokens() { return maxOutputTokens; }
     public void setMaxOutputTokens(int v) { this.maxOutputTokens = v; }
+  }
+
+  /**
+   * How a model call that failed for a passing reason is tried again: rate limited, overloaded, a
+   * provider error or a dropped connection. A request the provider rejected is never repeated.
+   */
+  public static class Retry {
+    /** Attempts in all, the first one included; 1 turns retrying off. */
+    private int maxAttempts = 4;
+    /** Wait before the first retry; each retry after doubles it, with jitter. */
+    private Duration initialBackoff = Duration.ofSeconds(1);
+    /** No computed wait is longer than this. */
+    private Duration maxBackoff = Duration.ofSeconds(20);
+    /** A provider asking to wait longer than this ends the call rather than holding the turn. */
+    private Duration maxRetryAfter = Duration.ofSeconds(60);
+
+    public int getMaxAttempts() { return maxAttempts; }
+    public void setMaxAttempts(int v) { this.maxAttempts = v; }
+    public Duration getInitialBackoff() { return initialBackoff; }
+    public void setInitialBackoff(Duration v) { this.initialBackoff = v; }
+    public Duration getMaxBackoff() { return maxBackoff; }
+    public void setMaxBackoff(Duration v) { this.maxBackoff = v; }
+    public Duration getMaxRetryAfter() { return maxRetryAfter; }
+    public void setMaxRetryAfter(Duration v) { this.maxRetryAfter = v; }
+  }
+
+  /**
+   * Prompt caching. The tool definitions and an agent's own instructions are the same on every
+   * call, so they are marked for the provider to keep; inside a tool loop the growing conversation
+   * is cached too, because the next round resends all of it.
+   */
+  public static class Caching {
+    private boolean enabled = true;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
   }
 
   public static class Loop {
@@ -95,7 +135,15 @@ public class AgentProperties {
   public static class ModelPrice {
     private double inputPerMillion;
     private double outputPerMillion;
+    /** Price of a cache read as a share of the input price. */
+    private double cacheReadMultiplier = 0.1;
+    /** Price of a cache write as a share of the input price (the five-minute cache). */
+    private double cacheWriteMultiplier = 1.25;
 
+    public double getCacheReadMultiplier() { return cacheReadMultiplier; }
+    public void setCacheReadMultiplier(double v) { this.cacheReadMultiplier = v; }
+    public double getCacheWriteMultiplier() { return cacheWriteMultiplier; }
+    public void setCacheWriteMultiplier(double v) { this.cacheWriteMultiplier = v; }
     public double getInputPerMillion() { return inputPerMillion; }
     public void setInputPerMillion(double v) { this.inputPerMillion = v; }
     public double getOutputPerMillion() { return outputPerMillion; }

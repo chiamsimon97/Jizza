@@ -29,13 +29,22 @@ public class DefaultCostAccountant implements CostAccountant {
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void record(UUID userId, String model, int inputTokens, int outputTokens, String purpose) {
+    record(userId, model, inputTokens, outputTokens, 0, 0, purpose);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void record(UUID userId, String model, int inputTokens, int outputTokens,
+                     int cacheReadTokens, int cacheWriteTokens, String purpose) {
     LlmUsageEntity entity = new LlmUsageEntity();
     entity.setUserId(userId);
     entity.setModel(model == null ? "unknown" : model);
     entity.setPurpose(purpose);
     entity.setInputTokens(inputTokens);
     entity.setOutputTokens(outputTokens);
-    entity.setCostUnits(cost(model, inputTokens, outputTokens));
+    entity.setCacheReadTokens(cacheReadTokens);
+    entity.setCacheWriteTokens(cacheWriteTokens);
+    entity.setCostUnits(cost(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens));
     usage.save(entity);
   }
 
@@ -63,9 +72,24 @@ public class DefaultCostAccountant implements CostAccountant {
   }
 
   BigDecimal cost(String model, int inputTokens, int outputTokens) {
+    return cost(model, inputTokens, outputTokens, 0, 0);
+  }
+
+  /**
+   * {@code inputTokens} counts every input token; the cached part of it is priced at the cache
+   * rates (a read is a fraction of the input price, a write a little more than it).
+   */
+  BigDecimal cost(String model, int inputTokens, int outputTokens, int cacheReadTokens,
+                  int cacheWriteTokens) {
     AgentProperties.ModelPrice price = props.getPricing().get(model);
     if (price == null) return BigDecimal.ZERO;
-    return BigDecimal.valueOf(inputTokens).multiply(BigDecimal.valueOf(price.getInputPerMillion()))
+    BigDecimal input = BigDecimal.valueOf(price.getInputPerMillion());
+    int uncached = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);
+    return BigDecimal.valueOf(uncached).multiply(input)
+        .add(BigDecimal.valueOf(cacheReadTokens).multiply(input)
+            .multiply(BigDecimal.valueOf(price.getCacheReadMultiplier())))
+        .add(BigDecimal.valueOf(cacheWriteTokens).multiply(input)
+            .multiply(BigDecimal.valueOf(price.getCacheWriteMultiplier())))
         .add(BigDecimal.valueOf(outputTokens).multiply(BigDecimal.valueOf(price.getOutputPerMillion())))
         .divide(MILLION, 6, RoundingMode.HALF_UP);
   }

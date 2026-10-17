@@ -217,9 +217,60 @@ class BaseAgentTest {
 
     agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "plan my wife's check-up"));
 
-    Msg system = llm.requests.get(0).get(0);
-    assertThat(system.role()).isEqualTo(Msg.Role.SYSTEM);
-    assertThat(system.text()).contains("Operating rules").contains("Allergic to penicillin");
+    Msg instructions = llm.requests.get(0).get(0);
+    Msg remembered = llm.requests.get(0).get(1);
+    assertThat(instructions.role()).isEqualTo(Msg.Role.SYSTEM);
+    assertThat(remembered.role()).isEqualTo(Msg.Role.SYSTEM);
+    assertThat(instructions.text()).contains("Operating rules");
+    assertThat(remembered.text()).contains("Allergic to penicillin");
+  }
+
+  @Test
+  void theAgentsInstructionsStayTheSameWhateverIsRememberedSoTheyCanBeCached() {
+    memory = mock(MemoryContextProvider.class);
+    when(memory.contextFor(any(), any(), any())).thenReturn(
+        new MemoryContextProvider.MemoryContext("## What you already know\n- one fact",
+            List.of(java.util.UUID.randomUUID()), List.of()),
+        new MemoryContextProvider.MemoryContext("## What you already know\n- another fact",
+            List.of(java.util.UUID.randomUUID()), List.of()));
+    var llm = new ScriptedLlm(List.of(text("a"), text("b")));
+    BaseAgent runtime = agentWith(llm);
+
+    runtime.run(AgentRequest.of(agent.getUserId(), agent.getId(), "first question"));
+    runtime.run(AgentRequest.of(agent.getUserId(), agent.getId(), "second question"));
+
+    assertThat(llm.requests.get(0).get(0).text()).isEqualTo(llm.requests.get(1).get(0).text());
+    assertThat(llm.requests.get(0).get(0).text()).doesNotContain("fact");
+  }
+
+  @Test
+  void theModelsOwnTurnIncludingItsThinkingIsSentBackUnchanged() {
+    var thinking = Json.obj().put("type", "thinking").put("thinking", "")
+        .put("signature", "sig-123");
+    var toolUse = Json.obj().put("type", "tool_use").put("id", "call-1")
+        .put("name", "knowledge_search");
+    toolUse.set("input", Json.obj());
+    var withThinking = new LlmResponse("", List.of(new ToolCall("call-1", "knowledge_search",
+        Json.obj())), "tool_use", 10, 5, "m", 0, 0, List.of(thinking, toolUse));
+    var llm = new ScriptedLlm(List.of(withThinking, text("done")));
+
+    agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "how am I?"));
+
+    Msg replayed = llm.requests.get(1).get(llm.requests.get(1).size() - 2);
+    assertThat(replayed.role()).isEqualTo(Msg.Role.ASSISTANT);
+    assertThat(replayed.providerContent()).hasSize(2);
+    assertThat(replayed.providerContent().get(0).path("signature").asText()).isEqualTo("sig-123");
+  }
+
+  @Test
+  void cachedTokensAreRecordedSoTheyArePricedAtTheCacheRate() {
+    var cached = new LlmResponse("hi", List.of(), "end_turn", 1000, 20, "m", 900, 50, List.of());
+    var llm = new ScriptedLlm(List.of(cached));
+
+    agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "hello"));
+
+    org.mockito.Mockito.verify(costs).record(agent.getUserId(), "test-model-STANDARD", cached,
+        "agent:health");
   }
 
   @Test

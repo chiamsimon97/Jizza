@@ -31,6 +31,12 @@ public class LlmUsageEntity {
 
   private int outputTokens;
 
+  /** The part of {@code inputTokens} read from the provider's prompt cache. */
+  private int cacheReadTokens;
+
+  /** The part of {@code inputTokens} written to the provider's prompt cache. */
+  private int cacheWriteTokens;
+
   private BigDecimal costUnits;
 
   private Instant createdAt;
@@ -52,6 +58,12 @@ public class LlmUsageEntity {
 
   public int getOutputTokens() { return outputTokens; }
   public void setOutputTokens(int outputTokens) { this.outputTokens = outputTokens; }
+
+  public int getCacheReadTokens() { return cacheReadTokens; }
+  public void setCacheReadTokens(int cacheReadTokens) { this.cacheReadTokens = cacheReadTokens; }
+
+  public int getCacheWriteTokens() { return cacheWriteTokens; }
+  public void setCacheWriteTokens(int cacheWriteTokens) { this.cacheWriteTokens = cacheWriteTokens; }
 
   public BigDecimal getCostUnits() { return costUnits; }
   public void setCostUnits(BigDecimal costUnits) { this.costUnits = costUnits; }

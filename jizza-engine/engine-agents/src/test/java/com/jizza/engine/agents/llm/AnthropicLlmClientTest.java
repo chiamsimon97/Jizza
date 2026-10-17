@@ -45,9 +45,21 @@ class AnthropicLlmClientTest {
     var body = client.buildRequest("m",
         List.of(Msg.system("rule one"), Msg.system("rule two"), Msg.user("hello")), List.of());
 
-    assertThat(body.path("system").asText()).isEqualTo("rule one\n\nrule two");
+    assertThat(body.path("system")).hasSize(2);
+    assertThat(body.path("system").get(0).path("text").asText()).isEqualTo("rule one");
+    assertThat(body.path("system").get(1).path("text").asText()).isEqualTo("rule two");
     assertThat(body.path("messages")).hasSize(1);
     assertThat(body.path("messages").get(0).path("role").asText()).isEqualTo("user");
+  }
+
+  @Test
+  void withCachingOffTheSystemTurnsAreJoinedIntoOneString() {
+    props.getAnthropic().getCaching().setEnabled(false);
+    var body = client.buildRequest("m",
+        List.of(Msg.system("rule one"), Msg.system("rule two"), Msg.user("hello")), List.of());
+
+    assertThat(body.path("system").asText()).isEqualTo("rule one\n\nrule two");
+    assertThat(body.has("cache_control")).isFalse();
   }
 
   @Test
@@ -151,6 +163,9 @@ class AnthropicLlmClientTest {
     String sse = "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n";
     assertThatThrownBy(() -> client.readEvents(
         new java.io.ByteArrayInputStream(sse.getBytes(java.nio.charset.StandardCharsets.UTF_8)), t -> { }))
-        .isInstanceOf(JizzaException.class);
+        .isInstanceOfSatisfying(AnthropicLlmClient.StreamError.class, e -> {
+          assertThat(e.type).isEqualTo("overloaded_error");
+          assertThat(e.failure).isInstanceOf(JizzaException.class);
+        });
   }
 }

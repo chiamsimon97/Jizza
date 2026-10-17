@@ -64,6 +64,13 @@ management:
   metrics:
     tags:
       application: jizza
+  # Every agent run, model call and tool call is a span (names, tiers, token counts and outcomes;
+  # never prompts, arguments or replies). Spans stay in the process unless an OTLP endpoint is
+  # given, e.g. MANAGEMENT_OTLP_TRACING_ENDPOINT=http://localhost:4318/v1/traces for a local
+  # Jaeger or Grafana Tempo. Leave the endpoint unset here: setting it at all switches export on.
+  tracing:
+    sampling:
+      probability: ${JIZZA_TRACE_SAMPLING:1.0}
 
 logging:
   level:
@@ -131,6 +138,17 @@ jizza:
       version: "2023-06-01"
       timeout: 120s
       max-output-tokens: 4096
+      # A call that failed for a passing reason (rate limited, overloaded, a dropped connection)
+      # is tried again with backoff, honouring the provider's retry-after.
+      retry:
+        max-attempts: ${JIZZA_LLM_MAX_ATTEMPTS:4}
+        initial-backoff: 1s
+        max-backoff: 20s
+        max-retry-after: 60s
+      # Tool definitions and each agent's instructions are cached by the provider, and so is the
+      # conversation inside a tool loop. Turn off only for a proxy that rejects cache_control.
+      caching:
+        enabled: ${JIZZA_LLM_PROMPT_CACHING:true}
     # Model tiering: a cheap model routes, a stronger one does the hard work. Configuration, never
     # a literal, because model names change.
     models:
