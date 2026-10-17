@@ -120,6 +120,7 @@ Two Maven aggregates plus the deployable that assembles them:
 | `jizza-engine/engine-orchestrator` | Jizza, delegation, agent seeding and renaming |
 | `jizza-engine/engine-connectors` | OAuth2 handshake, connection config, the SSRF/egress guard |
 | `jizza-engine/engine-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
+| `jizza-engine/engine-mcp` | Tools from the MCP servers the owner configured (`jizza.mcp.servers`), offered to the agents the owner named and run through the Capability Registry like any other tool |
 | `jizza-engine/engine-scheduler` | Durable one-time and recurring tasks, DST-safe, no double-fire |
 | `jizza-engine/engine-workflow` | The Postgres saga engine, the JEXL sandbox, interventions |
 | `jizza-engine/engine-procedures` | Learned-procedure mechanism: binding enforcement, deviation recording |
@@ -129,6 +130,8 @@ Two Maven aggregates plus the deployable that assembles them:
 | `jizza-platform/platform-usecases` | The business logic: ownership checks, defaults, audit calls, and the "learn a procedure" / activity-view decisions, all behind `engine-api` |
 | `jizza-platform/platform-api` | The HTTP + WebSocket surface, controllers, the activity view's ownership check |
 | `jizza-app` | Assembly, configuration, profiles |
+| `jizza-evals` | Fixed scenarios per built-in agent, graded on tools called, guardrail decisions and the answer; run against the real model on request |
+| `jizza-spikes` | Experiments that never ship, built only with `-Pspikes` (the ADK for Java evaluation: [docs/ADK-DECISION.md](docs/ADK-DECISION.md)) |
 
 `docs/INTEGRATION-MANIFEST.md` records what each module exposes and consumes, and every place the
 implementation had to resolve a gap in the Architecture Contract.
@@ -248,6 +251,36 @@ Tests named `*DbTest` or `*E2eTest` need a Docker daemon: they run against the r
 `pgvector/pgvector:pg16` image, because `citext`, `inet`, `jsonb` and `vector` have no honest
 in-memory stand-in. Without Docker they skip rather than pretending to pass.
 
+### Evals: how the agents behave against the real model
+
+`jizza-evals` holds scenarios for Jizza, Vita, Kai and Cato (`src/main/resources/evals/*.json`):
+the built-in prompts, the real agent loop, Capability Registry and guardrails, and fixture tools in
+place of real services, so nothing outside the process is touched except the model. Each scenario
+says which tools must or must not be called, what the guardrails must decide, and what the answer
+must or must not say. The normal build checks every scenario file and the harness itself. Running
+them against the model costs money, so it happens only when asked:
+
+```bash
+ANTHROPIC_API_KEY=... mvn -pl jizza-evals -am test -Djizza.evals=true -Dtest=LiveEvalSuiteTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Options: `-Djizza.evals.trials=3` (runs per scenario), `-Djizza.evals.filter=kai-` (by id),
+`-Djizza.evals.min-pass-rate=0.8`. A scenario marked `critical` (every safety promise in the
+built-in prompts has one) must pass every trial. The report is written to
+`jizza-evals/target/evals/report.md`. Run it after changing a prompt, a model or the loop.
+
+### Tracing
+
+Every agent run, model call and tool call is a span (`jizza.agent.run`, `jizza.llm.call`,
+`jizza.tool.call`) carrying names, tiers, token counts, cache hits and outcomes, never prompts,
+arguments or replies. Nothing is exported by default. To see traces, point the app at any OTLP
+collector, for example a local Jaeger:
+
+```bash
+docker run -d -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one
+MANAGEMENT_OTLP_TRACING_ENDPOINT=http://localhost:4318/v1/traces mvn -pl jizza-app spring-boot:run
+```
+
 ## Security notes worth knowing before you extend this
 
 * **Sign-in is two-step and hard to replay.** Argon2id passwords, then a TOTP code that is accepted
@@ -272,6 +305,14 @@ in-memory stand-in. Without Docker they skip rather than pretending to pass.
 * **Secrets never enter model context.** The model sees tool *schemas*; the executor injects auth
   server-side. The Anthropic client refuses to send a payload that still looks like it carries
   credential material.
+* **An MCP server is configuration, not something a model or a form can add.** Only the agents the
+  owner names see it, and a tool the owner has not classified under `action-types` is judged the
+  most consequential kind, so it asks every time; what a server says about its own tools is never
+  trusted. The client declares no sampling or elicitation, so a server cannot reach the model or the
+  user outside the agent loop.
+* **The model's turns are replayed exactly.** Thinking blocks and their signatures are kept and sent
+  back unchanged, so the history only grows at the end (prompt caching and the provider's
+  reasoning checks both depend on it).
 * **Knowledge isolation is structural.** The calling agent id is the namespace and is part of every
   query; the knowledge tool schemas have no namespace parameter at all.
 * **Outbound calls are guarded.** Only https, only publicly-routable addresses, only the host the

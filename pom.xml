@@ -45,6 +45,16 @@
     <module>jizza-evals</module>
   </modules>
 
+  <!-- Experiments that never ship: mvn -Pspikes ... builds them. -->
+  <profiles>
+    <profile>
+      <id>spikes</id>
+      <modules>
+        <module>jizza-spikes</module>
+      </modules>
+    </profile>
+  </profiles>
+
   <dependencyManagement>
     <dependencies>
       <dependency>

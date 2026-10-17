@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-spikes</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>adk-spike</artifactId>
+  <name>Jizza :: spike :: Google ADK for Java</name>
+  <description>Kai run by ADK's LlmAgent and Runner, with Jizza's own Claude client as the model, the
+    Capability Registry behind every tool, and budgets and accounting as an ADK plugin. Answers
+    whether ADK can carry Jizza's agent loop without losing what the loop guarantees.</description>
+  <properties>
+    <google-adk.version>1.12.0</google-adk.version>
+  </properties>
+  <dependencies>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-agents</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId></dependency>
+    <dependency><groupId>com.google.adk</groupId><artifactId>google-adk</artifactId><version>${google-adk.version}</version></dependency>
+    <!-- The same scenarios Jizza's own loop is graded on. -->
+    <dependency><groupId>com.jizza</groupId><artifactId>jizza-evals</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+  </dependencies>
+</project>
