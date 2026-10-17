@@ -113,6 +113,15 @@ public class PolicyAutonomyGate implements AutonomyGate {
   private final ObjectProvider<JizzaReviewer> reviewer;
   private final AuditLog audit;
 
+  /** What tools served from outside the engine do, as the user configured them. Optional. */
+  private ObjectProvider<com.jizza.engine.api.autonomy.ActionTypeSource> actionTypeSources;
+
+  @Autowired(required = false)
+  public void setActionTypeSources(
+      ObjectProvider<com.jizza.engine.api.autonomy.ActionTypeSource> actionTypeSources) {
+    this.actionTypeSources = actionTypeSources;
+  }
+
   @Autowired
   public PolicyAutonomyGate(AutonomyPolicyRepository policies, AgentRepository agents,
                             GeneratedToolRepository tools, GuardrailConditions conditions,
@@ -283,6 +292,9 @@ public class PolicyAutonomyGate implements AutonomyGate {
     }
     if (known != null) return new Resolved(known, null);
 
+    Optional<ActionType> configured = configuredActionType(agent.getId(), toolRef);
+    if (configured.isPresent()) return new Resolved(configured.get(), null);
+
     return tools.findEnabledForUser(agent.getUserId()).stream()
         .filter(tool -> tool.getName().equals(toolRef))
         .findFirst()
@@ -290,6 +302,16 @@ public class PolicyAutonomyGate implements AutonomyGate {
         // An unknown tool is treated as the most consequential kind: unrecognised is not the same
         // as harmless.
         .orElse(new Resolved(ActionType.MONEY, null));
+  }
+
+  /** The first answer a configured source gives; empty when none knows the tool. */
+  private Optional<ActionType> configuredActionType(UUID agentId, String toolRef) {
+    if (actionTypeSources == null) return Optional.empty();
+    for (var source : actionTypeSources) {
+      Optional<ActionType> type = source.actionTypeOf(agentId, toolRef);
+      if (type.isPresent()) return type;
+    }
+    return Optional.empty();
   }
 
   /** The agent's managers, nearest first. Cycle-safe. */

@@ -141,6 +141,33 @@ class AutonomyTest {
   }
 
   @Test
+  void aToolTheUserConfiguredAsReadingRunsFreelyAndEverythingElseFromThatSourceStillAsks() {
+    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+    beans.addBean("mcp", (com.jizza.engine.api.autonomy.ActionTypeSource) (agentId, toolRef) ->
+        "mcp_docs__search".equals(toolRef)
+            ? Optional.of(com.jizza.engine.api.enums.ActionType.READ) : Optional.empty());
+    gate.setActionTypeSources(
+        beans.getBeanProvider(com.jizza.engine.api.autonomy.ActionTypeSource.class));
+
+    assertThat(gate.evaluate(kai.getId(), "mcp_docs__search", null).rule())
+        .isEqualTo(AutonomyRule.ALLOW);
+    assertThat(gate.evaluate(kai.getId(), "mcp_docs__delete_page", null).rule())
+        .isEqualTo(AutonomyRule.ASK);
+  }
+
+  @Test
+  void aConfiguredActionTypeNeverLoosensAUsersOwnRule() {
+    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+    beans.addBean("mcp", (com.jizza.engine.api.autonomy.ActionTypeSource) (agentId, toolRef) ->
+        Optional.of(com.jizza.engine.api.enums.ActionType.READ));
+    gate.setActionTypeSources(
+        beans.getBeanProvider(com.jizza.engine.api.autonomy.ActionTypeSource.class));
+    policy(null, "mcp_*", AutonomyRule.DENY, 0, null);
+
+    assertThat(gate.evaluate(kai.getId(), "mcp_docs__search", null).denied()).isTrue();
+  }
+
+  @Test
   void theBuiltInReadAndRelayToolsRunFreely() {
     for (String tool : List.of("knowledge_search", "knowledge_get", "knowledge_upsert",
         "notify_user", "request_permission", "propose_workflow", "delegate_to_specialist")) {

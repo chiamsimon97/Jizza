@@ -173,6 +173,29 @@ jizza:
       per-window-units: ${JIZZA_LLM_BUDGET:5.0}
       window: 24h
 
+  # MCP servers whose tools agents may use. Each tool reaches the model as mcp_<server>__<tool>
+  # and runs through the Capability Registry like any other: kill switch, guardrails, audit.
+  # Only the agents named under `agents` see a server. A tool not listed under `action-types` is
+  # treated as moving money, so it asks every time; the server's own claims are not trusted.
+  # mcp:
+  #   servers:
+  #     notes:
+  #       transport: stdio
+  #       command: npx
+  #       args: [-y, "@modelcontextprotocol/server-filesystem", /Users/me/Notes]
+  #       agents: [jizza, professional]
+  #       tools: [read_text_file, list_directory, search_files]
+  #       action-types:
+  #         read_text_file: read
+  #         list_directory: read
+  #         search_files: read
+  #     docs:
+  #       transport: http
+  #       url: http://localhost:3333/mcp
+  #       headers:
+  #         Authorization: Bearer ${DOCS_MCP_TOKEN}
+  #       agents: [professional]
+
   # Embeddings for knowledge and memory. "local" is offline hashing (lexical similarity, nothing
   # leaves the machine). "openai-compatible" calls any /v1/embeddings endpoint; a local Ollama
   # (ollama pull nomic-embed-text) gives real semantic search and still stays on this machine.

@@ -28,6 +28,7 @@
     <bouncycastle.version>1.78.1</bouncycastle.version>
     <swagger-parser.version>2.1.22</swagger-parser.version>
     <pdfbox.version>3.0.5</pdfbox.version>
+    <mcp.version>2.1.0</mcp.version>
   </properties>
 
   <!--
@@ -76,6 +77,9 @@
         <groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.jizza</groupId><artifactId>engine-mcp</artifactId><version>${project.version}</version>
+      </dependency>
+      <dependency>
         <groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
@@ -120,6 +124,12 @@
       </dependency>
       <dependency>
         <groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId><version>${pdfbox.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId><artifactId>mcp-core</artifactId><version>${mcp.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId><artifactId>mcp-json-jackson2</artifactId><version>${mcp.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
