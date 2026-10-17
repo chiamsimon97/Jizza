@@ -39,7 +39,7 @@ export function TaskForm() {
     if (!request) return
     const f = request.fields
     setTitle(str(f.title))
-    setAgentId(matchAgent(agents, f.agent_key ?? f.agent)?.id ?? agents?.find(a => a.isOrchestrator)?.id ?? '')
+    setAgentId(matchAgent(agents, f.agent_key ?? f.agent)?.id ?? agents?.find(a => a.orchestrator)?.id ?? '')
     setSchedule(f.schedule === 'recurring' || (!f.schedule && str(f.cron)) ? 'recurring' : 'once')
     setRunAt(str(f.run_at) ? toLocalInput(str(f.run_at)) : '')
     setCron(str(f.cron))

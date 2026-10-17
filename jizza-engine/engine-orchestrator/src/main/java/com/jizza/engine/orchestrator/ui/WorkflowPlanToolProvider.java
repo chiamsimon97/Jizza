@@ -171,7 +171,9 @@ public class WorkflowPlanToolProvider implements ToolProvider {
 
   private String roster(UUID userId) {
     return agents.findByUserIdAndIsOrchestratorFalseAndEnabledTrue(userId).stream()
-        .map(a -> a.getKey() + " (" + a.getName() + (a.getDomain() == null ? "" : ", " + a.getDomain()) + ")")
+        .map(a -> a.getKey() + " (" + a.getName()
+            + (a.getDescription() != null ? ": " + a.getDescription()
+                : a.getDomain() == null ? "" : ", " + a.getDomain()) + ")")
         .collect(Collectors.joining(", "));
   }
 

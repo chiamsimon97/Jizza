@@ -1,6 +1,7 @@
 package com.jizza.engine.api.orchestrator;
 
 import com.jizza.engine.api.dto.AgentDto;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -18,4 +19,39 @@ public interface AgentStore {
   AgentDto rename(UUID agentId, String name);
 
   AgentDto setEnabled(UUID agentId, boolean enabled);
+
+  /**
+   * Creates a custom agent under {@code key}, with its own memory domain equal to the key. Draft
+   * and archived agents are stored disabled whatever else is asked.
+   */
+  default AgentDto createCustom(UUID userId, String key, CustomAgentDraft draft) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  /** Replaces what a custom agent is; its key and domain never change. */
+  default AgentDto updateCustom(UUID agentId, CustomAgentDraft draft) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  /** Changes the lifecycle status; draft and archived also disable the agent, active enables it. */
+  default AgentDto setStatus(UUID agentId, String status) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  default AgentDto setParent(UUID agentId, UUID parentAgentId) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  /** Deletes the agent and everything that cascades from it. */
+  default void delete(UUID agentId) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  default AgentRevision recordRevision(UUID agentId, UUID changedByUserId) {
+    throw new UnsupportedOperationException("Custom agents are not supported");
+  }
+
+  default List<AgentRevision> revisions(UUID agentId) {
+    return List.of();
+  }
 }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.autonomy.AutonomyGate;
 import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.enums.NotificationKind;
 import com.jizza.engine.api.enums.TaskStatus;
@@ -511,6 +512,12 @@ class ProceduresAndAutonomyE2eTest extends E2eSupport {
   @Test
   void aValueCapSavedThroughTheApiRoutesAnOverLimitCallToApproval() {
     UUID cato = agentId("professional");
+    // The account-wide "money: never" default would otherwise catch the over-limit call first.
+    for (JsonNode policy : api.get("/api/autonomy/policies").json().path("policies")) {
+      if (ActionType.MONEY.token().equals(policy.path("toolRef").asText())) {
+        api.delete("/api/autonomy/policies/" + policy.path("id").asText());
+      }
+    }
     var saved = api.put("/api/autonomy/policies", Map.of(
         "agentId", cato.toString(), "toolRef", "*", "rule", "ALLOW", "precedence", 50,
         "limits", Json.obj().put("field", "body.amount").put("maxValue", 100)));

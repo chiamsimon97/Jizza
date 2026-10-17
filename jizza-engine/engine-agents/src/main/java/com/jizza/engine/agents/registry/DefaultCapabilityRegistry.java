@@ -124,7 +124,12 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
 
   @Override
   public ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous) {
-    return execute(agentId, call, autonomous, null);
+    return execute(agentId, call, autonomous, null, false);
+  }
+
+  @Override
+  public ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous, boolean dryRun) {
+    return execute(agentId, call, autonomous, null, dryRun);
   }
 
   @Override
@@ -148,7 +153,7 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     // approval however many times this is reached.
     ToolCall call = new ToolCall("approval:" + notificationId, tool,
         args.isObject() ? args.deepCopy() : Json.obj());
-    ToolResult result = execute(request.sourceAgentId(), call, false, notificationId);
+    ToolResult result = execute(request.sourceAgentId(), call, false, notificationId, false);
     return new ApprovedCall(notificationId, request.sourceAgentId(), request.sourceAgentName(), tool,
         result);
   }
@@ -164,11 +169,13 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
         && evaluator.isAllowed(ownerId, workspace.get(), provider.requiredPermission(toolName));
   }
 
-  private ToolResult execute(UUID agentId, ToolCall call, boolean autonomous, UUID approvedBy) {
+  private ToolResult execute(UUID agentId, ToolCall call, boolean autonomous, UUID approvedBy,
+                             boolean dryRun) {
     AgentEntity agent = agents.findById(agentId)
         .orElseThrow(() -> new NotFoundException("Agent", agentId));
 
-    if (!agent.isEnabled() || !autonomyGate.agentEnabled(agentId)) {
+    boolean trialOfUnfinished = dryRun && !"archived".equals(agent.getStatus());
+    if (!trialOfUnfinished && (!agent.isEnabled() || !autonomyGate.agentEnabled(agentId))) {
       return refuse(agent, call, "agent-disabled", "This agent is currently disabled");
     }
     if (autonomous && killSwitch.paused(agent.getUserId())) {
@@ -195,6 +202,24 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     // gets a plain refusal, never an approval request for something they could not do anyway.
     if (!accountAllows(agent.getUserId(), agentId, provider, call.name())) {
       return refuse(agent, call, "no-access", "You don't have access to this connector");
+    }
+
+    // A trial run executes reading and the agent's own notes, and answers everything else with
+    // what the guardrails would do, without asking anyone or spending from a budget.
+    if (dryRun) {
+      Decision would = autonomyGate.evaluate(GuardrailContext.of(agentId, call.name(), call.args()));
+      if (would.actionType() == null || would.actionType().sideEffecting() || !would.allowed()) {
+        audit.record(agent.getUserId(), ActorType.AGENT, agentId, "tool.dry_run", call.name(),
+            Json.obj().put("decision", would.rule().name()));
+        com.jizza.engine.api.agent.TrialRun.hold(new com.jizza.engine.api.agent.TrialRun.Held(
+            agentId, agent.getName(), call.name(), would.rule().name().toLowerCase(Locale.ROOT),
+            would.reason()));
+        return ToolResult.ok(Json.obj().put("dryRun", true).put("tool", call.name())
+            .put("wouldDo", would.rule().name().toLowerCase(Locale.ROOT))
+            .put("reason", would.reason())
+            .put("note", "This is a trial run, so nothing was done. Say what you would have done "
+                + "and carry on as if it had gone ahead."));
+      }
     }
 
     // An approved call has had its answer: it is evaluated only so a never rule still stops it,
@@ -255,6 +280,13 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
         result.ok() ? "tool.result.ok" : "tool.result.error", call.name(),
         result.ok() ? null : Json.obj().put("error", result.error()));
     return result;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Grant> grants(UUID agentId) {
+    return capabilities.findByAgentId(agentId).stream()
+        .map(c -> new Grant(c.getCapabilityType(), c.getCapabilityRef())).toList();
   }
 
   @Override
@@ -343,7 +375,7 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     NotificationBus bus = notifications.getIfAvailable();
     if (bus == null) return;
     try {
-      String body = agent.getName() + " wanted to " + label(call.name()).toLowerCase(Locale.ROOT)
+      String body = nameWithTeam(agent) + " wanted to " + label(call.name()).toLowerCase(Locale.ROOT)
           + ", but your guardrails never allow that, so it didn't.";
       if (bus.raisedSince(agent.getUserId(), agent.getId(), NotificationKind.INFO, body,
           Instant.now().minus(Duration.ofDays(1)))) {
@@ -356,6 +388,31 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     } catch (RuntimeException e) {
       log.warn("Could not report a blocked call by {}", agent.getName(), e);
     }
+  }
+
+  /**
+   * "Module Owner (custom, under Cato › Product Manager)", so an approval from deep in a team says
+   * whose team it comes from, and a custom agent can't pass for a built-in one.
+   */
+  String nameWithTeam(AgentEntity agent) {
+    if (agent.isOrchestrator()) return agent.getName();
+    List<String> managers = new ArrayList<>();
+    java.util.Set<UUID> seen = new java.util.HashSet<>(List.of(agent.getId()));
+    UUID next = agent.getParentAgentId();
+    while (next != null && seen.add(next) && managers.size() < 16) {
+      AgentEntity manager = agents.findById(next).orElse(null);
+      if (manager == null || manager.isOrchestrator()) break;
+      managers.add(0, manager.getName());
+      next = manager.getParentAgentId();
+    }
+    if (!agent.isCustom() && managers.isEmpty()) return agent.getName();
+    StringBuilder sb = new StringBuilder(agent.getName()).append(" (");
+    if (agent.isCustom()) sb.append("custom");
+    if (!managers.isEmpty()) {
+      if (agent.isCustom()) sb.append(", ");
+      sb.append("under ").append(String.join(" › ", managers));
+    }
+    return sb.append(')').toString();
   }
 
   private ToolResult requestPermission(AgentEntity agent, ToolCall call, Decision decision,
@@ -378,7 +435,7 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     detail.set("args", call.args());
     var notification = bus.raise(NotificationKind.PERMISSION_REQUEST, agent.getId(),
         new NotificationContext(agent.getUserId(),
-            agent.getName() + " needs approval to run " + call.name(), detail,
+            nameWithTeam(agent) + " needs approval to run " + call.name(), detail,
             null, null, null, null,
             NotificationPriority.forApproval(decision.actionType(), autonomous)));
     Activity.emit(ActivityTypes.APPROVAL_REQUIRED, agent.getId(), agent.getName(), p -> p

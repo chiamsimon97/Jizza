@@ -86,7 +86,7 @@ class DelegationToolProviderTest {
   void theToolDescriptionListsTheAvailableSpecialistsByKeyAndName() {
     String description = provider.toolsFor(jizza.getId()).get(0).inputSchema()
         .path("properties").path("agent_key").path("description").asText();
-    assertThat(description).contains("health (Vita, health)").contains("finance (Kai, finance)");
+    assertThat(description).contains("health: Vita. Use when: health").contains("finance: Kai. Use when: finance");
   }
 
   @Test
@@ -124,7 +124,7 @@ class DelegationToolProviderTest {
         Json.obj().put("agent_key", "legal").put("task", "read this contract")));
 
     assertThat(result.ok()).isFalse();
-    assertThat(result.error()).contains("No specialist with key 'legal'").contains("health (Vita");
+    assertThat(result.error()).contains("No one with key 'legal'").contains("health: Vita");
     verify(baseAgent, never()).run(any());
   }
 
@@ -136,7 +136,7 @@ class DelegationToolProviderTest {
         Json.obj().put("agent_key", "health").put("task", "sleep trend")));
 
     assertThat(result.ok()).isFalse();
-    assertThat(result.error()).contains("Vita is currently disabled");
+    assertThat(result.error()).contains("Vita is currently paused");
     verify(baseAgent, never()).run(any());
   }
 
@@ -155,7 +155,7 @@ class DelegationToolProviderTest {
         Json.obj().put("agent_key", "finance").put("task", "check my balance")));
 
     assertThat(result.ok()).isFalse();
-    assertThat(result.error()).contains("Only the orchestrator may delegate");
+    assertThat(result.error()).contains("Only an agent with a team may hand work on");
     verify(baseAgent, never()).run(any());
   }
 
@@ -181,5 +181,83 @@ class DelegationToolProviderTest {
     verify(baseAgent).run(captor.capture());
     assertThat(captor.getValue().autonomous()).isFalse();
     assertThat(captor.getValue().agentId()).isEqualTo(vita.getId());
+  }
+
+  // ── Teams ───────────────────────────────────────────────────────────────────
+
+  private AgentEntity report(String key, String name, AgentEntity manager) {
+    AgentEntity a = agent(key, name, false);
+    a.setCustom(true);
+    a.setParentAgentId(manager.getId());
+    when(agents.findById(a.getId())).thenReturn(Optional.of(a));
+    when(agents.findByUserIdAndKey(userId, key)).thenReturn(Optional.of(a));
+    return a;
+  }
+
+  @Test
+  void aManagerOnlyReachesItsOwnDirectReports() {
+    AgentEntity pm = report("c_pm", "Product manager", jizza);
+    AgentEntity lead = report("c_lead", "UI lead", pm);
+    when(agents.findByParentAgentIdOrderByNameAsc(pm.getId())).thenReturn(List.of(lead));
+    org.mockito.Mockito.doAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      return AgentResult.of(req.agentId(), "someone", "done: " + req.instruction());
+    }).when(baseAgent).run(any());
+
+    assertThat(provider.toolsFor(pm.getId())).extracting(ToolSpec::name)
+        .contains("delegate_to_specialist");
+    var sideways = provider.invoke(pm.getId(), new ToolCall("delegate_to_specialist",
+        Json.obj().put("agent_key", "finance").put("task", "check my balance")));
+    var down = provider.invoke(pm.getId(), new ToolCall("delegate_to_specialist",
+        Json.obj().put("agent_key", "c_lead").put("task", "sketch the screen")));
+
+    assertThat(sideways.ok()).isFalse();
+    assertThat(down.ok()).isTrue();
+    assertThat(provider.toolsFor(lead.getId())).as("no reports, no delegation").isEmpty();
+  }
+
+  @Test
+  void jizzaMayHandWorkStraightToAnAgentDeepInATeam() {
+    AgentEntity pm = report("c_pm", "Product manager", jizza);
+    AgentEntity lead = report("c_lead", "UI lead", pm);
+    org.mockito.Mockito.doAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      return AgentResult.of(req.agentId(), "UI lead", "done");
+    }).when(baseAgent).run(any());
+
+    var result = provider.invoke(jizza.getId(), new ToolCall("delegate_to_specialist",
+        Json.obj().put("agent_key", "c_lead").put("task", "sketch the screen")));
+
+    assertThat(result.ok()).isTrue();
+    assertThat(result.output().path("agent_name").asText()).isEqualTo("UI lead");
+  }
+
+  @Test
+  void aTrialRunStaysATrialAllTheWayDownTheTeam() {
+    java.util.List<AgentRequest> seen = new java.util.ArrayList<>();
+    org.mockito.Mockito.doAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      seen.add(req);
+      return AgentResult.of(req.agentId(), "Vita", "ok");
+    }).when(baseAgent).run(any());
+
+    com.jizza.engine.api.agent.TrialRun.run(true, () -> provider.invoke(jizza.getId(),
+        new ToolCall("delegate_to_specialist",
+            Json.obj().put("agent_key", "health").put("task", "sleep trend"))));
+
+    assertThat(seen).singleElement().satisfies(req -> assertThat(req.dryRun()).isTrue());
+  }
+
+  @Test
+  void handOffsAreRecordedOnTheTeamTrail() {
+    var recorded = com.jizza.engine.api.agent.TeamTrail.record(() -> provider.invoke(
+        jizza.getId(), new ToolCall("delegate_to_specialist",
+            Json.obj().put("agent_key", "health").put("task", "sleep trend"))));
+
+    assertThat(recorded.steps()).singleElement().satisfies(step -> {
+      assertThat(step.fromName()).isEqualTo("Jizza");
+      assertThat(step.toName()).isEqualTo("Vita");
+      assertThat(step.depth()).isEqualTo(1);
+    });
   }
 }

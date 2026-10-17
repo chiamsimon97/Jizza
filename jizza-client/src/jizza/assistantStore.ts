@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, UiAction, WorkflowPlan } from '@/types'
+import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, UiAction, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -31,6 +31,8 @@ export interface AssistantMessage {
   question?: { text: string; options: string[] }
   /** A workflow plan Jizza proposed, saved only if the user approves it. */
   plan?: WorkflowPlan
+  /** A new agent or team Jizza drafted, created only if the user says so. */
+  proposal?: AgentProposal
   /** Specialists who worked on this reply, shown by their logos. */
   helpers?: { agentId: string; agentName: string }[]
   error?: boolean
@@ -107,14 +109,16 @@ function describe(action: UiAction): string {
     case 'set_theme': return `Switched to the ${action.payload.theme} theme`
     case 'ask_user': return 'Waiting for your answer'
     case 'propose_workflow': return 'Proposed a workflow plan'
+    case 'propose_agent': return 'Drafted a new agent'
   }
 }
 
 /** Carries out Jizza's actions on the app, in order, and reports what was done. */
-function execute(actions: UiAction[], run = true): { steps: Step[]; question?: AssistantMessage['question']; plan?: WorkflowPlan } {
+function execute(actions: UiAction[], run = true): { steps: Step[]; question?: AssistantMessage['question']; plan?: WorkflowPlan; proposal?: AgentProposal } {
   const steps: Step[] = []
   let question: AssistantMessage['question']
   let plan: WorkflowPlan | undefined
+  let proposal: AgentProposal | undefined
   for (const action of actions) {
     switch (action.type) {
       case 'navigate': {
@@ -147,10 +151,14 @@ function execute(actions: UiAction[], run = true): { steps: Step[]; question?: A
         if (!action.payload?.planId || !Array.isArray(action.payload.steps)) continue
         plan = action.payload
         continue
+      case 'propose_agent':
+        if (!action.payload?.proposalId || !Array.isArray(action.payload.agents)) continue
+        proposal = action.payload
+        continue
     }
     steps.push({ label: describe(action) })
   }
-  return { steps, question, plan }
+  return { steps, question, plan, proposal }
 }
 
 const helpersOf = (contributors?: Contribution[]) =>
@@ -275,11 +283,11 @@ export const useAssistantStore = create<AssistantState>()(
             break
           case 'job.completed': {
             const actions = (e.payload.actions ?? []) as UiAction[]
-            const { steps, question, plan } = execute(actions)
+            const { steps, question, plan, proposal } = execute(actions)
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, helpers: helpersOf(e.payload.contributors) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, helpers: helpersOf(e.payload.contributors) }
                 : m)),
               lastReplyId: id,
             }))
@@ -446,7 +454,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
   }
   const actions = m.metadata?.actions ?? []
-  const { steps, question, plan } = execute(actions, false)
+  const { steps, question, plan, proposal } = execute(actions, false)
   return {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -458,6 +466,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     steps: steps.length ? steps : undefined,
     question,
     plan,
+    proposal,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
   }
 }

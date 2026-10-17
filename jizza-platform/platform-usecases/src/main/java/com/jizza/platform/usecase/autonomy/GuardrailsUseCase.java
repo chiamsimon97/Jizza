@@ -44,7 +44,8 @@ public class GuardrailsUseCase {
   public record Cell(AutonomyRule rule, UUID policyId, String matched, boolean locked) {}
 
   public record AgentGuardrails(UUID id, String key, String name, boolean orchestrator,
-                                boolean enabled, Map<ActionType, Cell> modes) {}
+                                boolean enabled, Map<ActionType, Cell> modes, boolean custom,
+                                UUID parentAgentId, String status) {}
 
   public record Overview(List<AutonomyRuleDto> rules, List<AgentGuardrails> agents,
                          String defaultRule, boolean paused, QuietHours quietHours) {}
@@ -84,17 +85,20 @@ public class GuardrailsUseCase {
     List<AutonomyRuleDto> rules = policies.list(userId);
     List<AgentGuardrails> grid = new ArrayList<>();
     for (AgentDto agent : agents.list(userId)) {
+      if ("archived".equals(agent.status())) continue;
       Map<ActionType, Cell> modes = new LinkedHashMap<>();
       for (ActionType type : ActionType.values()) {
         // A stand-in call of that kind, judged as the agent would be outside any workflow. A rule
         // with conditions shows as its mode; the conditions are on the rule itself.
-        Decision d = gate.evaluate(new GuardrailContext(agent.id(), type.token(), null, null, null,
-            null, true, type));
+        // A draft shows the rules it will start with once it is activated.
+        Decision d = com.jizza.engine.api.agent.TrialRun.run("draft".equals(agent.status()),
+            () -> gate.evaluate(new GuardrailContext(agent.id(), type.token(), null, null, null,
+                null, true, type)));
         modes.put(type, new Cell(d.rule(), d.policyId(), d.matchedPolicy(),
             rules.stream().anyMatch(r -> r.locked() && r.id().equals(d.policyId()))));
       }
       grid.add(new AgentGuardrails(agent.id(), agent.key(), agent.name(), agent.orchestrator(),
-          agent.enabled(), modes));
+          agent.enabled(), modes, agent.custom(), agent.parentAgentId(), agent.status()));
     }
     return new Overview(rules, grid, defaultRule, paused,
         settings.quietHours(userId).orElse(null));

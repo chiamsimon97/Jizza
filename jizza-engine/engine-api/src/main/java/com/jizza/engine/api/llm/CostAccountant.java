@@ -12,4 +12,9 @@ public interface CostAccountant {
 
   /** Spend so far in the current accounting window, in the configured currency unit. */
   double spendInWindow(UUID userId);
+
+  /** Spend recorded under one purpose (such as {@code agent:<key>}) since a moment. */
+  default double spendSince(UUID userId, String purpose, java.time.Instant since) {
+    return 0d;
+  }
 }

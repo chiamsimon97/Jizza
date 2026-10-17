@@ -209,7 +209,10 @@ public class MemoryToolProvider implements ToolProvider {
         props.getWrite().getAgentConfidence(),
         args.hasNonNull("importance") ? args.path("importance").asDouble() : null,
         MemorySource.AGENT, "agent:" + agent.getKey(), false, about,
-        args.path("shared").asBoolean(false) ? List.of() : null, null);
+        args.path("shared").asBoolean(false) ? List.of()
+            // What a custom agent learns stays in its own domain unless it shares it.
+            : agent.isCustom() && agent.getDomain() != null ? List.of(agent.getDomain()) : null,
+        null);
 
     MemoryWrite write = store.remember(agent.getUserId(), draft, Actor.agent(agent.getId()));
     ObjectNode out = Json.obj();

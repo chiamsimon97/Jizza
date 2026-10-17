@@ -44,7 +44,16 @@ public class AgentAdminUseCase {
       throw new ValidationException("Agent names are limited to " + MAX_NAME_LENGTH + " characters");
     }
 
-    AgentDto renamed = agents.rename(agentId, name.trim());
+    String trimmed = name.trim();
+    if (!agent.orchestrator() && trimmed.equalsIgnoreCase("jizza")) {
+      throw new ValidationException("Only your assistant is called Jizza");
+    }
+    boolean taken = directory.list(userId).stream()
+        .filter(a -> !a.id().equals(agentId) && !"archived".equals(a.status()))
+        .anyMatch(a -> a.name().equalsIgnoreCase(trimmed));
+    if (taken) throw new ValidationException("You already have an agent called " + trimmed);
+
+    AgentDto renamed = agents.rename(agentId, trimmed);
     audit.record(userId, ActorType.USER, null, "agent.renamed", agent.key(),
         Json.obj().put("from", agent.name()).put("to", renamed.name()));
     return renamed;
@@ -56,6 +65,12 @@ public class AgentAdminUseCase {
     if (agent.orchestrator() && !enabled) {
       throw new ValidationException("Jizza is the only way you reach your agents and cannot be "
           + "disabled. Use the kill switch to pause autonomous activity instead.");
+    }
+
+    if (enabled && !agent.active()) {
+      throw new ValidationException("draft".equals(agent.status())
+          ? "Finish and activate " + agent.name() + " first"
+          : "Restore " + agent.name() + " from the archive first");
     }
 
     AgentDto updated = agents.setEnabled(agentId, enabled);

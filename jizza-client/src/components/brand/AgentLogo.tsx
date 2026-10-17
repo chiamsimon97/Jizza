@@ -3,8 +3,15 @@ import { Cheeks, Eyes, type FaceCtx, Mascot, Mouth } from './Mascot'
 
 export type AgentState = 'idle' | 'working' | 'off'
 
+/** How a custom agent looks: one of the mascot colours, chosen when it was made. */
+export interface AgentAvatar {
+  style?: string
+  colour?: string
+}
+
 interface AgentLogoProps {
   agentKey: string
+  avatar?: AgentAvatar | null
   state?: AgentState
   size?: number
   className?: string
@@ -31,7 +38,7 @@ const SLEEPY = ['Zzz… five more minutes.', "Shh, I'm paused.", 'Wake me with R
  * Kai the piggy bank swallows coins with dollar-sign eyes, Cato the envelope fires off paper planes.
  * They watch the pointer, grin on hover and blurt something out when poked. Off means asleep.
  */
-export function AgentLogo({ agentKey, state = 'idle', size = 40, className = '' }: AgentLogoProps) {
+export function AgentLogo({ agentKey, avatar, state = 'idle', size = 40, className = '' }: AgentLogoProps) {
   if (agentKey === 'jizza') {
     return <JizzaOrb size={size} state={state === 'working' ? 'thinking' : 'idle'} asleep={state === 'off'} className={className} />
   }
@@ -40,12 +47,23 @@ export function AgentLogo({ agentKey, state = 'idle', size = 40, className = '' 
   return (
     <Mascot size={size} state={state} asleep={off} quips={off ? SLEEPY : QUIPS[agentKey] ?? QUIPS.other}
       className={`agent-logo ${className}`}>
-      {face => <Art face={face} working={state === 'working'} />}
+      {face => <Art face={face} working={state === 'working'} colour={avatar?.colour} />}
     </Mascot>
   )
 }
 
-type ArtProps = { face: FaceCtx; working: boolean }
+type ArtProps = { face: FaceCtx; working: boolean; colour?: string }
+
+/** Body, screen and trim for each colour a custom agent can have. */
+export const AVATAR_COLOURS: Record<string, [string, string, string]> = {
+  purple: ['#8b5cf6', '#ede9fe', '#6d28d9'],
+  teal: ['#14b8a6', '#ccfbf1', '#0f766e'],
+  coral: ['#fb7185', '#ffe4e6', '#be123c'],
+  blue: ['#3b82f6', '#dbeafe', '#1d4ed8'],
+  amber: ['#f59e0b', '#fef3c7', '#b45309'],
+  green: ['#22c55e', '#dcfce7', '#15803d'],
+  pink: ['#ec4899', '#fce7f3', '#be185d'],
+}
 
 /** Vita: a heart in a sweatband who curls dumbbells while working. */
 function Vita({ face, working }: ArtProps) {
@@ -163,20 +181,21 @@ function Cato({ face, working }: ArtProps) {
 }
 
 /** Any other agent: a little robot whose antenna gear spins while it works. */
-function Robo({ face }: ArtProps) {
+function Robo({ face, colour }: ArtProps) {
+  const [body, screen, trim] = AVATAR_COLOURS[colour ?? 'purple'] ?? AVATAR_COLOURS.purple
   return (
     <>
       <g className="m-antenna">
-        <path d="M50 26 V12" stroke="#6d28d9" strokeWidth="3.5" strokeLinecap="round" />
-        <circle className="m-bulb" cx="50" cy="9" r="5" fill="#f472b6" stroke="#6d28d9" strokeWidth="2" />
+        <path d="M50 26 V12" stroke={trim} strokeWidth="3.5" strokeLinecap="round" />
+        <circle className="m-bulb" cx="50" cy="9" r="5" fill="#f472b6" stroke={trim} strokeWidth="2" />
       </g>
       <g className="m-squish">
-        <rect x="14" y="26" width="72" height="62" rx="16" fill="#8b5cf6" />
-        <rect x="20" y="32" width="60" height="44" rx="11" fill="#ede9fe" />
+        <rect x="14" y="26" width="72" height="62" rx="16" fill={body} />
+        <rect x="20" y="32" width="60" height="44" rx="11" fill={screen} />
         <Eyes x1={38} x2={62} y={52} r={8.5} face={face} />
         <Mouth x={50} y={66} w={11} face={face} />
-        <rect x="8" y="50" width="6" height="16" rx="3" fill="#6d28d9" />
-        <rect x="86" y="50" width="6" height="16" rx="3" fill="#6d28d9" />
+        <rect x="8" y="50" width="6" height="16" rx="3" fill={trim} />
+        <rect x="86" y="50" width="6" height="16" rx="3" fill={trim} />
       </g>
     </>
   )

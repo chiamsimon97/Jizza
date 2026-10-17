@@ -5,7 +5,10 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -53,8 +56,52 @@ public class DefaultAgentDirectory implements AgentDirectory {
     return agents.findById(agentId).map(AgentEntity::getName).orElse("Unknown agent");
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<AgentDto> reportsOf(UUID agentId) {
+    return agents.findByParentAgentIdOrderByNameAsc(agentId).stream()
+        .map(DefaultAgentDirectory::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<AgentDto> fromTemplate(UUID templateId) {
+    return agents.findByOriginTemplateId(templateId).stream()
+        .map(DefaultAgentDirectory::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<AgentDto> managersOf(UUID agentId) {
+    return managers(agents, agentId).stream().map(DefaultAgentDirectory::toDto).toList();
+  }
+
+  /**
+   * The agent's managers, nearest first. Bounded and cycle-safe, so a bad row can never hang a
+   * caller that walks up the team.
+   */
+  public static List<AgentEntity> managers(AgentRepository agents, UUID agentId) {
+    List<AgentEntity> chain = new ArrayList<>();
+    Set<UUID> seen = new HashSet<>();
+    seen.add(agentId);
+    UUID next = agents.findById(agentId).map(AgentEntity::getParentAgentId).orElse(null);
+    while (next != null && seen.add(next) && chain.size() < MAX_WALK) {
+      AgentEntity manager = agents.findById(next).orElse(null);
+      if (manager == null) break;
+      chain.add(manager);
+      next = manager.getParentAgentId();
+    }
+    return chain;
+  }
+
+  private static final int MAX_WALK = 16;
+
   public static AgentDto toDto(AgentEntity a) {
     return new AgentDto(a.getId(), a.getUserId(), a.getKey(), a.getName(), a.getDomain(),
-        a.getSystemPrompt(), a.isOrchestrator(), a.isEnabled());
+        a.getSystemPrompt(), a.isOrchestrator(), a.isEnabled(), a.isCustom(), a.getDescription(),
+        a.getStatus(), a.getModelTier(), List.of(a.getMemoryDomains()), a.getAvatar(),
+        a.getMonthlyCostLimit() == null ? null : a.getMonthlyCostLimit().doubleValue(),
+        a.getParentAgentId(), List.of(a.getResponsibilities()), a.getHandsOffTo(),
+        a.isMemoryFromManager(), a.getOriginTemplateId(), a.getOriginTemplateVersion());
   }
 }

@@ -9,6 +9,9 @@ import { ChatPage } from '@/pages/ChatPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { CosmosView } from '@/pages/memory/CosmosView'
 import { AgentsPage } from '@/pages/AgentsPage'
+import { NewAgentPage } from '@/pages/agents/NewAgentPage'
+import { AgentDetailPage } from '@/pages/agents/AgentDetailPage'
+import { OrganizationAgentTemplatesPage } from '@/pages/OrganizationAgentTemplatesPage'
 import { TasksPage } from '@/pages/TasksPage'
 import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
@@ -48,6 +51,8 @@ export default function App() {
             {/* Conversations live in the chat workspace's left column now. */}
             <Route path="/conversations" element={<Navigate to="/chat" replace />} />
             <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/agents/new" element={<NewAgentPage />} />
+            <Route path="/agents/:agentId" element={<AgentDetailPage />} />
             <Route path="/memory" element={<CosmosView />} />
             <Route path="/memory/:agentId" element={<CosmosView />} />
             <Route path="/tasks" element={<TasksPage />} />
@@ -66,6 +71,9 @@ export default function App() {
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.GUARDRAILS_VIEW} />}>
             <Route path="/organization/guardrails" element={<OrganizationGuardrailsPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.AGENT_TEMPLATE_MANAGE} />}>
+            <Route path="/organization/agent-templates" element={<OrganizationAgentTemplatesPage />} />
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.CONNECTOR_VIEW} />}>
             <Route path="/connectors" element={<ConnectorsPage />} />

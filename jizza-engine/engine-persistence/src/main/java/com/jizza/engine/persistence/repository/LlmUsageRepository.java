@@ -17,6 +17,14 @@ public interface LlmUsageRepository extends JpaRepository<LlmUsageEntity, UUID> 
       """)
   java.math.BigDecimal spendSince(@Param("userId") UUID userId, @Param("since") Instant since);
 
+  @Query("""
+      select coalesce(sum(u.costUnits), 0) from LlmUsageEntity u
+       where u.userId = :userId and u.purpose = :purpose and u.createdAt >= :since
+      """)
+  java.math.BigDecimal spendSinceForPurpose(@Param("userId") UUID userId,
+                                            @Param("purpose") String purpose,
+                                            @Param("since") Instant since);
+
   List<LlmUsageEntity> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
   List<LlmUsageEntity> findByUserIdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(

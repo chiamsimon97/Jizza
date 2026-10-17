@@ -17,6 +17,7 @@ public class AgentProperties {
   private final Anthropic anthropic = new Anthropic();
   private final Loop loop = new Loop();
   private final Budget budget = new Budget();
+  private final Teams teams = new Teams();
 
   /** Model string per tier, e.g. {@code routing: claude-haiku-...}. */
   private Map<ModelTier, String> models = new EnumMap<>(ModelTier.class);
@@ -59,6 +60,27 @@ public class AgentProperties {
     public void setMaxToolResultChars(int v) { this.maxToolResultChars = v; }
   }
 
+  /** Limits on one request as it travels down a team, so a deep team cannot run away. */
+  public static class Teams {
+    /** Agent runs one request may start across the whole team, the first one included. */
+    private int maxRunsPerRequest = 20;
+    /** Tokens one request may spend across the whole team. */
+    private int maxTokensPerRequest = 600_000;
+    /** Levels below the first agent a hand-off may reach. */
+    private int maxDepth = 4;
+    /** Reports a manager works with at once when it hands work to several. */
+    private int maxParallel = 4;
+
+    public int getMaxRunsPerRequest() { return maxRunsPerRequest; }
+    public void setMaxRunsPerRequest(int v) { this.maxRunsPerRequest = v; }
+    public int getMaxTokensPerRequest() { return maxTokensPerRequest; }
+    public void setMaxTokensPerRequest(int v) { this.maxTokensPerRequest = v; }
+    public int getMaxDepth() { return maxDepth; }
+    public void setMaxDepth(int v) { this.maxDepth = v; }
+    public int getMaxParallel() { return maxParallel; }
+    public void setMaxParallel(int v) { this.maxParallel = v; }
+  }
+
   public static class Budget {
     /** Spend ceiling per rolling window; zero disables the ceiling. */
     private double perWindowUnits = 5.0;
@@ -82,6 +104,7 @@ public class AgentProperties {
 
   public Anthropic getAnthropic() { return anthropic; }
   public Loop getLoop() { return loop; }
+  public Teams getTeams() { return teams; }
   public Budget getBudget() { return budget; }
   public Map<ModelTier, String> getModels() { return models; }
   public void setModels(Map<ModelTier, String> v) { this.models = v; }

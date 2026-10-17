@@ -1,12 +1,20 @@
 import { useState, type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { Check, Copy, Trash2, X } from 'lucide-react'
 import { fieldClass } from '@/components/ui/SlideOver'
-import type { AgentDto, RunStepDto } from '@/types'
+import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
+import type { AgentDto, RunStepDto, TeamStep } from '@/types'
 import { NODE_META, exitsOf, setNext, targetsFor, updateNode, upstreamOf, type CanvasGraph, type CanvasNode } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 
 /** A service action the user can pick, with the service it belongs to. */
 export interface ToolOption { id: string; label: string }
+
+/** The hand-offs an agent step recorded in its output, when it asked its team for help. */
+function teamOf(output: unknown): TeamStep[] {
+  const team = output && typeof output === 'object' ? (output as { team?: unknown }).team : undefined
+  return Array.isArray(team) ? (team as TeamStep[]) : []
+}
 
 /** Settings for the selected step: what it does, where it goes next, and how it did in the last run. */
 export function CanvasInspector({ node, graph, agents, tools, issues, step, readOnly, onChange, onRemove, onClose }: {
@@ -23,6 +31,8 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
   const nextOf = (b: 'true' | 'false' | null) => graph.edges.find(e => e.from === node.id && e.branch === b)?.to ?? ''
   const upstream = upstreamOf(graph, node.id).filter(n => n.type !== 'TRIGGER')
   const Icon = NODE_ICON[node.type]
+  const location = useLocation()
+  const current = agents?.find(a => a.id === str('agentId'))
 
   return (
     <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-80 flex-col gap-3 overflow-y-auto border-l shadow-xl border-gray-200 bg-white p-3 animate-fade-in dark:border-gray-800 dark:bg-gray-900">
@@ -51,8 +61,23 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
           <Labelled label="Agent">
             <select className={fieldClass} value={str('agentId')} onChange={e => setConfig({ agentId: e.target.value || undefined }, 'agent')}>
               <option value="">Choose an agent…</option>
-              {agents?.filter(a => !a.isOrchestrator).map(a => <option key={a.id} value={a.id}>{a.name}{a.domain ? ` · ${a.domain}` : ''}</option>)}
+              {current && (current.status === 'archived' || current.status === 'draft') && (
+                <option value={current.id}>{current.name} ({current.status})</option>
+              )}
+              {groupByTeam(agents ?? []).map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.agents.map(a => (
+                    <option key={a.id} value={a.id} disabled={!a.enabled && a.id !== current?.id}>
+                      {a.name}{a.custom ? ' · custom' : a.domain ? ` · ${a.domain}` : ''}{a.enabled ? '' : ' (paused)'}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
+            {!readOnly && (
+              <Link to="/agents/new" state={{ returnTo: `${location.pathname}${location.search}` }}
+                className="mt-1 inline-block text-xs text-brand-600 hover:underline dark:text-brand-300">+ New agent</Link>
+            )}
           </Labelled>
           <Labelled label="What should the agent do?">
             <textarea className={fieldClass} rows={4} value={str('instruction')} onChange={e => setConfig({ instruction: e.target.value }, 'instruction')} />
@@ -115,6 +140,12 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
             Last run: <span className={step.status === 'FAILED' ? 'text-red-600' : step.status === 'DONE' ? 'text-emerald-600' : 'text-gray-500'}>
               {step.status.toLowerCase()}</span>{step.attempts > 1 ? ` after ${step.attempts} tries` : ''}
           </p>
+          {teamOf(step.output).length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs text-gray-500">Who it handed work to</p>
+              <TeamTrailList steps={teamOf(step.output)} />
+            </div>
+          )}
           {step.output !== undefined && step.output !== null && (
             <pre className="mt-1 max-h-56 overflow-auto rounded-lg bg-gray-50 p-2 text-[11px] text-gray-700 dark:bg-gray-950 dark:text-gray-300">
               {typeof step.output === 'string' ? step.output : JSON.stringify(step.output, null, 2)}

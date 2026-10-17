@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.agent.AgentResult;
+import com.jizza.engine.api.agent.TeamTrail;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.error.AutonomyDeniedException;
@@ -70,13 +73,26 @@ public class AgentStepNodeExecutor implements NodeExecutor {
     try (GuardrailScope.Handle ignored = execution.workflowId() == null ? () -> { }
         : GuardrailScope.open(execution.workflowId(), execution.workflowVersion(),
             execution.node().id())) {
-      AgentResult result = baseAgent.run(new AgentRequest(execution.userId(), agentId, instruction,
-          execution.context().input(), List.of(), tier, true, execution.runId().toString()));
+      // A manager hands parts of the step to its reports; the trail says who did what.
+      TeamTrail.Recorded<AgentResult> recorded = TeamTrail.record(() -> baseAgent.run(
+          new AgentRequest(execution.userId(), agentId, instruction, execution.context().input(),
+              List.of(), tier, true, execution.runId().toString())));
+      AgentResult result = recorded.value();
       if (!result.ok()) return Outcome.retryable(result.error());
-      return Outcome.completed(Json.obj()
+      ObjectNode output = Json.obj()
           .put("agent", result.agentName())
           .put("text", result.text())
-          .put("truncated", result.truncatedByBudget()));
+          .put("truncated", result.truncatedByBudget());
+      if (!recorded.steps().isEmpty()) {
+        ArrayNode team = output.putArray("team");
+        for (TeamTrail.Step step : recorded.steps()) {
+          team.addObject().put("from", step.fromName()).put("to", step.toName())
+              .put("toAgentId", String.valueOf(step.toAgentId())).put("depth", step.depth())
+              .put("task", step.task()).put("answer", step.answer()).put("failed", step.failed())
+              .put("tokens", step.tokens());
+        }
+      }
+      return Outcome.completed(output);
     } catch (AutonomyDeniedException | BudgetExceededException e) {
       // Neither is a transport hiccup: retrying would hit the same wall.
       return Outcome.permanentFailure(e.getMessage());

@@ -54,7 +54,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
       )}
 
       <div className={`flex items-center gap-1.5 rounded-t-[11px] px-2.5 py-1 text-[11px] font-semibold ${meta.tone}`}>
-        {node.type === 'AGENT_STEP' && agent ? <AgentLogo agentKey={agent.key} size={14} /> : <Icon className="h-3.5 w-3.5" />}
+        {node.type === 'AGENT_STEP' && agent ? <AgentLogo agentKey={agent.key} avatar={agent.avatar} size={14} /> : <Icon className="h-3.5 w-3.5" />}
         <span className="truncate">{node.type === 'AGENT_STEP' && agent ? agent.name : meta.label}</span>
         <span className="ml-auto flex items-center gap-1">
           {run && <RunBadge run={run} />}
@@ -175,17 +175,25 @@ function WireButton({ label, danger, onClick, children }: { label: string; dange
  * The "what comes next?" list n8n shows when you press + or drop a wire on empty canvas. Type to
  * filter, arrows to move, Enter to add.
  */
-export function StepPicker({ at, title, allowEnd = true, onPick, onClose }: {
+export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose }: {
   at: { x: number; y: number }; title: string; allowEnd?: boolean
-  onPick: (type: NodeType) => void; onClose: () => void
+  /** Agents offered as ready-made agent steps, under the step types. */
+  agents?: AgentDto[]
+  onPick: (type: NodeType, agent?: AgentDto) => void; onClose: () => void
 }) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const box = useRef<HTMLDivElement>(null)
   const options = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return PALETTE.filter(t => (allowEnd || t !== 'END') && (!q || `${NODE_META[t].label} ${NODE_META[t].desc}`.toLowerCase().includes(q)))
-  }, [query, allowEnd])
+    const steps: { type: NodeType; agent?: AgentDto }[] = PALETTE
+      .filter(t => (allowEnd || t !== 'END') && (!q || `${NODE_META[t].label} ${NODE_META[t].desc}`.toLowerCase().includes(q)))
+      .map(type => ({ type }))
+    // Only agents that can take work now; drafts, paused and archived ones would just fail the run.
+    const ready = (agents ?? []).filter(a => !a.orchestrator && a.enabled && (a.status ?? 'active') === 'active'
+      && (!q || `${a.name} ${a.description ?? ''} ${a.domain ?? ''}`.toLowerCase().includes(q)))
+    return [...steps, ...ready.map(agent => ({ type: 'AGENT_STEP' as NodeType, agent }))]
+  }, [query, allowEnd, agents])
 
   useEffect(() => {
     const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
@@ -208,22 +216,26 @@ export function StepPicker({ at, title, allowEnd = true, onPick, onClose }: {
           onKeyDown={e => {
             if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(options.length - 1, a + 1)) }
             if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(0, a - 1)) }
-            if (e.key === 'Enter') { e.preventDefault(); if (options[active]) onPick(options[active]) }
+            if (e.key === 'Enter') { e.preventDefault(); if (options[active]) onPick(options[active].type, options[active].agent) }
             if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose() }
           }}
           className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100" />
       </label>
       <ul role="listbox" className="max-h-64 overflow-y-auto">
-        {options.map((t, i) => {
+        {options.map(({ type: t, agent }, i) => {
           const Icon = NODE_ICON[t]
+          const first = agent && !options[i - 1]?.agent
           return (
-            <li key={t} role="option" aria-selected={i === active}>
-              <button type="button" onMouseEnter={() => setActive(i)} onClick={() => onPick(t)}
+            <li key={agent ? `agent:${agent.id}` : t} role="option" aria-selected={i === active}>
+              {first && <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Agents</p>}
+              <button type="button" onMouseEnter={() => setActive(i)} onClick={() => onPick(t, agent)}
                 className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left ${i === active ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
-                <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md ${NODE_META[t].tone}`}><Icon className="h-3.5 w-3.5" /></span>
+                {agent
+                  ? <span className="mt-0.5 shrink-0"><AgentLogo agentKey={agent.key} avatar={agent.avatar} size={24} /></span>
+                  : <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md ${NODE_META[t].tone}`}><Icon className="h-3.5 w-3.5" /></span>}
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">{NODE_META[t].label}</span>
-                  <span className="block text-[11px] text-gray-500 dark:text-gray-400">{NODE_META[t].desc}</span>
+                  <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">{agent ? agent.name : NODE_META[t].label}</span>
+                  <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">{agent ? agent.description ?? agent.domain ?? 'Agent step' : NODE_META[t].desc}</span>
                 </span>
               </button>
             </li>

@@ -55,6 +55,13 @@ public class DefaultCostAccountant implements CostAccountant {
     return spend == null ? 0d : spend.doubleValue();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public double spendSince(UUID userId, String purpose, Instant since) {
+    BigDecimal spend = usage.spendSinceForPurpose(userId, purpose, since);
+    return spend == null ? 0d : spend.doubleValue();
+  }
+
   BigDecimal cost(String model, int inputTokens, int outputTokens) {
     AgentProperties.ModelPrice price = props.getPricing().get(model);
     if (price == null) return BigDecimal.ZERO;

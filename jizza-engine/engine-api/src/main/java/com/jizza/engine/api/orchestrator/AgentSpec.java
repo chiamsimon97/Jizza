@@ -6,6 +6,14 @@ package com.jizza.engine.api.orchestrator;
  * <p>{@code key} is what code routes on and never changes; {@code name} is what the user sees and
  * is theirs to edit. Which agents exist at all, and what any of them are told, is a product
  * decision -- the engine only runs whatever it is given.
+ *
+ * @param description "when to use me", what Jizza reads when choosing who to hand work to
  */
 public record AgentSpec(String key, String name, String domain, boolean orchestrator,
-                        String systemPrompt) {}
+                        String systemPrompt, String description) {
+
+  public AgentSpec(String key, String name, String domain, boolean orchestrator,
+                   String systemPrompt) {
+    this(key, name, domain, orchestrator, systemPrompt, null);
+  }
+}

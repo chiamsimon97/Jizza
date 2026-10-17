@@ -91,6 +91,7 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_ask_user", ActionType.READ),
       Map.entry("app_set_theme", ActionType.READ),
       Map.entry("app_propose_workflow", ActionType.READ),
+      Map.entry("app_propose_agent", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),
@@ -146,7 +147,10 @@ public class PolicyAutonomyGate implements AutonomyGate {
     Optional<AgentEntity> found = agents.findById(ctx.agentId());
     if (found.isEmpty()) return Decision.deny("Unknown agent", "no-agent");
     AgentEntity agent = found.get();
-    if (!agent.isEnabled()) {
+    // While a draft or paused agent is being tried out, it is judged by its own rules.
+    boolean trial = com.jizza.engine.api.agent.TrialRun.active()
+        && !"archived".equals(agent.getStatus());
+    if (!agent.isEnabled() && !trial) {
       return Decision.deny("Agent " + agent.getName() + " is disabled", "agent-disabled");
     }
     if (ctx.toolRef() == null) return Decision.allow("no-tool");
@@ -172,6 +176,25 @@ public class PolicyAutonomyGate implements AutonomyGate {
           || policy.getRule().strictness() > ceiling.strictness())) {
         ceiling = policy.getRule();
         ceilingLabel = describe(policy);
+      }
+    }
+    // A manager's locked rules cap its whole team: nothing below it may be looser.
+    List<AutonomyPolicyEntity> all = null;
+    for (AgentEntity manager : managersOf(agent)) {
+      // Jizza's own locks stay its own; a rule for everyone is a global rule.
+      if (manager.isOrchestrator()) continue;
+      if (all == null) all = policies.findByUserIdOrderByPrecedenceDesc(agent.getUserId());
+      for (AutonomyPolicyEntity policy : all) {
+        if (!policy.isLocked() || policy.getWorkspaceId() != null || policy.getWorkflowId() != null
+            || !manager.getId().equals(policy.getAgentId())) {
+          continue;
+        }
+        if (!toolMatches(policy.getToolRef(), ctx.toolRef(), type)) continue;
+        if (ceiling == null || policy.getRule().strictness() > ceiling.strictness()) {
+          ceiling = policy.getRule();
+          ceilingLabel = "team:" + manager.getName() + ":"
+              + (policy.getToolRef() == null ? ANY : policy.getToolRef());
+        }
       }
     }
     UUID connectionId = ctx.connectionId() != null ? ctx.connectionId() : resolved.connectionId();
@@ -267,6 +290,21 @@ public class PolicyAutonomyGate implements AutonomyGate {
         // An unknown tool is treated as the most consequential kind: unrecognised is not the same
         // as harmless.
         .orElse(new Resolved(ActionType.MONEY, null));
+  }
+
+  /** The agent's managers, nearest first. Cycle-safe. */
+  private List<AgentEntity> managersOf(AgentEntity agent) {
+    List<AgentEntity> chain = new java.util.ArrayList<>();
+    java.util.Set<UUID> seen = new java.util.HashSet<>();
+    seen.add(agent.getId());
+    UUID next = agent.getParentAgentId();
+    while (next != null && seen.add(next) && chain.size() < 16) {
+      AgentEntity manager = agents.findById(next).orElse(null);
+      if (manager == null) break;
+      chain.add(manager);
+      next = manager.getParentAgentId();
+    }
+    return chain;
   }
 
   /** The locked rules of the organization that owns a connector, if any. */

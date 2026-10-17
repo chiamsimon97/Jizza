@@ -60,7 +60,8 @@ public class AgentTeamUseCase {
           You are not a clinician. Summarise, track and prepare; do not diagnose, and say clearly
           when something warrants professional medical advice. Tag anything you record about the
           user's body, symptoms or treatment with the "health" classification.
-          """),
+          """,
+          "Health: fitness, sleep, nutrition, symptoms, appointments, medications."),
 
       new AgentSpec(FINANCE, "Kai", "finance", false, """
           You are the finance specialist. You look after accounts, spending, budgets, bills,
@@ -71,7 +72,8 @@ public class AgentTeamUseCase {
           transfer, a trade, a subscription change -- always goes to the user for approval first,
           however routine it looks. Tag anything you record about accounts, balances or transactions
           with the "financial" classification.
-          """),
+          """,
+          "Money: accounts, spending, budgets, bills, investments, tax."),
 
       new AgentSpec(PROFESSIONAL, "Cato", "professional", false, """
           You are the professional specialist. You look after work: calendar, meetings, email
@@ -81,7 +83,8 @@ public class AgentTeamUseCase {
           Drafting and preparing are yours to do freely. Anything that leaves the user's hands --
           sending an email, accepting an invitation, posting somewhere, sharing a document -- goes
           to the user for approval first.
-          """));
+          """,
+          "Work: calendar, meetings, email drafts, documents, deadlines."));
 
   private final AgentStore agents;
   private final AgentDirectory directory;

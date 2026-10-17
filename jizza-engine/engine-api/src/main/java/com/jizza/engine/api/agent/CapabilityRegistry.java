@@ -21,6 +21,15 @@ public interface CapabilityRegistry {
   ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous);
 
   /**
+   * A trial run: reading tools and the agent's own notes run as usual, but nothing that changes
+   * the outside world is executed. Such a call is answered with what the guardrails would do.
+   */
+  default ToolResult invoke(UUID agentId, ToolCall call, boolean autonomous, boolean dryRun) {
+    if (dryRun) throw new UnsupportedOperationException("Trial runs are not supported here");
+    return invoke(agentId, call, autonomous);
+  }
+
+  /**
    * Runs the exact call held on an approved permission request: the tool and arguments stored
    * when it was asked for, by the agent that asked, never whatever a model asks for now. Every
    * other check (agent enabled, still granted, schema, a deny rule) still applies; only the
@@ -35,4 +44,12 @@ public interface CapabilityRegistry {
   void revoke(UUID agentId, CapabilityType type, UUID capabilityRef);
 
   boolean hasCapability(UUID agentId, String toolName);
+
+  /** A capability granted to an agent, by what it is rather than the tool it becomes. */
+  record Grant(CapabilityType type, UUID ref) {}
+
+  /** What the agent has been granted, whether or not each is usable right now. */
+  default List<Grant> grants(UUID agentId) {
+    return List.of();
+  }
 }

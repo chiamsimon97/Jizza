@@ -56,6 +56,7 @@ const organizationSections: NavSection[] = [
       { to: '/members',    icon: Users, label: 'Members',    permission: PERMISSIONS.MEMBERS_VIEW },
       { to: '/connectors', icon: Plug,  label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
       { to: '/organization/guardrails', icon: Shield, label: 'Guardrails', permission: PERMISSIONS.GUARDRAILS_VIEW },
+      { to: '/organization/agent-templates', icon: Bot, label: 'Agent templates', permission: PERMISSIONS.AGENT_TEMPLATE_MANAGE },
     ],
   },
   {
