@@ -1,0 +1,196 @@
+[
+  // ========== CONNECTOR PERMISSIONS BEGIN ==========
+  {
+    "name": "connector_view",
+    "label": "View connectors",
+    "description": "See connected services, their actions, triggers and run history.",
+    "category": "read",
+    "module": "connector",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_create",
+    "label": "Add connectors",
+    "description": "Connect new services, upload API docs and add actions, triggers and variables.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_modify",
+    "label": "Edit connectors",
+    "description": "Change, publish, test and assign connector actions to agents.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_delete",
+    "label": "Remove connectors",
+    "description": "Delete services and their parts, and revoke their access.",
+    "category": "read_and_write",
+    "module": "connector",
+    "dependencies": ["connector_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer"]
+  },
+  {
+    "name": "connector_use",
+    "label": "Use connectors through agents",
+    "description": "Let your own agents use this account's connector actions, without seeing how they are set up.",
+    "category": "read",
+    "module": "connector",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  // ========== CONNECTOR PERMISSIONS END ==========
+
+  // ========== MEMBERS PERMISSIONS BEGIN ==========
+  {
+    "name": "members_view",
+    "label": "View members",
+    "description": "See the organization's members, their roles and pending requests.",
+    "category": "read",
+    "module": "members",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "members_invite",
+    "label": "Add members",
+    "description": "Send membership requests and revoke pending ones.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  {
+    "name": "members_modify",
+    "label": "Change roles",
+    "description": "Change a member's role, within what your own role allows.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  {
+    "name": "members_remove",
+    "label": "Remove members",
+    "description": "Remove someone from the organization.",
+    "category": "read_and_write",
+    "module": "members",
+    "dependencies": ["members_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  // ========== MEMBERS PERMISSIONS END ==========
+
+  // ========== GUARDRAILS PERMISSIONS START ==========
+  {
+    "name": "guardrails_view",
+    "label": "View organization guardrails",
+    "description": "See the locks the organization puts on what agents may do with its connectors.",
+    "category": "read",
+    "module": "guardrails",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "guardrails_lock",
+    "label": "Lock organization guardrails",
+    "description": "Require approval for, or forbid, what any member's agents do with the organization's connectors.",
+    "category": "read_and_write",
+    "module": "guardrails",
+    "dependencies": ["guardrails_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  // ========== GUARDRAILS PERMISSIONS END ==========
+
+  // ========== AGENTS PERMISSIONS BEGIN ==========
+  {
+    "name": "agent_view",
+    "label": "View agents",
+    "description": "See the agent team, each agent's role, tools and history.",
+    "category": "read",
+    "module": "agents",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "agent_create",
+    "label": "Create agents",
+    "description": "Create your own agents and teams.",
+    "category": "read_and_write",
+    "module": "agents",
+    "dependencies": ["agent_view"],
+    "permittedAccountTypes": ["personal"],
+    "permittedRoles": ["owner"]
+  },
+  {
+    "name": "agent_modify",
+    "label": "Edit agents",
+    "description": "Change an agent's role, instructions, team, memory access and limits, and try it out.",
+    "category": "read_and_write",
+    "module": "agents",
+    "dependencies": ["agent_view"],
+    "permittedAccountTypes": ["personal"],
+    "permittedRoles": ["owner"]
+  },
+  {
+    "name": "agent_archive",
+    "label": "Archive agents",
+    "description": "Archive, restore and permanently delete your own agents.",
+    "category": "read_and_write",
+    "module": "agents",
+    "dependencies": ["agent_view"],
+    "permittedAccountTypes": ["personal"],
+    "permittedRoles": ["owner"]
+  },
+  // ========== AGENTS PERMISSIONS END ==========
+
+  // ========== AGENT TEMPLATES PERMISSIONS BEGIN ==========
+  {
+    "name": "agent_template_view",
+    "label": "View agent templates",
+    "description": "See the agents and teams this organization shares with its members.",
+    "category": "read",
+    "module": "agent_templates",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "agent_template_manage",
+    "label": "Manage agent templates",
+    "description": "Create, change, publish and unpublish the organization's agent templates.",
+    "category": "read_and_write",
+    "module": "agent_templates",
+    "dependencies": ["agent_template_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  {
+    "name": "agent_template_install",
+    "label": "Add agent templates",
+    "description": "Add one of the organization's agents or teams to your own team.",
+    "category": "read_and_write",
+    "module": "agent_templates",
+    "dependencies": ["agent_template_view"],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  }
+  // ========== AGENT TEMPLATES PERMISSIONS END ==========
+]

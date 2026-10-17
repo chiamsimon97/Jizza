@@ -1,0 +1,11 @@
+target/
+*.class
+.idea/
+*.iml
+.env
+*.key
+node_modules/
+dist/
+
+# Runtime working directory: logs, stored files and the local storage root.
+data/

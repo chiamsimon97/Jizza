@@ -1,0 +1,39 @@
+package com.jizza.engine.persistence.repository;
+
+import com.jizza.engine.persistence.entity.MessageEntity;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
+
+  List<MessageEntity> findByConversationIdOrderByCreatedAtAsc(UUID conversationId);
+
+  List<MessageEntity> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
+
+  /** The newest messages after a point, for the model's window. */
+  List<MessageEntity> findByConversationIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID conversationId,
+                                                                               Instant after,
+                                                                               Pageable pageable);
+
+  /** Everything not yet folded into the conversation's summary, oldest first. */
+  List<MessageEntity> findByConversationIdAndCreatedAtAfterOrderByCreatedAtAsc(UUID conversationId,
+                                                                              Instant after);
+
+  java.util.Optional<MessageEntity> findByConversationIdAndClientMessageId(UUID conversationId,
+                                                                           UUID clientMessageId);
+
+  /** Replies left mid-stream by a process that stopped. */
+  @Modifying
+  @Query("update MessageEntity m set m.status = 'failed' where m.status = 'streaming'")
+  int failAbandoned();
+
+  @Modifying
+  @Query("delete from MessageEntity m where m.createdAt < :cutoff")
+  int pruneOlderThan(@Param("cutoff") Instant cutoff);
+}

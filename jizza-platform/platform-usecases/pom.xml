@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-platform</artifactId><version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath></parent>
+  <artifactId>platform-usecases</artifactId>
+  <name>Jizza :: platform :: use-cases (business logic)</name>
+  <description>
+    Where the product's decisions live. Depends on engine-api and nothing else of the engine, so a
+    use-case can ask the engine to do something but can never reach inside it.
+  </description>
+  <dependencies>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
+    <dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency>
+    <dependency><groupId>org.springframework</groupId><artifactId>spring-tx</artifactId></dependency>
+  </dependencies>
+</project>

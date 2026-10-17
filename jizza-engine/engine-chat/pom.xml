@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-engine</artifactId><version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath></parent>
+  <artifactId>engine-chat</artifactId>
+  <name>Jizza :: chat (conversations, turns as jobs, activity timeline)</name>
+  <description>Owns conversations and messages, runs each chat turn as a background job that reports
+    everything it does as events, and keeps those events so the Activity panel can reopen any job.
+    Jizza's reasoning stays in engine-orchestrator, behind the Orchestrator port.</description>
+  <dependencies>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId></dependency>
+  </dependencies>
+</project>
