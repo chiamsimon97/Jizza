@@ -42,6 +42,7 @@
     <module>jizza-engine</module>
     <module>jizza-platform</module>
     <module>jizza-app</module>
+    <module>jizza-evals</module>
   </modules>
 
   <dependencyManagement>

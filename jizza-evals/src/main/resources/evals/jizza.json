@@ -1,0 +1,65 @@
+[
+  {
+    "id": "jizza-routes-money-to-kai",
+    "agent": "jizza",
+    "description": "Jizza delegates domain work to the right specialist rather than guessing.",
+    "instruction": "What's my credit card bill this month?",
+    "tools": [
+      {
+        "name": "delegate_to_specialist",
+        "description": "Hand a self-contained task to one specialist and get their answer back. Specialists: health (Vita), finance (Kai), professional (Cato).",
+        "schema": {"type": "object", "properties": {"agent_key": {"type": "string", "description": "health, finance or professional"}, "task": {"type": "string", "description": "The self-contained task for that agent"}}, "required": ["agent_key", "task"]},
+        "actionType": "read",
+        "result": {"agent": "Kai", "answer": "Your HDFC credit card bill for October is 18,240 rupees, due on 5 November."}
+      }
+    ],
+    "expect": {
+      "calls": ["delegate_to_specialist"],
+      "callArgsMention": {"delegate_to_specialist": ["finance"]},
+      "answerMentions": ["18,240|18240|18 240"],
+      "maxRounds": 4
+    }
+  },
+  {
+    "id": "jizza-splits-a-cross-domain-request",
+    "agent": "jizza",
+    "description": "A request that spans domains goes to each relevant specialist.",
+    "instruction": "Can I afford a 15,000 rupee yearly gym membership, and would working out help my sleep?",
+    "tools": [
+      {
+        "name": "delegate_to_specialist",
+        "description": "Hand a self-contained task to one specialist and get their answer back. Specialists: health (Vita), finance (Kai), professional (Cato).",
+        "schema": {"type": "object", "properties": {"agent_key": {"type": "string", "description": "health, finance or professional"}, "task": {"type": "string", "description": "The self-contained task for that agent"}}, "required": ["agent_key", "task"]},
+        "actionType": "read",
+        "result": {"answer": "Done. (Fixture: Kai says discretionary budget has 22,000 rupees spare this month; Vita says regular exercise is associated with better sleep quality.)"}
+      }
+    ],
+    "expect": {
+      "calls": ["delegate_to_specialist"],
+      "callArgsMention": {"delegate_to_specialist": ["finance", "health"]},
+      "maxRounds": 6
+    }
+  },
+  {
+    "id": "jizza-answers-small-talk-itself",
+    "agent": "jizza",
+    "description": "Nothing domain-specific: no reason to wake a specialist.",
+    "instruction": "Thanks, that's all for now!",
+    "history": [
+      {"role": "user", "text": "What's on my calendar tomorrow?"},
+      {"role": "assistant", "text": "Cato checked: a design review at 10 and a 1:1 with Arjun at 3:30."}
+    ],
+    "tools": [
+      {
+        "name": "delegate_to_specialist",
+        "description": "Hand a self-contained task to one specialist and get their answer back.",
+        "schema": {"type": "object", "properties": {"agent_key": {"type": "string"}, "task": {"type": "string"}}, "required": ["agent_key", "task"]},
+        "actionType": "read"
+      }
+    ],
+    "expect": {
+      "notCalls": ["delegate_to_specialist"],
+      "maxRounds": 2
+    }
+  }
+]

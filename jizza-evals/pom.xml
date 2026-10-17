@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jizza</groupId><artifactId>jizza-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>jizza-evals</artifactId>
+  <name>Jizza :: evals (behaviour of the built-in agents against the real model)</name>
+  <description>Fixed scenarios per agent, run through the real agent runtime, Capability Registry and
+    guardrails with fixture tools, graded on which tools were called, what the guardrails decided,
+    and what the answer said. The harness and every case file are checked in the normal build; the
+    scenarios only run against the model when asked to (-Djizza.evals=true), because they cost money.</description>
+  <dependencies>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-agents</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>platform-usecases</artifactId></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <jizza.evals>${jizza.evals}</jizza.evals>
+            <jizza.evals.trials>${jizza.evals.trials}</jizza.evals.trials>
+            <jizza.evals.filter>${jizza.evals.filter}</jizza.evals.filter>
+            <jizza.evals.min-pass-rate>${jizza.evals.min-pass-rate}</jizza.evals.min-pass-rate>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  <properties>
+    <jizza.evals>false</jizza.evals>
+    <jizza.evals.trials>3</jizza.evals.trials>
+    <jizza.evals.filter></jizza.evals.filter>
+    <jizza.evals.min-pass-rate>0.8</jizza.evals.min-pass-rate>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+</project>

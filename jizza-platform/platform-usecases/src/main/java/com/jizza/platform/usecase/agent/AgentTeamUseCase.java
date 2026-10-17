@@ -86,6 +86,11 @@ public class AgentTeamUseCase {
           """,
           "Work: calendar, meetings, email drafts, documents, deadlines."));
 
+  /** The built-in team as every account is given it; the evaluation suite runs these prompts. */
+  public static List<AgentSpec> builtInTeam() {
+    return TEAM;
+  }
+
   private final AgentStore agents;
   private final AgentDirectory directory;
 
