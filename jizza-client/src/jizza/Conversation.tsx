@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { loadJob, useAssistantStore, type AssistantMessage } from './assistantStore'
 import { JizzaOrb } from './JizzaOrb'
 import { WorkflowPlanCard } from './WorkflowPlanCard'
+import { AgentProposalCard } from './AgentProposalCard'
 import { useDictation } from './useSpeech'
 
 const SUGGESTIONS = [
@@ -210,6 +211,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
         {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
+        {msg.proposal && <AgentProposalCard proposal={msg.proposal} />}
         {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
         {msg.jobId && inlineDiscussion && !msg.streaming && <Discussion jobId={msg.jobId} />}
         {msg.jobId && onOpenJob && !inlineDiscussion && !msg.streaming && (

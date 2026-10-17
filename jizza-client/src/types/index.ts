@@ -36,13 +36,207 @@ export interface SessionDto {
 }
 
 // ── Agents ────────────────────────────────────────────────────────────────────
+export type AgentStatus = 'draft' | 'active' | 'archived'
+
+export interface AgentAvatarDto {
+  style?: string
+  colour?: string
+}
+
 export interface AgentDto {
   id: string
   key: string
   name: string
   domain?: string
   enabled: boolean
-  isOrchestrator: boolean
+  orchestrator: boolean
+  /** Made by the user rather than given to every account. */
+  custom?: boolean
+  /** "When to use me": what its manager reads when choosing who to ask. */
+  description?: string | null
+  /** Its instructions. */
+  systemPrompt?: string
+  /** draft, active or archived; a paused agent is active with enabled false. */
+  status?: AgentStatus
+  modelTier?: 'standard' | 'deep'
+  memoryDomains?: string[]
+  avatar?: AgentAvatarDto | null
+  monthlyCostLimit?: number | null
+  /** Who it reports to; null only for Jizza. */
+  parentAgentId?: string | null
+  responsibilities?: string[]
+  handsOffTo?: string | null
+  memoryFromManager?: boolean
+  originTemplateId?: string | null
+  originTemplateVersion?: number | null
+}
+
+export type ToolKind = 'GENERATED_TOOL' | 'SERVICE_ACTION' | 'SKILL' | 'KNOWLEDGE'
+
+export interface AgentToolOption {
+  type: ToolKind
+  ref: string
+  name: string
+  description?: string | null
+  source?: string | null
+  actionType?: ActionType | null
+  workspaceId?: string
+}
+
+export interface AgentGrant { type: ToolKind; ref: string }
+
+/** One agent as a template or a proposal describes it, before it exists. */
+export interface AgentBlueprint {
+  ref?: string | null
+  name: string
+  description?: string | null
+  instructions?: string | null
+  avatar?: AgentAvatarDto | null
+  modelTier?: 'standard' | 'deep'
+  reportsTo?: string | null
+  responsibilities?: string[]
+  handsOffTo?: string | null
+  memoryDomains?: string[]
+  tools?: AgentGrant[]
+  toolHints?: string[]
+  modes?: Partial<Record<ActionType, GuardrailMode>>
+  locks?: ActionType[]
+  /** On a proposal: where it would stop for the user, per kind of action. */
+  stops?: Partial<Record<ActionType, GuardrailMode>>
+}
+
+export interface AgentGalleryItem {
+  id: string
+  /** agent, team, or team:<built-in key> for a team meant to go under that agent. */
+  kind: string
+  name: string
+  description: string
+  agents: AgentBlueprint[]
+}
+
+export interface OrgAgentTemplate {
+  id: string
+  workspaceId: string
+  workspaceName?: string
+  name: string
+  description?: string | null
+  status: 'draft' | 'published' | 'unpublished'
+  version: number
+  kind: 'agent' | 'team'
+  agents: AgentBlueprint[]
+}
+
+export interface AgentTemplateUpdate {
+  agentId: string
+  agentName: string
+  templateId: string
+  templateName: string
+  from: number
+  to: number
+}
+
+export interface AgentRevisionDto {
+  id: string
+  agentId: string
+  revision: number
+  name: string
+  description?: string | null
+  systemPrompt: string
+  modelTier: string
+  changedByUserId?: string | null
+  createdAt: string
+}
+
+export interface AgentDependent {
+  kind: 'workflow' | 'task'
+  id: string
+  name: string
+  status?: string
+  ownedByAgent: boolean
+}
+
+export interface ArchiveResult {
+  agent: AgentDto
+  reassigned: number
+  reportsMoved: number
+  reportsPaused: number
+  dependents: AgentDependent[]
+}
+
+export interface TeamNode {
+  agent: AgentDto
+  depth: number
+  reports: TeamNode[]
+}
+
+export interface TeamStep {
+  fromAgentId?: string
+  fromName: string
+  toAgentId?: string
+  toName: string
+  depth: number
+  task?: string
+  answer?: string | null
+  failed: boolean
+  tokens: number
+}
+
+export interface HeldCall {
+  agentId: string
+  agentName: string
+  tool: string
+  wouldDo: string
+  reason: string
+}
+
+export interface AgentTrial {
+  answer?: string | null
+  error?: string | null
+  toolsUsed: string[]
+  wouldHaveDone: HeldCall[]
+  team: TeamStep[]
+  tokens: number
+}
+
+export interface ModeLine {
+  actionType: ActionType
+  rule: GuardrailMode
+  ceiling?: GuardrailMode | null
+  ceilingFrom?: string | null
+}
+
+/** What the agent form sends to create an agent. */
+export interface AgentCreate {
+  name: string
+  description?: string
+  instructions: string
+  modelTier?: 'standard' | 'deep'
+  memoryDomains?: string[]
+  avatar?: AgentAvatarDto
+  monthlyCostLimit?: number | null
+  parentAgentId?: string | null
+  responsibilities?: string[]
+  handsOffTo?: string
+  memoryFromManager?: boolean
+  status?: 'active' | 'draft'
+  tools?: AgentGrant[]
+  modes?: Partial<Record<ActionType, GuardrailMode>>
+  locks?: ActionType[]
+}
+
+export interface AgentEdit {
+  name?: string
+  enabled?: boolean
+  description?: string
+  instructions?: string
+  modelTier?: 'standard' | 'deep'
+  memoryDomains?: string[]
+  avatar?: AgentAvatarDto
+  monthlyCostLimit?: number | null
+  clearMonthlyCostLimit?: boolean
+  responsibilities?: string[]
+  handsOffTo?: string
+  memoryFromManager?: boolean
 }
 
 // ── Agent memory ──────────────────────────────────────────────────────────────
@@ -178,6 +372,16 @@ export type UiAction =
   | { type: 'ask_user'; payload: { question: string; options?: string[] } }
   | { type: 'set_theme'; payload: { theme: string } }
   | { type: 'propose_workflow'; payload: WorkflowPlan }
+  | { type: 'propose_agent'; payload: AgentProposal }
+
+/** A new agent, or a team, Jizza drafted; it exists only once the user creates it. */
+export interface AgentProposal {
+  proposalId: string
+  parentAgentId: string
+  parentAgentName: string
+  summary?: string
+  agents: AgentBlueprint[]
+}
 
 /** A workflow Jizza planned with the specialists, waiting for the user's approval before it is saved. */
 export interface WorkflowPlan {
@@ -592,6 +796,9 @@ export interface AgentGuardrails {
   orchestrator: boolean
   enabled: boolean
   modes: Record<ActionType, GuardrailCell>
+  custom?: boolean
+  parentAgentId?: string | null
+  status?: AgentStatus
 }
 
 export interface QuietHours {

@@ -10,10 +10,10 @@ import 'reactflow/dist/style.css'
 import { Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { api } from '@/lib/api'
-import type { ConnectionDto, GeneratedToolDto, RunDto, RunStepDto } from '@/types'
+import type { AgentDto, ConnectionDto, GeneratedToolDto, RunDto, RunStepDto } from '@/types'
 import {
   NODE_H, NODE_META, NODE_W, PALETTE, addAfter, addNode, cloneNodes, exitsOf, freeSpot, insertOnEdge, issues as findIssues, reaches,
-  removeNode, setNext, tidy, unreachable, type CanvasEdge, type CanvasGraph, type NodeType,
+  removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
 } from './canvasModel'
 import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
@@ -104,6 +104,12 @@ type History = ReturnType<typeof useHistory>
  * wire's end to reconnect it, hover a wire to put a step on it or delete it, and use the + on a
  * free exit to add what comes next.
  */
+/** Points a freshly added agent step at {@code agent} and names the step after it. */
+function assignAgent(graph: CanvasGraph, id: string, agent: AgentDto): CanvasGraph {
+  const node = graph.nodes.find(n => n.id === id)
+  return updateNode(graph, id, { label: agent.name, config: { ...node?.config, agentId: agent.id } })
+}
+
 export function WorkflowCanvas({ graph, onChange, readOnly = false, run }: Props) {
   const history = useHistory(graph, onChange)
   const [fullscreen, setFullscreen] = useState(false)
@@ -145,15 +151,29 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   // passed back on every render; without them each edit would blink every node out for a frame.
   const [sizes, setSizes] = useState<Map<string, { width: number; height: number }>>(() => new Map())
 
-  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
+  // Archived agents too, so a step still pointing at one can say so instead of looking empty.
+  const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const { data: tools } = useQuery({ queryKey: ['workflow-canvas-tools'], queryFn: loadTools, enabled: !readOnly, staleTime: 60_000 })
 
   const issueList = useMemo(() => findIssues(graph), [graph])
   const issuesByNode = useMemo(() => {
     const map = new Map<string, string[]>()
     for (const i of issueList) if (i.nodeId) map.set(i.nodeId, [...(map.get(i.nodeId) ?? []), i.message])
+    if (agents) {
+      for (const n of graph.nodes) {
+        const id = n.type === 'AGENT_STEP' ? n.config.agentId : undefined
+        if (typeof id !== 'string' || !id) continue
+        const a = agents.find(x => x.id === id)
+        const problem = !a ? 'The agent for this step no longer exists. Choose another.'
+          : a.status === 'archived' ? `${a.name} is archived. Restore it or choose another agent.`
+          : a.status === 'draft' ? `${a.name} is still a draft. Activate it before this runs.`
+          : !a.enabled ? `${a.name} is paused, so this step will fail until it is resumed.`
+          : null
+        if (problem) map.set(n.id, [...(map.get(n.id) ?? []), problem])
+      }
+    }
     return map
-  }, [issueList])
+  }, [issueList, agents, graph.nodes])
   const orphans = useMemo(() => unreachable(graph), [graph])
 
   const [showRun, setShowRun] = useState(true)
@@ -168,28 +188,31 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
   const commit = history.commit
 
-  const place = useCallback((type: NodeType, at?: { x: number; y: number }) => {
+  const place = useCallback((type: NodeType, at?: { x: number; y: number }, agent?: AgentDto) => {
     const anchor = graph.nodes.find(n => n.id === selNodes[0]) ?? graph.nodes[graph.nodes.length - 1]
     const { x, y } = at
       ? { x: Math.round(at.x - NODE_W / 2), y: Math.round(at.y - NODE_H / 2) }
       : freeSpot(graph, anchor ? anchor.x + 250 : 30, anchor ? anchor.y : 150)
     const result = addNode(graph, type, x, y, selNodes[0])
-    commit(result.graph)
+    commit(agent ? assignAgent(result.graph, result.id, agent) : result.graph)
     select([result.id])
     if (!at) requestAnimationFrame(() => flow.setCenter(x + NODE_W / 2, y + NODE_H / 2, { zoom: flow.getZoom(), duration: 300 }))
   }, [graph, selNodes, commit, select, flow])
 
-  const pick = useCallback((type: NodeType) => {
+  const pick = useCallback((type: NodeType, agent?: AgentDto) => {
     if (!picker) return
     setPicker(null)
+    // Picking an agent adds an agent step that already knows who does it.
+    const withAgent = (r: { graph: CanvasGraph; id: string }) =>
+      agent ? { ...r, graph: assignAgent(r.graph, r.id, agent) } : r
     if (picker.kind === 'wire') {
-      const r = insertOnEdge(graph, picker.edge, type)
+      const r = withAgent(insertOnEdge(graph, picker.edge, type))
       commit(r.graph)
       select([r.id])
       return
     }
     if (picker.kind === 'after') {
-      const r = addAfter(graph, picker.from, picker.branch, type)
+      const r = withAgent(addAfter(graph, picker.from, picker.branch, type))
       const drop = picker.drop
       const placed = drop
         ? { ...r.graph, nodes: r.graph.nodes.map(n => (n.id === r.id ? { ...n, x: Math.round(drop.x), y: Math.round(drop.y - NODE_H / 2) } : n)) }
@@ -198,7 +221,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
       select([r.id])
       return
     }
-    place(type, picker.drop)
+    place(type, picker.drop, agent)
   }, [picker, graph, commit, select, place])
 
   const deleteSelection = useCallback(() => {
@@ -576,7 +599,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
       </div>
 
       {picker && (
-        <StepPicker at={picker.at} onClose={() => setPicker(null)} onPick={pick}
+        <StepPicker at={picker.at} onClose={() => setPicker(null)} onPick={pick} agents={agents}
           title={picker.kind === 'wire' ? 'Insert a step' : picker.kind === 'after' ? 'Add the next step' : 'Add a step'}
           allowEnd={picker.kind !== 'wire'} />
       )}

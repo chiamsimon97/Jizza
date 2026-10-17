@@ -19,6 +19,7 @@ import com.jizza.engine.api.llm.CostAccountant;
 import com.jizza.engine.api.llm.LlmClient;
 import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.llm.Msg;
+import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.llm.RunBudget;
 import com.jizza.engine.api.memory.MemoryContextProvider;
 import com.jizza.engine.api.tool.ToolCall;
@@ -82,18 +83,27 @@ public class BaseAgent implements Agent {
     // one was started from (a delegation), or a fresh one.
     AccessContext context = req.traceId() != null ? AccessContext.fromTrace(req.traceId())
         : AccessContext.current().orElseGet(() -> AccessContext.fromTrace(null));
-    return context.run(() -> runInContext(req));
+    return context.run(() -> com.jizza.engine.api.agent.TrialRun.run(req.dryRun(),
+        () -> runInContext(req)));
   }
 
   private AgentResult runInContext(AgentRequest req) {
     AgentEntity agent = agents.findById(req.agentId())
         .orElseThrow(() -> new NotFoundException("Agent", req.agentId()));
 
-    if (!agent.isEnabled() || !autonomyGate.agentEnabled(agent.getId())) {
+    // A trial may run a draft or paused agent, since nothing it does is carried out.
+    boolean trialOfUnfinished = req.dryRun() && !"archived".equals(agent.getStatus());
+    if (!trialOfUnfinished
+        && (!agent.isEnabled() || !autonomyGate.agentEnabled(agent.getId()))) {
       throw new AutonomyDeniedException(agent.getName() + " is currently disabled");
     }
     if (req.autonomous()) {
       killSwitch.requireActive(req.userId());
+    }
+    if (req.autonomous() && overMonthlyLimit(agent)) {
+      throw new BudgetExceededException(agent.getName() + " has reached its monthly spending "
+          + "limit, so it doesn't work unattended until next month. Raise the limit on its page "
+          + "to let it carry on.");
     }
     if (!costs.withinBudget(req.userId())) {
       throw new BudgetExceededException(
@@ -115,7 +125,10 @@ public class BaseAgent implements Agent {
     RunBudget budget = new RunBudget(props.getLoop().getMaxToolIterations(),
         props.getLoop().getMaxTokensPerRun());
     List<ToolCall> callsMade = new ArrayList<>();
-    String model = llm.modelFor(req.tier());
+    // An agent set to think harder always does; otherwise the caller's tier stands.
+    ModelTier tier = "deep".equalsIgnoreCase(agent.getModelTier()) && req.tier() != ModelTier.DEEP
+        ? ModelTier.DEEP : req.tier();
+    String model = llm.modelFor(tier);
     int inputTokens = 0;
     int outputTokens = 0;
     String lastText = "";
@@ -137,7 +150,8 @@ public class BaseAgent implements Agent {
     boolean streams = agent.isOrchestrator() && Activity.active();
 
     audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.start", agent.getKey(),
-        Json.obj().put("autonomous", req.autonomous()).put("tier", req.tier().name())
+        Json.obj().put("autonomous", req.autonomous()).put("tier", tier.name())
+            .put("dryRun", req.dryRun())
             .put("memoryFacts", remembered.memoryIds().size()));
 
     try {
@@ -178,7 +192,9 @@ public class BaseAgent implements Agent {
         for (ToolCall call : response.toolCalls()) {
           Activity.checkCancelled();
           callsMade.add(call);
-          ToolResult result = capabilities.invoke(agent.getId(), call, req.autonomous());
+          ToolResult result = req.dryRun()
+              ? capabilities.invoke(agent.getId(), call, req.autonomous(), true)
+              : capabilities.invoke(agent.getId(), call, req.autonomous());
           results.add(new Msg.ToolResultRef(call.id(), truncate(result)));
         }
         messages.add(Msg.toolResults(results));
@@ -194,6 +210,15 @@ public class BaseAgent implements Agent {
       return new AgentResult(agent.getId(), agent.getName(), text, callsMade, true,
           inputTokens, outputTokens, null);
     }
+  }
+
+  /** True when a custom agent has a monthly limit and this month's spend has reached it. */
+  private boolean overMonthlyLimit(AgentEntity agent) {
+    if (agent.getMonthlyCostLimit() == null) return false;
+    java.time.Instant monthStart = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
+        .withDayOfMonth(1).toLocalDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+    double spent = costs.spendSince(agent.getUserId(), "agent:" + agent.getKey(), monthStart);
+    return spent >= agent.getMonthlyCostLimit().doubleValue();
   }
 
   /**

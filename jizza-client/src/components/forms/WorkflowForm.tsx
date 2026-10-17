@@ -208,7 +208,7 @@ export function WorkflowForm() {
   })
   const add = (kind: Step['kind']) => setSteps(list => [...list, {
     key: stepKey++, kind, instruction: '',
-    agentId: kind === 'agent' ? (agents?.find(a => !a.isOrchestrator && a.enabled)?.id ?? agents?.[0]?.id ?? '') : '',
+    agentId: kind === 'agent' ? (agents?.find(a => !a.orchestrator && a.enabled)?.id ?? agents?.[0]?.id ?? '') : '',
   }])
 
   const hi = !!request?.byJizza

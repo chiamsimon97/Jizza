@@ -11,4 +11,8 @@ public interface AgentRepository extends JpaRepository<AgentEntity, UUID> {
   Optional<AgentEntity> findByUserIdAndKey(UUID userId, String key);
   Optional<AgentEntity> findByUserIdAndIsOrchestratorTrue(UUID userId);
   List<AgentEntity> findByUserIdAndIsOrchestratorFalseAndEnabledTrue(UUID userId);
+  /** Direct reports, in the order a manager's roster lists them. */
+  List<AgentEntity> findByParentAgentIdOrderByNameAsc(UUID parentAgentId);
+  long countByUserIdAndIsCustomTrueAndStatus(UUID userId, String status);
+  List<AgentEntity> findByOriginTemplateId(UUID originTemplateId);
 }

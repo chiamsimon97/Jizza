@@ -104,6 +104,8 @@ public class JizzaOrchestrator implements Orchestrator {
          question at a time, with short options, and say briefly what the specialists found.
       3. When nothing is left open, call app_propose_workflow with the plan. Mark each step that
          changes something outside Jizza. List any defaults you picked as assumptions.
+         If no one on the user's team fits a step, offer a new agent with app_propose_agent
+         first, and propose the workflow once the user has created it.
       Never save the workflow yourself and never use app_open_form here. If the user asks for
       changes after seeing a plan, revise it and propose it again.]""";
 

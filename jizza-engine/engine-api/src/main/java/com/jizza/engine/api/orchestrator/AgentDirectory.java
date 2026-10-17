@@ -18,4 +18,19 @@ public interface AgentDirectory {
   AgentDto orchestrator(UUID userId);
 
   String nameOf(UUID agentId);
+
+  /** The agent's direct reports. */
+  default List<AgentDto> reportsOf(UUID agentId) {
+    return List.of();
+  }
+
+  /** The agent's managers, nearest first, ending with Jizza. Empty for Jizza itself. */
+  default List<AgentDto> managersOf(UUID agentId) {
+    return List.of();
+  }
+
+  /** Every agent, in any account, made from this organization template. */
+  default List<AgentDto> fromTemplate(UUID templateId) {
+    return List.of();
+  }
 }

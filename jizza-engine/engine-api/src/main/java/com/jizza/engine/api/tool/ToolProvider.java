@@ -34,8 +34,11 @@ public interface ToolProvider {
     return java.util.Optional.empty();
   }
 
-  /** The permission {@link #workspaceOf} requires; connector tools need connector_view. */
+  /**
+   * The permission {@link #workspaceOf} requires. Connector tools need connector_use, which every
+   * member has: using an action through one's own agent is not the same as seeing its setup.
+   */
   default String requiredPermission(String toolName) {
-    return com.jizza.engine.api.authz.Permissions.CONNECTOR_VIEW;
+    return com.jizza.engine.api.authz.Permissions.CONNECTOR_USE;
   }
 }
