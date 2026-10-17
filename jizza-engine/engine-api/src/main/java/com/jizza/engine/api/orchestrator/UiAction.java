@@ -9,7 +9,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  * <p>Actions only steer the user's own view of Jizza. They never change data on their own; a form
  * Jizza fills in still waits for the user to save it.
  *
- * @param type    one of {@code navigate}, {@code open_form}, {@code ask_user}, {@code set_theme}
+ * @param type    one of {@code navigate}, {@code open_form}, {@code ask_user}, {@code set_theme},
+ *                {@code propose_workflow}
  * @param payload the action's arguments, shaped per type
  */
 public record UiAction(String type, JsonNode payload) {
@@ -18,4 +19,6 @@ public record UiAction(String type, JsonNode payload) {
   public static final String OPEN_FORM = "open_form";
   public static final String ASK_USER = "ask_user";
   public static final String SET_THEME = "set_theme";
+  /** A workflow plan for the user to approve; the client saves it only when they do. */
+  public static final String PROPOSE_WORKFLOW = "propose_workflow";
 }

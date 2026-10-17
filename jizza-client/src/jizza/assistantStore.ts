@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, UiAction } from '@/types'
+import type { ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, UiAction, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -29,6 +29,8 @@ export interface AssistantMessage {
   steps?: Step[]
   /** A question Jizza is waiting on, with one-tap answers. */
   question?: { text: string; options: string[] }
+  /** A workflow plan Jizza proposed, saved only if the user approves it. */
+  plan?: WorkflowPlan
   /** Specialists who worked on this reply, shown by their logos. */
   helpers?: { agentId: string; agentName: string }[]
   error?: boolean
@@ -73,6 +75,10 @@ interface AssistantState {
   lastReplyId: number
   /** Bumped when the conversation list should refresh (a new conversation, a new title). */
   conversationsVersion: number
+  /** The Workflows page's planner is open: messages go to Jizza as workflow planning. */
+  plannerOpen: boolean
+  /** Plans the user approved, by plan id, with the workflow each was saved as. */
+  savedPlans: Record<string, string>
 
   send: (text: string) => Promise<void>
   stop: () => Promise<void>
@@ -87,6 +93,9 @@ interface AssistantState {
   openJob: (jobId: string) => void
   /** Lets the app tell Jizza about something the user just did, e.g. saving a form it drafted. */
   note: (text: string) => void
+  setPlannerOpen: (open: boolean) => void
+  /** Records an approved plan, and a line in the conversation saying it was saved. */
+  planSaved: (planId: string, workflowId: string, name: string) => void
 }
 
 let nextId = 1
@@ -97,13 +106,15 @@ function describe(action: UiAction): string {
     case 'open_form': return action.payload.form === 'new_workflow' ? 'Drafted a new workflow' : 'Drafted a new task'
     case 'set_theme': return `Switched to the ${action.payload.theme} theme`
     case 'ask_user': return 'Waiting for your answer'
+    case 'propose_workflow': return 'Proposed a workflow plan'
   }
 }
 
 /** Carries out Jizza's actions on the app, in order, and reports what was done. */
-function execute(actions: UiAction[], run = true): { steps: Step[]; question?: AssistantMessage['question'] } {
+function execute(actions: UiAction[], run = true): { steps: Step[]; question?: AssistantMessage['question']; plan?: WorkflowPlan } {
   const steps: Step[] = []
   let question: AssistantMessage['question']
+  let plan: WorkflowPlan | undefined
   for (const action of actions) {
     switch (action.type) {
       case 'navigate': {
@@ -132,10 +143,14 @@ function execute(actions: UiAction[], run = true): { steps: Step[]; question?: A
       case 'ask_user':
         question = { text: action.payload.question, options: action.payload.options ?? [] }
         continue
+      case 'propose_workflow':
+        if (!action.payload?.planId || !Array.isArray(action.payload.steps)) continue
+        plan = action.payload
+        continue
     }
     steps.push({ label: describe(action) })
   }
-  return { steps, question }
+  return { steps, question, plan }
 }
 
 const helpersOf = (contributors?: Contribution[]) =>
@@ -260,11 +275,11 @@ export const useAssistantStore = create<AssistantState>()(
             break
           case 'job.completed': {
             const actions = (e.payload.actions ?? []) as UiAction[]
-            const { steps, question } = execute(actions)
+            const { steps, question, plan } = execute(actions)
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, helpers: helpersOf(e.payload.contributors) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, helpers: helpersOf(e.payload.contributors) }
                 : m)),
               lastReplyId: id,
             }))
@@ -303,6 +318,8 @@ export const useAssistantStore = create<AssistantState>()(
         voiceReplies: false,
         lastReplyId: 0,
         conversationsVersion: 0,
+        plannerOpen: false,
+        savedPlans: {},
 
         send: async (raw) => {
           const text = raw.trim()
@@ -313,8 +330,9 @@ export const useAssistantStore = create<AssistantState>()(
               { id: nextId++, role: 'user', text }],
           }))
 
-          // Instant path: a plain command needs no round trip.
-          const local = matchLocalIntent(text)
+          // Instant path: a plain command needs no round trip. Not while planning: there
+          // "create a workflow" is the start of a conversation, not a request for the form.
+          const local = get().plannerOpen ? null : matchLocalIntent(text)
           if (local) {
             const { steps } = execute(local.actions)
             const id = nextId++
@@ -327,7 +345,8 @@ export const useAssistantStore = create<AssistantState>()(
           const clientMessageId = uuid()
           try {
             const ref = await chatApi.send({
-              message: text, clientMessageId, screen: navigator?.currentPage() ?? 'chat',
+              message: text, clientMessageId,
+              screen: get().plannerOpen ? 'workflow_planner' : navigator?.currentPage() ?? 'chat',
               ...(incognito ? { incognito: true } : { conversationId }),
             })
             set(s => ({
@@ -393,12 +412,19 @@ export const useAssistantStore = create<AssistantState>()(
           const id = nextId++
           set(s => ({ messages: [...s.messages, { id, role: 'assistant', text }], lastReplyId: id }))
         },
+
+        setPlannerOpen: (open) => set({ plannerOpen: open }),
+
+        planSaved: (planId, workflowId, name) => set(s => ({
+          savedPlans: { ...s.savedPlans, [planId]: workflowId },
+          messages: [...s.messages, { id: nextId++, role: 'event', text: `You approved the plan. "${name}" is saved as a draft workflow.` }],
+        })),
       }
     },
     {
       name: 'jizza-assistant',
       // The conversation lives on the server; locally keep only where we were and preferences.
-      partialize: (s) => ({ conversationId: s.conversationId, voiceReplies: s.voiceReplies }),
+      partialize: (s) => ({ conversationId: s.conversationId, voiceReplies: s.voiceReplies, savedPlans: s.savedPlans }),
     },
   ),
 )
@@ -420,7 +446,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
   }
   const actions = m.metadata?.actions ?? []
-  const { steps, question } = execute(actions, false)
+  const { steps, question, plan } = execute(actions, false)
   return {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -431,6 +457,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     stopped: m.status === 'cancelled',
     steps: steps.length ? steps : undefined,
     question,
+    plan,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
   }
 }

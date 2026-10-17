@@ -282,6 +282,7 @@ function uiActionLabel(type: string, payload: any): string {
     case 'open_form': return payload?.form === 'new_workflow' ? 'Drafted a new workflow' : 'Drafted a new task'
     case 'set_theme': return `Switched to the ${payload?.theme} theme`
     case 'ask_user': return `Asked you: ${payload?.question ?? ''}`
+    case 'propose_workflow': return `Proposed the workflow "${payload?.name ?? ''}"`
     default: return type
   }
 }

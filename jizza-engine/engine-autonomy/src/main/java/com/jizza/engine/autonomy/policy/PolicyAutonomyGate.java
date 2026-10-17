@@ -90,6 +90,7 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_open_form", ActionType.READ),
       Map.entry("app_ask_user", ActionType.READ),
       Map.entry("app_set_theme", ActionType.READ),
+      Map.entry("app_propose_workflow", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),

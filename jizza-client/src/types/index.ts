@@ -177,6 +177,30 @@ export type UiAction =
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
   | { type: 'ask_user'; payload: { question: string; options?: string[] } }
   | { type: 'set_theme'; payload: { theme: string } }
+  | { type: 'propose_workflow'; payload: WorkflowPlan }
+
+/** A workflow Jizza planned with the specialists, waiting for the user's approval before it is saved. */
+export interface WorkflowPlan {
+  planId: string
+  name: string
+  description?: string
+  steps: WorkflowPlanStep[]
+  /** Defaults Jizza picked that the user didn't state. */
+  assumptions?: string[]
+}
+
+export interface WorkflowPlanStep {
+  kind: 'agent' | 'ask'
+  instruction: string
+  why?: string
+  agentId?: string
+  agentKey?: string
+  agentName?: string
+  /** The step changes something outside Jizza (sends, creates, buys). */
+  changesThings?: boolean
+  /** What the agent's current rules would do when this step changes something. */
+  approval?: 'auto' | 'ask' | 'never'
+}
 
 export type JizzaForm = 'new_workflow' | 'new_task'
 
@@ -477,14 +501,26 @@ export interface WorkflowDto {
   createdAt: string
 }
 
+export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'DONE' | 'FAILED' | 'CANCELLED'
+
+export interface RunStepDto {
+  id: string
+  nodeId: string
+  status: 'DONE' | 'FAILED' | 'SKIPPED'
+  output?: unknown
+  attempts: number
+  finishedAt?: string
+}
+
 export interface RunDto {
   id: string
   workflowId: string
-  workflowVersion: number
-  status: string
+  version: number
+  status: RunStatus
   currentNode?: string
-  startedAt: string
+  createdAt: string
   updatedAt: string
+  steps?: RunStepDto[]
 }
 
 export interface SkillDto {

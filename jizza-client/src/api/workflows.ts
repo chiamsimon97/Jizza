@@ -14,6 +14,9 @@ export const workflowsApi = {
   runs: (id: string) =>
     api.get<RunDto[]>(`/api/workflows/${id}/runs`),
 
+  getRun: (runId: string) =>
+    api.get<RunDto>(`/api/runs/${runId}`),
+
   cancelRun: (runId: string) =>
     api.post<void>(`/api/runs/${runId}/cancel`),
 
@@ -21,7 +24,7 @@ export const workflowsApi = {
     api.post<void>(`/api/runs/${runId}/resume`, { instruction, approved }),
 
   saveAsSkill: (id: string, name: string, description?: string) =>
-    api.post<SkillDto>(`/api/workflows/${id}/skill`, { name, description }),
+    api.post<SkillDto>(`/api/workflows/${id}/save-skill`, { name, description }),
 
   skills: () =>
     api.get<SkillDto[]>('/api/skills'),
