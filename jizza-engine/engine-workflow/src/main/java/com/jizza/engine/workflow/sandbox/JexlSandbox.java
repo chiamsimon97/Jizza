@@ -66,7 +66,9 @@ public class JexlSandbox {
 
     this.engine = new JexlBuilder()
         .features(features)
-        .permissions(JexlPermissions.RESTRICTED)
+        // The fmt: functions are the one class added to what an expression may call.
+        .permissions(JexlPermissions.RESTRICTED.compose("com.jizza.engine.workflow.sandbox.*"))
+        .namespaces(java.util.Map.of("fmt", Formatters.class))
         .strict(true)
         .silent(false)
         .safe(false)

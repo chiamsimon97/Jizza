@@ -338,7 +338,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         issues: issuesByNode.get(n.id) ?? [],
         orphan: orphans.has(n.id),
         run: runInfo?.nodes.get(n.id),
-        freeExits: exitsOf(n.type).filter(b => !used.has(`${n.id}:${handleOf(b)}`)),
+        freeExits: exitsOf(n).filter(b => !used.has(`${n.id}:${handleOf(b)}`)),
         readOnly,
         onAddAfter: (b, at) => onAddAfter(n.id, b, at),
       },
@@ -627,6 +627,7 @@ const MINIMAP: Record<NodeType, string> = {
   TRIGGER: '#111827', AGENT_STEP: 'rgb(var(--brand-500))', HUMAN_INTERVENTION: '#f59e0b', CONNECTOR_TOOL: '#0284c7',
   TRANSFORM: '#7c3aed', BRANCH: '#059669', END: '#9ca3af',
   PARALLEL: '#0d9488', JOIN: '#0f766e', WAIT: '#f97316', SUB_WORKFLOW: '#4f46e5', FOR_EACH: '#c026d3',
+  APPROVAL: '#d97706', HTTP_REQUEST: '#0891b2', FILTER: '#65a30d', SWITCH: '#15803d', SET_VARIABLE: '#9333ea', STORAGE: '#475569', NOTIFY: '#f43f5e',
 }
 
 const RUN_LABEL: Record<string, string> = {

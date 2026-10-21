@@ -83,6 +83,11 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   static final String PAUSED_FOR_PERMISSION = "permission";
   static final String PARKED_ON_TIMER = "timer";
   static final String PARKED_ON_CHILDREN = "children";
+  /** Nodes whose result picks which of their outgoing paths are taken. */
+  private static final Set<NodeType> ROUTES_BY_OUTLET =
+      Set.of(NodeType.BRANCH, NodeType.SWITCH, NodeType.APPROVAL, NodeType.FILTER);
+  /** The outlet a filter records when its condition held. */
+  public static final String FILTER_PASSED = "pass";
 
   private final WorkflowRepository workflows;
   private final WorkflowVersionRepository versions;
@@ -223,6 +228,20 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
     if (PAUSED_FOR_PERMISSION.equals(reason)) {
       boolean approved = instruction != null && instruction.path("approved").asBoolean(false);
+      if (isApprovalStep(run, node)) {
+        // An approval step's answer is its result, either way: it picks the path, never fails.
+        clearPause(context, node);
+        ApprovalDecisions.record(context, node, approved ? "approved" : "rejected",
+            instruction == null ? null : instruction.path("feedback").asText(null));
+        run.setContext(context.toJson());
+        run.setStatus(RunStatus.RUNNING);
+        run.setCurrentNode(node);
+        runs.save(run);
+        audit.record(run.getUserId(), ActorType.USER, null,
+            approved ? "run.approval_approved" : "run.approval_rejected",
+            run.getId().toString(), Json.obj().put("node", node));
+        return advance(runId);
+      }
       if (!approved) {
         clearPause(context, node);
         context.dequeue(node);
@@ -328,7 +347,14 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     for (Map.Entry<String, String> parked : context.parked().entrySet()) {
       boolean timerDue = PARKED_ON_TIMER.equals(parked.getValue())
           && !now.isBefore(Objects.requireNonNullElse(context.wakeAt(parked.getKey()), now));
-      if (timerDue || PARKED_ON_CHILDREN.equals(parked.getValue())) {
+      // An approval with a deadline is asked again once it passes, and takes its timeout path.
+      Instant deadline = context.wakeAt(parked.getKey());
+      boolean approvalLapsed = PAUSED_FOR_PERMISSION.equals(parked.getValue())
+          && deadline != null && !now.isBefore(deadline);
+      if (approvalLapsed) {
+        clearPause(context, parked.getKey());
+        due = true;
+      } else if (timerDue || PARKED_ON_CHILDREN.equals(parked.getValue())) {
         context.unpark(parked.getKey());
         due = true;
       }
@@ -408,6 +434,9 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         // Already done in an earlier life of this run: move on without re-executing. This is the
         // line that makes a side-effecting node exactly-once across a crash.
         context.recordOutput(nodeId, checkpoint.get().getOutput());
+        if (node.type() == NodeType.SET_VARIABLE) {
+          SetVariables.apply(context, checkpoint.get().getOutput());
+        }
         finishNode(run, graph, node, context);
         continue;
       }
@@ -443,7 +472,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         case AWAIT_INSTRUCTION -> parkForPerson(current, context, nodeId, PAUSED_FOR_INSTRUCTION,
             outcome.message(), NotificationKind.INSTRUCTION_REQUIRED);
         case AWAIT_PERMISSION -> parkForPerson(current, context, nodeId, PAUSED_FOR_PERMISSION,
-            outcome.message(), NotificationKind.PERMISSION_REQUEST);
+            outcome.message(), NotificationKind.PERMISSION_REQUEST, outcome.wakeAt());
         case WAIT -> {
           context.park(nodeId, PARKED_ON_TIMER, outcome.wakeAt());
           save(current, context);
@@ -479,14 +508,27 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     return toDto(run);
   }
 
+  private boolean isApprovalStep(WorkflowRunEntity run, String nodeId) {
+    return workflows.findById(run.getWorkflowId())
+        .map(w -> graphFor(w, run.getVersion()))
+        .flatMap(g -> g.node(nodeId))
+        .map(n -> n.type() == NodeType.APPROVAL)
+        .orElse(false);
+  }
+
   /** A node is done: take it off the frontier and send its result down every path it opens. */
   private void finishNode(WorkflowRunEntity run, WorkflowGraph graph, WorkflowNode node,
                           RunContext context) {
     context.dequeue(node.id());
     context.recordLast(node.id());
-    String outlet = node.type() == NodeType.BRANCH ? context.branchOf(node.id()) : null;
+    String outlet = ROUTES_BY_OUTLET.contains(node.type()) ? context.branchOf(node.id()) : null;
     for (WorkflowEdge edge : graph.outgoing(node.id())) {
-      boolean live = node.type() != NodeType.BRANCH || Objects.equals(edge.branch(), outlet);
+      boolean live = switch (node.type()) {
+        case BRANCH, SWITCH, APPROVAL -> Objects.equals(edge.branch(), outlet);
+        // A filter has one way out, open only when its condition held.
+        case FILTER -> FILTER_PASSED.equals(outlet);
+        default -> true;
+      };
       reach(run, graph, context, edge.to(), node.id(), live);
     }
     save(run, context);
@@ -557,7 +599,13 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind) {
-    context.park(nodeId, reason, null);
+    parkForPerson(run, context, nodeId, reason, prompt, kind, null);
+  }
+
+  /** As above; with {@code until}, the recovery sweep runs the step again once that time passes. */
+  private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
+                             String reason, String prompt, NotificationKind kind, Instant until) {
+    context.park(nodeId, reason, until);
     save(run, context);
 
     NotificationBus bus = notifications.getIfAvailable();

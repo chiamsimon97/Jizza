@@ -277,12 +277,23 @@ public final class RunContext {
 
   public int depth() { return root.path("depth").asInt(0); }
 
-  /** The variable bindings a Transform or Branch expression is evaluated against. */
+  /** Sets a run variable, which later steps read as {@code vars.<name>}. */
+  public void setVar(String name, JsonNode value) {
+    ObjectNode vars = root.has("vars") && root.get("vars").isObject()
+        ? (ObjectNode) root.get("vars") : root.putObject("vars");
+    vars.set(name, value == null ? com.fasterxml.jackson.databind.node.NullNode.getInstance() : value);
+  }
+
+  public JsonNode vars() { return root.path("vars"); }
+
+  /** The variable bindings every expression and template in a run is evaluated against. */
   public Map<String, Object> variables() {
     Map<String, Object> variables = new HashMap<>();
     variables.put("input", Json.mapper().convertValue(input(), Object.class));
     variables.put("nodes", Json.mapper().convertValue(root.path("nodes"), Object.class));
     variables.put("instructions", Json.mapper().convertValue(root.path("instructions"), Object.class));
+    variables.put("vars", root.path("vars").isObject()
+        ? Json.mapper().convertValue(root.path("vars"), Object.class) : new HashMap<>());
     return variables;
   }
 }

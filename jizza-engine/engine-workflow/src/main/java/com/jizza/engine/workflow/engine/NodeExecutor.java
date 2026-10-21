@@ -86,6 +86,11 @@ public interface NodeExecutor {
       return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt);
     }
 
+    /** Asks the user to approve, as {@link #awaitPermission}, and stops asking at {@code until}. */
+    public static Outcome awaitApproval(String prompt, Instant until) {
+      return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt, until);
+    }
+
     public static Outcome waitUntil(Instant wakeAt) {
       return new Outcome(Status.WAIT, null, null, null, wakeAt);
     }

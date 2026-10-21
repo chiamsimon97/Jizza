@@ -1,27 +1,60 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
-import { AlertCircle, Bot, Check, CircleSlash, Clock, Flag, GitBranch, GitMerge, Hand, Loader2, Play, Plug, Plus, Repeat, Search, Shuffle, Split, Trash2, Workflow, X } from 'lucide-react'
+import {
+  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, Play, Plug, Plus, Repeat, Search,
+  ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
+} from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, exitsOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
 
 export type Exit = ExitKey
 /** How a step did in the run shown on the canvas. */
 export type StepRun = 'done' | 'failed' | 'skipped' | 'running' | 'waiting'
 
 export const handleOf = (b: Exit) => b ?? 'out'
-export const exitOf = (handle: string | null | undefined): Exit =>
-  handle === 'true' || handle === 'false' || handle === 'a' || handle === 'b' || handle === 'c' ? handle : null
+export const exitOf = (handle: string | null | undefined): Exit => (handle && handle !== 'out' && handle !== 'in' ? handle : null)
 
-/** What an exit is called next to its dot. */
-export const exitLabel = (b: Exit): string => (b === 'true' ? 'yes' : b === 'false' ? 'no' : b ? `path ${'abc'.indexOf(b) + 1}` : '')
+/** What an exit is called next to its dot. A paths step's cases go by their labels, so it needs the node. */
+export function exitLabel(b: Exit, node?: CanvasNode): string {
+  if (b === null) return ''
+  if (b === 'true') return 'yes'
+  if (b === 'false') return 'no'
+  if (b === 'else') return 'otherwise'
+  if (b === 'approved' || b === 'rejected') return b
+  if (node?.type === 'SWITCH') {
+    const cases = casesOf(node.config)
+    const i = cases.findIndex(c => c.id === b)
+    return i < 0 ? b : cases[i].label.trim() || `path ${i + 1}`
+  }
+  return 'abc'.includes(b) ? `path ${'abc'.indexOf(b) + 1}` : b
+}
+
+/** Whether an exit is the "go" or "stop" side of a choice, for its colour. */
+const exitTone = (b: Exit): 'yes' | 'no' | 'other' => (b === 'true' || b === 'approved' ? 'yes' : b === 'false' || b === 'rejected' ? 'no' : 'other')
 
 export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
   PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
+  APPROVAL: ShieldCheck, HTTP_REQUEST: Webhook, FILTER: Filter, SWITCH: Signpost, SET_VARIABLE: Braces, STORAGE: Database, NOTIFY: Bell,
 }
 
 const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
+/** Past three exits (a paths step), each gets this many pixels below the header and the card grows to fit. */
+const EXIT_GAP = 22
+const EXIT_FIRST = 40
+
+/** Where each of a node's exits sits, from the top of the card. */
+const exitTops = (n: number): string[] => EXIT_TOP[n] ?? Array.from({ length: n }, (_, i) => `${EXIT_FIRST + i * EXIT_GAP}px`)
+
+/** Room in the card body for the exit labels on the right and the dots below the text. */
+function bodyPad(node: CanvasNode, exits: number): string {
+  if (node.type === 'BRANCH') return 'pb-5 pr-10'
+  if (node.type === 'PARALLEL') return 'pb-7 pr-14'
+  if (node.type === 'APPROVAL') return 'pb-5 pr-20'
+  if (node.type === 'SWITCH') return exits === 2 ? 'pb-5 pr-20' : 'pb-7 pr-20'
+  return ''
+}
 
 export interface StepData {
   node: CanvasNode
@@ -48,13 +81,14 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
   const { node, agent, issues, orphan, run, freeExits, readOnly, onAddAfter } = data
   const meta = NODE_META[node.type]
   const Icon = NODE_ICON[node.type]
-  const exits: Exit[] = exitsOf(node.type)
+  const exits: Exit[] = exitsOf(node)
+  const tops = exitTops(exits.length)
   const summary = summarise(node, agent)
 
   return (
     <div className={`group relative rounded-xl border bg-white shadow-sm transition-shadow dark:bg-gray-900 ${
       selected ? 'border-brand-500 shadow-md ring-4 ring-brand-500/20' : 'border-gray-200 hover:shadow-md dark:border-gray-700'} ${
-      run ? RUN_RING[run] : ''}`} style={{ width: NODE_W }}>
+      run ? RUN_RING[run] : ''}`} style={{ width: NODE_W, minHeight: exits.length > 3 ? EXIT_FIRST + exits.length * EXIT_GAP : undefined }}>
       {node.type !== 'TRIGGER' && (
         <Handle type="target" position={Position.Left} id="in"
           className="!h-3.5 !w-3.5 !rounded-full !border-2 !border-white !bg-gray-400 transition-transform hover:!scale-125 dark:!border-gray-900" />
@@ -67,7 +101,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
           {run && <RunBadge run={run} />}
         </span>
       </div>
-      <div className={`px-2.5 py-2 ${node.type === 'BRANCH' ? 'pb-5 pr-10' : node.type === 'PARALLEL' ? 'pb-7 pr-14' : ''}`}>
+      <div className={`px-2.5 py-2 ${bodyPad(node, exits.length)}`}>
         <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{node.label}</p>
         {summary && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{summary}</p>}
       </div>
@@ -80,22 +114,23 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
       )}
 
       {exits.map((b, i) => {
-        const top = EXIT_TOP[exits.length][i]
+        const top = tops[i]
         const free = freeExits.includes(b)
+        const tone = exitTone(b)
         return (
           <div key={handleOf(b)}>
             {b && (
-              <span className={`pointer-events-none absolute right-2.5 -translate-y-1/2 text-[10px] font-semibold uppercase ${
-                b === 'true' ? 'text-emerald-600' : b === 'false' ? 'text-red-500' : 'text-teal-600 dark:text-teal-400'}`}
-                style={{ top }}>{exitLabel(b)}</span>
+              <span className={`pointer-events-none absolute right-2.5 max-w-[72px] -translate-y-1/2 truncate text-[10px] font-semibold uppercase ${
+                tone === 'yes' ? 'text-emerald-600' : tone === 'no' ? 'text-red-500' : b === 'else' ? 'text-gray-500' : 'text-teal-600 dark:text-teal-400'}`}
+                style={{ top }}>{exitLabel(b, node)}</span>
             )}
             <Handle type="source" position={Position.Right} id={handleOf(b)} style={{ top }}
               className={`!h-3.5 !w-3.5 !rounded-full !border-2 !border-white transition-transform hover:!scale-125 dark:!border-gray-900 ${
-                b === 'true' ? '!bg-emerald-500' : b === 'false' ? '!bg-red-500' : '!bg-gray-500'}`} />
+                tone === 'yes' ? '!bg-emerald-500' : tone === 'no' ? '!bg-red-500' : '!bg-gray-500'}`} />
             {free && !readOnly && (
               <div className="nodrag nopan absolute flex items-center" style={{ top, left: '100%', transform: 'translateY(-50%)' }}>
                 <span className="ml-2 h-px w-5 bg-gray-300 dark:bg-gray-600" />
-                <button type="button" aria-label={`Add a step after ${node.label}${b ? ` (${exitLabel(b)})` : ''}`}
+                <button type="button" aria-label={`Add a step after ${node.label}${b ? ` (${exitLabel(b, node)})` : ''}`}
                   title="Add the next step"
                   onClick={e => { e.stopPropagation(); onAddAfter(b, { x: e.clientX, y: e.clientY }) }}
                   className="grid h-6 w-6 place-items-center rounded-md border border-gray-300 bg-white text-gray-500 shadow-sm transition-colors hover:border-brand-500 hover:bg-brand-50 hover:text-brand-600 dark:border-gray-600 dark:bg-gray-900 dark:hover:bg-brand-500/15">
@@ -133,9 +168,24 @@ export function summarise(node: CanvasNode, agent?: AgentDto): string {
     case 'WAIT': return c.duration ? `Waits ${describeDuration(String(c.duration))}` : c.until ? `Waits until ${String(c.until).replace('T', ' ')}` : 'Set how long to wait'
     case 'SUB_WORKFLOW': return c.workflowName ? `Runs "${String(c.workflowName)}"` : 'Choose a workflow'
     case 'FOR_EACH': return c.workflowName ? `Runs "${String(c.workflowName)}" for each of ${String(c.items ?? 'a list')}` : 'Choose a workflow and a list'
+    case 'APPROVAL': return String(c.prompt || 'Waits for you to approve or reject')
+    case 'HTTP_REQUEST': return c.url ? `${String(c.method ?? 'POST')} ${String(c.url)}` : 'Set a URL'
+    case 'FILTER': return c.condition ? `Only if ${String(c.condition)}` : 'Set a condition'
+    case 'SWITCH': {
+      const cases = casesOf(c)
+      return cases.length ? [...cases.map((k, i) => k.label.trim() || `Path ${i + 1}`), 'otherwise'].join(' · ') : 'Add a path'
+    }
+    case 'SET_VARIABLE': {
+      const names = (Array.isArray(c.variables) ? c.variables as Array<{ name?: unknown }> : []).map(v => String(v?.name ?? '').trim()).filter(Boolean)
+      return names.length ? `Sets ${names.map(v => `vars.${v}`).join(', ')}` : 'Add a variable'
+    }
+    case 'STORAGE': return c.key ? `${STORAGE_VERB[String(c.action ?? 'get')] ?? 'Uses'} "${String(c.key)}"` : 'Set a key'
+    case 'NOTIFY': return String(c.title || c.message || 'Set a message')
     default: return 'The run finishes here'
   }
 }
+
+const STORAGE_VERB: Record<string, string> = { get: 'Reads', set: 'Saves', increment: 'Counts up', append: 'Adds to', delete: 'Forgets' }
 
 /** "PT2H" as "2 hours", or the text itself when it isn't a simple duration. */
 function describeDuration(iso: string): string {
@@ -162,11 +212,12 @@ export const Wire = memo(function Wire(props: EdgeProps<WireData>) {
   const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition })
   if (!data) return null
   const active = selected || data.hovered
-  const stroke = selected ? 'rgb(var(--brand-500))' : data.travelled ? '#10b981' : data.branch === 'false' ? '#f87171' : data.branch === 'true' ? '#34d399' : '#9ca3af'
+  const tone = exitTone(data.branch)
+  const stroke = selected ? 'rgb(var(--brand-500))' : data.travelled ? '#10b981' : tone === 'no' ? '#f87171' : tone === 'yes' ? '#34d399' : '#9ca3af'
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} interactionWidth={22}
-        style={{ stroke, strokeWidth: active ? 2.5 : 2, strokeDasharray: data.branch === 'false' ? '6 4' : undefined }} />
+        style={{ stroke, strokeWidth: active ? 2.5 : 2, strokeDasharray: tone === 'no' ? '6 4' : undefined }} />
       <EdgeLabelRenderer>
         <div className="nodrag nopan absolute flex items-center gap-1"
           style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, pointerEvents: 'all' }}

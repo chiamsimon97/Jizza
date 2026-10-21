@@ -210,6 +210,20 @@ module.
     Jizza, the workflow planner, a long message, a failed check) means standard. The check is
     recorded as `jizza:routing` spend. `jizza.agents.routing.enabled` turns it off.
 
+23. **Built-in steps that need no agent.** The Zapier and Zoho Flow core actions, so a decided
+    workflow runs without a model deciding anything: `APPROVAL` (approved / rejected paths, an
+    optional timeout that takes a chosen path), `HTTP_REQUEST` (send a webhook through the same
+    `GuardedHttpClient` and egress rules as connectors), `FILTER` (stops its path; the run still
+    ends well), `SWITCH` (Paths: the first matching case, else `else`), `SET_VARIABLE` (read later
+    as `vars.<name>`), `STORAGE` (per-user values between runs, table `workflow_storage`, V17) and
+    `NOTIFY` (the owner only, in the app and/or by email). Text fields take `{{ expression }}`
+    placeholders and every expression can call the `fmt:` helpers (text, numbers, dates, lookups),
+    the only class added to the sandbox's permissions. An approval reuses the permission request
+    and its answer; a rejection picks the path instead of failing the run. Delay, loop and
+    sub-workflow were already covered by `WAIT`, `FOR_EACH` and `SUB_WORKFLOW` (gap 21). A webhook
+    or notify step that dies after sending can send again on resume, like any side effect without
+    an idempotency key.
+
 ## Acceptance suite
 
 `jizza-app/src/test/java/com/jizza/app/e2e` — 107 tests, the whole application booted against a real

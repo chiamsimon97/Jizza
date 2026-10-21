@@ -457,6 +457,54 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
   }
 
   @Test
+  void builtInStepsApproveCallAWebhookKeepACountAndTellTheUserWithoutAnAgent() {
+    try (StubService service = new StubService()) {
+      WorkflowGraph graph = new WorkflowGraph(
+          List.of(node("start", NodeType.TRIGGER, null),
+              node("approve", NodeType.APPROVAL, Json.obj()
+                  .put("prompt", "Add {{ input.name }} to the shop?")),
+              node("hook", NodeType.HTTP_REQUEST, Json.obj().put("method", "POST")
+                  .put("url", service.baseUrl() + "/v1/pets")
+                  .put("bodyExpr", "{'name': input.name}")
+                  .set("headers", Json.obj().put("Authorization", "Bearer {{ input.token }}"))),
+              node("count", NodeType.STORAGE, Json.obj().put("action", "increment")
+                  .put("key", "pets-added")),
+              node("tell", NodeType.NOTIFY, Json.obj()
+                  .put("message", "Added {{ nodes.hook.body.id }}, {{ nodes.count.value }} so far")),
+              node("finish", NodeType.END, null)),
+          List.of(new WorkflowEdge("start", "approve", null),
+              new WorkflowEdge("approve", "hook", "approved"),
+              new WorkflowEdge("hook", "count", null), new WorkflowEdge("count", "tell", null),
+              new WorkflowEdge("tell", "finish", null)));
+      UUID workflowId = approvedWorkflow("Add a pet", graph);
+
+      var run = api.post("/api/workflows/" + workflowId + "/run",
+          Map.of("version", 1, "input", Json.obj().put("name", "Rex").put("token", "t-1")));
+      UUID runId = UUID.fromString(run.json().path("id").asText());
+      assertThat(run.json().path("status").asText()).isEqualTo("PAUSED_WAITING_INSTRUCTION");
+      assertThat(service.petsCreated.get()).as("nothing is sent before approval").isZero();
+
+      var request = java.util.stream.StreamSupport.stream(
+              api.get("/api/notifications?unreadOnly=true").json().spliterator(), false)
+          .filter(n -> n.path("runId").asText().equals(runId.toString()))
+          .findFirst().orElseThrow();
+      assertThat(request.path("kind").asText()).isEqualTo("PERMISSION_REQUEST");
+      assertThat(request.path("body").asText()).isEqualTo("Add Rex to the shop?");
+
+      var answered = api.post("/api/notifications/" + request.path("id").asText() + "/answer",
+          Map.of("kind", "APPROVE"));
+      assertThat(answered.ok()).as(answered.body()).isTrue();
+
+      assertThat(api.get("/api/runs/" + runId).json().path("status").asText()).isEqualTo("DONE");
+      assertThat(service.petsCreated.get()).isEqualTo(1);
+      assertThat(service.lastBearerToken()).isEqualTo("t-1");
+      assertThat(steps.findByRunIdAndNodeId(runId, "count").orElseThrow().getOutput()
+          .path("value").asLong()).isEqualTo(1);
+      assertThat(api.get("/api/notifications").json().toString()).contains("Added pet-1, 1 so far");
+    }
+  }
+
+  @Test
   void aTransformCannotEscapeItsSandboxAndTheRunSaysSo() {
     WorkflowGraph graph = new WorkflowGraph(
         List.of(node("start", NodeType.TRIGGER, null),

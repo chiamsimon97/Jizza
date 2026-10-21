@@ -113,4 +113,42 @@ class JexlSandboxTest {
     assertThatThrownBy(() -> sandbox.evaluate("somethingElse.value", Map.of("input", Map.of())))
         .isInstanceOf(SandboxViolationException.class);
   }
+
+  // ── fmt: functions ─────────────────────────────────────────────────────
+
+  @Test
+  void formatsTextNumbersAndDatesWithoutAnAgent() {
+    Map<String, Object> vars = Map.of("input", Map.of("name", "  priya sharma ",
+        "amount", "1,23,456.789", "due", "2026-10-21T10:00:00+05:30",
+        "items", List.of(Map.of("price", 10), Map.of("price", 32.5))));
+    assertThat(sandbox.evaluate("fmt:titleCase(fmt:trim(input.name))", vars).asText())
+        .isEqualTo("Priya Sharma");
+    assertThat(sandbox.evaluate("fmt:round(input.amount, 2)", vars).asDouble()).isEqualTo(123456.79);
+    assertThat(sandbox.evaluate("fmt:formatNumber(input.amount, 2)", vars).asText())
+        .isEqualTo("123,456.79");
+    assertThat(sandbox.evaluate("fmt:formatDate(input.due, 'dd MMM yyyy')", vars).asText())
+        .isEqualTo("21 Oct 2026");
+    assertThat(sandbox.evaluate("fmt:formatDate(fmt:addTime(input.due, 'P3D'), 'yyyy-MM-dd')", vars)
+        .asText()).isEqualTo("2026-10-24");
+    assertThat(sandbox.evaluate("fmt:sum(fmt:pluck(input.items, 'price'))", vars).asDouble())
+        .isEqualTo(42.5);
+    assertThat(sandbox.evaluate("fmt:lookup({'IN': 'India'}, 'IN', 'Unknown')", vars).asText())
+        .isEqualTo("India");
+  }
+
+  @Test
+  void theFormattersDoNotOpenAWayOut() {
+    refuses("fmt:getClass().forName('java.lang.Runtime')");
+    refuses("fmt:getClass().getName()");
+    refuses("fmt:upper('x').getClass().forName('java.lang.Runtime')");
+  }
+
+  @Test
+  void templatesFillPlaceholdersFromTheRun() {
+    Map<String, Object> vars = Map.of("input", Map.of("name", "Priya", "total", 42),
+        "vars", Map.of("tier", "gold"));
+    assertThat(Templates.render("Hi {{ input.name }}, {{input.total * 2}} for {{ vars.tier }}{{ input.missing }}!",
+        sandbox, vars)).isEqualTo("Hi Priya, 84 for gold!");
+    assertThat(Templates.render("no placeholders", sandbox, vars)).isEqualTo("no placeholders");
+  }
 }

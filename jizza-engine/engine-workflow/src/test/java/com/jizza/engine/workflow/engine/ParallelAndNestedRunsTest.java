@@ -487,6 +487,6 @@ class ParallelAndNestedRunsTest {
         List.of(start, node("a", NodeType.TRANSFORM, "{\"expression\":\"1\"}"),
             node("b", NodeType.TRANSFORM, "{\"expression\":\"2\"}")),
         List.of(edge("start", "a"), edge("start", "b")))))
-        .hasMessageContaining("only a branch or parallel step may fork");
+        .hasMessageContaining("may fork");
   }
 }
