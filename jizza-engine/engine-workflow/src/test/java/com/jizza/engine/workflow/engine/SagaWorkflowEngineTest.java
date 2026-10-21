@@ -85,12 +85,6 @@ class SagaWorkflowEngineTest {
     // A fresh process picks the run up. It must not re-run the nodes that already completed.
     harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.completed(
         Json.obj().put("text", "recovered"));
-    // What the row looks like when the process died mid-step: running, with the step still on
-    // the frontier (the retries above parked it for a person, which a real crash never gets to).
-    RunContext crashed = RunContext.of(harness.run(run.id()).getContext());
-    crashed.unpark("summarise");
-    crashed.clearPause();
-    harness.run(run.id()).setContext(crashed.toJson());
     harness.run(run.id()).setStatus(RunStatus.RUNNING);
     var resumed = harness.engine.resumeAfterRestart(run.id());
 

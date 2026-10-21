@@ -297,6 +297,17 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     log.info("Resuming run {} from node {}", runId, run.getCurrentNode());
     audit.record(run.getUserId(), ActorType.SYSTEM, null, "run.resumed_after_restart",
         runId.toString(), Json.obj().put("fromNode", String.valueOf(run.getCurrentNode())));
+    // A run parked for a person is never saved as running, so one that is was set running on
+    // purpose (by hand, or a step died between the two): its paused steps run again.
+    RunContext context = RunContext.of(run.getContext());
+    List<String> pausedSteps = context.parked().entrySet().stream()
+        .filter(e -> PAUSED_FOR_INSTRUCTION.equals(e.getValue())
+            || PAUSED_FOR_PERMISSION.equals(e.getValue()))
+        .map(Map.Entry::getKey).toList();
+    if (!pausedSteps.isEmpty()) {
+      pausedSteps.forEach(nodeId -> clearPause(context, nodeId));
+      save(run, context);
+    }
     return advance(runId);
   }
 
