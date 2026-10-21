@@ -37,9 +37,15 @@ import com.jizza.engine.persistence.repository.WorkflowRunRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunStepRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.nodes.BranchNodeExecutor;
+import com.jizza.engine.workflow.nodes.ChildRuns;
 import com.jizza.engine.workflow.nodes.ConnectorToolNodeExecutor;
 import com.jizza.engine.workflow.nodes.EndNodeExecutor;
+import com.jizza.engine.workflow.nodes.ForEachNodeExecutor;
 import com.jizza.engine.workflow.nodes.InterventionNodeExecutor;
+import com.jizza.engine.workflow.nodes.JoinNodeExecutor;
+import com.jizza.engine.workflow.nodes.ParallelNodeExecutor;
+import com.jizza.engine.workflow.nodes.SubWorkflowNodeExecutor;
+import com.jizza.engine.workflow.nodes.WaitNodeExecutor;
 import com.jizza.engine.workflow.nodes.TransformNodeExecutor;
 import com.jizza.engine.workflow.nodes.TriggerNodeExecutor;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
@@ -65,6 +71,10 @@ public final class EngineHarness {
   public final List<NotificationDto> raised = new ArrayList<>();
 
   public final WorkflowEntity workflow = new WorkflowEntity();
+  /** Every workflow the engine can find, so a test can add ones to run as steps. */
+  public final List<WorkflowEntity> workflowRows = new ArrayList<>();
+  /** What the engine and the wait step believe the time is. */
+  public final MutableClock clock = new MutableClock();
   public final GeneratedToolEntity sendEmailTool = new GeneratedToolEntity();
 
   /** Counts real invocations of the side-effecting tool, which is what exactly-once is about. */
@@ -90,7 +100,9 @@ public final class EngineHarness {
     workflow.setVersion(1);
 
     WorkflowRepository workflows = mock(WorkflowRepository.class);
-    when(workflows.findById(workflow.getId())).thenReturn(Optional.of(workflow));
+    workflowRows.add(workflow);
+    when(workflows.findById(any())).thenAnswer(inv -> workflowRows.stream()
+        .filter(w -> w.getId().equals(inv.getArgument(0))).findFirst());
 
     runs = mock(WorkflowRunRepository.class);
     when(runs.save(any())).thenAnswer(inv -> {
@@ -200,9 +212,18 @@ public final class EngineHarness {
     when(busProvider.getIfAvailable()).thenReturn(bus);
 
     JexlSandbox sandbox = new JexlSandbox();
+    SagaWorkflowEngine[] self = new SagaWorkflowEngine[1];
+    ObjectProvider<SagaWorkflowEngine> engineProvider = mock(ObjectProvider.class);
+    when(engineProvider.getIfAvailable()).thenAnswer(inv -> self[0]);
+    ChildRuns childRuns = new ChildRuns(engineProvider, runs);
     List<NodeExecutor> executors = List.of(
         new TriggerNodeExecutor(),
-        new EndNodeExecutor(),
+        new EndNodeExecutor(sandbox),
+        new ParallelNodeExecutor(),
+        new JoinNodeExecutor(),
+        new WaitNodeExecutor(sandbox, clock),
+        new SubWorkflowNodeExecutor(childRuns, sandbox),
+        new ForEachNodeExecutor(childRuns, sandbox),
         new TransformNodeExecutor(sandbox),
         new BranchNodeExecutor(sandbox),
         new InterventionNodeExecutor(),
@@ -210,7 +231,37 @@ public final class EngineHarness {
         new CountingAgentStep());
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
-        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors);
+        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock);
+    self[0] = engine;
+  }
+
+  /** Adds another approved workflow of the same person, for a step to run. */
+  public WorkflowEntity addWorkflow(String name, WorkflowGraph graph) {
+    WorkflowEntity other = new WorkflowEntity();
+    other.setId(UUID.randomUUID());
+    other.setUserId(userId);
+    other.setName(name);
+    other.setGraph(graph.toJson());
+    other.setGraphFingerprint(graph.fingerprint());
+    other.setOrigin(WorkflowOrigin.USER_BUILT);
+    other.setStatus(WorkflowStatus.APPROVED);
+    other.setOwningAgentId(agentId);
+    other.setVersion(1);
+    workflowRows.add(other);
+    return other;
+  }
+
+  /** A clock a test can move forward. */
+  public static final class MutableClock extends java.time.Clock {
+    private Instant now = Instant.parse("2026-10-21T08:00:00Z");
+
+    public void advance(java.time.Duration by) { now = now.plus(by); }
+
+    @Override public java.time.ZoneId getZone() { return java.time.ZoneOffset.UTC; }
+
+    @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+
+    @Override public Instant instant() { return now; }
   }
 
   /** Counts how often an agent step ran, so re-execution after a resume is detectable. */

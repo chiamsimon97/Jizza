@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, cloneNodes, emptyGraph, fromGraph, insertOnEdge, issues, problems, setNext, targetsFor, tidy, toGraph, unreachable,
+  addAfter, addNode, cloneNodes, emptyGraph, fromDuration, fromGraph, insertOnEdge, issues, problems, setNext, targetsFor, tidy, toDuration, toGraph,
+  unreachable,
 } from './canvasModel'
 
 describe('canvasModel', () => {
@@ -79,5 +80,36 @@ describe('canvasModel', () => {
     expect(loose.graph.edges).toHaveLength(1)
     const tidied = tidy(a.graph)
     expect(tidied.nodes.find(n => n.id === a.id)!.x).toBeGreaterThan(tidied.nodes.find(n => n.id === 'start')!.x)
+  })
+
+  it('gives a parallel step lanes that each run, and keeps them through a save', () => {
+    let g = addAfter(emptyGraph(), 'start', null, 'PARALLEL')
+    const split = g.id
+    expect(problems(g.graph)).toEqual([expect.stringContaining('at least two paths')])
+    const left = addAfter(g.graph, split, 'a', 'TRANSFORM')
+    const right = addAfter(left.graph, split, 'b', 'WAIT')
+    g = right
+    const saved = toGraph(g.graph)
+    expect(saved.edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
+    expect(fromGraph(saved).edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
+    expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('at least two paths'))
+    expect(problems(g.graph)).toContainEqual(expect.stringContaining('how long to wait'))
+    // A graph with parallel paths can't be shown as a step list.
+    expect(stepsFromGraph(saved)).toBeNull()
+  })
+
+  it('checks wait lengths and the workflow a step runs', () => {
+    const wait = addAfter(emptyGraph(), 'start', null, 'WAIT')
+    const bad = { ...wait.graph, nodes: wait.graph.nodes.map(n => n.id === wait.id ? { ...n, config: { duration: '2 hours' } } : n) }
+    expect(problems(bad)).toContainEqual(expect.stringContaining("can't read"))
+    const good = { ...wait.graph, nodes: wait.graph.nodes.map(n => n.id === wait.id ? { ...n, config: { duration: toDuration(2, 'hours') } } : n) }
+    expect(problems(good)).toEqual([])
+    expect(fromDuration('PT2H')).toEqual({ amount: 2, unit: 'hours' })
+    expect(fromDuration('P3D')).toEqual({ amount: 3, unit: 'days' })
+
+    const each = addAfter(emptyGraph(), 'start', null, 'FOR_EACH')
+    expect(problems(each.graph)).toEqual(expect.arrayContaining([
+      expect.stringContaining('needs a workflow'), expect.stringContaining('list to go through'),
+    ]))
   })
 })

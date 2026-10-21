@@ -122,7 +122,7 @@ Two Maven aggregates plus the deployable that assembles them:
 | `jizza-engine/engine-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
 | `jizza-engine/engine-mcp` | Tools from the MCP servers the owner configured (`jizza.mcp.servers`), offered to the agents the owner named and run through the Capability Registry like any other tool |
 | `jizza-engine/engine-scheduler` | Durable one-time and recurring tasks, DST-safe, no double-fire |
-| `jizza-engine/engine-workflow` | The Postgres saga engine, the JEXL sandbox, interventions |
+| `jizza-engine/engine-workflow` | The Postgres saga engine (parallel paths, waits, sub-workflows, for-each), the JEXL sandbox, interventions |
 | `jizza-engine/engine-procedures` | Learned-procedure mechanism: binding enforcement, deviation recording |
 | `jizza-engine/engine-notifications` | The bus, expiry and escalation |
 | `jizza-engine/engine-autonomy` | Kill switch and autonomy gate evaluation |

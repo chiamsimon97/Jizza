@@ -1,20 +1,27 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
-import { AlertCircle, Bot, Check, CircleSlash, Flag, GitBranch, Hand, Loader2, Play, Plug, Plus, Search, Shuffle, Trash2, X } from 'lucide-react'
+import { AlertCircle, Bot, Check, CircleSlash, Clock, Flag, GitBranch, GitMerge, Hand, Loader2, Play, Plug, Plus, Repeat, Search, Shuffle, Split, Trash2, Workflow, X } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, type CanvasNode, type NodeType } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, exitsOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
 
-export type Exit = 'true' | 'false' | null
+export type Exit = ExitKey
 /** How a step did in the run shown on the canvas. */
 export type StepRun = 'done' | 'failed' | 'skipped' | 'running' | 'waiting'
 
 export const handleOf = (b: Exit) => b ?? 'out'
-export const exitOf = (handle: string | null | undefined): Exit => (handle === 'true' ? 'true' : handle === 'false' ? 'false' : null)
+export const exitOf = (handle: string | null | undefined): Exit =>
+  handle === 'true' || handle === 'false' || handle === 'a' || handle === 'b' || handle === 'c' ? handle : null
+
+/** What an exit is called next to its dot. */
+export const exitLabel = (b: Exit): string => (b === 'true' ? 'yes' : b === 'false' ? 'no' : b ? `path ${'abc'.indexOf(b) + 1}` : '')
 
 export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
+  PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
 }
+
+const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
 
 export interface StepData {
   node: CanvasNode
@@ -41,7 +48,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
   const { node, agent, issues, orphan, run, freeExits, readOnly, onAddAfter } = data
   const meta = NODE_META[node.type]
   const Icon = NODE_ICON[node.type]
-  const exits: Exit[] = node.type === 'END' ? [] : node.type === 'BRANCH' ? ['true', 'false'] : [null]
+  const exits: Exit[] = exitsOf(node.type)
   const summary = summarise(node, agent)
 
   return (
@@ -60,7 +67,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
           {run && <RunBadge run={run} />}
         </span>
       </div>
-      <div className={`px-2.5 py-2 ${node.type === 'BRANCH' ? 'pb-5 pr-10' : ''}`}>
+      <div className={`px-2.5 py-2 ${node.type === 'BRANCH' ? 'pb-5 pr-10' : node.type === 'PARALLEL' ? 'pb-7 pr-14' : ''}`}>
         <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{node.label}</p>
         {summary && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{summary}</p>}
       </div>
@@ -73,13 +80,14 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
       )}
 
       {exits.map((b, i) => {
-        const top = exits.length === 1 ? '50%' : i === 0 ? '48%' : '76%'
+        const top = EXIT_TOP[exits.length][i]
         const free = freeExits.includes(b)
         return (
           <div key={handleOf(b)}>
             {b && (
-              <span className={`pointer-events-none absolute right-2.5 -translate-y-1/2 text-[10px] font-semibold uppercase ${b === 'true' ? 'text-emerald-600' : 'text-red-500'}`}
-                style={{ top }}>{b === 'true' ? 'yes' : 'no'}</span>
+              <span className={`pointer-events-none absolute right-2.5 -translate-y-1/2 text-[10px] font-semibold uppercase ${
+                b === 'true' ? 'text-emerald-600' : b === 'false' ? 'text-red-500' : 'text-teal-600 dark:text-teal-400'}`}
+                style={{ top }}>{exitLabel(b)}</span>
             )}
             <Handle type="source" position={Position.Right} id={handleOf(b)} style={{ top }}
               className={`!h-3.5 !w-3.5 !rounded-full !border-2 !border-white transition-transform hover:!scale-125 dark:!border-gray-900 ${
@@ -87,7 +95,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
             {free && !readOnly && (
               <div className="nodrag nopan absolute flex items-center" style={{ top, left: '100%', transform: 'translateY(-50%)' }}>
                 <span className="ml-2 h-px w-5 bg-gray-300 dark:bg-gray-600" />
-                <button type="button" aria-label={`Add a step after ${node.label}${b ? (b === 'true' ? ' (yes)' : ' (no)') : ''}`}
+                <button type="button" aria-label={`Add a step after ${node.label}${b ? ` (${exitLabel(b)})` : ''}`}
                   title="Add the next step"
                   onClick={e => { e.stopPropagation(); onAddAfter(b, { x: e.clientX, y: e.clientY }) }}
                   className="grid h-6 w-6 place-items-center rounded-md border border-gray-300 bg-white text-gray-500 shadow-sm transition-colors hover:border-brand-500 hover:bg-brand-50 hover:text-brand-600 dark:border-gray-600 dark:bg-gray-900 dark:hover:bg-brand-500/15">
@@ -120,8 +128,21 @@ export function summarise(node: CanvasNode, agent?: AgentDto): string {
     case 'CONNECTOR_TOOL': return c.toolName ? String(c.toolName) : c.toolId ? 'Service action set' : 'Choose a service action'
     case 'TRANSFORM': return String(c.expression ?? 'Set an expression')
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
+    case 'PARALLEL': return 'Every connected path runs'
+    case 'JOIN': return 'Waits for every path that leads here'
+    case 'WAIT': return c.duration ? `Waits ${describeDuration(String(c.duration))}` : c.until ? `Waits until ${String(c.until).replace('T', ' ')}` : 'Set how long to wait'
+    case 'SUB_WORKFLOW': return c.workflowName ? `Runs "${String(c.workflowName)}"` : 'Choose a workflow'
+    case 'FOR_EACH': return c.workflowName ? `Runs "${String(c.workflowName)}" for each of ${String(c.items ?? 'a list')}` : 'Choose a workflow and a list'
     default: return 'The run finishes here'
   }
+}
+
+/** "PT2H" as "2 hours", or the text itself when it isn't a simple duration. */
+function describeDuration(iso: string): string {
+  const m = /^P(?:(\d+)D|T(\d+)([HM]))$/.exec(iso)
+  if (!m) return iso
+  const [n, unit] = m[1] ? [Number(m[1]), 'day'] : [Number(m[2]), m[3] === 'H' ? 'hour' : 'minute']
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
 }
 
 export interface WireData {

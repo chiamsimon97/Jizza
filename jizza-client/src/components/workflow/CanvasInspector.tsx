@@ -4,11 +4,16 @@ import { Check, Copy, Trash2, X } from 'lucide-react'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import type { AgentDto, RunStepDto, TeamStep } from '@/types'
-import { NODE_META, exitsOf, setNext, targetsFor, updateNode, upstreamOf, type CanvasGraph, type CanvasNode } from './canvasModel'
-import { NODE_ICON } from './canvasParts'
+import {
+  NODE_META, exitsOf, fromDuration, setNext, targetsFor, toDuration, updateNode, upstreamOf, type CanvasGraph, type CanvasNode, type ExitKey,
+} from './canvasModel'
+import { NODE_ICON, exitLabel } from './canvasParts'
 
 /** A service action the user can pick, with the service it belongs to. */
 export interface ToolOption { id: string; label: string }
+
+/** Another workflow a step can run. */
+export interface WorkflowOption { id: string; name: string; status: string }
 
 /** The hand-offs an agent step recorded in its output, when it asked its team for help. */
 function teamOf(output: unknown): TeamStep[] {
@@ -17,8 +22,8 @@ function teamOf(output: unknown): TeamStep[] {
 }
 
 /** Settings for the selected step: what it does, where it goes next, and how it did in the last run. */
-export function CanvasInspector({ node, graph, agents, tools, issues, step, readOnly, onChange, onRemove, onClose }: {
-  node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; issues: string[]
+export function CanvasInspector({ node, graph, agents, tools, workflows, issues, step, readOnly, onChange, onRemove, onClose }: {
+  node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]; issues: string[]
   step?: RunStepDto; readOnly: boolean
   /** {@code key} groups keystrokes in one field into a single undo step. */
   onChange: (g: CanvasGraph, key?: string) => void
@@ -28,7 +33,7 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
     onChange(updateNode(graph, node.id, { config: { ...node.config, ...patch } }), `${node.id}:${key}`)
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const targets = targetsFor(graph, node.id)
-  const nextOf = (b: 'true' | 'false' | null) => graph.edges.find(e => e.from === node.id && e.branch === b)?.to ?? ''
+  const nextOf = (b: ExitKey) => graph.edges.find(e => e.from === node.id && e.branch === b)?.to ?? ''
   const upstream = upstreamOf(graph, node.id).filter(n => n.type !== 'TRIGGER')
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
@@ -114,8 +119,42 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
           </Labelled>
         )}
 
+        {node.type === 'PARALLEL' && <p className="text-[11px] text-gray-500">Every connected path runs. A step that several paths lead to waits for all of them.</p>}
+        {node.type === 'JOIN' && <p className="text-[11px] text-gray-500">Carries on once every path leading here has finished (or was skipped by a branch). Later steps read each path's result as nodes.{node.id}.&lt;step id&gt;.</p>}
+
+        {node.type === 'WAIT' && <WaitFields node={node} setConfig={setConfig} />}
+
+        {(node.type === 'SUB_WORKFLOW' || node.type === 'FOR_EACH') && <>
+          <Labelled label="Workflow to run" hint={node.type === 'FOR_EACH' ? 'It runs once per item, getting {"item", "index"} as its input.' : 'It must be approved to run when nobody is testing.'}>
+            <select className={fieldClass} value={str('workflowId')}
+              onChange={e => setConfig({ workflowId: e.target.value || undefined, workflowName: workflows?.find(w => w.id === e.target.value)?.name }, 'workflow')}>
+              <option value="">Choose a workflow…</option>
+              {str('workflowId') && !workflows?.some(w => w.id === str('workflowId')) && <option value={str('workflowId')}>{str('workflowName') || 'Current workflow'}</option>}
+              {workflows?.map(w => <option key={w.id} value={w.id}>{w.name}{w.status === 'approved' || w.status === 'APPROVED' ? '' : ` (${w.status.toLowerCase().replace(/_/g, ' ')})`}</option>)}
+            </select>
+          </Labelled>
+          {node.type === 'FOR_EACH' && <>
+            <Labelled label="List to go through" hint="A JEXL expression that gives a list, e.g. nodes.fetch.invoices">
+              <input className={`${fieldClass} font-mono text-xs`} value={str('items')} onChange={e => setConfig({ items: e.target.value }, 'items')} />
+            </Labelled>
+            <Labelled label="Items at a time">
+              <input type="number" min={1} max={10} className={fieldClass} value={typeof node.config.concurrency === 'number' ? node.config.concurrency : 1}
+                onChange={e => setConfig({ concurrency: Math.max(1, Math.min(10, Number(e.target.value) || 1)) }, 'concurrency')} />
+            </Labelled>
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input type="checkbox" checked={node.config.continueOnError === true} onChange={e => setConfig({ continueOnError: e.target.checked || undefined }, 'continueOnError')} />
+              Keep going when an item fails
+            </label>
+          </>}
+          {node.type === 'SUB_WORKFLOW' && (
+            <Labelled label="Input (optional)" hint="A JEXL expression for the workflow's input, e.g. {'amount': nodes.check.total}">
+              <input className={`${fieldClass} font-mono text-xs`} value={str('inputExpr')} onChange={e => setConfig({ inputExpr: e.target.value || undefined }, 'inputExpr')} />
+            </Labelled>
+          )}
+        </>}
+
         {exitsOf(node.type).map(b => (
-          <Labelled key={String(b)} label={b === 'true' ? 'If yes, go to' : b === 'false' ? 'If no, go to' : 'Then go to'}>
+          <Labelled key={String(b)} label={b === 'true' ? 'If yes, go to' : b === 'false' ? 'If no, go to' : b ? `Path ${exitLabel(b).slice(5)} goes to` : 'Then go to'}>
             <select className={fieldClass} value={nextOf(b)} onChange={e => onChange(setNext(graph, node.id, b, e.target.value || null))}>
               <option value="">Nothing (the run ends here)</option>
               {targets.map(t => <option key={t.id} value={t.id}>{t.label} · {NODE_META[t.type].label}</option>)}
@@ -162,6 +201,39 @@ export function CanvasInspector({ node, graph, agents, tools, issues, step, read
       )}
     </aside>
   )
+}
+
+/** How long a wait step waits: a length of time, or until a date and time. */
+function WaitFields({ node, setConfig }: { node: CanvasNode; setConfig: (patch: Record<string, unknown>, key: string) => void }) {
+  const duration = typeof node.config.duration === 'string' ? node.config.duration : ''
+  const until = typeof node.config.until === 'string' ? node.config.until : ''
+  const parsed = fromDuration(duration)
+  const mode = until && !duration ? 'until' : 'for'
+  return <>
+    <Labelled label="Wait">
+      <select className={fieldClass} value={mode}
+        onChange={e => setConfig(e.target.value === 'until' ? { duration: undefined, until: until || '' } : { until: undefined, duration: duration || 'PT1H' }, 'waitMode')}>
+        <option value="for">for a length of time</option>
+        <option value="until">until a date and time</option>
+      </select>
+    </Labelled>
+    {mode === 'for' ? (
+      <div className="flex gap-2">
+        <input type="number" min={1} aria-label="How long" className={fieldClass} value={parsed?.amount ?? 1}
+          onChange={e => setConfig({ duration: toDuration(Math.max(1, Number(e.target.value) || 1), parsed?.unit ?? 'hours') }, 'duration')} />
+        <select aria-label="Unit" className={fieldClass} value={parsed?.unit ?? 'hours'}
+          onChange={e => setConfig({ duration: toDuration(parsed?.amount ?? 1, e.target.value as 'minutes' | 'hours' | 'days') }, 'duration')}>
+          <option value="minutes">minutes</option>
+          <option value="hours">hours</option>
+          <option value="days">days</option>
+        </select>
+      </div>
+    ) : (
+      <Labelled label="Until" hint="In India time. The run continues within a minute of it.">
+        <input type="datetime-local" className={fieldClass} value={until.slice(0, 16)} onChange={e => setConfig({ until: e.target.value ? `${e.target.value}:00` : '' }, 'until')} />
+      </Labelled>
+    )}
+  </>
 }
 
 function CopyChip({ text, label }: { text: string; label: string }) {

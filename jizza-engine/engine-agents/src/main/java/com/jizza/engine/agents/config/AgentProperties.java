@@ -18,6 +18,7 @@ public class AgentProperties {
   private final Loop loop = new Loop();
   private final Budget budget = new Budget();
   private final Teams teams = new Teams();
+  private final Routing routing = new Routing();
 
   /** Model string per tier, e.g. {@code routing: claude-haiku-...}. */
   private Map<ModelTier, String> models = new EnumMap<>(ModelTier.class);
@@ -100,6 +101,22 @@ public class AgentProperties {
     public void setMaxToolResultChars(int v) { this.maxToolResultChars = v; }
   }
 
+  /**
+   * Cheap routing for Jizza's own turns. A quick call on the routing model sorts each message into
+   * simple (a greeting, a short question, a hand-off to one specialist) or not; simple turns run on
+   * the routing model and the rest on the standard one. Specialists keep their own tier either way.
+   */
+  public static class Routing {
+    private boolean enabled = true;
+    /** Messages longer than this skip the check and go to the standard model. */
+    private int maxSimpleChars = 600;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public int getMaxSimpleChars() { return maxSimpleChars; }
+    public void setMaxSimpleChars(int v) { this.maxSimpleChars = v; }
+  }
+
   /** Limits on one request as it travels down a team, so a deep team cannot run away. */
   public static class Teams {
     /** Agent runs one request may start across the whole team, the first one included. */
@@ -152,6 +169,8 @@ public class AgentProperties {
 
   public Anthropic getAnthropic() { return anthropic; }
   public Loop getLoop() { return loop; }
+  public Routing getRouting() { return routing; }
+
   public Teams getTeams() { return teams; }
   public Budget getBudget() { return budget; }
   public Map<ModelTier, String> getModels() { return models; }

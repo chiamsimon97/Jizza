@@ -2,9 +2,9 @@ package com.jizza.engine.workflow.recovery;
 
 import com.jizza.engine.api.autonomy.KillSwitch;
 import com.jizza.engine.api.enums.RunStatus;
-import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.persistence.entity.WorkflowRunEntity;
 import com.jizza.engine.persistence.repository.WorkflowRunRepository;
+import com.jizza.engine.workflow.engine.SagaWorkflowEngine;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +20,10 @@ import org.springframework.stereotype.Component;
  * {@code running} by a process that died, and a run halted mid-flight because the kill switch was
  * thrown and has since been released. Both are simply advanced again from their last completed
  * node.
+ *
+ * <p>The same sweep wakes runs that are parked: a wait step whose time has come, or a step whose
+ * child runs have finished (a backstop; a finishing child wakes its parent straight away). A run
+ * with nothing due is left untouched after one read.
  */
 @Component
 public class RunRecovery {
@@ -27,10 +31,10 @@ public class RunRecovery {
   private static final Logger log = LoggerFactory.getLogger(RunRecovery.class);
 
   private final WorkflowRunRepository runs;
-  private final WorkflowEngine engine;
+  private final SagaWorkflowEngine engine;
   private final KillSwitch killSwitch;
 
-  public RunRecovery(WorkflowRunRepository runs, WorkflowEngine engine, KillSwitch killSwitch) {
+  public RunRecovery(WorkflowRunRepository runs, SagaWorkflowEngine engine, KillSwitch killSwitch) {
     this.runs = runs;
     this.engine = engine;
     this.killSwitch = killSwitch;
@@ -55,6 +59,16 @@ public class RunRecovery {
         engine.resumeAfterRestart(run.getId());
       } catch (RuntimeException e) {
         log.warn("Could not resume run {}", run.getId(), e);
+      }
+    }
+    for (RunStatus status : new RunStatus[] {RunStatus.WAITING, RunStatus.PAUSED_WAITING_INSTRUCTION}) {
+      for (WorkflowRunEntity run : runs.findByStatus(status)) {
+        if (killSwitch.paused(run.getUserId())) continue;
+        try {
+          engine.wake(run.getId());
+        } catch (RuntimeException e) {
+          log.warn("Could not wake run {}", run.getId(), e);
+        }
       }
     }
   }

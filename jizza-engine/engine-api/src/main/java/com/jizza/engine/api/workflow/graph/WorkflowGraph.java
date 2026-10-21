@@ -47,6 +47,10 @@ public record WorkflowGraph(List<WorkflowNode> nodes, List<WorkflowEdge> edges) 
     return edges.stream().filter(e -> e.from().equals(nodeId)).toList();
   }
 
+  public List<WorkflowEdge> incoming(String nodeId) {
+    return edges.stream().filter(e -> e.to().equals(nodeId)).toList();
+  }
+
   /** Next node for a plain (non-branching) step. */
   public Optional<String> next(String nodeId) {
     return outgoing(nodeId).stream().map(WorkflowEdge::to).findFirst();
@@ -60,7 +64,8 @@ public record WorkflowGraph(List<WorkflowNode> nodes, List<WorkflowEdge> edges) 
 
   /**
    * Structural validation applied before a workflow may be saved or run: unique ids, exactly one
-   * trigger, no dangling edges, and no cycles (the engine executes a DAG, not a loop).
+   * trigger, no dangling edges, and no cycles (the engine executes a DAG; repeating work is a
+   * {@code FOR_EACH} step running another workflow per item, not a loop in the graph).
    */
   public void validate() {
     if (nodes.isEmpty()) throw new ValidationException("Workflow has no nodes");

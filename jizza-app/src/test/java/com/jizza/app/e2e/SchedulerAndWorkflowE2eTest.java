@@ -385,13 +385,75 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
         Map.of("version", 1, "input", Json.obj().put("total", 5000)));
     UUID highRun = UUID.fromString(high.json().path("id").asText());
     assertThat(steps.findByRunIdAndNodeId(highRun, "escalate")).isPresent();
-    assertThat(steps.findByRunIdAndNodeId(highRun, "file")).isEmpty();
+    assertThat(steps.findByRunIdAndNodeId(highRun, "file").orElseThrow().getStatus())
+        .as("the path not taken is recorded as skipped").isEqualTo(RunStepStatus.SKIPPED);
 
     var low = api.post("/api/workflows/" + workflowId + "/run",
         Map.of("version", 1, "input", Json.obj().put("total", 50)));
     UUID lowRun = UUID.fromString(low.json().path("id").asText());
     assertThat(steps.findByRunIdAndNodeId(lowRun, "file")).isPresent();
-    assertThat(steps.findByRunIdAndNodeId(lowRun, "escalate")).isEmpty();
+    assertThat(steps.findByRunIdAndNodeId(lowRun, "escalate").orElseThrow().getStatus())
+        .isEqualTo(RunStepStatus.SKIPPED);
+  }
+
+  @Test
+  void aParallelPathWaitsInTheDatabaseWhileTheOtherFinishes() {
+    WorkflowGraph graph = new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("split", NodeType.PARALLEL, null),
+            node("quick", NodeType.TRANSFORM, Json.obj().put("expression", "'done now'")),
+            node("later", NodeType.WAIT, Json.obj().put("duration", "PT1H")),
+            node("join", NodeType.JOIN, null),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "split", null),
+            new WorkflowEdge("split", "quick", "a"), new WorkflowEdge("split", "later", "b"),
+            new WorkflowEdge("quick", "join", null), new WorkflowEdge("later", "join", null),
+            new WorkflowEdge("join", "finish", null)));
+    UUID workflowId = approvedWorkflow("Parallel with a wait", graph);
+
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+
+    var stored = api.get("/api/runs/" + runId).json();
+    assertThat(stored.path("status").asText()).isEqualTo("WAITING");
+    assertThat(stored.path("currentNode").asText()).isEqualTo("later");
+    assertThat(steps.findByRunIdAndNodeId(runId, "quick").orElseThrow().getStatus())
+        .isEqualTo(RunStepStatus.DONE);
+    assertThat(steps.findByRunIdAndNodeId(runId, "join")).isEmpty();
+
+    // A recovery sweep before the time comes leaves it waiting.
+    engine.resumeAfterRestart(runId);
+    assertThat(api.get("/api/runs/" + runId).json().path("status").asText()).isEqualTo("WAITING");
+
+    engine.cancel(runId);
+    assertThat(api.get("/api/runs/" + runId).json().path("status").asText()).isEqualTo("CANCELLED");
+  }
+
+  @Test
+  void aWorkflowRunsAnotherAsAStepAndGetsItsResult() {
+    UUID child = approvedWorkflow("Add tax", new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("tax", NodeType.TRANSFORM, Json.obj().put("expression", "input.item * 1.18")),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "tax", null), new WorkflowEdge("tax", "finish", null))));
+    UUID parent = approvedWorkflow("Invoice totals", new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("each", NodeType.FOR_EACH, Json.obj().put("workflowId", child.toString())
+                .put("items", "input.amounts")),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "each", null), new WorkflowEdge("each", "finish", null))));
+
+    var run = api.post("/api/workflows/" + parent + "/run",
+        Map.of("version", 1, "input", Json.read("{\"amounts\":[100,200]}")));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+
+    assertThat(run.json().path("status").asText()).isEqualTo("DONE");
+    var results = steps.findByRunIdAndNodeId(runId, "each").orElseThrow().getOutput().path("results");
+    assertThat(results.get(0).asDouble()).isEqualTo(118.0);
+    assertThat(results.get(1).asDouble()).isEqualTo(236.0);
+    assertThat(runs.findAll()).filteredOn(r -> r.getWorkflowId().equals(child)).hasSize(2);
   }
 
   @Test

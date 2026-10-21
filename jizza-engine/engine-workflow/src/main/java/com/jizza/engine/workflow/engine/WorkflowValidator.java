@@ -41,14 +41,55 @@ public class WorkflowValidator {
                 + "' needs an 'instruction' or 'instructionExpr'");
           }
         }
-        default -> { /* Trigger, intervention and end nodes need no extra configuration. */ }
+        case PARALLEL -> {
+          if (graph.outgoing(node.id()).size() < 2) {
+            throw new ValidationException("Parallel step '" + node.id()
+                + "' needs at least two paths leaving it");
+          }
+        }
+        case WAIT -> validateWait(node);
+        case SUB_WORKFLOW -> requireWorkflowId(node);
+        case FOR_EACH -> {
+          requireWorkflowId(node);
+          requireConfig(node, "items");
+        }
+        default -> { /* Trigger, intervention, join and end nodes need no extra configuration. */ }
       }
 
       if (node.type() != NodeType.END && node.type() != NodeType.BRANCH
-          && graph.outgoing(node.id()).size() > 1) {
+          && node.type() != NodeType.PARALLEL && graph.outgoing(node.id()).size() > 1) {
         throw new ValidationException("Node '" + node.id()
-            + "' has more than one outgoing edge; only a branch node may fork");
+            + "' has more than one outgoing edge; only a branch or parallel step may fork");
       }
+    }
+  }
+
+  private void validateWait(WorkflowNode node) {
+    var config = node.config();
+    boolean duration = config != null && config.hasNonNull("duration");
+    if (!duration && (config == null
+        || (!config.hasNonNull("until") && !config.hasNonNull("untilExpr")))) {
+      throw new ValidationException("Wait step '" + node.id()
+          + "' needs a 'duration', an 'until' time or an 'untilExpr'");
+    }
+    if (duration) {
+      try {
+        java.time.Duration parsed = java.time.Duration.parse(config.get("duration").asText());
+        if (parsed.isNegative()) throw new java.time.format.DateTimeParseException("", "", 0);
+      } catch (java.time.format.DateTimeParseException e) {
+        throw new ValidationException("Wait step '" + node.id() + "' has a duration that is not "
+            + "an ISO-8601 duration such as PT30M or P1D");
+      }
+    }
+  }
+
+  private void requireWorkflowId(WorkflowNode node) {
+    requireConfig(node, "workflowId");
+    try {
+      java.util.UUID.fromString(node.config().get("workflowId").asText());
+    } catch (IllegalArgumentException e) {
+      throw new ValidationException(node.type() + " node '" + node.id()
+          + "' names a workflow id that is not valid");
     }
   }
 

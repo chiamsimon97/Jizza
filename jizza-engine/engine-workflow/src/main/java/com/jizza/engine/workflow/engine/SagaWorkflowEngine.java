@@ -1,6 +1,8 @@
 package com.jizza.engine.workflow.engine;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.autonomy.KillSwitch;
 import com.jizza.engine.api.dto.RunDto;
@@ -16,6 +18,7 @@ import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
+import com.jizza.engine.api.workflow.graph.WorkflowEdge;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.api.workflow.graph.WorkflowNode;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
@@ -25,15 +28,21 @@ import com.jizza.engine.persistence.repository.WorkflowRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunStepRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +58,15 @@ import org.springframework.transaction.annotation.Transactional;
  * switch is checked at every checkpoint so pausing autonomy stops runs at a safe boundary, retries
  * back off and then either raise an intervention or dead-letter, and an intervention node stops the
  * run in a state that survives a restart untouched.
+ *
+ * <p><b>Several paths at once.</b> The run keeps a frontier in its context: the steps that can run
+ * now and the steps parked on a time, on workflows they started, or on a person. A step with more
+ * than one incoming path runs once every path has resolved, either by reaching it or by being cut
+ * off by a branch that went the other way (dead-path elimination), so a parallel split joins
+ * exactly once and a branch that merges back never waits for the side it did not take. Paths are
+ * interleaved on the run's own worker rather than on separate threads, which keeps one transaction
+ * and one activity context per run; what parallel buys is that a path waiting on a person or a
+ * timer no longer holds up the others.
  */
 @Service
 public class SagaWorkflowEngine implements WorkflowEngine {
@@ -58,8 +76,13 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   /** Ceiling on nodes executed in one advance, so a pathological graph cannot spin a worker. */
   private static final int MAX_NODES_PER_ADVANCE = 200;
 
+  /** How deep sub-workflows may nest: a workflow running one that runs one, and so on. */
+  static final int MAX_DEPTH = 5;
+
   static final String PAUSED_FOR_INSTRUCTION = "instruction";
   static final String PAUSED_FOR_PERMISSION = "permission";
+  static final String PARKED_ON_TIMER = "timer";
+  static final String PARKED_ON_CHILDREN = "children";
 
   private final WorkflowRepository workflows;
   private final WorkflowVersionRepository versions;
@@ -69,13 +92,24 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   private final KillSwitch killSwitch;
   private final AuditLog audit;
   private final ObjectProvider<NotificationBus> notifications;
+  private final Clock clock;
   private final Map<NodeType, NodeExecutor> executors = new EnumMap<>(NodeType.class);
 
+  @Autowired
   public SagaWorkflowEngine(WorkflowRepository workflows, WorkflowVersionRepository versions,
                             WorkflowRunRepository runs, WorkflowRunStepRepository steps,
                             WorkflowValidator validator, KillSwitch killSwitch, AuditLog audit,
                             ObjectProvider<NotificationBus> notifications,
                             List<NodeExecutor> nodeExecutors) {
+    this(workflows, versions, runs, steps, validator, killSwitch, audit, notifications,
+        nodeExecutors, Clock.systemUTC());
+  }
+
+  public SagaWorkflowEngine(WorkflowRepository workflows, WorkflowVersionRepository versions,
+                            WorkflowRunRepository runs, WorkflowRunStepRepository steps,
+                            WorkflowValidator validator, KillSwitch killSwitch, AuditLog audit,
+                            ObjectProvider<NotificationBus> notifications,
+                            List<NodeExecutor> nodeExecutors, Clock clock) {
     this.workflows = workflows;
     this.versions = versions;
     this.runs = runs;
@@ -84,6 +118,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     this.killSwitch = killSwitch;
     this.audit = audit;
     this.notifications = notifications;
+    this.clock = clock;
     nodeExecutors.forEach(executor -> executors.put(executor.type(), executor));
   }
 
@@ -92,6 +127,52 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   public RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource) {
     WorkflowEntity workflow = workflows.findById(workflowId)
         .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
+    return launch(workflow, version, input, triggerSource, context -> { });
+  }
+
+  /**
+   * Starts {@code workflowId} as a step of another run. The child belongs to the same person,
+   * must not already be running further up the chain, and follows the same approval rule as any
+   * run: only a person testing by hand may run a draft. When the child finishes, the parent is
+   * woken to pick up its result.
+   *
+   * @throws ValidationException when nesting is too deep, the workflow would run itself, or it
+   *                             is not allowed to run unattended
+   * @throws NotFoundException   when there is no such workflow for this person
+   */
+  @Transactional
+  public RunDto startChild(UUID parentRunId, String parentNodeId, UUID workflowId,
+                           JsonNode input) {
+    WorkflowRunEntity parent = requireRun(parentRunId);
+    RunContext parentContext = RunContext.of(parent.getContext());
+    int depth = parentContext.depth() + 1;
+    if (depth > MAX_DEPTH) {
+      throw new ValidationException("Workflows can call other workflows at most " + MAX_DEPTH
+          + " levels deep");
+    }
+    WorkflowEntity workflow = workflows.findById(workflowId)
+        .filter(w -> Objects.equals(w.getUserId(), parent.getUserId()))
+        .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
+
+    Set<UUID> seen = new HashSet<>();
+    for (WorkflowRunEntity up = parent; up != null && seen.add(up.getId()); ) {
+      if (up.getWorkflowId().equals(workflowId)) {
+        throw new ValidationException("Workflow '" + workflow.getName()
+            + "' is already running further up this chain, so it cannot run itself as a step");
+      }
+      UUID next = RunContext.of(up.getContext()).parentRunId();
+      up = next == null ? null : runs.findById(next).orElse(null);
+    }
+
+    boolean manual = parent.getTriggerSource() != null
+        && parent.getTriggerSource().startsWith("manual");
+    String trigger = (manual ? "manual:" : "") + "subworkflow:" + parentRunId;
+    return launch(workflow, workflow.getVersion(), input, trigger,
+        context -> context.recordParent(parentRunId, parentNodeId, depth));
+  }
+
+  private RunDto launch(WorkflowEntity workflow, int version, JsonNode input, String triggerSource,
+                        Consumer<RunContext> setUp) {
     WorkflowGraph graph = graphFor(workflow, version);
     validator.validate(graph);
 
@@ -106,14 +187,18 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       throw new ValidationException("Workflow '" + workflow.getName() + "' is disabled");
     }
 
+    RunContext context = RunContext.start(input);
+    context.startFrontier(graph.trigger().id(), false);
+    setUp.accept(context);
+
     WorkflowRunEntity run = new WorkflowRunEntity();
     run.setUserId(workflow.getUserId());
-    run.setWorkflowId(workflowId);
+    run.setWorkflowId(workflow.getId());
     run.setVersion(version);
     run.setTriggerSource(triggerSource);
     run.setStatus(RunStatus.RUNNING);
     run.setCurrentNode(graph.trigger().id());
-    run.setContext(RunContext.start(input).toJson());
+    run.setContext(context.toJson());
     runs.save(run);
 
     audit.record(run.getUserId(), ActorType.SYSTEM, workflow.getOwningAgentId(), "run.started",
@@ -127,25 +212,27 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   @Transactional
   public RunDto resume(UUID runId, JsonNode instruction) {
     WorkflowRunEntity run = requireRun(runId);
-    if (run.getStatus() != RunStatus.PAUSED_WAITING_INSTRUCTION) {
+    if (run.getStatus() == RunStatus.DONE || run.getStatus() == RunStatus.FAILED
+        || run.getStatus() == RunStatus.CANCELLED) {
       throw new ValidationException("Run " + runId + " is " + run.getStatus()
           + " and is not waiting for anything");
     }
     RunContext context = RunContext.of(run.getContext());
-    String node = context.pausedNode() == null ? run.getCurrentNode() : context.pausedNode();
-    String reason = context.pausedFor();
+    String node = waitingStep(run, context, instruction);
+    String reason = context.parked().getOrDefault(node, context.pausedFor());
 
     if (PAUSED_FOR_PERMISSION.equals(reason)) {
       boolean approved = instruction != null && instruction.path("approved").asBoolean(false);
       if (!approved) {
-        context.clearPause();
+        clearPause(context, node);
+        context.dequeue(node);
         run.setContext(context.toJson());
         failRun(run, node, "The user declined to approve this step");
         return toDto(run);
       }
       // Approving does not skip the node: it clears the pause so the node runs for real, and
       // records the approval so the node does not stop to ask the same question again.
-      context.clearPause();
+      clearPause(context, node);
       context.recordApproval(node);
       run.setContext(context.toJson());
       run.setStatus(RunStatus.RUNNING);
@@ -164,7 +251,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     }
 
     context.recordInstruction(node, text);
-    context.clearPause();
+    clearPause(context, node);
+    forgetFailedChildren(context, node);
     run.setContext(context.toJson());
     run.setStatus(RunStatus.RUNNING);
     run.setCurrentNode(node);
@@ -173,6 +261,32 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     audit.record(run.getUserId(), ActorType.USER, null, "run.instruction_submitted",
         run.getId().toString(), Json.obj().put("node", node));
     return advance(runId);
+  }
+
+  /**
+   * Which step an answer is for. With one step waiting on a person that is the one; with several
+   * (two parallel paths both asking) the answer must name it as {@code "node"}, which the
+   * notification it answers carries.
+   */
+  private String waitingStep(WorkflowRunEntity run, RunContext context, JsonNode instruction) {
+    List<String> waiting = context.parked().entrySet().stream()
+        .filter(e -> PAUSED_FOR_INSTRUCTION.equals(e.getValue())
+            || PAUSED_FOR_PERMISSION.equals(e.getValue()))
+        .map(Map.Entry::getKey).toList();
+    String named = instruction != null && instruction.path("node").isTextual()
+        ? instruction.get("node").asText() : null;
+    if (named != null && waiting.contains(named)) return named;
+    if (waiting.size() == 1) return waiting.get(0);
+    if (waiting.isEmpty() && run.getStatus() == RunStatus.PAUSED_WAITING_INSTRUCTION) {
+      // A run paused before steps were parked individually.
+      return context.pausedNode() == null ? run.getCurrentNode() : context.pausedNode();
+    }
+    if (waiting.isEmpty()) {
+      throw new ValidationException("Run " + run.getId() + " is " + run.getStatus()
+          + " and is not waiting for anything");
+    }
+    throw new ValidationException("Several steps of this run are waiting for you; say which one "
+        + "this answer is for");
   }
 
   @Override
@@ -186,6 +300,35 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     return advance(runId);
   }
 
+  /**
+   * Re-checks a run whose steps are parked: a wait step whose time has come, or a step waiting
+   * on workflows it started. Does nothing, and costs one read, when nothing is due.
+   */
+  @Transactional
+  public RunDto wake(UUID runId) {
+    WorkflowRunEntity run = requireRun(runId);
+    if (run.getStatus() != RunStatus.WAITING
+        && run.getStatus() != RunStatus.PAUSED_WAITING_INSTRUCTION) {
+      return toDto(run);
+    }
+    RunContext context = RunContext.of(run.getContext());
+    Instant now = clock.instant();
+    boolean due = false;
+    for (Map.Entry<String, String> parked : context.parked().entrySet()) {
+      boolean timerDue = PARKED_ON_TIMER.equals(parked.getValue())
+          && !now.isBefore(Objects.requireNonNullElse(context.wakeAt(parked.getKey()), now));
+      if (timerDue || PARKED_ON_CHILDREN.equals(parked.getValue())) {
+        context.unpark(parked.getKey());
+        due = true;
+      }
+    }
+    if (!due) return toDto(run);
+    run.setContext(context.toJson());
+    run.setStatus(RunStatus.RUNNING);
+    runs.save(run);
+    return advance(runId);
+  }
+
   @Override
   @Transactional
   public void cancel(UUID runId) {
@@ -193,6 +336,9 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     run.setStatus(RunStatus.CANCELLED);
     runs.save(run);
     audit.record(run.getUserId(), ActorType.USER, null, "run.cancelled", runId.toString(), null);
+    RunContext context = RunContext.of(run.getContext());
+    cancelChildren(context);
+    wakeParent(context);
   }
 
   @Override
@@ -202,7 +348,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   }
 
   /**
-   * Drives the run forward from whatever node it is on, checkpointing as it goes.
+   * Drives the run forward from its frontier, checkpointing as it goes.
    *
    * <p>Re-entrant by construction: calling it on a run that has already completed some nodes skips
    * straight past their checkpoints, which is what makes "resume from the last completed node" the
@@ -227,8 +373,16 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       WorkflowGraph graph = graphFor(workflows.findById(run.getWorkflowId())
           .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
           run.getVersion());
-      String nodeId = run.getCurrentNode();
-      if (nodeId == null) return completeRun(run);
+      RunContext context = RunContext.of(run.getContext());
+      if (!context.hasFrontier()) {
+        // Started before runs tracked a frontier: carry on from the one node it was on.
+        context.startFrontier(run.getCurrentNode(), true);
+      }
+
+      List<String> ready = context.ready();
+      if (ready.isEmpty()) return settle(run, graph, context);
+      String nodeId = ready.get(0);
+      run.setCurrentNode(nodeId);
 
       WorkflowNode node = graph.node(nodeId).orElse(null);
       if (node == null) {
@@ -237,13 +391,13 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         return toDto(run);
       }
 
-      RunContext context = RunContext.of(run.getContext());
       Optional<WorkflowRunStepEntity> checkpoint = steps.findByRunIdAndNodeId(runId, nodeId);
 
       if (checkpoint.isPresent() && checkpoint.get().getStatus() == RunStepStatus.DONE) {
         // Already done in an earlier life of this run: move on without re-executing. This is the
         // line that makes a side-effecting node exactly-once across a crash.
-        if (!moveToNext(run, graph, node, context)) return completeRun(run);
+        context.recordOutput(nodeId, checkpoint.get().getOutput());
+        finishNode(run, graph, node, context);
         continue;
       }
 
@@ -263,36 +417,48 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         outcome = NodeExecutor.Outcome.retryable(String.valueOf(e.getMessage()));
       }
 
+      // A child run started by this node may have finished and touched this row; carry on from
+      // the latest copy, with the context as this node left it.
+      WorkflowRunEntity current = requireRun(runId);
+      if (current.getStatus() != RunStatus.RUNNING) return toDto(current);
+
       switch (outcome.status()) {
         case COMPLETED -> {
           context.recordOutput(nodeId, outcome.output());
           if (outcome.branch() != null) context.recordBranch(nodeId, outcome.branch());
           checkpoint(runId, nodeId, RunStepStatus.DONE, outcome.output(), attempt, null);
-          run.setContext(context.toJson());
-          if (!moveToNext(run, graph, node, context)) return completeRun(run);
+          finishNode(current, graph, node, context);
         }
-        case AWAIT_INSTRUCTION -> {
-          return toDto(pause(run, context, nodeId, PAUSED_FOR_INSTRUCTION, outcome.message(),
-              NotificationKind.INSTRUCTION_REQUIRED));
+        case AWAIT_INSTRUCTION -> parkForPerson(current, context, nodeId, PAUSED_FOR_INSTRUCTION,
+            outcome.message(), NotificationKind.INSTRUCTION_REQUIRED);
+        case AWAIT_PERMISSION -> parkForPerson(current, context, nodeId, PAUSED_FOR_PERMISSION,
+            outcome.message(), NotificationKind.PERMISSION_REQUEST);
+        case WAIT -> {
+          context.park(nodeId, PARKED_ON_TIMER, outcome.wakeAt());
+          save(current, context);
         }
-        case AWAIT_PERMISSION -> {
-          return toDto(pause(run, context, nodeId, PAUSED_FOR_PERMISSION, outcome.message(),
-              NotificationKind.PERMISSION_REQUEST));
+        case AWAIT_CHILDREN -> {
+          context.park(nodeId, PARKED_ON_CHILDREN, null);
+          save(current, context);
         }
         case PERMANENT_FAILURE -> {
           checkpoint(runId, nodeId, RunStepStatus.FAILED, null, attempt, outcome.message());
-          return toDto(handleExhausted(run, node, context, outcome.message()));
+          if (handleExhausted(current, node, context, outcome.message())) return toDto(current);
         }
         case RETRYABLE -> {
           int maxAttempts = node.retryOrDefault().maxAttempts();
           checkpoint(runId, nodeId, RunStepStatus.FAILED, null, attempt, outcome.message());
           if (attempt >= maxAttempts) {
-            return toDto(handleExhausted(run, node, context,
-                outcome.message() + " (after " + attempt + " attempts)"));
+            if (handleExhausted(current, node, context,
+                outcome.message() + " (after " + attempt + " attempts)")) {
+              return toDto(current);
+            }
+          } else {
+            save(current, context);
+            backoff(node, attempt);
+            // Loop round and retry the same node; the attempt count lives in the checkpoint, so a
+            // restart mid-retry does not reset it.
           }
-          backoff(node, attempt);
-          // Loop round and retry the same node; the attempt count lives in the checkpoint, so a
-          // restart mid-retry does not reset it.
         }
       }
     }
@@ -302,27 +468,86 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     return toDto(run);
   }
 
-  /** @return false when there is nowhere further to go, meaning the run is finished. */
-  private boolean moveToNext(WorkflowRunEntity run, WorkflowGraph graph, WorkflowNode node,
-                             RunContext context) {
-    Optional<String> next = node.type() == NodeType.BRANCH
-        ? graph.next(node.id(), context.branchOf(node.id()))
-        : graph.next(node.id());
-    if (next.isEmpty()) return false;
-    run.setCurrentNode(next.get());
-    run.setUpdatedAt(Instant.now());
-    runs.save(run);
-    return true;
+  /** A node is done: take it off the frontier and send its result down every path it opens. */
+  private void finishNode(WorkflowRunEntity run, WorkflowGraph graph, WorkflowNode node,
+                          RunContext context) {
+    context.dequeue(node.id());
+    context.recordLast(node.id());
+    String outlet = node.type() == NodeType.BRANCH ? context.branchOf(node.id()) : null;
+    for (WorkflowEdge edge : graph.outgoing(node.id())) {
+      boolean live = node.type() != NodeType.BRANCH || Objects.equals(edge.branch(), outlet);
+      reach(run, graph, context, edge.to(), node.id(), live);
+    }
+    save(run, context);
   }
 
-  private WorkflowRunEntity pause(WorkflowRunEntity run, RunContext context, String nodeId,
-                                  String reason, String prompt, NotificationKind kind) {
-    context.pause(reason, nodeId);
-    run.setContext(context.toJson());
-    run.setCurrentNode(nodeId);
-    run.setStatus(RunStatus.PAUSED_WAITING_INSTRUCTION);
-    run.setUpdatedAt(Instant.now());
-    runs.save(run);
+  /**
+   * One incoming path of {@code to} has resolved. Once all of them have, the node runs if any
+   * arrived and is skipped if none did, which resolves its own outgoing paths in turn.
+   */
+  private void reach(WorkflowRunEntity run, WorkflowGraph graph, RunContext context, String to,
+                     String from, boolean live) {
+    context.arrive(to, from, live);
+    if (context.ready().contains(to) || context.isParked(to)
+        || steps.findByRunIdAndNodeId(run.getId(), to).map(s -> s.getStatus() != RunStepStatus.FAILED)
+            .orElse(false)) {
+      return;
+    }
+    if (context.legacy()) {
+      // Runs from before the frontier never recorded the paths their branches skipped, so they
+      // keep the old rule: the first path to arrive runs the node.
+      if (live) context.enqueue(to);
+      return;
+    }
+    Map<String, Boolean> arrived = context.arrivals(to);
+    boolean allResolved = graph.incoming(to).stream()
+        .allMatch(edge -> arrived.containsKey(edge.from()));
+    if (!allResolved) return;
+    if (arrived.containsValue(true)) {
+      context.enqueue(to);
+      return;
+    }
+    checkpoint(run.getId(), to, RunStepStatus.SKIPPED, null, 0, null);
+    for (WorkflowEdge edge : graph.outgoing(to)) reach(run, graph, context, edge.to(), to, false);
+  }
+
+  /**
+   * Nothing can run right now. With nothing parked the run is finished; otherwise it waits for a
+   * person if anyone owes it an answer, and for its timers and child runs if not.
+   */
+  private RunDto settle(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
+    Map<String, String> parked = context.parked();
+    if (parked.isEmpty()) return completeRun(run, graph, context);
+
+    Optional<Map.Entry<String, String>> person = parked.entrySet().stream()
+        .filter(e -> PAUSED_FOR_INSTRUCTION.equals(e.getValue())
+            || PAUSED_FOR_PERMISSION.equals(e.getValue()))
+        .findFirst();
+    boolean wasWaiting = run.getStatus() == RunStatus.WAITING;
+    if (person.isPresent()) {
+      run.setStatus(RunStatus.PAUSED_WAITING_INSTRUCTION);
+      run.setCurrentNode(person.get().getKey());
+      // Kept for anything that still reads the single paused step.
+      context.pause(person.get().getValue(), person.get().getKey());
+    } else {
+      run.setStatus(RunStatus.WAITING);
+      run.setCurrentNode(parked.keySet().iterator().next());
+    }
+    save(run, context);
+    if (run.getStatus() == RunStatus.WAITING && !wasWaiting) {
+      Instant soonest = parked.keySet().stream().map(context::wakeAt).filter(Objects::nonNull)
+          .min(Instant::compareTo).orElse(null);
+      audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.waiting",
+          run.getId().toString(), Json.obj().put("node", run.getCurrentNode())
+              .put("until", String.valueOf(soonest)));
+    }
+    return toDto(run);
+  }
+
+  private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
+                             String reason, String prompt, NotificationKind kind) {
+    context.park(nodeId, reason, null);
+    save(run, context);
 
     NotificationBus bus = notifications.getIfAvailable();
     if (bus != null) {
@@ -336,40 +561,88 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     }
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.paused",
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
-    return run;
+  }
+
+  private void clearPause(RunContext context, String nodeId) {
+    if (!context.hasFrontier()) context.startFrontier(null, true);
+    context.unpark(nodeId);
+    if (nodeId.equals(context.pausedNode()) || context.pausedNode() == null) context.clearPause();
+  }
+
+  /**
+   * An answer to a failed step means "try it again". For a step that runs other workflows, that
+   * means starting the ones that failed again, while keeping the ones that finished.
+   */
+  private void forgetFailedChildren(RunContext context, String nodeId) {
+    if (!context.hasState(nodeId)) return;
+    JsonNode children = context.state(nodeId).path("children");
+    if (!children.isArray()) return;
+    ArrayNode kept = Json.mapper().createArrayNode();
+    for (JsonNode child : children) {
+      RunStatus status = runs.findById(UUID.fromString(child.path("runId").asText()))
+          .map(WorkflowRunEntity::getStatus).orElse(RunStatus.FAILED);
+      if (status != RunStatus.FAILED && status != RunStatus.CANCELLED) kept.add(child);
+    }
+    context.state(nodeId).set("children", kept);
   }
 
   /**
    * A node that has run out of attempts either raises an intervention -- the default, because a
    * permanent failure should reach a human rather than vanish -- or dead-letters when the node
    * explicitly says so.
+   *
+   * @return true when the run has ended
    */
-  private WorkflowRunEntity handleExhausted(WorkflowRunEntity run, WorkflowNode node,
-                                            RunContext context, String message) {
+  private boolean handleExhausted(WorkflowRunEntity run, WorkflowNode node, RunContext context,
+                                  String message) {
     String onFailure = node.config() == null
         ? "intervene" : node.config().path("onFailure").asText("intervene");
     if ("dead_letter".equals(onFailure)) {
       run.setDeadLettered(true);
+      context.dequeue(node.id());
+      run.setContext(context.toJson());
       failRun(run, node.id(), message);
       audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.dead_lettered",
           run.getId().toString(), Json.obj().put("node", node.id())
               .put("error", String.valueOf(message)));
-      return run;
+      return true;
     }
-    return pause(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
+    parkForPerson(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
         "Step '" + (node.label() == null ? node.id() : node.label()) + "' could not complete: "
             + message + " How would you like to proceed?",
         NotificationKind.INSTRUCTION_REQUIRED);
+    return false;
   }
 
-  private RunDto completeRun(WorkflowRunEntity run) {
+  private RunDto completeRun(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
+    context.recordResult(resultOf(graph, context));
+    run.setContext(context.toJson());
     run.setStatus(RunStatus.DONE);
     run.setCurrentNode(null);
     run.setUpdatedAt(Instant.now());
     runs.save(run);
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.completed",
         run.getId().toString(), null);
+    wakeParent(context);
     return toDto(run);
+  }
+
+  /**
+   * What the run produced, handed to a parent run's step: the output of the end step it reached,
+   * of each end step by id when parallel paths reached several, or of the last step to finish
+   * when no path ended at an end step.
+   */
+  private JsonNode resultOf(WorkflowGraph graph, RunContext context) {
+    List<WorkflowNode> ended = graph.nodes().stream()
+        .filter(n -> n.type() == NodeType.END && context.toJson().path("nodes").has(n.id()))
+        .toList();
+    if (ended.size() == 1) return context.outputOf(ended.get(0).id());
+    if (ended.size() > 1) {
+      ObjectNode byEnd = Json.obj();
+      ended.forEach(n -> byEnd.set(n.id(), context.outputOf(n.id())));
+      return byEnd;
+    }
+    return context.last() == null ? Json.obj() : context.outputOf(context.last());
   }
 
   private void failRun(WorkflowRunEntity run, String nodeId, String message) {
@@ -381,6 +654,48 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.failed",
         run.getId().toString(), Json.obj().put("node", String.valueOf(nodeId))
             .put("error", String.valueOf(message)));
+    RunContext context = RunContext.of(run.getContext());
+    cancelChildren(context);
+    wakeParent(context);
+  }
+
+  /** Stops every unfinished run this run started, and theirs in turn. */
+  private void cancelChildren(RunContext context) {
+    for (UUID childId : context.childRunIds()) {
+      runs.findById(childId).ifPresent(child -> {
+        if (child.getStatus() == RunStatus.DONE || child.getStatus() == RunStatus.FAILED
+            || child.getStatus() == RunStatus.CANCELLED) {
+          return;
+        }
+        child.setStatus(RunStatus.CANCELLED);
+        child.setUpdatedAt(Instant.now());
+        runs.save(child);
+        audit.record(child.getUserId(), ActorType.SYSTEM, null, "run.cancelled",
+            child.getId().toString(), Json.obj().put("reason", "its parent run stopped"));
+        cancelChildren(RunContext.of(child.getContext()));
+      });
+    }
+  }
+
+  /**
+   * A child run has finished: let the parent's waiting step pick up the result. A parent that is
+   * running right now started this child itself and reads the result as soon as it returns.
+   */
+  private void wakeParent(RunContext context) {
+    UUID parentId = context.parentRunId();
+    if (parentId == null) return;
+    runs.findById(parentId).ifPresent(parent -> {
+      if (parent.getStatus() == RunStatus.WAITING
+          || parent.getStatus() == RunStatus.PAUSED_WAITING_INSTRUCTION) {
+        wake(parentId);
+      }
+    });
+  }
+
+  private void save(WorkflowRunEntity run, RunContext context) {
+    run.setContext(context.toJson());
+    run.setUpdatedAt(Instant.now());
+    runs.save(run);
   }
 
   /** Upserts the per-node checkpoint. The unique (run_id, node_id) index keeps it to one row. */
@@ -398,7 +713,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     step.setOutput(output);
     step.setAttempts(attempts);
     step.setError(error);
-    if (status == RunStepStatus.DONE) step.setFinishedAt(Instant.now());
+    if (status != RunStepStatus.FAILED) step.setFinishedAt(Instant.now());
     steps.save(step);
   }
 

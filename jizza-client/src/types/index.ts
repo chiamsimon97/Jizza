@@ -705,7 +705,7 @@ export interface WorkflowDto {
   createdAt: string
 }
 
-export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'DONE' | 'FAILED' | 'CANCELLED'
+export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'WAITING' | 'DONE' | 'FAILED' | 'CANCELLED'
 
 export interface RunStepDto {
   id: string

@@ -85,6 +85,12 @@ class SagaWorkflowEngineTest {
     // A fresh process picks the run up. It must not re-run the nodes that already completed.
     harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.completed(
         Json.obj().put("text", "recovered"));
+    // What the row looks like when the process died mid-step: running, with the step still on
+    // the frontier (the retries above parked it for a person, which a real crash never gets to).
+    RunContext crashed = RunContext.of(harness.run(run.id()).getContext());
+    crashed.unpark("summarise");
+    crashed.clearPause();
+    harness.run(run.id()).setContext(crashed.toJson());
     harness.run(run.id()).setStatus(RunStatus.RUNNING);
     var resumed = harness.engine.resumeAfterRestart(run.id());
 
@@ -399,12 +405,18 @@ class SagaWorkflowEngineTest {
     EngineHarness high = branching();
     high.engine.start(high.workflow.getId(), 1, Json.obj().put("total", 5000), "manual");
     assertThat(high.step(high.runRows.get(0).getId(), "escalate")).isPresent();
-    assertThat(high.step(high.runRows.get(0).getId(), "file")).isEmpty();
+    assertThat(high.step(high.runRows.get(0).getId(), "file"))
+        .as("the path not taken is recorded as skipped, never run")
+        .hasValueSatisfying(step -> assertThat(step.getStatus()).isEqualTo(RunStepStatus.SKIPPED));
 
     EngineHarness low = branching();
     low.engine.start(low.workflow.getId(), 1, Json.obj().put("total", 50), "manual");
     assertThat(low.step(low.runRows.get(0).getId(), "file")).isPresent();
-    assertThat(low.step(low.runRows.get(0).getId(), "escalate")).isEmpty();
+    assertThat(low.step(low.runRows.get(0).getId(), "escalate"))
+        .hasValueSatisfying(step -> assertThat(step.getStatus()).isEqualTo(RunStepStatus.SKIPPED));
+    assertThat(low.runRows.get(0).getStatus())
+        .as("the merge after the branch runs once, without waiting for the side not taken")
+        .isEqualTo(RunStatus.DONE);
   }
 
   // ── approval gate on starting a run ──────────────────────────────────────
