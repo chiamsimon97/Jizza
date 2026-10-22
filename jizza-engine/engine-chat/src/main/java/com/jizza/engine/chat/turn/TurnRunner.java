@@ -216,7 +216,7 @@ public class TurnRunner implements ChatService {
     try {
       String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
       turn = Activity.run(recorder, () -> orchestrator.respond(userId,
-          new Orchestrator.TurnInput(input, s.screen(), history, ref.userMessageId())));
+          new Orchestrator.TurnInput(input, s.screen(), history, ref.userMessageId(), s.context())));
       Orchestrator.Turn done = turn;
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());

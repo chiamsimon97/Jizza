@@ -8,6 +8,7 @@ import { JizzaOrb } from './JizzaOrb'
 import { pageForPath } from './pages'
 import { useFormStore } from './formStore'
 import { canSpeak, speak } from './useSpeech'
+import { useContextStore } from './contextStore'
 
 /**
  * Jizza, available on every page: a floating orb that opens the conversation in a panel, plus the
@@ -21,6 +22,9 @@ export function JizzaDock() {
   const onChatPage = location.pathname.startsWith('/chat')
   // A form slides in from the right; Jizza steps aside so the form's buttons stay reachable.
   const formOpen = useFormStore(s => s.request !== null)
+  // In the Builder the step settings are on the right, so Jizza works from the left beside them.
+  const inBuilder = useContextStore(s => s.stack.some(e => e.ctx.kind === 'builder' || e.ctx.kind === 'step'))
+  const side = inBuilder ? 'sm:left-6' : formOpen ? 'sm:right-[38rem]' : 'sm:right-6'
 
   useEffect(() => {
     if (formOpen && !window.matchMedia('(min-width: 1024px)').matches) setDockOpen(false)
@@ -45,6 +49,8 @@ export function JizzaDock() {
         if (onChatPage) document.querySelector<HTMLTextAreaElement>('textarea')?.focus()
         else setDockOpen(!useAssistantStore.getState().dockOpen)
       } else if (e.key === 'Escape' && useAssistantStore.getState().dockOpen) {
+        // Only the panel closes: a form open behind it stays.
+        e.preventDefault()
         setDockOpen(false)
       }
     }
@@ -70,7 +76,7 @@ export function JizzaDock() {
         <div
           role="dialog"
           aria-label="Jizza"
-          className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up dark:bg-gray-950 sm:inset-auto sm:bottom-24 sm:h-[min(640px,calc(100vh-8rem))] ${formOpen ? 'sm:right-[38rem]' : 'sm:right-6'} sm:w-[400px] sm:rounded-2xl sm:border sm:border-gray-200 sm:dark:border-gray-800`}
+          className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up dark:bg-gray-950 sm:inset-auto sm:bottom-24 sm:h-[min(640px,calc(100vh-8rem))] ${side} sm:w-[400px] sm:rounded-2xl sm:border sm:border-gray-200 sm:dark:border-gray-800`}
         >
           <div className="flex items-center gap-2.5 border-b border-gray-200 px-3 py-2.5 dark:border-gray-800">
             <JizzaOrb size={30} state={thinking ? 'thinking' : 'idle'} />
@@ -103,11 +109,11 @@ export function JizzaDock() {
         aria-label={dockOpen ? 'Close Jizza' : 'Ask Jizza'}
         title="Ask Jizza (Ctrl+K)"
         className={`group fixed bottom-6 z-50 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40 ${
-          formOpen ? 'right-[38rem] hidden lg:block' : 'right-6'} ${dockOpen ? 'hidden sm:block' : ''}`}
+          inBuilder ? 'left-6 hidden lg:block' : formOpen ? 'right-[38rem] hidden lg:block' : 'right-6'} ${dockOpen ? 'hidden sm:block' : ''}`}
       >
         <JizzaOrb size={56} state={thinking ? 'thinking' : 'idle'} />
         {!dockOpen && (
-          <span className="pointer-events-none absolute right-full top-1/2 mr-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-100 dark:text-gray-900">
+          <span className={`pointer-events-none absolute top-1/2 ${inBuilder ? 'left-full ml-3' : 'right-full mr-3'} -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-100 dark:text-gray-900`}>
             Ask Jizza · Ctrl K
           </span>
         )}

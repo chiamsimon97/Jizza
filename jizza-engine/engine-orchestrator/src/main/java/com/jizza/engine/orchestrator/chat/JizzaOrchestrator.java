@@ -1,5 +1,6 @@
 package com.jizza.engine.orchestrator.chat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.activity.Activity;
 import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.agent.Agent;
@@ -64,13 +65,13 @@ public class JizzaOrchestrator implements Orchestrator {
         : AccessContext.chatTurn(input.userMessageId()).toTrace();
     ModelTier tier = tiers.tierFor(userId, jizza, input.message(), input.screen(), input.history());
     recorder.beginTurn();
-    if (input.screen() != null) uiActions.beginTurn();
+    if (input.screen() != null) uiActions.beginTurn(stepInFocus(input.screen(), input.context()));
     AgentResult result;
     List<DelegationRecorder.Contribution> contributions;
     List<UiAction> actions;
     try {
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(input.message(), input.screen()), null, input.history(), tier,
+          withScreen(input.message(), input.screen(), input.context()), null, input.history(), tier,
           false, trace));
     } finally {
       contributions = recorder.endTurn();
@@ -112,11 +113,71 @@ public class JizzaOrchestrator implements Orchestrator {
       Never save the workflow yourself and never use app_open_form here. If the user asks for
       changes after seeing a plan, revise it and propose it again.]""";
 
+  /** The workflow Builder, with the workflow's steps and settings as context. */
+  static final String WORKFLOW_BUILDER = "workflow_builder";
+
+  /** One Builder step's settings, opened with "Configure using Jizza". */
+  static final String WORKFLOW_STEP = "workflow_step";
+
+  /** How much of what the screen describes is passed on; the client keeps it well under this. */
+  static final int MAX_CONTEXT_CHARS = 24_000;
+
+  static final String BUILDER_GUIDE = """
+      [App context: the user is in the workflow Builder, working on the workflow described below.
+      Answer about this workflow specifically, naming its steps. The workflow runs exactly as its
+      steps are configured, with no AI deciding anything at run time unless a step asks an agent;
+      say so when it matters. You cannot change the canvas from here: say which step to add or
+      change and how, and tell the user they can choose "Configure using Jizza" on a step's menu
+      to have you fill that step in. Later steps read earlier results as {{ nodes.<step id>... }}
+      and variables as {{ vars.<name> }}.
+      Workflow: %s]""";
+
+  static final String STEP_GUIDE = """
+      [App context: the user opened "Configure using Jizza" on one step of a workflow in the
+      Builder. Your job is to configure that step, and only that step.
+      1. Work out its settings from what the user gives you: API documentation, a cURL command,
+         an example, or a description. You cannot open links; if all you have is a link, ask the
+         user to paste the relevant part (the endpoint, its parameters, how it signs in, an
+         example request).
+      2. If something only the user can decide is still open, ask with app_ask_user: one short
+         question with options. Set multiple=true when several options can apply together, such
+         as which optional fields to send. Ask before guessing anything that changes what the
+         call does.
+      3. Then call app_configure_step with the settings to set. Use only the settings listed under
+         "fields"; leave the rest out. Use null to clear one. Where a value comes from an earlier
+         step, use a {{ nodes.<step id>... }} reference to it. Never invent a credential, token,
+         password or key: leave it out, or keep "(set, hidden)" when one is already set, and tell
+         the user to paste theirs into the field.
+      4. Say in one or two sentences what you filled in and what is left for the user. Your
+         settings appear in the step's panel unsaved; the user reviews them and presses Save.
+      The workflow runs the step exactly as configured; you are not part of the run.
+      Step and workflow: %s]""";
+
+  /** The step Jizza may fill in this turn: the one whose settings sent the message. */
+  static String stepInFocus(String screen, JsonNode context) {
+    if (!WORKFLOW_STEP.equals(screen) || context == null) return null;
+    String id = context.path("step").path("id").asText("");
+    return id.isBlank() ? null : id;
+  }
+
   /** Tells the model where the user is, for this turn only. */
-  private static String withScreen(String message, String screen) {
+  static String withScreen(String message, String screen, JsonNode context) {
     if (screen == null || screen.isBlank()) return message;
     if (WORKFLOW_PLANNER.equals(screen)) return message + "\n\n" + PLANNER_GUIDE;
+    if (stepInFocus(screen, context) != null) {
+      return message + "\n\n" + STEP_GUIDE.formatted(described(context));
+    }
+    if ((WORKFLOW_BUILDER.equals(screen) || WORKFLOW_STEP.equals(screen)) && context != null) {
+      return message + "\n\n" + BUILDER_GUIDE.formatted(described(context));
+    }
     String page = screen.length() > 40 ? screen.substring(0, 40) : screen;
     return message + "\n\n[App context: the user is on the '" + page + "' page of the Jizza app.]";
+  }
+
+  /** The screen's own description, as JSON, cut to a size a turn can afford. */
+  static String described(JsonNode context) {
+    String json = context.toString();
+    return json.length() <= MAX_CONTEXT_CHARS ? json
+        : json.substring(0, MAX_CONTEXT_CHARS) + " ...(cut short)";
   }
 }

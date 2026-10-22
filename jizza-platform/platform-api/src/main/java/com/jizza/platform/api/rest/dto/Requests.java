@@ -61,9 +61,12 @@ public final class Requests {
   /** {@code screen} is the app page the message was sent from, when it came from the app. */
   public record Chat(@NotBlank String message, UUID conversationId, String screen) {}
 
-  /** A message sent as a background turn. {@code clientMessageId} makes a retried send safe. */
+  /**
+   * A message sent as a background turn. {@code clientMessageId} makes a retried send safe;
+   * {@code context} is what is open on the screen, such as the Builder step being configured.
+   */
   public record Turn(@NotBlank String message, UUID conversationId, UUID clientMessageId,
-                     String screen, Boolean incognito) {}
+                     String screen, Boolean incognito, JsonNode context) {}
 
   public record ConversationCreate(String title) {}
 

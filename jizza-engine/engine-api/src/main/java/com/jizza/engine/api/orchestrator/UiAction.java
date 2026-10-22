@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * Jizza fills in still waits for the user to save it.
  *
  * @param type    one of {@code navigate}, {@code open_form}, {@code ask_user}, {@code set_theme},
- *                {@code propose_workflow}, {@code propose_agent}
+ *                {@code propose_workflow}, {@code propose_agent}, {@code configure_step}
  * @param payload the action's arguments, shaped per type
  */
 public record UiAction(String type, JsonNode payload) {
@@ -23,4 +23,6 @@ public record UiAction(String type, JsonNode payload) {
   public static final String PROPOSE_WORKFLOW = "propose_workflow";
   /** A custom agent, or a whole team, for the user to approve; created only when they do. */
   public static final String PROPOSE_AGENT = "propose_agent";
+  /** Settings for the Builder step the user asked Jizza to configure; they still save them. */
+  public static final String CONFIGURE_STEP = "configure_step";
 }

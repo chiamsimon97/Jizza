@@ -14,9 +14,22 @@ import org.springframework.stereotype.Component;
 public class UiActionRecorder {
 
   private static final ThreadLocal<List<UiAction>> TURN = new ThreadLocal<>();
+  private static final ThreadLocal<String> STEP = new ThreadLocal<>();
 
   public void beginTurn() {
+    beginTurn(null);
+  }
+
+  /** {@code stepId} is the Builder step whose settings are open with Jizza on them, if any. */
+  public void beginTurn(String stepId) {
     TURN.set(new ArrayList<>());
+    if (stepId == null || stepId.isBlank()) STEP.remove();
+    else STEP.set(stepId);
+  }
+
+  /** The Builder step Jizza may fill in this turn, or null when none is open. */
+  public String stepInFocus() {
+    return TURN.get() == null ? null : STEP.get();
   }
 
   /** False when no turn is open, i.e. the agent is not talking to someone looking at the app. */
@@ -32,6 +45,7 @@ public class UiActionRecorder {
   public List<UiAction> endTurn() {
     List<UiAction> turn = TURN.get();
     TURN.remove();
+    STEP.remove();
     return turn == null ? List.of() : List.copyOf(turn);
   }
 }

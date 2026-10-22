@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/Input'
 import { Field, SlideOver, fieldClass } from '@/components/ui/SlideOver'
 import { useFormStore } from '@/jizza/formStore'
 import { useAssistantStore } from '@/jizza/assistantStore'
+import { useJizzaContext } from '@/jizza/contextStore'
+import { builderContext } from '@/jizza/builderContext'
 import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -212,6 +214,10 @@ export function WorkflowForm() {
   }])
 
   const hi = !!request?.byJizza
+
+  // While the form is open Jizza works on this workflow, whichever editor shows it.
+  const shownGraph = request ? (mode === 'canvas' ? canvas : fromGraph(toGraph(steps))) : null
+  useJizzaContext(request && shownGraph ? builderContext(name.trim(), shownGraph, canvasProblems(shownGraph)) : null)
 
   return (
     <SlideOver

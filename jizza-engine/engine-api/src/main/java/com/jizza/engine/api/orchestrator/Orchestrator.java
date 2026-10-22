@@ -1,5 +1,6 @@
 package com.jizza.engine.api.orchestrator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.llm.Msg;
 import java.util.List;
 import java.util.UUID;
@@ -20,10 +21,17 @@ public interface Orchestrator {
    *                      context for this turn only and is never stored
    * @param userMessageId the stored message this turn answers, null for an incognito turn; memory
    *                      reads are stamped with it
+   * @param context       what is open on that screen, such as the Builder step Jizza is configuring;
+   *                      like the screen, context for this turn only
    */
-  record TurnInput(String message, String screen, List<Msg> history, UUID userMessageId) {
+  record TurnInput(String message, String screen, List<Msg> history, UUID userMessageId,
+                   JsonNode context) {
     public TurnInput {
       history = history == null ? List.of() : List.copyOf(history);
+    }
+
+    public TurnInput(String message, String screen, List<Msg> history, UUID userMessageId) {
+      this(message, screen, history, userMessageId, null);
     }
   }
 

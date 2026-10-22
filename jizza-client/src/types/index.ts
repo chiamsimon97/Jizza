@@ -369,10 +369,12 @@ export interface AssistantReply {
 export type UiAction =
   | { type: 'navigate'; payload: { page: string; reason?: string } }
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
-  | { type: 'ask_user'; payload: { question: string; options?: string[] } }
+  | { type: 'ask_user'; payload: { question: string; options?: string[]; multiple?: boolean } }
   | { type: 'set_theme'; payload: { theme: string } }
   | { type: 'propose_workflow'; payload: WorkflowPlan }
   | { type: 'propose_agent'; payload: AgentProposal }
+  /** Settings for the Builder step Jizza was opened on; they land in its panel unsaved. */
+  | { type: 'configure_step'; payload: { stepId: string; label?: string; config: Record<string, unknown>; summary?: string } }
 
 /** A new agent, or a team, Jizza drafted; it exists only once the user creates it. */
 export interface AgentProposal {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Check, Copy, Plus, Trash2, X } from 'lucide-react'
+import { Check, Copy, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
@@ -10,6 +10,10 @@ import {
   type CanvasGraph, type CanvasNode, type ExitKey, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON, exitLabel } from './canvasParts'
+import { useAssistantStore } from '@/jizza/assistantStore'
+import { registerStepTarget, useContextStore, useJizzaContext } from '@/jizza/contextStore'
+import { stepContext } from '@/jizza/builderContext'
+import { canConfigureWithJizza, startersFor } from '@/jizza/commands'
 
 /** A service action the user can pick, with the service it belongs to. */
 export interface ToolOption { id: string; label: string }
@@ -51,13 +55,15 @@ function teamOf(output: unknown): TeamStep[] {
  * Changes are kept here until Save, which hands back the edited graph; Close drops them. Save stays
  * off until every mandatory field (see {@link fieldIssues}) has a value.
  */
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, workflows, issues: extraIssues, step, readOnly, focusNote, onDirty, onSave, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, workflows, issues: extraIssues, step, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
   /** Problems the step has beyond its settings, such as an agent that is paused. */
   issues: string[]
   step?: RunStepDto; readOnly: boolean
   /** Opens with the note field in focus ("Add note" on the step's menu). */
   focusNote?: boolean
+  /** Opens with Jizza working on this step ("Configure using Jizza" on the step's menu). */
+  askJizza?: boolean
   /** Told whether there are unsaved changes, so leaving the step can ask first. */
   onDirty: (dirty: boolean) => void
   onSave: (edited: CanvasGraph) => void
@@ -90,6 +96,53 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
     onClose()
   }
 
+  // ---- Configure using Jizza ---------------------------------------------------------------
+  // While on, Jizza is told about this step and what it may set, and what it fills in lands here
+  // as unsaved changes for the user to review and Save. It never saves the step itself.
+  const [jizzaOn, setJizzaOn] = useState(false)
+  const [filledByJizza, setFilledByJizza] = useState(false)
+  /** Bumped when Jizza fills fields in, so fields that keep their own rows read the new values. */
+  const [revision, setRevision] = useState(0)
+  const workflowName = useContextStore(s => s.stack.find(e => e.ctx.kind === 'builder')?.ctx.detail)
+  const latest = useRef(graph)
+  latest.current = graph
+  const jizzaAvailable = !readOnly && canConfigureWithJizza(node.type)
+  const jizzaToken = useJizzaContext(jizzaOn && jizzaAvailable ? stepContext(node, graph, workflowName, {
+    agents, tools, workflows, missing: missing.map(m => m.message),
+  }) : null)
+  // The chip's ✕ (or /leave) hands Jizza back to the Builder; the button here shows it is off.
+  const jizzaLeft = useContextStore(s => jizzaToken !== undefined && !s.stack.some(e => e.token === jizzaToken))
+  useEffect(() => { if (jizzaLeft) setJizzaOn(false) }, [jizzaLeft])
+  useEffect(() => { if (askJizza && jizzaAvailable) setJizzaOn(true) }, [askJizza, jizzaAvailable])
+  useEffect(() => {
+    if (!jizzaOn) return
+    useAssistantStore.getState().startStepSession(NODE_META[node.type].label, node.label, startersFor(node.type))
+    return registerStepTarget(node.id, (patch, label) => {
+      const g = latest.current
+      const current = g.nodes.find(n => n.id === node.id)
+      if (!current) return false
+      const config: Record<string, unknown> = { ...current.config }
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === 'ui') continue
+        if (v === null) { delete config[k]; continue }
+        if (k === 'auth' && v && typeof v === 'object') {
+          // A credential Jizza was only told is set comes back as that placeholder: keep the real one.
+          const was = (current.config.auth ?? {}) as Record<string, unknown>
+          config.auth = Object.fromEntries(Object.entries(v as Record<string, unknown>)
+            .map(([ak, av]) => [ak, av === '(set, hidden)' ? was[ak] : av]))
+          continue
+        }
+        config[k] = v
+      }
+      onChange(updateNode(g, node.id, { config, ...(label && label.trim() ? { label: label.trim() } : {}) }))
+      setRevision(r => r + 1)
+      setFilledByJizza(true)
+      return true
+    })
+    // Started once each time it is turned on, for the step this panel is for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jizzaOn, node.id])
+
   return (
     <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-80 flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
@@ -99,9 +152,25 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
         </span>
         <code className="truncate text-[11px] text-gray-400" title="This step's id, used to read its result as nodes.<id>">{node.id}</code>
         <span className="flex-1" />
+        {jizzaAvailable && (
+          <button type="button" onClick={() => (jizzaOn ? useAssistantStore.getState().setDockOpen(true) : setJizzaOn(true))}
+            title={jizzaOn ? 'Jizza is working on this step' : 'Configure using Jizza'} aria-label="Configure using Jizza" aria-pressed={jizzaOn}
+            className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors ${jizzaOn
+              ? 'bg-brand-500 text-white'
+              : 'text-brand-700 ring-1 ring-inset ring-brand-500/30 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10'}`}>
+            <Sparkles className="h-3.5 w-3.5" />{jizzaOn ? 'Jizza is on it' : 'Configure using Jizza'}
+          </button>
+        )}
         <button type="button" onClick={close} aria-label="Close step settings"
           className="grid h-7 w-7 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
       </div>
+
+      {filledByJizza && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 ring-1 ring-inset ring-brand-500/20 animate-fade-in dark:bg-brand-500/10 dark:text-brand-200">
+          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>Jizza filled in these settings. Check them, then press Save to keep them.</span>
+        </p>
+      )}
 
       {issues.length > 0 && (
         <ul className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">
@@ -109,7 +178,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
         </ul>
       )}
 
-      <fieldset disabled={readOnly} className="flex flex-col gap-3">
+      <fieldset key={revision} disabled={readOnly} className={`flex flex-col gap-3 ${revision > 0 ? 'rounded-lg animate-jizza-filled' : ''}`}>
         <Labelled label="Name">
           <input className={fieldClass} value={node.label} onChange={e => onChange(updateNode(graph, node.id, { label: e.target.value }), `${node.id}:label`)} />
         </Labelled>
