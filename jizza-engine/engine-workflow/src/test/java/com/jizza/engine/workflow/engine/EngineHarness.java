@@ -104,6 +104,18 @@ public final class EngineHarness {
       new GuardedHttpClient.Response(200, "{\"ok\":true}", java.util.Map.of("content-type", "application/json"));
   /** Emails the notify step sent: to, subject, body. */
   public final List<String[]> emails = new ArrayList<>();
+  /** Calls the MCP tool step made, as "tool args". */
+  public final List<String> mcpCalls = new ArrayList<>();
+  public final UUID mcpServerId = UUID.randomUUID();
+  /** One added MCP server with two tools; replace it to change what the step finds. */
+  public com.jizza.engine.api.mcp.McpServerDto mcpServer = new com.jizza.engine.api.mcp.McpServerDto(
+      mcpServerId, userId, UUID.randomUUID(), "Kite", "kite", "https://mcp.kite.example/mcp",
+      com.jizza.engine.api.mcp.McpAuthType.NONE, null, false, false, true, List.of("jizza"), false,
+      "connected", null, null, null, List.of(
+          new com.jizza.engine.api.mcp.McpToolDto("get_quote", "mcp_kite__get_quote", null, null,
+              Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, null),
+          new com.jizza.engine.api.mcp.McpToolDto("place_order", "mcp_kite__place_order", null,
+              null, Json.obj(), false, null, null)), null, null);
 
   public final SagaWorkflowEngine engine;
   public final WorkflowRunRepository runs;
@@ -257,12 +269,29 @@ public final class EngineHarness {
         new StorageNodeExecutor(sandbox, storageRepository(), clock),
         new HttpRequestNodeExecutor(sandbox, httpClient()),
         new NotifyNodeExecutor(sandbox, busProvider, mailProvider(), userRepository()),
+        new com.jizza.engine.workflow.nodes.McpToolNodeExecutor(mcpServers(), gate, sandbox,
+            mock(com.jizza.engine.persistence.repository.AgentRepository.class),
+            mock(ObjectProvider.class)),
         new CountingAgentStep());
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
         new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock,
         sandbox);
     self[0] = engine;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<com.jizza.engine.api.mcp.McpServers> mcpServers() {
+    var store = mock(com.jizza.engine.api.mcp.McpServers.class);
+    when(store.find(any())).thenAnswer(inv -> Optional.ofNullable(mcpServer)
+        .filter(s -> s.id().equals(inv.getArgument(0))));
+    when(store.call(any(), any(), any())).thenAnswer(inv -> {
+      mcpCalls.add(inv.getArgument(1) + " " + inv.getArgument(2));
+      return nextToolResult;
+    });
+    ObjectProvider<com.jizza.engine.api.mcp.McpServers> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(store);
+    return provider;
   }
 
   private WorkflowStorageRepository storageRepository() {

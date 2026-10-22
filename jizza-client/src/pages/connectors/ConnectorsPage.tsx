@@ -16,6 +16,7 @@ import { AUTH_LABELS, ServiceStatusBadge } from './shared'
 import { Can } from '@/auth/Can'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
+import { McpServersSection } from './McpServers'
 
 /** Connectors: the services Jizza's agents can work with, each one defined here. */
 export function ConnectorsPage() {
@@ -45,6 +46,8 @@ export function ConnectorsPage() {
           ))}
         </div>
       )}
+
+      <McpServersSection />
 
       {/* OAuth needs its URLs and client id before it is valid, so the Authentication tab opens
           with it chosen and the details still to fill in. */}

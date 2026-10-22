@@ -351,8 +351,16 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     return !toolName.startsWith("delegate_to_") && !toolName.startsWith("app_");
   }
 
-  /** "zerodha_get_holdings" reads as "Zerodha get holdings". */
+  /**
+   * "zerodha_get_holdings" reads as "Zerodha get holdings", and an MCP server's
+   * "mcp_kite__get_holdings" as "Kite: get holdings".
+   */
   static String label(String toolName) {
+    int split = toolName.indexOf("__");
+    if (toolName.startsWith("mcp_") && split > 4) {
+      return label(toolName.substring(4, split)) + ": "
+          + toolName.substring(split + 2).replace('_', ' ').replace('-', ' ').trim();
+    }
     String words = toolName.replace('_', ' ').replace('-', ' ').trim();
     return words.isEmpty() ? toolName : Character.toUpperCase(words.charAt(0)) + words.substring(1);
   }

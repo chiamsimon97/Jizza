@@ -103,6 +103,9 @@ public class SdkMcpSessions implements McpSession.Factory {
     }
 
     @Override
+    public McpSchema.Implementation serverInfo() { return client.getServerInfo(); }
+
+    @Override
     public void close() {
       try {
         client.closeGracefully();

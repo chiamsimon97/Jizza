@@ -9,8 +9,9 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { ChevronDown, Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
+import { mcpApi } from '@/api/mcp'
 import { api } from '@/lib/api'
-import type { AgentDto, ConnectionDto, GeneratedToolDto, RunDto, RunStepDto, WorkflowDto } from '@/types'
+import type { AgentDto, ConnectionDto, GeneratedToolDto, McpServer, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
   NODE_H, NODE_META, NODE_W, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
   insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
@@ -161,6 +162,8 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   // Archived agents too, so a step still pointing at one can say so instead of looking empty.
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const { data: tools } = useQuery({ queryKey: ['workflow-canvas-tools'], queryFn: loadTools, enabled: !readOnly, staleTime: 60_000 })
+  // Without connector access the list is empty rather than an error.
+  const { data: mcpServers } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list().catch(() => [] as McpServer[]), enabled: !readOnly, staleTime: 30_000 })
   const { data: workflows } = useQuery({
     queryKey: ['workflow-canvas-workflows'], enabled: !readOnly, staleTime: 60_000,
     queryFn: () => api.get<WorkflowDto[]>('/api/workflows')
@@ -704,7 +707,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         {/* Over the canvas rather than beside it: resizing the canvas under the pointer would turn
             the click that opened it into a click on empty canvas. */}
         {selected && (
-        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} workflows={workflows} readOnly={readOnly}
+        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} workflows={workflows} readOnly={readOnly}
           issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} askJizza={askJizza === selected.id} onDirty={onDirty}
           onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
           onClose={() => { unsaved.current = false; select([]) }} />
@@ -737,6 +740,7 @@ const MINIMAP: Record<NodeType, string> = {
   TRANSFORM: '#7c3aed', BRANCH: '#059669', END: '#9ca3af',
   PARALLEL: '#0d9488', JOIN: '#0f766e', WAIT: '#f97316', SUB_WORKFLOW: '#4f46e5', FOR_EACH: '#c026d3',
   APPROVAL: '#d97706', HTTP_REQUEST: '#0891b2', FILTER: '#65a30d', SWITCH: '#15803d', SET_VARIABLE: '#9333ea', STORAGE: '#475569', NOTIFY: '#f43f5e',
+  MCP_TOOL: '#6d28d9',
 }
 
 const RUN_LABEL: Record<string, string> = {

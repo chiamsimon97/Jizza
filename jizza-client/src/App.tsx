@@ -15,6 +15,7 @@ import { OrganizationAgentTemplatesPage } from '@/pages/OrganizationAgentTemplat
 import { TasksPage } from '@/pages/TasksPage'
 import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
+import { McpServerPage } from '@/pages/connectors/McpServers'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
 import { GuardrailsPage } from '@/pages/GuardrailsPage'
@@ -79,6 +80,7 @@ export default function App() {
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.CONNECTOR_VIEW} />}>
             <Route path="/connectors" element={<ConnectorsPage />} />
+            <Route path="/connectors/mcp/:mcpId" element={<McpServerPage />} />
             <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />
           </Route>
           <Route path="/connections" element={<Navigate to="/connectors" replace />} />

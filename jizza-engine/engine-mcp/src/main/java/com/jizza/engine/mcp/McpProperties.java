@@ -10,10 +10,10 @@ import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * The MCP servers this installation uses, written by its owner. There is deliberately no way to add
- * a server at run time: a server can start a process on this machine and its tools act with the
- * owner's authority, so which ones exist is a decision made in configuration, not by a model or a
- * web form.
+ * The MCP servers this installation uses, written by its owner. Only configuration can start a
+ * process on this machine ({@code stdio}): a web form or a model never can. Remote servers can also
+ * be added from the app ({@link StoredMcpServers}); those are HTTP only, pass the egress guard, and
+ * reach the provider as the same {@link Server} shape with their id set.
  *
  * <pre>
  * jizza:
@@ -82,6 +82,12 @@ public class McpProperties {
     /** How long a server's tool list is reused before it is asked again. */
     private Duration toolsCacheTtl = Duration.ofMinutes(5);
 
+    // Set only for a server added from the app, never from configuration.
+    private java.util.UUID id;
+    private java.util.UUID workspaceId;
+    /** The tools the user reviewed and left on; offered without asking the server each turn. */
+    private List<io.modelcontextprotocol.spec.McpSchema.Tool> knownTools;
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
     public Transport getTransport() { return transport; }
@@ -108,6 +114,19 @@ public class McpProperties {
     public void setRequestTimeout(Duration v) { this.requestTimeout = v; }
     public Duration getToolsCacheTtl() { return toolsCacheTtl; }
     public void setToolsCacheTtl(Duration v) { this.toolsCacheTtl = v; }
+
+    public java.util.UUID getId() { return id; }
+    public void setId(java.util.UUID v) { this.id = v; }
+    public java.util.UUID getWorkspaceId() { return workspaceId; }
+    public void setWorkspaceId(java.util.UUID v) { this.workspaceId = v; }
+    public List<io.modelcontextprotocol.spec.McpSchema.Tool> getKnownTools() { return knownTools; }
+    public void setKnownTools(List<io.modelcontextprotocol.spec.McpSchema.Tool> v) { this.knownTools = v; }
+
+    /** What a session to this server depends on; when it changes the session is opened afresh. */
+    String fingerprint() {
+      return transport + "|" + url + "|" + new java.util.TreeMap<>(headers) + "|" + command + "|"
+          + args + "|" + new java.util.TreeMap<>(env);
+    }
 
     boolean offeredTo(String agentKey) {
       return enabled && agentKey != null && (agents.contains("*") || agents.contains(agentKey));

@@ -198,6 +198,15 @@ describe('canvasModel', () => {
     expect(at('start')).toEqual(scattered.nodes.find(n => n.id === 'start'))
   })
 
+  it('asks an MCP tool step for a server, then for one of its tools', () => {
+    const hook = addAfter(emptyGraph(), 'start', null, 'MCP_TOOL')
+    const node = hook.graph.nodes.find(n => n.id === hook.id)!
+    expect(fieldIssues(node).map(f => f.field)).toEqual(['serverId'])
+    expect(fieldIssues({ ...node, config: { serverId: 's1' } }).map(f => f.field)).toEqual(['tool'])
+    expect(fieldIssues({ ...node, config: { serverId: 's1', tool: 'get_holdings' } })).toEqual([])
+    expect(fromGraph(toGraph(hook.graph)).nodes.find(n => n.id === hook.id)?.type).toBe('MCP_TOOL')
+  })
+
   it('lists a step\'s mandatory fields and saves an edit without losing canvas changes', () => {
     const hook = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
     const node = hook.graph.nodes.find(n => n.id === hook.id)!
