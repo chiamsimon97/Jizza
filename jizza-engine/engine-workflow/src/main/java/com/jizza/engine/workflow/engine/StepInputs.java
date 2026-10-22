@@ -34,7 +34,9 @@ final class StepInputs {
     ObjectNode snapshot = Json.obj();
     Map<String, Object> variables = context.variables();
     if (node.config() != null && !node.config().isNull() && !node.config().isEmpty()) {
-      snapshot.set("settings", render(node.config(), variables));
+      JsonNode settings = render(node.config(), variables);
+      if (node.type() == NodeType.HTTP_REQUEST && settings instanceof ObjectNode o) hideSecrets(o);
+      snapshot.set("settings", settings);
     }
     if (node.type() == NodeType.TRIGGER) {
       snapshot.set("received", context.input());
@@ -50,6 +52,28 @@ final class StepInputs {
     return Json.obj().put("truncated", true)
         .put("preview", text.substring(0, MAX_CHARS));
   }
+
+  /** Header names whose values are credentials. */
+  private static final java.util.regex.Pattern SECRET_HEADER =
+      java.util.regex.Pattern.compile("(?i).*(authorization|token|secret|api[-_]?key|password|cookie).*");
+
+  /**
+   * A webhook's sign-in details and credential headers are not kept in the history, which anyone
+   * looking at past runs can read; they are shown as hidden instead.
+   */
+  private static void hideSecrets(ObjectNode settings) {
+    if (settings.path("auth") instanceof ObjectNode auth) {
+      for (String field : new String[] {"password", "token", "value"}) {
+        if (auth.hasNonNull(field)) auth.put(field, HIDDEN);
+      }
+    }
+    if (settings.path("headers") instanceof ObjectNode headers) {
+      headers.properties().stream().map(Map.Entry::getKey).filter(k -> SECRET_HEADER.matcher(k).matches())
+          .toList().forEach(k -> headers.put(k, HIDDEN));
+    }
+  }
+
+  private static final String HIDDEN = "(hidden)";
 
   private JsonNode render(JsonNode value, Map<String, Object> variables) {
     if (value.isTextual()) {

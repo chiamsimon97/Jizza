@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, cloneNodes, emptyGraph, exitsOf, fromDuration, fromGraph, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
+  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
   toDuration, toGraph, unreachable, updateNode,
 } from './canvasModel'
 
@@ -93,7 +93,8 @@ describe('canvasModel', () => {
     expect(saved.edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
     expect(fromGraph(saved).edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
     expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('at least two paths'))
-    expect(problems(g.graph)).toContainEqual(expect.stringContaining('how long to wait'))
+    // A new wait starts at an hour, so it has nothing to fill in.
+    expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('how long to wait'))
     // A graph with parallel paths can't be shown as a step list.
     expect(stepsFromGraph(saved)).toBeNull()
   })
@@ -172,5 +173,44 @@ describe('canvasModel', () => {
     expect(set('STORAGE', { key: 'count' })).toEqual([])
     expect(set('SET_VARIABLE', { variables: [{ name: 'total', expr: 'nodes.a.sum' }] })).toEqual([])
     expect(set('SET_VARIABLE', { variables: [{ name: 'bad name', expr: '1' }] })).toEqual([expect.stringContaining('needs a name')])
+  })
+
+  it('selects and arranges the steps after a split, as a tree that keeps its paths apart', () => {
+    const branch = addAfter(emptyGraph(), 'start', null, 'BRANCH')
+    const yes = addAfter(branch.graph, branch.id, 'true', 'NOTIFY')
+    const no = addAfter(yes.graph, branch.id, 'false', 'TRANSFORM')
+    const after = addAfter(no.graph, no.id, null, 'END')
+    const g = after.graph
+    expect(branchesFrom(g, branch.id)).toBe(true)
+    expect(branchesFrom(g, 'start')).toBe(false)
+    expect(descendantsOf(g, branch.id).sort()).toEqual([yes.id, no.id, after.id].sort())
+
+    const scattered = updateNode(updateNode(g, yes.id, { x: 5, y: 900 }), no.id, { x: 5, y: 905 })
+    const arranged = arrangeFrom(scattered, branch.id)
+    const at = (id: string) => arranged.nodes.find(n => n.id === id)!
+    const root = at(branch.id)
+    expect(root).toEqual(scattered.nodes.find(n => n.id === branch.id))
+    expect(at(yes.id).x).toBeGreaterThan(root.x)
+    expect(at(yes.id).x).toBe(at(no.id).x)
+    expect(Math.abs(at(yes.id).y - at(no.id).y)).toBeGreaterThanOrEqual(130)
+    expect(at(after.id).x).toBeGreaterThan(at(no.id).x)
+    // Start is outside what was arranged and stays put.
+    expect(at('start')).toEqual(scattered.nodes.find(n => n.id === 'start'))
+  })
+
+  it('lists a step\'s mandatory fields and saves an edit without losing canvas changes', () => {
+    const hook = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
+    const node = hook.graph.nodes.find(n => n.id === hook.id)!
+    expect(fieldIssues(node).map(f => f.field)).toEqual(['url'])
+    const bearer = { ...node, config: { ...node.config, url: 'https://x.test', auth: { type: 'bearer' } } }
+    expect(fieldIssues(bearer).map(f => f.field)).toEqual(['auth.token'])
+
+    const edited = updateNode(hook.graph, hook.id, { config: { url: 'https://x.test' }, label: 'Ping' })
+    const moved = updateNode(hook.graph, hook.id, { x: 777 })
+    const saved = applyStepEdit(moved, edited, hook.id)
+    const after = saved.nodes.find(n => n.id === hook.id)!
+    expect(after.label).toBe('Ping')
+    expect(after.x).toBe(777)
+    expect(saved.edges).toEqual(moved.edges)
   })
 })

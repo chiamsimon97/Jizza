@@ -12,8 +12,8 @@ import { agentsApi } from '@/api/agents'
 import { api } from '@/lib/api'
 import type { AgentDto, ConnectionDto, GeneratedToolDto, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
-  NODE_H, NODE_META, NODE_W, PALETTE, addAfter, addNode, cloneNodes, exitsOf, freeSpot, insertOnEdge, issues as findIssues, reaches,
-  removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
+  NODE_H, NODE_META, NODE_W, PALETTE, addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
+  insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
 } from './canvasModel'
 import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
@@ -140,7 +140,11 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const [hovered, setHovered] = useState<string | null>(null)
   const hoverTimer = useRef<number>()
   const [picker, setPicker] = useState<Picker | null>(null)
-  const [menu, setMenu] = useState<{ at: { x: number; y: number }; items: MenuItem[] } | null>(null)
+  /** {@code nodeId} is the step whose options menu this is, which keeps its button showing. */
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; items: MenuItem[]; nodeId?: string } | null>(null)
+  /** Whether the open step settings have changes not yet saved, and whether to open them at the note. */
+  const unsaved = useRef(false)
+  const [focusNote, setFocusNote] = useState(false)
   const [help, setHelp] = useState(false)
   const [paletteQuery, setPaletteQuery] = useState('')
   const connecting = useRef<{ from: string; branch: Exit; done: boolean } | null>(null)
@@ -161,9 +165,9 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   })
 
   const issueList = useMemo(() => findIssues(graph), [graph])
-  const issuesByNode = useMemo(() => {
+  // Problems with the agent a step points at, which its settings can't show by themselves.
+  const agentIssues = useMemo(() => {
     const map = new Map<string, string[]>()
-    for (const i of issueList) if (i.nodeId) map.set(i.nodeId, [...(map.get(i.nodeId) ?? []), i.message])
     if (agents) {
       for (const n of graph.nodes) {
         const id = n.type === 'AGENT_STEP' ? n.config.agentId : undefined
@@ -174,11 +178,17 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
           : a.status === 'draft' ? `${a.name} is still a draft. Activate it before this runs.`
           : !a.enabled ? `${a.name} is paused, so this step will fail until it is resumed.`
           : null
-        if (problem) map.set(n.id, [...(map.get(n.id) ?? []), problem])
+        if (problem) map.set(n.id, [problem])
       }
     }
     return map
-  }, [issueList, agents, graph.nodes])
+  }, [agents, graph.nodes])
+  const issuesByNode = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const i of issueList) if (i.nodeId) map.set(i.nodeId, [...(map.get(i.nodeId) ?? []), i.message])
+    for (const [id, list] of agentIssues) map.set(id, [...(map.get(id) ?? []), ...list])
+    return map
+  }, [issueList, agentIssues])
   const orphans = useMemo(() => unreachable(graph), [graph])
 
   const [showRun, setShowRun] = useState(true)
@@ -187,7 +197,24 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
   const selected = selNodes.length === 1 ? graph.nodes.find(n => n.id === selNodes[0]) ?? null : null
 
-  const select = useCallback((nodes: string[], edges: string[] = []) => { setSelNodes(nodes); setSelEdges(edges) }, [])
+  /**
+   * Leaving the step whose settings are open, with changes not saved, asks first. False when the
+   * user would rather stay.
+   */
+  const mayLeave = useCallback((nodes: string[]) => {
+    const open = selNodes.length === 1 ? selNodes[0] : null
+    if (!open || !unsaved.current || (nodes.length === 1 && nodes[0] === open)) return true
+    if (!window.confirm('Leave this step without saving your changes?')) return false
+    unsaved.current = false
+    return true
+  }, [selNodes])
+
+  const select = useCallback((nodes: string[], edges: string[] = []) => {
+    if (!mayLeave(nodes)) return
+    setFocusNote(false)
+    setSelNodes(nodes)
+    setSelEdges(edges)
+  }, [mayLeave])
 
   // ---- Editing operations -------------------------------------------------------------------
 
@@ -235,6 +262,8 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     if (!nodes.length && !selEdges.length) return
     let next: CanvasGraph = { ...graph, edges: graph.edges.filter(e => !selEdges.includes(edgeId(e))) }
     for (const id of nodes) next = removeNode(next, id)
+    // The step whose settings were open is gone, and its unsaved changes with it.
+    unsaved.current = false
     commit(next)
     select([])
   }, [readOnly, selNodes, selEdges, graph, commit, select])
@@ -279,7 +308,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     if (!area) return
     const { x, zoom } = flow.getViewport()
     const right = area.left + x + (node.x + NODE_W) * zoom
-    const limit = area.right - 320 - 24
+    const limit = area.right - 416 - 24
     if (right > limit) flow.setViewport({ ...flow.getViewport(), x: x - (right - limit) }, { duration: 250 })
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -289,7 +318,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     const onKey = (e: KeyboardEvent) => {
       if (!active.current && !fullscreen) return
       const t = e.target as HTMLElement
-      if (t.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      if (t.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
       const mod = e.metaKey || e.ctrlKey
       const key = e.key.toLowerCase()
       if (e.key === 'Escape') {
@@ -321,6 +350,50 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
   // ---- React Flow wiring ------------------------------------------------------------------
 
+  /**
+   * The options on a step's ⋮ button. Selecting and arranging "from here" only make sense where
+   * the flow splits, so they show only on a step with more than one connection leaving it.
+   */
+  const stepMenu = useCallback((id: string, at: { x: number; y: number }) => {
+    const node = graph.nodes.find(n => n.id === id)
+    if (!node || readOnly) return
+    const isStart = node.type === 'TRIGGER'
+    const note = typeof node.config.note === 'string' && node.config.note.trim()
+    const items: MenuItem[] = []
+    if (!isStart) items.push({ label: 'Clone', shortcut: `${MOD}+D`, onSelect: () => duplicate([id]) })
+    if (branchesFrom(graph, id)) {
+      items.push(
+        {
+          label: 'Select steps from here', divider: items.length > 0,
+          onSelect: () => select([id, ...descendantsOf(graph, id)]),
+        },
+        {
+          label: 'Auto arrange from here',
+          onSelect: () => {
+            commit(arrangeFrom(graph, id))
+            requestAnimationFrame(() => flow.fitView({ padding: 0.2, duration: 300, maxZoom: 1, nodes: [{ id }, ...descendantsOf(graph, id).map(d => ({ id: d }))] }))
+          },
+        },
+      )
+    }
+    if (!isStart) {
+      items.push(
+        { label: note ? 'Edit note' : 'Add note', divider: !branchesFrom(graph, id) && items.length > 0, onSelect: () => { select([id]); setFocusNote(true) } },
+        {
+          label: 'Delete', shortcut: 'Del', danger: true, divider: true,
+          onSelect: () => {
+            if (selNodes.length === 1 && selNodes[0] === id) unsaved.current = false
+            commit(removeNode(graph, id))
+            select(selNodes.filter(s => s !== id))
+          },
+        },
+      )
+    }
+    if (items.length) setMenu({ at, items, nodeId: id })
+  }, [graph, readOnly, duplicate, select, commit, flow, selNodes])
+
+  const onDirty = useCallback((dirty: boolean) => { unsaved.current = dirty }, [])
+
   const onAddAfter = useCallback((from: string, branch: Exit, at: { x: number; y: number }) => setPicker({ kind: 'after', from, branch, at }), [])
 
   const nodes: Node<StepData>[] = useMemo(() => {
@@ -340,10 +413,12 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         run: runInfo?.nodes.get(n.id),
         freeExits: exitsOf(n).filter(b => !used.has(`${n.id}:${handleOf(b)}`)),
         readOnly,
+        menuOpen: menu?.nodeId === n.id,
         onAddAfter: (b, at) => onAddAfter(n.id, b, at),
+        onMenu: readOnly ? undefined : at => stepMenu(n.id, at),
       },
     }))
-  }, [graph, sizes, selNodes, readOnly, agents, issuesByNode, orphans, runInfo, onAddAfter])
+  }, [graph, sizes, selNodes, readOnly, agents, issuesByNode, orphans, runInfo, onAddAfter, menu, stepMenu])
 
   const onHover = useCallback((id: string | null) => {
     window.clearTimeout(hoverTimer.current)
@@ -388,8 +463,11 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
       const at = moved
       history.replace({ ...graph, nodes: graph.nodes.map(n => (at.has(n.id) ? { ...n, x: Math.round(at.get(n.id)!.x), y: Math.round(at.get(n.id)!.y) } : n)) })
     }
-    if (selects.length) setSelNodes(prev => applySelection(prev, selects))
-  }, [readOnly, graph, history])
+    if (selects.length) {
+      const next = applySelection(selNodes, selects)
+      if (next !== selNodes && mayLeave(next)) { setFocusNote(false); setSelNodes(next) }
+    }
+  }, [readOnly, graph, history, selNodes, mayLeave])
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const selects = changes.filter((c): c is EdgeSelectionChange => c.type === 'select')
@@ -462,6 +540,10 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         { label: 'Duplicate', shortcut: `${MOD}+D`, disabled: onlyStart, onSelect: () => duplicate(ids) },
         { label: 'Copy', shortcut: `${MOD}+C`, disabled: onlyStart, onSelect: () => copy(ids) },
         { label: 'Disconnect', onSelect: () => commit({ ...graph, edges: graph.edges.filter(x => !ids.includes(x.from) && !ids.includes(x.to)) }) },
+        ...(ids.length === 1 && branchesFrom(graph, node.id) ? [
+          { label: 'Select steps from here', onSelect: () => select([node.id, ...descendantsOf(graph, node.id)]) },
+          { label: 'Auto arrange from here', onSelect: () => commit(arrangeFrom(graph, node.id)) },
+        ] : []),
         {
           label: ids.length > 1 ? `Delete ${ids.length} steps` : 'Delete', shortcut: 'Del', danger: true, disabled: onlyStart,
           onSelect: () => {
@@ -548,7 +630,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} className="!bg-gray-50 dark:!bg-gray-950" />
           <Controls showInteractive={false} position="bottom-left" />
-          <MiniMap pannable zoomable position="bottom-right" nodeBorderRadius={8} style={selected ? { marginRight: 336 } : undefined}
+          <MiniMap pannable zoomable position="bottom-right" nodeBorderRadius={8} style={selected ? { marginRight: 432 } : undefined}
             nodeColor={n => MINIMAP[(n.data as StepData).node.type]} maskColor="rgb(var(--gray-500) / 0.12)" />
 
           <Panel position="top-left">
@@ -569,7 +651,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
           </Panel>
 
           {/* Clear of the step settings when they are open over the canvas. */}
-          <Panel position="top-right" style={selected ? { marginRight: 336 } : undefined}>
+          <Panel position="top-right" style={selected ? { marginRight: 432 } : undefined}>
             <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               {!readOnly && <>
                 <ToolButton label="Add a step (Tab)" onClick={openPickerCentered}><Plus className="h-4 w-4" /></ToolButton>
@@ -597,8 +679,9 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
             the click that opened it into a click on empty canvas. */}
         {selected && (
         <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} workflows={workflows} readOnly={readOnly}
-          issues={issuesByNode.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)}
-          onChange={commit} onRemove={() => { commit(removeNode(graph, selected.id)); select([]) }} onClose={() => select([])} />
+          issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} onDirty={onDirty}
+          onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
+          onClose={() => { unsaved.current = false; select([]) }} />
         )}
 
       </div>

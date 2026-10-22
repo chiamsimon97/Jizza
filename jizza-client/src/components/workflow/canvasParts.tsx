@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
-  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, Play, Plug, Plus, Repeat, Search,
+  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
   ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -65,7 +65,11 @@ export interface StepData {
   /** Exits with nothing connected yet, which get an n8n-style "+" to add the next step. */
   freeExits: Exit[]
   readOnly: boolean
+  /** Whether this step's options menu is open, which keeps its button showing. */
+  menuOpen: boolean
   onAddAfter: (branch: Exit, at: { x: number; y: number }) => void
+  /** Opens the step's options menu next to its button; none on a read-only canvas. */
+  onMenu?: (at: { x: number; y: number }) => void
 }
 
 const RUN_RING: Record<StepRun, string> = {
@@ -78,7 +82,7 @@ const RUN_RING: Record<StepRun, string> = {
 
 /** One step on the canvas: a card with an input on the left and its exits on the right. */
 export const StepNode = memo(function StepNode({ data, selected }: NodeProps<StepData>) {
-  const { node, agent, issues, orphan, run, freeExits, readOnly, onAddAfter } = data
+  const { node, agent, issues, orphan, run, freeExits, readOnly, menuOpen, onAddAfter, onMenu } = data
   const meta = NODE_META[node.type]
   const Icon = NODE_ICON[node.type]
   const exits: Exit[] = exitsOf(node)
@@ -99,12 +103,29 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
         <span className="truncate">{node.type === 'AGENT_STEP' && agent ? agent.name : meta.label}</span>
         <span className="ml-auto flex items-center gap-1">
           {run && <RunBadge run={run} />}
+          {onMenu && (
+            <button type="button" aria-label={`More options for ${node.label}`} title="More options" aria-haspopup="menu" aria-expanded={menuOpen}
+              onClick={e => {
+                e.stopPropagation()
+                const r = e.currentTarget.getBoundingClientRect()
+                onMenu({ x: r.right + 6, y: r.top })
+              }}
+              className={`nodrag -my-0.5 -mr-1 grid h-5 w-5 place-items-center rounded transition-opacity hover:bg-black/15 focus-visible:opacity-100 ${
+                menuOpen ? 'bg-black/15 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <MoreVertical className="h-3.5 w-3.5" />
+            </button>
+          )}
         </span>
       </div>
       <div className={`px-2.5 py-2 ${bodyPad(node, exits.length)}`}>
         <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{node.label}</p>
         {summary && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{summary}</p>}
       </div>
+      {typeof node.config.note === 'string' && node.config.note.trim() && (
+        <p title={node.config.note} className="mx-2 mb-2 line-clamp-3 whitespace-pre-line rounded-md bg-yellow-50 px-2 py-1 text-[11px] leading-snug text-yellow-900 ring-1 ring-inset ring-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-200 dark:ring-yellow-500/30">
+          {node.config.note}
+        </p>
+      )}
 
       {(issues.length > 0 || orphan) && (
         <span title={[...issues, ...(orphan ? ['Nothing leads here from Start, so this step will never run.'] : [])].join('\n')}
@@ -155,6 +176,16 @@ function RunBadge({ run }: { run: StepRun }) {
 }
 
 export function summarise(node: CanvasNode, agent?: AgentDto): string {
+  return readable(describe(node, agent))
+}
+
+/** Mapped values as the field they read, [body.price], rather than the whole {{ nodes.… }} reference. */
+function readable(text: string): string {
+  return text.replace(/\{\{\s*(nodes\.[A-Za-z0-9_]+|input|vars)\.?([A-Za-z0-9_.[\]]*)\s*}}/g,
+    (_, root: string, path: string) => `[${path || (root === 'input' ? 'input' : 'result')}]`)
+}
+
+function describe(node: CanvasNode, agent?: AgentDto): string {
   const c = node.config
   switch (node.type) {
     case 'TRIGGER': return 'When the workflow is run'
@@ -319,7 +350,9 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
   )
 }
 
-export interface MenuItem { label: string; shortcut?: string; danger?: boolean; disabled?: boolean; onSelect: () => void }
+export interface MenuItem { label: string; shortcut?: string; danger?: boolean; disabled?: boolean; onSelect: () => void
+  /** Draws a line above this item, to set it apart from the ones before. */
+  divider?: boolean }
 
 /** A right-click menu. */
 export function ContextMenu({ at, items, onClose }: { at: { x: number; y: number }; items: MenuItem[]; onClose: () => void }) {
@@ -332,8 +365,9 @@ export function ContextMenu({ at, items, onClose }: { at: { x: number; y: number
   return (
     <div ref={box} role="menu" style={{ left: Math.min(at.x, window.innerWidth - 220), top: Math.min(at.y, window.innerHeight - items.length * 34 - 16) }}
       className="fixed z-[70] w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-xl animate-fade-in dark:border-gray-700 dark:bg-gray-900">
-      {items.map(item => (
-        <button key={item.label} type="button" role="menuitem" disabled={item.disabled}
+      {items.map(item => (<div key={item.label}>
+        {item.divider && <div role="separator" className="my-1 h-px bg-gray-200 dark:bg-gray-700" />}
+        <button type="button" role="menuitem" disabled={item.disabled}
           onClick={() => { onClose(); item.onSelect() }}
           className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm disabled:opacity-40 ${item.danger
             ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10'
@@ -341,7 +375,7 @@ export function ContextMenu({ at, items, onClose }: { at: { x: number; y: number
           <span className="flex-1">{item.label}</span>
           {item.shortcut && <kbd className="text-[11px] text-gray-400">{item.shortcut}</kbd>}
         </button>
-      ))}
+      </div>))}
     </div>
   )
 }
