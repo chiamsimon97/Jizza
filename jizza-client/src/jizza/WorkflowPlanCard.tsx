@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Hand, Pencil, ShieldAlert, ShieldCheck, ShieldX, Workflow } from 'lucide-react'
+import { Check, Hand, Pencil, Repeat, ShieldAlert, ShieldCheck, ShieldX, Workflow } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { workflowsApi } from '@/api/workflows'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
 import { toGraph } from '@/components/forms/WorkflowForm'
-import type { WorkflowPlan, WorkflowPlanStep } from '@/types'
+import type { ReuseGuardrails, ReuseProfile, WorkflowPlan, WorkflowPlanStep } from '@/types'
 import { useAssistantStore } from './assistantStore'
 
 const APPROVAL = {
@@ -26,12 +26,21 @@ export function WorkflowPlanCard({ plan, onRevise }: { plan: WorkflowPlan; onRev
   const qc = useQueryClient()
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list(), staleTime: 300_000 })
   const [error, setError] = useState('')
+  // The guardrails are the user's to set: Jizza's suggestion is only where the switches start.
+  const [guardrails, setGuardrails] = useState<ReuseGuardrails>({
+    confirmBeforeRun: plan.reuse?.guardrails?.confirmBeforeRun ?? true,
+    allowScheduled: plan.reuse?.guardrails?.allowScheduled ?? false,
+    maxRunsPerDay: plan.reuse?.guardrails?.maxRunsPerDay,
+    rules: plan.reuse?.guardrails?.rules ?? [],
+  })
+  const [keep, setKeep] = useState(Boolean(plan.reuse))
 
   const save = useMutation({
     mutationFn: () => workflowsApi.save({
       name: plan.name,
       description: plan.description,
       graph: toGraph(plan.steps.map(s => ({ kind: s.kind, agentId: s.agentId ?? '', instruction: s.instruction }))),
+      ...(plan.reuse && keep ? { reuse: { ...plan.reuse, guardrails } } : {}),
     }),
     onSuccess: (wf) => {
       void qc.invalidateQueries({ queryKey: ['workflows'] })
@@ -69,14 +78,16 @@ export function WorkflowPlanCard({ plan, onRevise }: { plan: WorkflowPlan; onRev
         </div>
       )}
 
+      {plan.reuse && <ReuseSection reuse={plan.reuse} keep={keep} onKeep={setKeep} guardrails={guardrails} onChange={setGuardrails} locked={Boolean(savedId)} />}
+
       <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
         {stops === 0 ? 'Once running, this workflow will not need to stop for you.' : `This workflow will stop for you at ${stops} ${stops === 1 ? 'step' : 'steps'}.`}
-        {' '}Approving saves it as a draft; nothing runs until you run it.
+        {' '}Approving saves it as a draft; nothing runs until you run it{plan.reuse && keep ? ', or Jizza reuses it within the limits above' : ''}.
       </p>
 
       {savedId ? (
         <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-          <Check className="h-4 w-4" /> Saved as a draft workflow
+          <Check className="h-4 w-4" /> {plan.reuse && keep ? 'Saved, and kept for Jizza to reuse' : 'Saved as a draft workflow'}
         </p>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -115,5 +126,54 @@ function PlanStep({ index, step, agentKey }: { index: number; step: WorkflowPlan
         )}
       </div>
     </li>
+  )
+}
+
+/**
+ * What Jizza will keep so it can recognise the next request this workflow does, and the switches
+ * that decide how far it may go when it reuses it.
+ */
+function ReuseSection({ reuse, keep, onKeep, guardrails, onChange, locked }: {
+  reuse: ReuseProfile
+  keep: boolean
+  onKeep: (keep: boolean) => void
+  guardrails: ReuseGuardrails
+  onChange: (next: ReuseGuardrails) => void
+  locked: boolean
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+      <label className="flex items-start gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+        <input type="checkbox" className="mt-0.5" checked={keep} disabled={locked} onChange={e => onKeep(e.target.checked)} />
+        <span className="flex items-center gap-1.5"><Repeat className="h-3.5 w-3.5" /> Let Jizza reuse this next time</span>
+      </label>
+      {reuse.summary && <p className="mt-1 pl-6 text-xs text-gray-600 dark:text-gray-400">Used when: {reuse.summary}</p>}
+      {keep && (
+        <div className="mt-2 flex flex-col gap-1.5 pl-6 text-xs text-gray-700 dark:text-gray-300">
+          {reuse.examples && reuse.examples.length > 0 && (
+            <p className="text-gray-500 dark:text-gray-400">For requests like {reuse.examples.map(e => `"${e}"`).join(', ')}</p>
+          )}
+          {reuse.inputs && reuse.inputs.length > 0 && (
+            <p className="text-gray-500 dark:text-gray-400">Asks for {reuse.inputs.map(i => i.description ? `${i.name} (${i.description})` : i.name).join(', ')}</p>
+          )}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={guardrails.confirmBeforeRun} disabled={locked}
+              onChange={e => onChange({ ...guardrails, confirmBeforeRun: e.target.checked })} />
+            Ask me before each run
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={guardrails.allowScheduled} disabled={locked}
+              onChange={e => onChange({ ...guardrails, allowScheduled: e.target.checked })} />
+            Scheduled tasks doing this job may run it on their own
+          </label>
+          {guardrails.maxRunsPerDay && <p>At most {guardrails.maxRunsPerDay} reused runs a day</p>}
+          {guardrails.rules && guardrails.rules.length > 0 && (
+            <ul className="list-disc pl-4 text-gray-600 dark:text-gray-400">
+              {guardrails.rules.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

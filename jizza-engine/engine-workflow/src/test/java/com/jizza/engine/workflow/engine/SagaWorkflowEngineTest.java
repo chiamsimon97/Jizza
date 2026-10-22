@@ -431,6 +431,32 @@ class SagaWorkflowEngineTest {
   }
 
   @Test
+  void aDraftRunsUnattendedFromTheLibraryOnlyForTheStepsTheUserAllowed() {
+    EngineHarness harness = linear();
+    harness.workflow.setStatus(com.jizza.engine.api.enums.WorkflowStatus.DRAFT);
+    var allowed = new com.jizza.engine.api.workflow.library.ReuseProfile("Pay small invoices",
+        java.util.List.of(), java.util.List.of(),
+        new com.jizza.engine.api.workflow.library.ReuseProfile.Guardrails(true, true, null,
+            java.util.List.of(), harness.workflow.getGraphFingerprint()), null);
+    harness.workflow.setReuse(allowed.toJson());
+
+    assertThat(harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("amount", 1),
+        "library:scheduled_task:abc").status()).isEqualTo(RunStatus.DONE);
+    org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+            harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("amount", 1),
+                "scheduled_task:abc"))
+        .as("the allowance is for library reuse, not any unattended start")
+        .hasMessageContaining("not approved");
+
+    harness.workflow.setGraphFingerprint("steps-changed-since");
+    org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+            harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("amount", 1),
+                "library:scheduled_task:abc"))
+        .as("editing the steps lapses the permission")
+        .hasMessageContaining("not approved");
+  }
+
+  @Test
   void aDisabledWorkflowCannotBeRunAtAll() {
     EngineHarness harness = linear();
     harness.workflow.setDisabled(true);

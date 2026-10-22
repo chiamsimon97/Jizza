@@ -1,12 +1,16 @@
 package com.jizza.platform.api.rest;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.dto.RunDto;
 import com.jizza.engine.api.dto.SkillDto;
 import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
+import com.jizza.engine.api.workflow.library.ReuseProfile;
+import com.jizza.engine.api.workflow.library.WorkflowLibrary;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.skill.SkillUseCase;
 import com.jizza.platform.usecase.workflow.WorkflowUseCase;
@@ -15,9 +19,11 @@ import com.jizza.platform.api.rest.dto.Responses;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -52,7 +58,26 @@ public class WorkflowController {
   public WorkflowDto save(@Valid @RequestBody Requests.WorkflowSave request) {
     return workflows.save(CurrentUser.userId(), request.id(), request.name(),
         request.description(), request.graph(), request.inputSchema(), request.triggerConfig(),
-        request.owningAgentId());
+        request.owningAgentId(), ReuseProfile.from(request.reuse()));
+  }
+
+  /** The workflows Jizza may reuse, with what it keeps about each and their guardrails. */
+  @GetMapping("/workflows/library")
+  public List<WorkflowLibrary.Match> library() {
+    return workflows.library(CurrentUser.userId());
+  }
+
+  /** Sets when Jizza may reuse a workflow; allowing scheduled runs holds for its current steps. */
+  @PutMapping("/workflows/{id}/reuse")
+  public WorkflowLibrary.Match describe(@PathVariable UUID id, @RequestBody JsonNode reuse) {
+    ReuseProfile profile = ReuseProfile.from(reuse);
+    if (profile == null) throw new ValidationException("Send what to keep, or DELETE to remove it");
+    return workflows.describe(CurrentUser.userId(), id, profile);
+  }
+
+  @DeleteMapping("/workflows/{id}/reuse")
+  public WorkflowLibrary.Match forget(@PathVariable UUID id) {
+    return workflows.describe(CurrentUser.userId(), id, null);
   }
 
   @GetMapping("/workflows/{id}/versions")

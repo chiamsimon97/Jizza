@@ -179,15 +179,25 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         context -> context.recordParent(parentRunId, parentNodeId, depth));
   }
 
+  /** A library run of the current version, whose steps are the ones the user allowed unattended. */
+  private static boolean allowedUnattended(WorkflowEntity workflow, int version, String triggerSource) {
+    if (triggerSource == null || !triggerSource.startsWith("library:")) return false;
+    if (version != workflow.getVersion()) return false;
+    var profile = com.jizza.engine.api.workflow.library.ReuseProfile.from(workflow.getReuse());
+    return profile != null && profile.guardrails().allowsUnattended(workflow.getGraphFingerprint());
+  }
+
   private RunDto launch(WorkflowEntity workflow, int version, JsonNode input, String triggerSource,
                         Consumer<RunContext> setUp) {
     WorkflowGraph graph = graphFor(workflow, version);
     validator.validate(graph);
 
     // A run started by anything other than a person must use an approved version. Manual runs of a
-    // draft are how a user tests what they are building.
+    // draft are how a user tests what they are building. The one other way is the user allowing a
+    // library workflow to run on a schedule, which holds only for the steps they allowed it with.
     boolean manual = triggerSource != null && triggerSource.startsWith("manual");
-    if (!manual && workflow.getStatus() != com.jizza.engine.api.enums.WorkflowStatus.APPROVED) {
+    if (!manual && workflow.getStatus() != com.jizza.engine.api.enums.WorkflowStatus.APPROVED
+        && !allowedUnattended(workflow, version, triggerSource)) {
       throw new ValidationException("Workflow '" + workflow.getName()
           + "' is not approved, so it cannot run unattended");
     }

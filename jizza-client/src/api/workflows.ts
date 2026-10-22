@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { RunDto, SkillDto, WorkflowDto } from '@/types'
+import type { LibraryEntry, ReuseProfile, RunDto, SkillDto, WorkflowDto } from '@/types'
 
 export const workflowsApi = {
   list: () =>
@@ -28,4 +28,14 @@ export const workflowsApi = {
 
   skills: () =>
     api.get<SkillDto[]>('/api/skills'),
+
+  /** The workflows Jizza may reuse, with their guardrails. */
+  library: () =>
+    api.get<LibraryEntry[]>('/api/workflows/library'),
+
+  setReuse: (id: string, reuse: ReuseProfile) =>
+    api.put<LibraryEntry>(`/api/workflows/${id}/reuse`, reuse),
+
+  forgetReuse: (id: string) =>
+    api.delete<LibraryEntry>(`/api/workflows/${id}/reuse`),
 }

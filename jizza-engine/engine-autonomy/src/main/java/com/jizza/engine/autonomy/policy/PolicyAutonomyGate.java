@@ -94,6 +94,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_propose_agent", ActionType.READ),
       // Fills in a Builder step's panel; the user still saves it.
       Map.entry("app_configure_step", ActionType.READ),
+      // Looking the request up in the user's saved workflows.
+      Map.entry("find_saved_workflows", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),
@@ -102,7 +104,11 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("create_plan", ActionType.DRAFT),
       Map.entry("save_instruction", ActionType.DRAFT),
       // Starting work that may do anything: a whole workflow, or a job for later.
-      Map.entry("schedule_task", ActionType.CREATE));
+      Map.entry("schedule_task", ActionType.CREATE),
+      // A saved workflow the user agreed to reuse. The tool itself will not start one the user's
+      // guardrails say to ask about until they have said yes, and each step still meets its own
+      // autonomy rule as the run reaches it, so asking again here would only ask twice.
+      Map.entry("run_saved_workflow", ActionType.DRAFT));
 
   private final AutonomyPolicyRepository policies;
   private final AgentRepository agents;
