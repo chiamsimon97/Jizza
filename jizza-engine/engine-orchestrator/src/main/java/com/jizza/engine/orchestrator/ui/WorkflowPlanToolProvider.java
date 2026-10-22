@@ -15,16 +15,22 @@ import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.library.ReuseProfile;
+import com.jizza.engine.orchestrator.library.CallSteps;
 import com.jizza.engine.orchestrator.library.ReuseArgs;
+import com.jizza.engine.persistence.entity.GeneratedToolEntity;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -54,11 +60,20 @@ public class WorkflowPlanToolProvider implements ToolProvider {
   private final UiActionRecorder recorder;
   private final ObjectProvider<AutonomyGate> gate;
 
+  private final CallSteps callSteps;
+
   public WorkflowPlanToolProvider(AgentRepository agents, UiActionRecorder recorder,
                                   ObjectProvider<AutonomyGate> gate) {
+    this(agents, recorder, gate, null);
+  }
+
+  @Autowired
+  public WorkflowPlanToolProvider(AgentRepository agents, UiActionRecorder recorder,
+                                  ObjectProvider<AutonomyGate> gate, CallSteps callSteps) {
     this.agents = agents;
     this.recorder = recorder;
     this.gate = gate;
+    this.callSteps = callSteps;
   }
 
   @Override
@@ -94,19 +109,29 @@ public class WorkflowPlanToolProvider implements ToolProvider {
       payload.put("description", args.path("description").asText().trim());
     }
     ArrayNode outSteps = payload.putArray("steps");
+    Set<String> stepInputs = new LinkedHashSet<>();
     int i = 0;
     for (JsonNode step : steps) {
       i++;
       String kind = step.path("kind").asText("agent");
       String instruction = step.path("instruction").asText("").trim();
-      if (instruction.isEmpty()) return ToolResult.error("Step " + i + " needs an instruction");
+      if (instruction.isEmpty() && !"tool".equals(kind)) {
+        return ToolResult.error("Step " + i + " needs an instruction");
+      }
       ObjectNode out = outSteps.addObject();
       if (!step.path("why").asText("").isBlank()) out.put("why", step.path("why").asText().trim());
+      if ("tool".equals(kind)) {
+        String problem = toolStep(jizza.get(), i, step, instruction, out, stepInputs);
+        if (problem != null) return ToolResult.error(problem);
+        continue;
+      }
       if ("ask".equals(kind)) {
         out.put("kind", "ask").put("instruction", instruction);
         continue;
       }
-      if (!"agent".equals(kind)) return ToolResult.error("Step " + i + ": kind must be agent or ask");
+      if (!"agent".equals(kind)) {
+        return ToolResult.error("Step " + i + ": kind must be tool, agent or ask");
+      }
       String key = step.path("agent_key").asText("");
       Optional<AgentEntity> specialist = agents.findByUserIdAndKey(userId, key)
           .filter(a -> !a.isOrchestrator() && a.isEnabled());
@@ -131,6 +156,7 @@ public class WorkflowPlanToolProvider implements ToolProvider {
     // guardrails before anything is saved.
     var reuse = ReuseArgs.parse(args.path("reuse"));
     if (reuse != null) {
+      reuse = withStepInputs(reuse, stepInputs);
       UUID conversationId = Activity.current()
           .map(ActivitySink::conversationId).orElse(null);
       payload.set("reuse", reuse.withLearnedFrom(
@@ -142,6 +168,56 @@ public class WorkflowPlanToolProvider implements ToolProvider {
     return ToolResult.ok(Json.obj().put("done", true).put("note",
         "The plan is on the user's screen with Approve and Change buttons. Nothing is saved until "
             + "they approve it. End your turn with one or two sentences; do not repeat the steps."));
+  }
+
+  /**
+   * A step that makes one of the conversation's service calls again, exactly as it was made but
+   * for the values mapped to inputs. Null when it was built, otherwise what is wrong with it.
+   */
+  private String toolStep(AgentEntity jizza, int index, JsonNode step, String instruction,
+                          ObjectNode out, Set<String> inputs) {
+    if (callSteps == null) return "Step " + index + ": tool steps are not available";
+    CallSteps.Step built;
+    try {
+      built = callSteps.step(jizza.getUserId(), step.path("call").asInt(0), step.path("arguments"),
+          step.path("inputs"));
+    } catch (IllegalArgumentException e) {
+      return "Step " + index + ": " + e.getMessage();
+    }
+    GeneratedToolEntity action = built.action();
+    String label = action.getLabel() != null ? action.getLabel() : action.getName();
+    out.put("kind", "tool").put("instruction", instruction.isEmpty() ? label : instruction)
+        .put("toolId", action.getId().toString()).put("toolName", action.getName())
+        .put("toolLabel", label).put("changesThings", action.isSideEffecting());
+    if (built.call().agentName() != null) out.put("agentName", built.call().agentName());
+    out.set("arguments", built.arguments());
+    if (!built.inputs().isEmpty()) {
+      ArrayNode reads = out.putArray("inputs");
+      built.inputs().forEach(reads::add);
+    }
+    inputs.addAll(built.inputs());
+    if (action.isSideEffecting()) {
+      // The saved workflow runs as Jizza, so Jizza's rules for this action are the ones that apply.
+      AutonomyGate g = gate.getIfAvailable();
+      if (g == null) {
+        out.put("approval", "ask");
+      } else {
+        Decision decision = g.evaluate(jizza.getId(), action.getName(), built.arguments());
+        out.put("approval", decision.allowed() ? "auto" : decision.denied() ? "never" : "ask");
+      }
+    }
+    return null;
+  }
+
+  /** Every input a step reads is one a run must be given, whether or not Jizza listed it. */
+  private static ReuseProfile withStepInputs(ReuseProfile reuse, Set<String> used) {
+    List<ReuseProfile.Input> inputs = new ArrayList<>(reuse.inputs());
+    for (String name : used) {
+      boolean listed = inputs.stream().anyMatch(in -> in.name().equals(name));
+      if (!listed) inputs.add(new ReuseProfile.Input(name, null, true));
+    }
+    return new ReuseProfile(reuse.summary(), reuse.examples(), inputs, reuse.guardrails(),
+        reuse.learnedFrom());
   }
 
   /** What the agent's autonomy rules would do today with a step that changes something. */
@@ -157,16 +233,24 @@ public class WorkflowPlanToolProvider implements ToolProvider {
 
   private static ToolSpec spec(String roster) {
     ObjectNode step = JsonSchemas.object(new LinkedHashMap<>(Map.of(
-        "kind", enumOf("agent: a specialist does this step. ask: stop and ask the user.",
-            List.of("agent", "ask")),
+        "kind", enumOf("tool: repeat a service call this conversation made, exactly (see "
+                + "recent_service_calls); prefer it wherever a call did the work. agent: a "
+                + "specialist does this step, for judgement. ask: stop and ask the user.",
+            List.of("tool", "agent", "ask")),
+        "call", JsonSchemas.integer("For a tool step, the call's number from "
+            + "recent_service_calls"),
+        "inputs", JsonSchemas.objectSchema("For a tool step, which arguments come from the "
+            + "run's input instead of the value used today: {\"<argument>\": \"<input name>\"}"),
+        "arguments", JsonSchemas.objectSchema("For a tool step, arguments to set differently, "
+            + "e.g. {\"<argument>\": \"{{ nodes.step_1.<field> }}\"} to use step 1's result"),
         "agent_key", JsonSchemas.string("For an agent step, which specialist. One of: " + roster),
-        "instruction", JsonSchemas.string(
-            "What the agent does, or what to ask the user, written so it stands on its own"),
+        "instruction", JsonSchemas.string("What the agent does, or what to ask the user, "
+            + "written so it stands on its own. For a tool step, a short name for it"),
         "why", JsonSchemas.string("One short line on why this step is there"),
         "changes_things", JsonSchemas.bool(
             "True if the step changes something outside Jizza: sends a message, creates or "
                 + "updates a record, places an order, moves money"))),
-        List.of("kind", "instruction"));
+        List.of("kind"));
     ObjectNode steps = Json.obj().put("type", "array")
         .put("description", "The steps, in the order they run");
     steps.set("items", step);

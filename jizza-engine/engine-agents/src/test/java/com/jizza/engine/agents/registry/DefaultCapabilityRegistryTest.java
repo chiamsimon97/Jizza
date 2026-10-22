@@ -79,6 +79,27 @@ class DefaultCapabilityRegistryTest {
   }
 
   @Test
+  void aCallInAConversationIsKeptSoTheJobCanBeSavedAsSteps() {
+    ServiceCallJournal journal = new ServiceCallJournal();
+    registry.setJournal(journal);
+    UUID conversationId = UUID.randomUUID();
+    var sink = new com.jizza.engine.api.activity.ActivitySink() {
+      @Override public void emit(com.jizza.engine.api.activity.ActivityEvent event) {}
+      @Override public boolean cancelled() { return false; }
+      @Override public UUID conversationId() { return conversationId; }
+    };
+
+    com.jizza.engine.api.activity.Activity.run(sink, () -> registry.invoke(agent.getId(), validCall()));
+    gate.rule = AutonomyRule.DENY;
+    com.jizza.engine.api.activity.Activity.run(sink, () -> registry.invoke(agent.getId(), validCall()));
+
+    assertThat(journal.recent(conversationId)).singleElement().satisfies(c -> {
+      assertThat(c.tool()).isEqualTo("send_email");
+      assertThat(c.arguments()).isEqualTo(validCall().args());
+    });
+  }
+
+  @Test
   void aDeniedToolIsBlockedBeforeItRuns() {
     gate.rule = AutonomyRule.DENY;
 

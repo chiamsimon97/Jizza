@@ -116,6 +116,30 @@ class SagaWorkflowEngineTest {
   }
 
   @Test
+  void aServiceActionStepFillsItsArgumentsFromTheRunsInput() {
+    EngineHarness harness = new EngineHarness(new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null), node("finish", NodeType.END, null)),
+        List.of(edge("start", "finish"))));
+    harness.workflow.setGraph(new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("send", NodeType.CONNECTOR_TOOL, "{\"toolId\":\"" + harness.sendEmailTool.getId()
+                + "\",\"arguments\":{\"to\":\"{{ input.email }}\",\"copies\":\"{{ input.copies }}\","
+                + "\"subject\":\"Rate for {{ input.city }}\",\"body\":\"fixed\"}}"),
+            node("finish", NodeType.END, null)),
+        List.of(edge("start", "send"), edge("send", "finish"))).toJson());
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("email", "kai@example.com").put("copies", 2).put("city", "Chennai"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.lastToolArgs.path("to").asText()).isEqualTo("kai@example.com");
+    assertThat(harness.lastToolArgs.path("copies").isNumber())
+        .as("a single placeholder keeps the type of what it gives").isTrue();
+    assertThat(harness.lastToolArgs.path("subject").asText()).isEqualTo("Rate for Chennai");
+    assertThat(harness.lastToolArgs.path("body").asText()).isEqualTo("fixed");
+  }
+
+  @Test
   void aSideEffectingNodeIsSentOnceEvenAcrossACrashAndResume() {
     EngineHarness harness = sideEffectHarness();
     harness.agentStepBehaviour = nodeId -> {

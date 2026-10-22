@@ -13,6 +13,7 @@ import com.jizza.engine.persistence.entity.GeneratedToolEntity;
 import com.jizza.engine.persistence.repository.GeneratedToolRepository;
 import com.jizza.engine.workflow.engine.NodeExecutor;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
+import com.jizza.engine.workflow.sandbox.Templates;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
@@ -169,11 +170,15 @@ public class ConnectorToolNodeExecutor implements NodeExecutor {
   }
 
   /**
-   * Argument values may be literals or {@code {"expr": "..."}} objects evaluated in the sandbox
-   * against earlier node outputs.
+   * Argument values may be literals, text with {@code {{ }}} placeholders (the run's input and
+   * earlier steps' results, as in every other built-in step), or {@code {"expr": "..."}} objects
+   * evaluated in the sandbox against earlier node outputs.
    */
   private JsonNode resolveArguments(JsonNode template, Execution execution) {
     if (template == null || template.isNull()) return Json.obj();
+    if (template.isTextual() && template.asText().contains("{{")) {
+      return Templates.renderValue(template.asText(), sandbox, execution.context().variables());
+    }
     if (template.isObject() && template.hasNonNull("expr")) {
       return sandbox.evaluate(template.path("expr").asText(), execution.context().variables());
     }
