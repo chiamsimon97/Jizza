@@ -27,6 +27,15 @@ public interface LlmUsageRepository extends JpaRepository<LlmUsageEntity, UUID> 
 
   List<LlmUsageEntity> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
+  @Query("""
+      select u from LlmUsageEntity u
+       where u.userId = :userId
+         and u.createdAt >= :from and u.createdAt < :to
+       order by u.createdAt desc
+      """)
+  List<LlmUsageEntity> findWindow(@Param("userId") UUID userId, @Param("from") Instant from,
+                                  @Param("to") Instant to, Pageable pageable);
+
   List<LlmUsageEntity> findByUserIdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
       UUID userId, Instant since);
 }

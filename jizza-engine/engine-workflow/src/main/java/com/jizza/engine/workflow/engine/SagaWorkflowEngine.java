@@ -24,6 +24,7 @@ import com.jizza.engine.api.workflow.graph.WorkflowNode;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
 import com.jizza.engine.persistence.entity.WorkflowRunEntity;
 import com.jizza.engine.persistence.entity.WorkflowRunStepEntity;
+import com.jizza.engine.workflow.sandbox.JexlSandbox;
 import com.jizza.engine.persistence.repository.WorkflowRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunStepRepository;
@@ -98,6 +99,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   private final AuditLog audit;
   private final ObjectProvider<NotificationBus> notifications;
   private final Clock clock;
+  private final StepInputs stepInputs;
   private final Map<NodeType, NodeExecutor> executors = new EnumMap<>(NodeType.class);
 
   @Autowired
@@ -105,16 +107,16 @@ public class SagaWorkflowEngine implements WorkflowEngine {
                             WorkflowRunRepository runs, WorkflowRunStepRepository steps,
                             WorkflowValidator validator, KillSwitch killSwitch, AuditLog audit,
                             ObjectProvider<NotificationBus> notifications,
-                            List<NodeExecutor> nodeExecutors) {
+                            List<NodeExecutor> nodeExecutors, JexlSandbox sandbox) {
     this(workflows, versions, runs, steps, validator, killSwitch, audit, notifications,
-        nodeExecutors, Clock.systemUTC());
+        nodeExecutors, Clock.systemUTC(), sandbox);
   }
 
   public SagaWorkflowEngine(WorkflowRepository workflows, WorkflowVersionRepository versions,
                             WorkflowRunRepository runs, WorkflowRunStepRepository steps,
                             WorkflowValidator validator, KillSwitch killSwitch, AuditLog audit,
                             ObjectProvider<NotificationBus> notifications,
-                            List<NodeExecutor> nodeExecutors, Clock clock) {
+                            List<NodeExecutor> nodeExecutors, Clock clock, JexlSandbox sandbox) {
     this.workflows = workflows;
     this.versions = versions;
     this.runs = runs;
@@ -124,6 +126,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     this.audit = audit;
     this.notifications = notifications;
     this.clock = clock;
+    this.stepInputs = new StepInputs(sandbox);
     nodeExecutors.forEach(executor -> executors.put(executor.type(), executor));
   }
 
@@ -448,6 +451,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       }
 
       int attempt = checkpoint.map(WorkflowRunStepEntity::getAttempts).orElse(0) + 1;
+      Instant stepStarted = Instant.now();
+      JsonNode stepInput = stepInputs.snapshot(node, context);
       NodeExecutor.Outcome outcome;
       try {
         outcome = executor.execute(new NodeExecutor.Execution(runId, run.getUserId(),
@@ -466,7 +471,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         case COMPLETED -> {
           context.recordOutput(nodeId, outcome.output());
           if (outcome.branch() != null) context.recordBranch(nodeId, outcome.branch());
-          checkpoint(runId, nodeId, RunStepStatus.DONE, outcome.output(), attempt, null);
+          checkpoint(runId, nodeId, RunStepStatus.DONE, stepInput, outcome.output(), attempt,
+              null, stepStarted);
           finishNode(current, graph, node, context);
         }
         case AWAIT_INSTRUCTION -> parkForPerson(current, context, nodeId, PAUSED_FOR_INSTRUCTION,
@@ -482,12 +488,14 @@ public class SagaWorkflowEngine implements WorkflowEngine {
           save(current, context);
         }
         case PERMANENT_FAILURE -> {
-          checkpoint(runId, nodeId, RunStepStatus.FAILED, null, attempt, outcome.message());
+          checkpoint(runId, nodeId, RunStepStatus.FAILED, stepInput, null, attempt,
+              outcome.message(), stepStarted);
           if (handleExhausted(current, node, context, outcome.message())) return toDto(current);
         }
         case RETRYABLE -> {
           int maxAttempts = node.retryOrDefault().maxAttempts();
-          checkpoint(runId, nodeId, RunStepStatus.FAILED, null, attempt, outcome.message());
+          checkpoint(runId, nodeId, RunStepStatus.FAILED, stepInput, null, attempt,
+              outcome.message(), stepStarted);
           if (attempt >= maxAttempts) {
             if (handleExhausted(current, node, context,
                 outcome.message() + " (after " + attempt + " attempts)")) {
@@ -560,7 +568,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       context.enqueue(to);
       return;
     }
-    checkpoint(run.getId(), to, RunStepStatus.SKIPPED, null, 0, null);
+    checkpoint(run.getId(), to, RunStepStatus.SKIPPED, null, null, 0, null, Instant.now());
     for (WorkflowEdge edge : graph.outgoing(to)) reach(run, graph, context, edge.to(), to, false);
   }
 
@@ -758,17 +766,19 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   }
 
   /** Upserts the per-node checkpoint. The unique (run_id, node_id) index keeps it to one row. */
-  private void checkpoint(UUID runId, String nodeId, RunStepStatus status, JsonNode output,
-                          int attempts, String error) {
+  private void checkpoint(UUID runId, String nodeId, RunStepStatus status, JsonNode input,
+                          JsonNode output, int attempts, String error, Instant startedAt) {
     WorkflowRunStepEntity step = steps.findByRunIdAndNodeId(runId, nodeId)
         .orElseGet(() -> {
           WorkflowRunStepEntity fresh = new WorkflowRunStepEntity();
           fresh.setRunId(runId);
           fresh.setNodeId(nodeId);
-          fresh.setStartedAt(Instant.now());
+          // The first attempt's start, so a retried step's time covers every attempt.
+          fresh.setStartedAt(startedAt);
           return fresh;
         });
     step.setStatus(status);
+    step.setInput(input);
     step.setOutput(output);
     step.setAttempts(attempts);
     step.setError(error);

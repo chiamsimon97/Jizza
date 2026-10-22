@@ -73,6 +73,15 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
     parkWorkLeftDueByOtherTests();
   }
 
+  private ApiClient signedInAsSomeoneElse() {
+    ApiClient other = new ApiClient(port);
+    other.prime();
+    String email = "other-" + UUID.randomUUID() + "@jizza.local";
+    other.post("/api/auth/register", Map.of("email", email, "password", PASSWORD));
+    other.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+    return other;
+  }
+
   /**
    * A dispatch pass polls every user's tasks, so anything another test left due would run inside
    * this one and show up in its assertions. Park it a year out; each test asserts only about the
@@ -267,6 +276,62 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
     UUID runId = UUID.fromString(run.json().path("id").asText());
     assertThat(steps.findByRunIdAndNodeId(runId, "double").orElseThrow().getOutput().asInt())
         .isEqualTo(42);
+  }
+
+  @Test
+  void theRunHistoryListsEveryRunAndTracesEachStepWithWhatItTookAndGave() {
+    model.scriptFor("Cato", LlmResponse.text("The total is 42."));
+    UUID workflowId = approvedWorkflow("History", threeSteps());
+    var run = api.post("/api/workflows/" + workflowId + "/run",
+        Map.of("version", 1, "input", Json.obj().put("amount", 21)));
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+
+    var page = api.get("/api/runs?workflowId=" + workflowId + "&status=DONE&trigger=manual"
+        + "&from=" + Instant.now().minusSeconds(3600) + "&tz=Asia/Singapore");
+    assertThat(page.ok()).as(page.body()).isTrue();
+    assertThat(page.json().path("total").asInt()).isEqualTo(1);
+    var item = page.json().path("items").get(0);
+    assertThat(item.path("id").asText()).isEqualTo(runId.toString());
+    assertThat(item.path("workflowName").asText()).isEqualTo("History");
+    assertThat(item.path("triggerKind").asText()).isEqualTo("manual");
+    assertThat(item.path("stepCount").asInt()).isEqualTo(4);
+    assertThat(page.json().path("stats").path("successRate").asDouble()).isEqualTo(1.0);
+    assertThat(page.json().path("buckets").size()).isPositive();
+
+    var trace = api.get("/api/runs/" + runId + "/trace");
+    assertThat(trace.ok()).as(trace.body()).isTrue();
+    assertThat(trace.json().path("nodes").findValuesAsText("id"))
+        .containsExactly("start", "double", "summarise", "finish");
+    JsonNode doubled = null;
+    for (JsonNode step : trace.json().path("steps")) {
+      if (step.path("nodeId").asText().equals("double")) doubled = step;
+    }
+    assertThat(doubled).isNotNull();
+    assertThat(doubled.path("type").asText()).isEqualTo("TRANSFORM");
+    assertThat(doubled.path("output").asInt()).isEqualTo(42);
+    assertThat(doubled.path("input").path("settings").path("expression").asText())
+        .isEqualTo("input.amount * 2");
+    assertThat(doubled.path("input").path("received").has("start")).isTrue();
+    assertThat(trace.json().path("input").path("amount").asInt()).isEqualTo(21);
+
+    // Someone else's run is not there to read.
+    var other = signedInAsSomeoneElse();
+    assertThat(other.get("/api/runs/" + runId + "/trace").status()).isEqualTo(404);
+    assertThat(other.get("/api/runs").json().path("total").asInt()).isZero();
+
+    // The same run shows up in the activity view, filed under workflows.
+    var activity = api.get("/api/activity/explore?category=workflows&group=workflows/runs"
+        + "&from=" + Instant.now().minusSeconds(3600));
+    assertThat(activity.ok()).as(activity.body()).isTrue();
+    assertThat(activity.json().path("items").findValuesAsText("action")).contains("run.completed");
+    assertThat(activity.json().path("categories").findValuesAsText("key"))
+        .contains("security", "workflows", "other");
+    assertThat(api.get("/api/activity/catalog").json().path("categories").size()).isGreaterThan(5);
+
+    var usage = api.get("/api/usage/explore?groupBy=MODEL&thenBy=AREA&from="
+        + Instant.now().minusSeconds(3600));
+    assertThat(usage.ok()).as(usage.body()).isTrue();
+    assertThat(usage.json().path("totals").path("calls").asLong()).isPositive();
   }
 
   @Test
