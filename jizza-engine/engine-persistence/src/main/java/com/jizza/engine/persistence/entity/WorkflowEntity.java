@@ -66,6 +66,11 @@ public class WorkflowEntity {
   @Column(columnDefinition = "text")
   private String graphFingerprint;
 
+  /** What the workflow library keeps for reusing it; null when it is not in the library. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  private JsonNode reuse;
+
   private Instant createdAt;
 
   @Version
@@ -115,6 +120,9 @@ public class WorkflowEntity {
 
   public String getGraphFingerprint() { return graphFingerprint; }
   public void setGraphFingerprint(String graphFingerprint) { this.graphFingerprint = graphFingerprint; }
+
+  public JsonNode getReuse() { return reuse; }
+  public void setReuse(JsonNode reuse) { this.reuse = reuse; }
 
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

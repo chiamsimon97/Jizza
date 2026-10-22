@@ -283,6 +283,7 @@ function uiActionLabel(type: string, payload: any): string {
     case 'set_theme': return `Switched to the ${payload?.theme} theme`
     case 'ask_user': return `Asked you: ${payload?.question ?? ''}`
     case 'propose_workflow': return `Proposed the workflow "${payload?.name ?? ''}"`
+    case 'reused_workflow': return `Ran your saved workflow "${payload?.name ?? ''}"`
     default: return type
   }
 }

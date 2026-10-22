@@ -1,5 +1,6 @@
 package com.jizza.engine.scheduler.run;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.agent.AgentResult;
@@ -10,18 +11,26 @@ import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.enums.ScheduleType;
 import com.jizza.engine.api.enums.TaskStatus;
+import com.jizza.engine.api.dto.RunDto;
+import com.jizza.engine.api.enums.NotificationKind;
 import com.jizza.engine.api.error.AutonomyDeniedException;
+import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.notification.NotificationBus;
+import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowEngine;
+import com.jizza.engine.api.workflow.library.WorkflowLibrary;
 import com.jizza.engine.persistence.entity.ScheduledTaskEntity;
 import com.jizza.engine.persistence.repository.ScheduledTaskRepository;
 import com.jizza.engine.scheduler.config.SchedulerProperties;
 import com.jizza.engine.scheduler.recurrence.RecurrenceCalculator;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -49,6 +58,8 @@ public class TaskRunner {
   private final SchedulerProperties props;
   private final ObjectProvider<com.jizza.engine.api.procedure.BindingEnforcer> bindingEnforcer;
   private final ApplicationEventPublisher events;
+  private ObjectProvider<WorkflowLibrary> library;
+  private ObjectProvider<NotificationBus> notifications;
 
   public TaskRunner(ScheduledTaskRepository tasks, Agent baseAgent,
                     ObjectProvider<WorkflowEngine> workflowEngine, RecurrenceCalculator recurrence,
@@ -66,6 +77,14 @@ public class TaskRunner {
     this.props = props;
     this.bindingEnforcer = bindingEnforcer;
     this.events = events;
+  }
+
+  /** Optional: without the library every unbound task goes to its agent. */
+  @Autowired(required = false)
+  public void setLibrary(ObjectProvider<WorkflowLibrary> library,
+                         ObjectProvider<NotificationBus> notifications) {
+    this.library = library;
+    this.notifications = notifications;
   }
 
   /**
@@ -103,12 +122,19 @@ public class TaskRunner {
         throw new AutonomyDeniedException("The agent that owns this task is disabled");
       }
 
-      String outcome = task.getBoundWorkflowId() != null ? runBoundProcedure(task) : runAgent(task);
+      String outcome = task.getBoundWorkflowId() != null ? runBoundProcedure(task) : null;
+      boolean reused = false;
+      if (outcome == null) {
+        outcome = runFromLibrary(task);
+        reused = outcome != null;
+      }
+      if (outcome == null) outcome = runAgent(task);
       finish(task, due, TaskStatus.DONE, outcome);
 
       // A repetitive job with nothing bound yet is the trigger for learning a procedure. The
       // scheduler only announces it; deciding what to do about it belongs to jizza-procedures.
-      if (task.isRepetitive() && task.getBoundWorkflowId() == null) {
+      // A job a saved workflow just did already has its procedure.
+      if (task.isRepetitive() && task.getBoundWorkflowId() == null && !reused) {
         events.publishEvent(new com.jizza.engine.api.event.RepetitiveTaskCompleted(task.getUserId(),
             task.getAgentId(), task.getId(), task.getTitle(), outcome));
       }
@@ -149,10 +175,67 @@ public class TaskRunner {
         + run.status() + ")";
   }
 
-  private String runAgent(ScheduledTaskEntity task) {
-    String instruction = task.getPayload() == null
+  /**
+   * Runs the user's saved workflow for this job, when one clearly does it and the user allowed it
+   * to run on a schedule, and tells them the first time it does. Null when there is none, or when
+   * its guardrails stop it today, so the job goes to the agent as it always has.
+   */
+  private String runFromLibrary(ScheduledTaskEntity task) {
+    WorkflowLibrary lib = library == null ? null : library.getIfAvailable();
+    if (lib == null) return null;
+    String instruction = instruction(task);
+    List<WorkflowLibrary.Match> found;
+    try {
+      found = lib.find(task.getUserId(), instruction, WorkflowLibrary.Use.SCHEDULE, 1);
+    } catch (RuntimeException e) {
+      log.info("Could not look up saved workflows for task {}: {}", task.getTitle(), e.getMessage());
+      return null;
+    }
+    if (found.isEmpty()) return null;
+    WorkflowLibrary.Match match = found.get(0);
+    JsonNode input = task.getPayload() != null && task.getPayload().path("input").isObject()
+        ? task.getPayload().path("input") : Json.obj();
+    RunDto run;
+    try {
+      run = lib.reuse(task.getUserId(), match.workflowId(), input, WorkflowLibrary.Use.SCHEDULE,
+          "scheduled_task:" + task.getId(), false);
+    } catch (ValidationException e) {
+      log.info("Task {} did not reuse '{}': {}", task.getTitle(), match.name(), e.getMessage());
+      return null;
+    }
+    tell(task, match, run);
+    return "Ran your saved workflow '" + match.name() + "' (run " + run.id() + ", "
+        + run.status() + ")";
+  }
+
+  /** Once a week at most per task and workflow, so a daily job does not fill the inbox. */
+  private void tell(ScheduledTaskEntity task, WorkflowLibrary.Match match, RunDto run) {
+    NotificationBus bus = notifications == null ? null : notifications.getIfAvailable();
+    if (bus == null) return;
+    String body = "'" + task.getTitle() + "' ran your saved workflow '" + match.name()
+        + "' instead of working the job out again.";
+    try {
+      if (bus.raisedSince(task.getUserId(), task.getAgentId(), NotificationKind.INFO, body,
+          Instant.now().minus(java.time.Duration.ofDays(7)))) {
+        return;
+      }
+      bus.raise(NotificationKind.INFO, task.getAgentId(), NotificationContext.forRun(task.getUserId(),
+          body, Json.obj().put("workflowId", match.workflowId().toString())
+              .put("taskId", task.getId().toString()), run.id()));
+    } catch (RuntimeException e) {
+      log.info("Could not tell the user task {} reused '{}': {}", task.getTitle(), match.name(),
+          e.getMessage());
+    }
+  }
+
+  private static String instruction(ScheduledTaskEntity task) {
+    return task.getPayload() == null
         ? task.getTitle()
         : task.getPayload().path("instruction").asText(task.getTitle());
+  }
+
+  private String runAgent(ScheduledTaskEntity task) {
+    String instruction = instruction(task);
 
     AgentResult result = baseAgent.run(new AgentRequest(task.getUserId(), task.getAgentId(),
         instruction, task.getPayload(), java.util.List.of(), ModelTier.STANDARD, true,

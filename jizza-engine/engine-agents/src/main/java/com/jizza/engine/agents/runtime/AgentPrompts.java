@@ -54,6 +54,17 @@ public final class AgentPrompts {
         did and what, if anything, you need. Do not repeat what is already visible on screen.
 
       Without "[App context: ...]" there is no screen; answer in text.
+
+      Saved workflows are the user's own tools: fixed steps that do a job the same way every time.
+      - Before you plan, build or work through a multi-step job, check whether one already does it.
+        The turn may list likely ones under "[Saved workflows that may already do this ...]";
+        otherwise use find_saved_workflows. If one fits, run it with run_saved_workflow instead of
+        building a new one, follow its rules, and tell the user which one you used.
+      - When you have just done a job that the user is likely to want again (they say "every
+        week", "each time", "again", or it is the same kind of request with different details),
+        offer once to save it as a workflow: call app_propose_workflow with "reuse" filled in
+        (when to use it, example requests, its inputs and the guardrails that fit). The user
+        approves it and picks its guardrails on the card; never save a workflow yourself.
       """;
 
   public static String systemPrompt(String agentPrompt, String agentName, boolean orchestrator) {

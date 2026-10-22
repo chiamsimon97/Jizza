@@ -230,4 +230,62 @@ class TaskRunnerTest {
     return new RunDto(UUID.randomUUID(), userId, workflowId, version, "scheduled_task",
         RunStatus.DONE, null, null, Instant.now(), Instant.now(), List.of());
   }
+
+  // ── reusing a saved workflow ──────────────────────────────────────────────
+
+  @SuppressWarnings("unchecked")
+  private com.jizza.engine.api.notification.NotificationBus withLibrary(
+      com.jizza.engine.api.workflow.library.WorkflowLibrary library) {
+    ObjectProvider<com.jizza.engine.api.workflow.library.WorkflowLibrary> libraries =
+        mock(ObjectProvider.class);
+    when(libraries.getIfAvailable()).thenReturn(library);
+    var bus = mock(com.jizza.engine.api.notification.NotificationBus.class);
+    ObjectProvider<com.jizza.engine.api.notification.NotificationBus> buses = mock(ObjectProvider.class);
+    when(buses.getIfAvailable()).thenReturn(bus);
+    runner.setLibrary(libraries, buses);
+    return bus;
+  }
+
+  @Test
+  void aTaskASavedWorkflowDoesRunsThatWorkflowAndTellsTheUser() {
+    var library = mock(com.jizza.engine.api.workflow.library.WorkflowLibrary.class);
+    UUID workflowId = UUID.randomUUID();
+    when(library.find(eq(userId), eq("Summarise last week's spending"),
+        eq(com.jizza.engine.api.workflow.library.WorkflowLibrary.Use.SCHEDULE), eq(1)))
+        .thenReturn(List.of(new com.jizza.engine.api.workflow.library.WorkflowLibrary.Match(
+            workflowId, "Weekly spending summary", null,
+            com.jizza.engine.api.enums.WorkflowStatus.APPROVED, 1, null, 0.8, List.of())));
+    UUID runId = UUID.randomUUID();
+    when(library.reuse(eq(userId), eq(workflowId), any(),
+        eq(com.jizza.engine.api.workflow.library.WorkflowLibrary.Use.SCHEDULE),
+        eq("scheduled_task:" + task.getId()), eq(false)))
+        .thenReturn(new RunDto(runId, userId, workflowId, 1, "library:scheduled_task", RunStatus.DONE,
+            null, Json.obj(), Instant.now(), Instant.now(), List.of()));
+    task.setRepetitive(true);
+    var bus = withLibrary(library);
+
+    runner.run(task.getId());
+
+    verify(baseAgent, never()).run(any());
+    assertThat(task.getLastResult()).contains("Weekly spending summary");
+    verify(bus).raise(eq(com.jizza.engine.api.enums.NotificationKind.INFO), eq(agentId), any());
+    verify(events, never()).publishEvent(any(Object.class));
+  }
+
+  @Test
+  void whenItsGuardrailsSayNoTheAgentDoesTheJobAsBefore() {
+    var library = mock(com.jizza.engine.api.workflow.library.WorkflowLibrary.class);
+    when(library.find(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        .thenReturn(List.of(new com.jizza.engine.api.workflow.library.WorkflowLibrary.Match(
+            UUID.randomUUID(), "Weekly spending summary", null,
+            com.jizza.engine.api.enums.WorkflowStatus.APPROVED, 1, null, 0.8, List.of())));
+    when(library.reuse(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+        .thenThrow(new com.jizza.engine.api.error.ValidationException("its limit"));
+    withLibrary(library);
+
+    runner.run(task.getId());
+
+    verify(baseAgent).run(any());
+    assertThat(task.getLastResult()).isEqualTo("Spending was steady.");
+  }
 }
