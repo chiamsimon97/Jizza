@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
   addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
-  toDuration, toGraph, unreachable, updateNode,
+  toDuration, toGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS,
 } from './canvasModel'
 
 describe('canvasModel', () => {
@@ -212,5 +212,14 @@ describe('canvasModel', () => {
     expect(after.label).toBe('Ping')
     expect(after.x).toBe(777)
     expect(saved.edges).toEqual(moved.edges)
+  })
+})
+
+describe('palette groups', () => {
+  it('lists every step type once, under a title', () => {
+    expect(new Set(PALETTE).size).toBe(PALETTE.length)
+    expect(PALETTE).toHaveLength(Object.keys(NODE_META).length - 1)
+    expect(PALETTE).not.toContain('TRIGGER')
+    expect(PALETTE_GROUPS.every(g => g.title && g.types.length)).toBe(true)
   })
 })
