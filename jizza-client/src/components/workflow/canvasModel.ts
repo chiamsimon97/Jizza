@@ -76,11 +76,20 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
 }
 
-/** What can be dragged from the palette. Start is added once, automatically. */
-export const PALETTE: NodeType[] = [
-  'AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY', 'CONNECTOR_TOOL', 'HTTP_REQUEST', 'TRANSFORM', 'SET_VARIABLE', 'STORAGE',
-  'BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN', 'WAIT', 'SUB_WORKFLOW', 'FOR_EACH', 'END',
+/** The palette's steps, grouped by what they do. Start is added once, automatically. */
+export const PALETTE_GROUPS: Array<{ title: string; types: NodeType[] }> = [
+  { title: 'Agents and people', types: ['AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY'] },
+  { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'HTTP_REQUEST'] },
+  { title: 'Data', types: ['TRANSFORM', 'SET_VARIABLE', 'STORAGE'] },
+  { title: 'Conditions and paths', types: ['BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN'] },
+  { title: 'Flow control', types: ['WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END'] },
 ]
+
+/** What can be dragged from the palette, in group order. */
+export const PALETTE: NodeType[] = PALETTE_GROUPS.flatMap(g => g.types)
+
+/** The title of the group a step type is listed under. */
+export const groupOf = (type: NodeType): string => PALETTE_GROUPS.find(g => g.types.includes(type))?.title ?? ''
 
 const toExit = (v: unknown): ExitKey => (v === true ? 'true' : v === false ? 'false' : typeof v === 'string' && v ? v : null)
 
