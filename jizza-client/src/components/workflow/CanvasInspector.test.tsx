@@ -4,6 +4,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { CanvasInspector } from './CanvasInspector'
 import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
 
+/** Types into a field where earlier steps' data shows as chips. */
+function type(box: HTMLElement, text: string) {
+  box.textContent = text
+  fireEvent.input(box)
+}
+
 function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn()) {
   render(
     <MemoryRouter>
@@ -23,7 +29,7 @@ describe('CanvasInspector', () => {
     const save = screen.getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), { target: { value: 'https://hooks.example.com' } })
+    type(screen.getByRole('textbox', { name: 'URL' }), 'https://hooks.example.com')
     expect(save).toBeEnabled()
 
     // Signing in with a bearer token makes the token mandatory too.
@@ -34,7 +40,7 @@ describe('CanvasInspector', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add a field' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'key 1' }), { target: { value: 'order.id' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Value 1' }), { target: { value: '{{ input.id }}' } })
+    type(screen.getByRole('textbox', { name: 'Value 1' }), '{{ input.id }}')
 
     fireEvent.click(save)
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
@@ -47,11 +53,33 @@ describe('CanvasInspector', () => {
     const { graph, id } = addAfter(emptyGraph(), 'start', null, 'NOTIFY')
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const { onSave, onClose } = open(graph, id)
-    fireEvent.change(screen.getByLabelText(/^Message/), { target: { value: 'Hello' } })
+    type(screen.getByRole('textbox', { name: 'Message' }), 'Hello')
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(confirm).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()
     expect(onSave).not.toHaveBeenCalled()
     confirm.mockRestore()
+  })
+
+  it('has no "go to" pickers: connections are made on the canvas', () => {
+    const { graph, id } = addAfter(emptyGraph(), 'start', null, 'NOTIFY')
+    open(graph, id)
+    expect(screen.queryByText(/go to/i)).not.toBeInTheDocument()
+  })
+
+  it('shows mapped values as chips and inserts one from the picker', () => {
+    const first = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
+    const { graph, id } = addAfter(first.graph, first.id, null, 'NOTIFY')
+    const withMessage = { ...graph, nodes: graph.nodes.map(n => (n.id === id ? { ...n, config: { message: `Status {{ nodes.${first.id}.status }}` } } : n)) }
+    const { onSave } = open(withMessage, id)
+    const box = screen.getByRole('textbox', { name: 'Message' })
+    expect(box.querySelector('[data-expr]')).toHaveTextContent('Send webhook›status')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Insert data from earlier steps' })[1])
+    fireEvent.click(screen.getByRole('button', { name: 'Send webhook' }))
+    fireEvent.click(screen.getByRole('button', { name: /^body/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config.message).toBe(`Status {{ nodes.${first.id}.status }}{{ nodes.${first.id}.body }}`)
   })
 })

@@ -97,6 +97,14 @@ public class HashChainAuditLog implements AuditLog {
 
   @Override
   @Transactional(readOnly = true)
+  public List<AuditEntryDto> between(UUID userId, Instant from, Instant to, int limit) {
+    return repository.findWindow(userId, from == null ? Instant.EPOCH : from,
+        to == null ? Instant.now().plusSeconds(60) : to, PageRequest.of(0, Math.max(1, limit)))
+        .stream().map(this::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public long countForUser(UUID userId) {
     return repository.countByUserId(userId);
   }

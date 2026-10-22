@@ -21,6 +21,7 @@ import { GuardrailsPage } from '@/pages/GuardrailsPage'
 import { OrganizationGuardrailsPage } from '@/pages/OrganizationGuardrailsPage'
 import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
+import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 import { MembersPage } from '@/pages/MembersPage'
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/autonomy" element={<Navigate to="/guardrails" replace />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/usage" element={<UsagePage />} />
+            <Route path="/runs" element={<RunHistoryPage />} />
           </Route>
 
           <Route path="/notifications" element={<NotificationsPage />} />

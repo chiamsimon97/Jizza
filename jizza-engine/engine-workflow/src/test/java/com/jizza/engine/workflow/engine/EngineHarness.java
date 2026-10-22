@@ -260,7 +260,8 @@ public final class EngineHarness {
         new CountingAgentStep());
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
-        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock);
+        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock,
+        sandbox);
     self[0] = engine;
   }
 

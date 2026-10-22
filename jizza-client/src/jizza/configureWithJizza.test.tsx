@@ -48,7 +48,7 @@ describe('Configure using Jizza', () => {
       }, 'Get gold rate')).toBe(true)
     })
 
-    expect(screen.getByRole('textbox', { name: 'URL' })).toHaveValue('https://api.example.com/rates')
+    expect(screen.getByRole('textbox', { name: 'URL' })).toHaveTextContent('https://api.example.com/rates')
     expect(screen.getByRole('textbox', { name: 'name 1' })).toHaveValue('currency')
     expect(screen.getByText(/Jizza filled in these settings/)).toBeInTheDocument()
 

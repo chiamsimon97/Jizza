@@ -13,6 +13,7 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   procedures:    { path: '/procedures',    label: 'Procedures',    aliases: ['procedures', 'reviews', 'proposals'] },
   guardrails:    { path: '/guardrails',    label: 'Guardrails',    aliases: ['guardrails', 'autonomy', 'kill switch', 'rules', 'permissions', 'approvals'] },
   activity:      { path: '/activity',      label: 'Activity',      aliases: ['activity', 'activity log', 'logs', 'audit'] },
+  runs:          { path: '/runs',          label: 'Run history',   aliases: ['run history', 'runs', 'workflow runs', 'executions', 'task history', 'run log'] },
   usage:         { path: '/usage',         label: 'Usage',         aliases: ['usage', 'cost', 'costs', 'spend', 'billing', 'tokens'] },
   members:       { path: '/members',       label: 'Members',       aliases: ['members', 'member', 'people', 'organization members', 'membership requests'] },
 }

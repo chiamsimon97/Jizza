@@ -31,6 +31,11 @@ public class WorkflowRunStepEntity {
   @Column(nullable = false)
   private RunStepStatus status;
 
+  /** What the step was handed: its rendered settings and the data that reached it. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  private JsonNode input;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb")
   private JsonNode output;
@@ -55,6 +60,9 @@ public class WorkflowRunStepEntity {
 
   public RunStepStatus getStatus() { return status; }
   public void setStatus(RunStepStatus status) { this.status = status; }
+
+  public JsonNode getInput() { return input; }
+  public void setInput(JsonNode input) { this.input = input; }
 
   public JsonNode getOutput() { return output; }
   public void setOutput(JsonNode output) { this.output = output; }
