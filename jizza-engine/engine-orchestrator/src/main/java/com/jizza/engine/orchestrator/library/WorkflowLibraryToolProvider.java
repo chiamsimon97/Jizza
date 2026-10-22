@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -61,6 +62,7 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
 
   record Offer(UUID userId, UUID workflowId, UUID conversationId, int askedIn, Instant expires) {}
 
+  @Autowired
   public WorkflowLibraryToolProvider(AgentRepository agents, ObjectProvider<WorkflowLibrary> library,
                                      UiActionRecorder recorder) {
     this(agents, library, recorder, Clock.systemUTC());
