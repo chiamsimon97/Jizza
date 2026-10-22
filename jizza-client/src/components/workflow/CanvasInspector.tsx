@@ -1,15 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Check, Copy, Plus, Trash2, X } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import type { AgentDto, RunStepDto, TeamStep } from '@/types'
 import {
-  MAX_CASES, NODE_META, casesOf, exitsOf, fieldIssues, fromDuration, issues as findIssues, nextCaseId, setNext, targetsFor, toDuration, updateNode, upstreamOf,
-  type CanvasGraph, type CanvasNode, type ExitKey, type SwitchCase,
+  MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, issues as findIssues, nextCaseId, toDuration, updateNode,
+  type CanvasGraph, type CanvasNode, type SwitchCase,
 } from './canvasModel'
-import { NODE_ICON, exitLabel } from './canvasParts'
+import { NODE_ICON } from './canvasParts'
+import { dataSourcesFor } from './dataMapping'
+import { MappedField, type MappingContext } from './MappedField'
 
 /** A service action the user can pick, with the service it belongs to. */
 export interface ToolOption { id: string; label: string }
@@ -17,27 +19,11 @@ export interface ToolOption { id: string; label: string }
 /** Another workflow a step can run. */
 export interface WorkflowOption { id: string; name: string; status: string }
 
+/** A field with a set width: fieldClass is full width, which would win over a w-* next to it. */
+const NARROW_FIELD = fieldClass.replace('w-full', '')
+
 /** Said under every field that takes {{ placeholders }}. */
-const TEMPLATE_HINT = 'Use {{ expression }} to put in values from input, nodes, vars or instructions.'
-
-/** What the "go to" picker for an exit is called. */
-function exitPrompt(b: ExitKey, node: CanvasNode): string {
-  if (b === null) return 'Then go to'
-  if (b === 'true') return 'If yes, go to'
-  if (b === 'false') return 'If no, go to'
-  if (b === 'approved') return 'If approved, go to'
-  if (b === 'rejected') return 'If rejected, go to'
-  if (b === 'else') return 'Otherwise, go to'
-  if (node.type === 'SWITCH') return `If "${exitLabel(b, node)}", go to`
-  return `Path ${exitLabel(b, node).slice(5)} goes to`
-}
-
-/** The variables earlier set-variable steps keep, which a step can read as vars.<name>. */
-function varsOf(nodes: CanvasNode[]): string[] {
-  const names = nodes.filter(n => n.type === 'SET_VARIABLE')
-    .flatMap(n => (Array.isArray(n.config.variables) ? n.config.variables as Array<{ name?: unknown }> : []).map(v => String(v?.name ?? '').trim()))
-  return [...new Set(names.filter(Boolean))]
-}
+const TEMPLATE_HINT = 'Type {{ or press {} to put in data from earlier steps.'
 
 /** The hand-offs an agent step recorded in its output, when it asked its team for help. */
 function teamOf(output: unknown): TeamStep[] {
@@ -51,8 +37,10 @@ function teamOf(output: unknown): TeamStep[] {
  * Changes are kept here until Save, which hands back the edited graph; Close drops them. Save stays
  * off until every mandatory field (see {@link fieldIssues}) has a value.
  */
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, workflows, issues: extraIssues, step, readOnly, focusNote, onDirty, onSave, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, onDirty, onSave, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
+  /** Every step of the last run, so earlier steps' real output fields can be mapped in. */
+  runSteps?: ReadonlyMap<string, RunStepDto>
   /** Problems the step has beyond its settings, such as an agent that is paused. */
   issues: string[]
   step?: RunStepDto; readOnly: boolean
@@ -78,21 +66,20 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
   const setConfig = (patch: Record<string, unknown>, _key?: string) =>
     onChange(updateNode(graph, node.id, { config: { ...node.config, ...patch } }))
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
-  const targets = targetsFor(graph, node.id)
-  const nextOf = (b: ExitKey) => graph.edges.find(e => e.from === node.id && e.branch === b)?.to ?? ''
-  const upstream = upstreamOf(graph, node.id).filter(n => n.type !== 'TRIGGER')
+  const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
+  // Connections can't change in here, so the earlier steps are those of the graph it opened with.
+  const mapping: MappingContext = useMemo(() => ({ graph: canvas, sources: dataSourcesFor(canvas, opened.id, outputs) }), [canvas, opened.id, outputs])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
-  const vars = varsOf(upstream)
   const close = () => {
     if (dirty && !window.confirm('Close without saving your changes to this step?')) return
     onClose()
   }
 
   return (
-    <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-80 flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+    <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-[26rem] max-w-full flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4">
       <div className="flex items-center gap-2">
         <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${NODE_META[node.type].tone}`}>
           <Icon className="h-3 w-3" />{NODE_META[node.type].label}
@@ -109,7 +96,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
         </ul>
       )}
 
-      <fieldset disabled={readOnly} className="flex flex-col gap-3">
+      <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-3">
         <Labelled label="Name">
           <input className={fieldClass} value={node.label} onChange={e => onChange(updateNode(graph, node.id, { label: e.target.value }), `${node.id}:label`)} />
         </Labelled>
@@ -160,14 +147,14 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
         </>}
 
         {node.type === 'TRANSFORM' && (
-          <Labelled label="Expression" required missing={isMissing('expression')} hint="JEXL over input, nodes, vars and instructions. fmt: helpers format values, e.g. fmt:upper(s) or fmt:round(n, 2).">
-            <textarea className={`${fieldClass} font-mono text-xs`} rows={4} value={str('expression')} onChange={e => setConfig({ expression: e.target.value })} />
+          <Labelled group label="Expression" required missing={isMissing('expression')} hint="JEXL over input, nodes, vars and instructions. Press {} to put in data; click it to format it with a function.">
+            <MappedField aria-label="Expression" mode="expression" context={mapping} multiline rows={4} mono invalid={isMissing('expression')} value={str('expression')} onChange={v => setConfig({ expression: v })} />
           </Labelled>
         )}
 
         {node.type === 'BRANCH' && (
-          <Labelled label="Condition" required missing={isMissing('condition')} hint="A JEXL test over input, nodes and vars, e.g. nodes.check.price < 2000">
-            <textarea className={`${fieldClass} font-mono text-xs`} rows={3} value={str('condition')} onChange={e => setConfig({ condition: e.target.value })} />
+          <Labelled group label="Condition" required missing={isMissing('condition')} hint="A JEXL test, e.g. a price chip followed by < 2000">
+            <MappedField aria-label="Condition" mode="expression" context={mapping} multiline mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
           </Labelled>
         )}
 
@@ -186,8 +173,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
             </select>
           </Labelled>
           {node.type === 'FOR_EACH' && <>
-            <Labelled label="List to go through" required missing={isMissing('items')} hint="A JEXL expression that gives a list, e.g. nodes.fetch.invoices">
-              <input className={`${fieldClass} font-mono text-xs`} value={str('items')} onChange={e => setConfig({ items: e.target.value })} />
+            <Labelled group label="List to go through" required missing={isMissing('items')} hint="Data that is a list, such as an earlier step's invoices.">
+              <MappedField aria-label="List to go through" mode="expression" context={mapping} mono invalid={isMissing('items')} value={str('items')} onChange={v => setConfig({ items: v })} />
             </Labelled>
             <Labelled label="Items at a time">
               <input type="number" min={1} max={10} className={fieldClass} value={typeof node.config.concurrency === 'number' ? node.config.concurrency : 1}
@@ -199,34 +186,34 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
             </label>
           </>}
           {node.type === 'SUB_WORKFLOW' && (
-            <Labelled label="Input (optional)" hint="A JEXL expression for the workflow's input, e.g. {'amount': nodes.check.total}">
-              <input className={`${fieldClass} font-mono text-xs`} value={str('inputExpr')} onChange={e => setConfig({ inputExpr: e.target.value || undefined })} />
+            <Labelled group label="Input (optional)" hint="A JEXL expression for the workflow's input, e.g. {'amount': followed by a total chip and }">
+              <MappedField aria-label="Input" mode="expression" context={mapping} mono value={str('inputExpr')} onChange={v => setConfig({ inputExpr: v || undefined })} />
             </Labelled>
           )}
         </>}
 
-        {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} />}
+        {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} mapping={mapping} />}
 
-        {node.type === 'HTTP_REQUEST' && <WebhookFields node={node} setConfig={setConfig} isMissing={isMissing} />}
+        {node.type === 'HTTP_REQUEST' && <WebhookFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'FILTER' && (
-          <Labelled label="Carry on only if" required missing={isMissing('condition')} hint="A JEXL test over input, nodes and vars. When it is false this path stops here.">
-            <textarea className={`${fieldClass} font-mono text-xs`} rows={3} value={str('condition')} onChange={e => setConfig({ condition: e.target.value })} />
+          <Labelled group label="Carry on only if" required missing={isMissing('condition')} hint="A JEXL test. When it is false this path stops here.">
+            <MappedField aria-label="Carry on only if" mode="expression" context={mapping} multiline mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
           </Labelled>
         )}
 
-        {node.type === 'SWITCH' && <SwitchFields node={node} graph={graph} onChange={onChange} />}
+        {node.type === 'SWITCH' && <SwitchFields node={node} graph={graph} onChange={onChange} mapping={mapping} />}
 
-        {node.type === 'SET_VARIABLE' && <VariableFields node={node} setConfig={setConfig} />}
+        {node.type === 'SET_VARIABLE' && <VariableFields node={node} setConfig={setConfig} mapping={mapping} />}
 
-        {node.type === 'STORAGE' && <StorageFields node={node} setConfig={setConfig} />}
+        {node.type === 'STORAGE' && <StorageFields node={node} setConfig={setConfig} mapping={mapping} />}
 
         {node.type === 'NOTIFY' && <>
-          <Labelled label="Title">
-            <input className={fieldClass} value={str('title')} onChange={e => setConfig({ title: e.target.value || undefined })} />
+          <Labelled group label="Title">
+            <MappedField aria-label="Title" mode="template" context={mapping} value={str('title')} onChange={v => setConfig({ title: v || undefined })} />
           </Labelled>
-          <Labelled label="Message" required missing={isMissing('message')} hint={TEMPLATE_HINT}>
-            <textarea className={fieldClass} rows={3} value={str('message')} onChange={e => setConfig({ message: e.target.value })} />
+          <Labelled group label="Message" required missing={isMissing('message')} hint={TEMPLATE_HINT}>
+            <MappedField aria-label="Message" mode="template" context={mapping} multiline invalid={isMissing('message')} value={str('message')} onChange={v => setConfig({ message: v })} />
           </Labelled>
           <Labelled label="Send to">
             <select className={fieldClass} value={str('channel') || 'app'} onChange={e => setConfig({ channel: e.target.value })}>
@@ -237,26 +224,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
           </Labelled>
         </>}
 
-        {exitsOf(node).map(b => (
-          <Labelled key={String(b)} label={exitPrompt(b, node)}>
-            <select className={fieldClass} value={nextOf(b)} onChange={e => onChange(setNext(graph, node.id, b, e.target.value || null))}>
-              <option value="">Nothing (the run ends here)</option>
-              {targets.map(t => <option key={t.id} value={t.id}>{t.label} · {NODE_META[t.type].label}</option>)}
-            </select>
-          </Labelled>
-        ))}
       </fieldset>
 
-      {upstream.length > 0 && node.type !== 'TRIGGER' && (
-        <div>
-          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data from earlier steps</p>
-          <p className="mb-1.5 text-[11px] text-gray-400">Click to copy a reference for an expression or argument.</p>
-          <div className="flex flex-wrap gap-1">
-            {upstream.map(n => <CopyChip key={n.id} text={`nodes.${n.id}`} label={n.label} />)}
-            {vars.map(v => <CopyChip key={`vars.${v}`} text={`vars.${v}`} label={`vars.${v}`} />)}
-          </div>
-        </div>
-      )}
 
       {step && (
         <div>
@@ -315,7 +284,7 @@ const BODY_TYPES = [
 const CONTENT_TYPES = ['application/json', 'application/xml', 'text/xml', 'text/plain', 'text/html', 'text/csv']
 
 /** A webhook step: request, query parameters, sign-in, headers, payload and how to read the answer. */
-function WebhookFields({ node, setConfig, isMissing }: { node: CanvasNode; setConfig: SetConfig; isMissing: (field: string) => boolean }) {
+function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNode; setConfig: SetConfig; isMissing: (field: string) => boolean; mapping: MappingContext }) {
   const c = node.config
   const s = (k: string) => (typeof c[k] === 'string' ? (c[k] as string) : '')
   const method = s('method') || 'POST'
@@ -328,17 +297,17 @@ function WebhookFields({ node, setConfig, isMissing }: { node: CanvasNode; setCo
   const customType = !!contentType && !CONTENT_TYPES.includes(contentType)
 
   return <>
-    <Labelled label="URL" required missing={isMissing('url')} hint={TEMPLATE_HINT}>
-      <div className="flex gap-2">
-        <select aria-label="Method" className={`${fieldClass} w-24 shrink-0`} value={method} onChange={e => setConfig({ method: e.target.value })}>
-          {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <input aria-label="URL" placeholder="https://…" className={`${fieldClass} font-mono text-xs`} value={s('url')} onChange={e => setConfig({ url: e.target.value })} />
-      </div>
+    <Labelled label="Method">
+      <select aria-label="Method" className={fieldClass} value={method} onChange={e => setConfig({ method: e.target.value })}>
+        {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
+    </Labelled>
+    <Labelled group label="URL" required missing={isMissing('url')} hint={TEMPLATE_HINT}>
+      <MappedField aria-label="URL" placeholder="https://…" mode="template" context={mapping} mono invalid={isMissing('url')} value={s('url')} onChange={v => setConfig({ url: v })} />
     </Labelled>
 
     <Section title="Query parameters">
-      <PairsField key={`${node.id}:query`} value={c.queryParams} onChange={v => setConfig({ queryParams: v })} namePlaceholder="name" valuePlaceholder="value or {{ … }}" addLabel="Add a parameter" />
+      <PairsField key={`${node.id}:query`} mapping={mapping} value={c.queryParams} onChange={v => setConfig({ queryParams: v })} namePlaceholder="name" valuePlaceholder="value" addLabel="Add a parameter" />
     </Section>
 
     <Section title="Authentication">
@@ -384,7 +353,7 @@ function WebhookFields({ node, setConfig, isMissing }: { node: CanvasNode; setCo
     </Section>
 
     <Section title="Headers">
-      <PairsField key={`${node.id}:headers`} value={c.headers} onChange={v => setConfig({ headers: v })} namePlaceholder="Header" valuePlaceholder="value or {{ … }}" addLabel="Add a header" />
+      <PairsField key={`${node.id}:headers`} mapping={mapping} value={c.headers} onChange={v => setConfig({ headers: v })} namePlaceholder="Header" valuePlaceholder="value" addLabel="Add a header" />
     </Section>
 
     {method !== 'GET' && method !== 'DELETE' && (
@@ -395,7 +364,7 @@ function WebhookFields({ node, setConfig, isMissing }: { node: CanvasNode; setCo
           </select>
         </Labelled>
         {(bodyType === 'json' || bodyType === 'form') && <>
-          <PairsField key={`${node.id}:fields`} value={c.fields} onChange={v => setConfig({ fields: v })} namePlaceholder="key" valuePlaceholder="value or {{ … }}" addLabel="Add a field" />
+          <PairsField key={`${node.id}:fields`} mapping={mapping} value={c.fields} onChange={v => setConfig({ fields: v })} namePlaceholder="key" valuePlaceholder="value" addLabel="Add a field" />
           {bodyType === 'json' && <>
             <p className="text-[11px] text-gray-400">A value that is just {'{{ … }}'} keeps its type: a number, a list or an object.</p>
             <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
@@ -420,13 +389,13 @@ function WebhookFields({ node, setConfig, isMissing }: { node: CanvasNode; setCo
           {customType && (
             <input aria-label="Custom content type" className={`${fieldClass} font-mono text-xs`} value={contentType} onChange={e => setConfig({ contentType: e.target.value })} />
           )}
-          <Labelled label="Body" required missing={isMissing('body')} hint={TEMPLATE_HINT}>
-            <textarea className={`${fieldClass} font-mono text-xs`} rows={5} value={s('body')} onChange={e => setConfig({ body: e.target.value || undefined })} />
+          <Labelled group label="Body" required missing={isMissing('body')} hint={TEMPLATE_HINT}>
+            <MappedField aria-label="Body" mode="template" context={mapping} multiline rows={5} mono invalid={isMissing('body')} value={s('body')} onChange={v => setConfig({ body: v || undefined })} />
           </Labelled>
         </>}
         {bodyType === 'expression' && (
-          <Labelled label="Body expression" required missing={isMissing('bodyExpr')} hint="JEXL that gives the body, sent as JSON, e.g. {'total': nodes.sum.value}.">
-            <textarea className={`${fieldClass} font-mono text-xs`} rows={3} value={s('bodyExpr')} onChange={e => setConfig({ bodyExpr: e.target.value || undefined })} />
+          <Labelled group label="Body expression" required missing={isMissing('bodyExpr')} hint="JEXL that gives the body, sent as JSON, e.g. {'total': followed by a chip and }.">
+            <MappedField aria-label="Body expression" mode="expression" context={mapping} multiline mono invalid={isMissing('bodyExpr')} value={s('bodyExpr')} onChange={v => setConfig({ bodyExpr: v || undefined })} />
           </Labelled>
         )}
       </Section>
@@ -461,8 +430,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  * Name and value rows, saved as an object. Rows without a name are kept on screen while being
  * typed, but not saved.
  */
-function PairsField({ value, onChange, namePlaceholder, valuePlaceholder, addLabel }: {
-  value: unknown; onChange: (v: Record<string, string> | undefined) => void
+function PairsField({ value, onChange, namePlaceholder, valuePlaceholder, addLabel, mapping }: {
+  value: unknown; onChange: (v: Record<string, string> | undefined) => void; mapping: MappingContext
   namePlaceholder: string; valuePlaceholder: string; addLabel: string
 }) {
   const [rows, setRows] = useState<Array<{ name: string; value: string }>>(() =>
@@ -477,10 +446,12 @@ function PairsField({ value, onChange, namePlaceholder, valuePlaceholder, addLab
   return <>
     {rows.map((r, i) => (
       <div key={i} className="flex items-start gap-1.5">
-        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${fieldClass} w-28 shrink-0 font-mono text-xs`} value={r.name}
+        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${NARROW_FIELD} w-28 shrink-0 font-mono text-xs`} value={r.name}
           onChange={e => save(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-        <input aria-label={`Value ${i + 1}`} placeholder={valuePlaceholder} className={`${fieldClass} font-mono text-xs`} value={r.value}
-          onChange={e => save(rows.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} />
+        <div className="min-w-0 flex-1">
+          <MappedField aria-label={`Value ${i + 1}`} placeholder={valuePlaceholder} mode="template" context={mapping} mono value={r.value}
+            onChange={v => save(rows.map((x, j) => (j === i ? { ...x, value: v } : x)))} />
+        </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i))} aria-label={`Remove row ${i + 1}`}
           className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
@@ -533,12 +504,12 @@ function DurationInput({ value, onChange }: { value: string; onChange: (iso: str
 type SetConfig = (patch: Record<string, unknown>, key?: string) => void
 
 /** What an approval asks, and what happens if nobody answers in time. */
-function ApprovalFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfig }) {
+function ApprovalFields({ node, setConfig, mapping }: { node: CanvasNode; setConfig: SetConfig; mapping: MappingContext }) {
   const timeout = typeof node.config.timeout === 'string' ? node.config.timeout : ''
   return <>
-    <Labelled label="What should it ask you to approve?" hint={TEMPLATE_HINT}>
-      <textarea className={fieldClass} rows={3} value={typeof node.config.prompt === 'string' ? node.config.prompt : ''}
-        onChange={e => setConfig({ prompt: e.target.value })} />
+    <Labelled group label="What should it ask you to approve?" hint={TEMPLATE_HINT}>
+      <MappedField aria-label="What should it ask you to approve?" mode="template" context={mapping} multiline value={typeof node.config.prompt === 'string' ? node.config.prompt : ''}
+        onChange={v => setConfig({ prompt: v })} />
     </Labelled>
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={!!timeout} onChange={e => setConfig({ timeout: e.target.checked ? 'P1D' : undefined, onTimeout: undefined })} />
@@ -558,7 +529,7 @@ function ApprovalFields({ node, setConfig }: { node: CanvasNode; setConfig: SetC
 }
 
 /** A paths step's cases: checked in order, the first that is true is the path taken. */
-function SwitchFields({ node, graph, onChange }: { node: CanvasNode; graph: CanvasGraph; onChange: (g: CanvasGraph, key?: string) => void }) {
+function SwitchFields({ node, graph, onChange, mapping }: { node: CanvasNode; graph: CanvasGraph; onChange: (g: CanvasGraph, key?: string) => void; mapping: MappingContext }) {
   const cases = casesOf(node.config)
   const save = (next: SwitchCase[], key: string, g: CanvasGraph = graph) =>
     onChange(updateNode(g, node.id, { config: { ...node.config, cases: next } }), `${node.id}:${key}`)
@@ -574,20 +545,20 @@ function SwitchFields({ node, graph, onChange }: { node: CanvasNode; graph: Canv
           <button type="button" onClick={() => remove(c.id)} aria-label={`Remove path ${i + 1}`} disabled={cases.length <= 1}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
-        <input aria-label={`Condition for path ${i + 1}`} placeholder="e.g. nodes.check.total > 1000" className={`${fieldClass} font-mono text-xs`} value={c.condition}
-          onChange={e => edit(i, { condition: e.target.value }, 'caseCondition')} />
+        <MappedField aria-label={`Condition for path ${i + 1}`} placeholder="e.g. a total chip followed by > 1000" mode="expression" context={mapping} mono value={c.condition}
+          onChange={v => edit(i, { condition: v }, 'caseCondition')} />
       </div>
     ))}
     {cases.length < MAX_CASES && (
       <button type="button" onClick={() => save([...cases, { id: nextCaseId(cases), label: `Path ${cases.length + 1}`, condition: '' }], 'addCase')}
         className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3.5 w-3.5" /> Add a path</button>
     )}
-    <p className="-mt-1 text-[11px] text-gray-400">Conditions are JEXL tests over input, nodes and vars.</p>
+    <p className="-mt-1 text-[11px] text-gray-400">Conditions are JEXL tests. Press {'{}'} to put in data from earlier steps.</p>
   </>
 }
 
 /** The variables a set-variable step keeps: a name and a JEXL expression each. */
-function VariableFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfig }) {
+function VariableFields({ node, setConfig, mapping }: { node: CanvasNode; setConfig: SetConfig; mapping: MappingContext }) {
   const rows = (Array.isArray(node.config.variables) ? node.config.variables as Array<Record<string, unknown>> : [])
     .map(v => ({ name: typeof v?.name === 'string' ? v.name : '', expr: typeof v?.expr === 'string' ? v.expr : '' }))
   const save = (next: typeof rows, key: string) => setConfig({ variables: next }, key)
@@ -595,22 +566,24 @@ function VariableFields({ node, setConfig }: { node: CanvasNode; setConfig: SetC
     <p className="text-[11px] text-gray-500">Later steps read each one as vars.&lt;name&gt;.</p>
     {rows.map((r, i) => (
       <div key={i} className="flex items-start gap-1.5">
-        <input aria-label={`Name of variable ${i + 1}`} placeholder="name" className={`${fieldClass} w-24 shrink-0 font-mono text-xs`} value={r.name}
+        <input aria-label={`Name of variable ${i + 1}`} placeholder="name" className={`${NARROW_FIELD} w-24 shrink-0 font-mono text-xs`} value={r.name}
           onChange={e => save(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)), `varName:${i}`)} />
-        <input aria-label={`Expression for variable ${i + 1}`} placeholder="nodes.fetch.total" className={`${fieldClass} font-mono text-xs`} value={r.expr}
-          onChange={e => save(rows.map((x, j) => (j === i ? { ...x, expr: e.target.value } : x)), `varExpr:${i}`)} />
+        <div className="min-w-0 flex-1">
+          <MappedField aria-label={`Expression for variable ${i + 1}`} placeholder="value" mode="expression" context={mapping} mono value={r.expr}
+            onChange={v => save(rows.map((x, j) => (j === i ? { ...x, expr: v } : x)), `varExpr:${i}`)} />
+        </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i), 'removeVar')} aria-label={`Remove variable ${i + 1}`} disabled={rows.length <= 1}
           className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     ))}
     <button type="button" onClick={() => save([...rows, { name: '', expr: '' }], 'addVar')}
       className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3.5 w-3.5" /> Add a variable</button>
-    <p className="-mt-1 text-[11px] text-gray-400">Expressions are JEXL over input, nodes, vars and instructions, with fmt: helpers such as fmt:formatDate(d, 'dd MMM yyyy').</p>
+    <p className="-mt-1 text-[11px] text-gray-400">Expressions are JEXL. Press {'{}'} to put in data, and click it to format it, e.g. as a date.</p>
   </>
 }
 
 /** A storage step: which action, on which key, with only the fields that action uses. */
-function StorageFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfig }) {
+function StorageFields({ node, setConfig, mapping }: { node: CanvasNode; setConfig: SetConfig; mapping: MappingContext }) {
   const c = node.config
   const action = typeof c.action === 'string' ? c.action : 'get'
   return <>
@@ -623,12 +596,12 @@ function StorageFields({ node, setConfig }: { node: CanvasNode; setConfig: SetCo
         <option value="delete">Forget a value</option>
       </select>
     </Labelled>
-    <Labelled label="Key" required hint={`Values are kept between runs of this workflow under this name. ${TEMPLATE_HINT}`}>
-      <input className={`${fieldClass} font-mono text-xs`} value={typeof c.key === 'string' ? c.key : ''} onChange={e => setConfig({ key: e.target.value })} />
+    <Labelled group label="Key" required hint={`Values are kept between runs of this workflow under this name. ${TEMPLATE_HINT}`}>
+      <MappedField aria-label="Key" mode="template" context={mapping} mono value={typeof c.key === 'string' ? c.key : ''} onChange={v => setConfig({ key: v })} />
     </Labelled>
     {(action === 'set' || action === 'append') && (
-      <Labelled label={action === 'set' ? 'Value to save' : 'Value to add'} required hint="A JEXL expression, e.g. nodes.fetch.total">
-        <input className={`${fieldClass} font-mono text-xs`} value={typeof c.valueExpr === 'string' ? c.valueExpr : ''} onChange={e => setConfig({ valueExpr: e.target.value })} />
+      <Labelled group label={action === 'set' ? 'Value to save' : 'Value to add'} required hint="Data from an earlier step, or a JEXL expression.">
+        <MappedField aria-label={action === 'set' ? 'Value to save' : 'Value to add'} mode="expression" context={mapping} mono value={typeof c.valueExpr === 'string' ? c.valueExpr : ''} onChange={v => setConfig({ valueExpr: v })} />
       </Labelled>
     )}
     {action === 'increment' && (
@@ -650,17 +623,6 @@ function StorageFields({ node, setConfig }: { node: CanvasNode; setConfig: SetCo
   </>
 }
 
-function CopyChip({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button type="button" title={text}
-      onClick={() => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200) }) }}
-      className="inline-flex max-w-full items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-700 hover:border-brand-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300">
-      {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-      <span className="truncate">{label}</span>
-    </button>
-  )
-}
 
 /** Edits a JSON value as text, keeping the text while it doesn't parse. */
 function JsonField({ label, value, hint, onChange }: { label: string; value: unknown; hint?: string; onChange: (v: unknown) => void }) {
@@ -678,16 +640,19 @@ function JsonField({ label, value, hint, onChange }: { label: string; value: unk
   )
 }
 
-function Labelled({ label, hint, required, missing, children }: {
+function Labelled({ label, hint, required, missing, group, children }: {
   label: string; hint?: string
+  /** Wraps a mapped field: not a <label>, whose clicks would go to the field's insert button. */
+  group?: boolean
   /** A mandatory field: marked with *, and Save waits for it. */
   required?: boolean
   /** Whether a mandatory field is still empty or unusable. */
   missing?: boolean
   children: ReactNode
 }) {
+  const Wrapper = group ? 'div' : 'label'
   return (
-    <label className="flex flex-col gap-1">
+    <Wrapper className="flex min-w-0 flex-col gap-1">
       <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
         {label}{required && <span className="ml-0.5 text-red-500" aria-hidden>*</span>}
         {required && <span className="sr-only"> (required)</span>}
@@ -695,6 +660,6 @@ function Labelled({ label, hint, required, missing, children }: {
       {children}
       {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
       {missing && <span className="text-[11px] text-red-500">Required</span>}
-    </label>
+    </Wrapper>
   )
 }

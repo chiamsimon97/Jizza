@@ -308,7 +308,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     if (!area) return
     const { x, zoom } = flow.getViewport()
     const right = area.left + x + (node.x + NODE_W) * zoom
-    const limit = area.right - 320 - 24
+    const limit = area.right - 416 - 24
     if (right > limit) flow.setViewport({ ...flow.getViewport(), x: x - (right - limit) }, { duration: 250 })
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -318,7 +318,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     const onKey = (e: KeyboardEvent) => {
       if (!active.current && !fullscreen) return
       const t = e.target as HTMLElement
-      if (t.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      if (t.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
       const mod = e.metaKey || e.ctrlKey
       const key = e.key.toLowerCase()
       if (e.key === 'Escape') {
@@ -630,7 +630,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} className="!bg-gray-50 dark:!bg-gray-950" />
           <Controls showInteractive={false} position="bottom-left" />
-          <MiniMap pannable zoomable position="bottom-right" nodeBorderRadius={8} style={selected ? { marginRight: 336 } : undefined}
+          <MiniMap pannable zoomable position="bottom-right" nodeBorderRadius={8} style={selected ? { marginRight: 432 } : undefined}
             nodeColor={n => MINIMAP[(n.data as StepData).node.type]} maskColor="rgb(var(--gray-500) / 0.12)" />
 
           <Panel position="top-left">
@@ -651,7 +651,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
           </Panel>
 
           {/* Clear of the step settings when they are open over the canvas. */}
-          <Panel position="top-right" style={selected ? { marginRight: 336 } : undefined}>
+          <Panel position="top-right" style={selected ? { marginRight: 432 } : undefined}>
             <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               {!readOnly && <>
                 <ToolButton label="Add a step (Tab)" onClick={openPickerCentered}><Plus className="h-4 w-4" /></ToolButton>
@@ -679,7 +679,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
             the click that opened it into a click on empty canvas. */}
         {selected && (
         <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} workflows={workflows} readOnly={readOnly}
-          issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} focusNote={focusNote} onDirty={onDirty}
+          issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} onDirty={onDirty}
           onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
           onClose={() => { unsaved.current = false; select([]) }} />
         )}

@@ -176,6 +176,16 @@ function RunBadge({ run }: { run: StepRun }) {
 }
 
 export function summarise(node: CanvasNode, agent?: AgentDto): string {
+  return readable(describe(node, agent))
+}
+
+/** Mapped values as the field they read, [body.price], rather than the whole {{ nodes.… }} reference. */
+function readable(text: string): string {
+  return text.replace(/\{\{\s*(nodes\.[A-Za-z0-9_]+|input|vars)\.?([A-Za-z0-9_.[\]]*)\s*}}/g,
+    (_, root: string, path: string) => `[${path || (root === 'input' ? 'input' : 'result')}]`)
+}
+
+function describe(node: CanvasNode, agent?: AgentDto): string {
   const c = node.config
   switch (node.type) {
     case 'TRIGGER': return 'When the workflow is run'
