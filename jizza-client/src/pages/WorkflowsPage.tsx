@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { WorkflowGuardrails } from '@/components/guardrails/WorkflowGuardrails'
+import { ReuseSettings } from '@/components/workflow/ReuseSettings'
 
 export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
@@ -81,6 +82,7 @@ export function WorkflowsPage() {
                     onKeyDown={e => e.stopPropagation()}>
                     <Shield className="h-4 w-4" />Guardrails
                   </Button>
+                  {wf.reuse && <Badge variant="default">Reused by Jizza</Badge>}
                   <Badge variant={wf.status === 'ACTIVE' ? 'success' : 'default'}>{wf.status}</Badge>
                 </div>
               </div>
@@ -88,6 +90,7 @@ export function WorkflowsPage() {
                 // Setting a step's mode here must not also open the workflow behind it.
                 <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-800"
                   onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                  <ReuseSettings workflow={wf} />
                   <WorkflowGuardrails workflowId={wf.id} />
                 </div>
               )}

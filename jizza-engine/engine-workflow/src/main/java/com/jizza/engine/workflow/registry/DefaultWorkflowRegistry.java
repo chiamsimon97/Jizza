@@ -119,7 +119,8 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
   public static WorkflowDto toDto(WorkflowEntity w) {
     return new WorkflowDto(w.getId(), w.getUserId(), w.getName(), w.getDescription(), w.getGraph(),
         w.getInputSchema(), w.getTriggerConfig(), w.getOrigin(), w.getStatus(),
-        w.getOwningAgentId(), w.getVersion(), w.getSourceTaskId(), w.getCreatedAt());
+        w.getOwningAgentId(), w.getVersion(), w.getSourceTaskId(), w.getCreatedAt(),
+        w.getReuse());
   }
 
   private static WorkflowDto snapshotDto(WorkflowEntity workflow, WorkflowVersionEntity snapshot) {
@@ -127,7 +128,7 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
         workflow.getDescription(), snapshot.getGraph(), workflow.getInputSchema(),
         workflow.getTriggerConfig(), workflow.getOrigin(), snapshot.getStatus(),
         workflow.getOwningAgentId(), snapshot.getVersion(), workflow.getSourceTaskId(),
-        snapshot.getCreatedAt());
+        snapshot.getCreatedAt(), workflow.getReuse());
   }
 
 }

@@ -3,6 +3,8 @@ package com.jizza.engine.orchestrator.ui;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.activity.Activity;
+import com.jizza.engine.api.activity.ActivitySink;
 import com.jizza.engine.api.autonomy.AutonomyGate;
 import com.jizza.engine.api.autonomy.Decision;
 import com.jizza.engine.api.orchestrator.UiAction;
@@ -12,6 +14,8 @@ import com.jizza.engine.api.tool.ToolProvider;
 import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workflow.library.ReuseProfile;
+import com.jizza.engine.orchestrator.library.ReuseArgs;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import java.util.LinkedHashMap;
@@ -123,6 +127,17 @@ public class WorkflowPlanToolProvider implements ToolProvider {
       if (!note.asText("").isBlank()) notes.add(note.asText().trim());
     }
 
+    // What to keep for reusing it next time: a draft for the card, where the user sets the
+    // guardrails before anything is saved.
+    var reuse = ReuseArgs.parse(args.path("reuse"));
+    if (reuse != null) {
+      UUID conversationId = Activity.current()
+          .map(ActivitySink::conversationId).orElse(null);
+      payload.set("reuse", reuse.withLearnedFrom(
+          new ReuseProfile.LearnedFrom(conversationId, null))
+          .toJson());
+    }
+
     recorder.record(new UiAction(UiAction.PROPOSE_WORKFLOW, payload));
     return ToolResult.ok(Json.obj().put("done", true).put("note",
         "The plan is on the user's screen with Approve and Change buttons. Nothing is saved until "
@@ -159,14 +174,18 @@ public class WorkflowPlanToolProvider implements ToolProvider {
         .put("description", "Defaults you chose that the user did not state, one short line each");
     assumptions.set("items", Json.obj().put("type", "string"));
     return new ToolSpec(PROPOSE,
-        "Show the user a finished workflow plan to approve. Use it only once you have talked the "
+        "Show the user a finished workflow plan to approve. Use it once you have talked the "
             + "request through with the relevant specialists and nothing is left that only the "
-            + "user can decide. Approving saves it as a draft workflow; you never save it yourself.",
+            + "user can decide, or to offer to save a job you just did that the user will want "
+            + "again (fill in reuse). Approving saves it as a draft workflow; you never save it "
+            + "yourself.",
         JsonSchemas.object(new LinkedHashMap<>(Map.of(
             "name", JsonSchemas.string("Short name, e.g. Gold rate checker"),
             "description", JsonSchemas.string("What the workflow does, in one or two sentences"),
             "steps", steps,
-            "assumptions", assumptions)), List.of("name", "steps")));
+            "assumptions", assumptions,
+            "reuse", ReuseArgs.schema())),
+            List.of("name", "steps")));
   }
 
   private String roster(UUID userId) {

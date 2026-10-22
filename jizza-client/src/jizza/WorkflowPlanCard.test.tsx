@@ -52,4 +52,39 @@ describe('WorkflowPlanCard', () => {
     expect(useAssistantStore.getState().savedPlans['plan-1']).toBe('wf-1')
     expect(screen.queryByRole('button', { name: /Approve and save/ })).not.toBeInTheDocument()
   })
+
+  it('keeps the plan for reuse with the guardrails the user picked', async () => {
+    save.mockResolvedValue({ id: 'wf-2', name: 'Gold rate checker' })
+    const offered: WorkflowPlan = {
+      ...plan, planId: 'plan-2',
+      reuse: {
+        summary: 'When I ask for the gold rate',
+        examples: ['check the gold rate'],
+        inputs: [{ name: 'city', required: true }],
+        guardrails: { confirmBeforeRun: true, allowScheduled: false, rules: ['Never buy more than 1g'] },
+      },
+    }
+    renderWithSnapshot(<WorkflowPlanCard plan={offered} />, makeSnapshot())
+    expect(screen.getByText('Used when: When I ask for the gold rate')).toBeInTheDocument()
+    expect(screen.getByText('Never buy more than 1g')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText(/Scheduled tasks doing this job/))
+    fireEvent.click(screen.getByRole('button', { name: /Approve and save/ }))
+
+    await waitFor(() => expect(screen.getByText('Saved, and kept for Jizza to reuse')).toBeInTheDocument())
+    const sent = save.mock.calls[0][0] as { reuse: { summary: string; guardrails: { confirmBeforeRun: boolean; allowScheduled: boolean } } }
+    expect(sent.reuse.summary).toBe('When I ask for the gold rate')
+    expect(sent.reuse.guardrails).toMatchObject({ confirmBeforeRun: true, allowScheduled: true })
+  })
+
+  it('saves without keeping it for reuse when the user unticks it', async () => {
+    save.mockResolvedValue({ id: 'wf-3', name: 'Gold rate checker' })
+    renderWithSnapshot(<WorkflowPlanCard plan={{ ...plan, planId: 'plan-3', reuse: { summary: 'Gold' } }} />, makeSnapshot())
+
+    fireEvent.click(screen.getByLabelText(/Let Jizza reuse this next time/))
+    fireEvent.click(screen.getByRole('button', { name: /Approve and save/ }))
+
+    await waitFor(() => expect(screen.getByText('Saved as a draft workflow')).toBeInTheDocument())
+    expect((save.mock.calls[0][0] as { reuse?: unknown }).reuse).toBeUndefined()
+  })
 })

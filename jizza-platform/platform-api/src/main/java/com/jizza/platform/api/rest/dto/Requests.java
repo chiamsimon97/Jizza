@@ -93,9 +93,10 @@ public final class Requests {
   public record CapabilityGrant(@NotNull com.jizza.engine.api.enums.CapabilityType type,
                                 @NotNull UUID capabilityRef) {}
 
+  /** {@code reuse}: keep it in the workflow library with these guardrails (a {@code ReuseProfile}). */
   public record WorkflowSave(UUID id, @NotBlank String name, String description,
                              @NotNull JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
-                             UUID owningAgentId) {}
+                             UUID owningAgentId, JsonNode reuse) {}
 
   public record SaveAsSkill(@NotBlank String name, String description, JsonNode parameterSchema) {}
 

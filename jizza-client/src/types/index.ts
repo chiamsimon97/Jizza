@@ -375,6 +375,8 @@ export type UiAction =
   | { type: 'propose_agent'; payload: AgentProposal }
   /** Settings for the Builder step Jizza was opened on; they land in its panel unsaved. */
   | { type: 'configure_step'; payload: { stepId: string; label?: string; config: Record<string, unknown>; summary?: string } }
+  /** Jizza ran one of the user's saved workflows instead of building a new one. */
+  | { type: 'reused_workflow'; payload: { workflowId: string; name: string; runId: string; status: string } }
 
 /** A new agent, or a team, Jizza drafted; it exists only once the user creates it. */
 export interface AgentProposal {
@@ -393,6 +395,37 @@ export interface WorkflowPlan {
   steps: WorkflowPlanStep[]
   /** Defaults Jizza picked that the user didn't state. */
   assumptions?: string[]
+  /** Set when Jizza offers to keep a job it just did, so it can reuse it next time. */
+  reuse?: ReuseProfile
+}
+
+/** What Jizza keeps about a saved workflow to recognise and reuse it. */
+export interface ReuseProfile {
+  /** When this workflow is the right one. */
+  summary?: string
+  examples?: string[]
+  inputs?: { name: string; description?: string; required?: boolean }[]
+  guardrails?: ReuseGuardrails
+  learnedFrom?: { conversationId?: string; savedAt?: string }
+}
+
+export interface ReuseGuardrails {
+  /** Jizza asks before each run it starts from a chat. */
+  confirmBeforeRun: boolean
+  /** A scheduled task doing this job may run it on its own. */
+  allowScheduled: boolean
+  maxRunsPerDay?: number
+  rules?: string[]
+}
+
+/** A workflow in the library, as the server describes it. */
+export interface LibraryEntry {
+  workflowId: string
+  name: string
+  description?: string
+  status: string
+  version: number
+  profile?: ReuseProfile
 }
 
 export interface WorkflowPlanStep {
@@ -705,6 +738,8 @@ export interface WorkflowDto {
   version: number
   owningAgentId?: string
   createdAt: string
+  /** Kept in the workflow library for Jizza to reuse; absent when it is not. */
+  reuse?: ReuseProfile
 }
 
 export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'WAITING' | 'DONE' | 'FAILED' | 'CANCELLED'
