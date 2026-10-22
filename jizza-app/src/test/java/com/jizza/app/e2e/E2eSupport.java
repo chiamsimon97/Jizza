@@ -101,6 +101,8 @@ public abstract class E2eSupport {
     registry.add("jizza.memory.extraction.enabled", () -> "false");
     registry.add("jizza.memory.extraction.async", () -> "false");
     registry.add("jizza.memory.access.async", () -> "false");
+    // Choosing the model for Jizza's turn is a model call of its own; off for the same reason.
+    registry.add("jizza.agents.routing.enabled", () -> "false");
 
     registry.add("jizza.agents.models.routing", () -> "test-routing");
     registry.add("jizza.agents.models.standard", () -> "test-standard");

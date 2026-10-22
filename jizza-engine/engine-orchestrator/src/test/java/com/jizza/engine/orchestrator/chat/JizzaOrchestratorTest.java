@@ -13,6 +13,7 @@ import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.agent.AgentResult;
+import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.orchestrator.Orchestrator;
@@ -39,6 +40,7 @@ class JizzaOrchestratorTest {
   private DelegationRecorder recorder;
   private final UiActionRecorder uiActions = new UiActionRecorder();
   private JizzaOrchestrator orchestrator;
+  private TurnTierSelector tiers;
 
   @BeforeEach
   void setUp() {
@@ -55,7 +57,9 @@ class JizzaOrchestratorTest {
     when(agents.findByUserIdAndIsOrchestratorTrue(userId)).thenReturn(Optional.of(jizza));
     baseAgent = mock(Agent.class);
     recorder = new DelegationRecorder();
-    orchestrator = new JizzaOrchestrator(agents, baseAgent, recorder, uiActions);
+    tiers = mock(TurnTierSelector.class);
+    when(tiers.tierFor(any(), any(), any(), any(), any())).thenReturn(ModelTier.STANDARD);
+    orchestrator = new JizzaOrchestrator(agents, baseAgent, recorder, uiActions, tiers);
   }
 
   private Orchestrator.Turn ask(String message) {
@@ -67,6 +71,17 @@ class JizzaOrchestratorTest {
       for (DelegationRecorder.Contribution c : contributions) recorder.record(c);
       return AgentResult.of(jizza.getId(), "Jizza", text);
     });
+  }
+
+  @Test
+  void runsTheTurnOnTheTierTheRoutingCheckChose() {
+    when(tiers.tierFor(any(), any(), any(), any(), any())).thenReturn(ModelTier.ROUTING);
+    answerWith("Hi!");
+    ask("hello");
+
+    ArgumentCaptor<AgentRequest> request = ArgumentCaptor.forClass(AgentRequest.class);
+    Mockito.verify(baseAgent).run(request.capture());
+    assertThat(request.getValue().tier()).isEqualTo(ModelTier.ROUTING);
   }
 
   @Test

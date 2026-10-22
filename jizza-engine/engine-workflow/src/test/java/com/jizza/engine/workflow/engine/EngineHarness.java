@@ -37,12 +37,31 @@ import com.jizza.engine.persistence.repository.WorkflowRunRepository;
 import com.jizza.engine.persistence.repository.WorkflowRunStepRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.nodes.BranchNodeExecutor;
+import com.jizza.engine.workflow.nodes.ChildRuns;
 import com.jizza.engine.workflow.nodes.ConnectorToolNodeExecutor;
 import com.jizza.engine.workflow.nodes.EndNodeExecutor;
+import com.jizza.engine.workflow.nodes.ForEachNodeExecutor;
 import com.jizza.engine.workflow.nodes.InterventionNodeExecutor;
+import com.jizza.engine.workflow.nodes.JoinNodeExecutor;
+import com.jizza.engine.workflow.nodes.ParallelNodeExecutor;
+import com.jizza.engine.workflow.nodes.SubWorkflowNodeExecutor;
+import com.jizza.engine.workflow.nodes.WaitNodeExecutor;
 import com.jizza.engine.workflow.nodes.TransformNodeExecutor;
 import com.jizza.engine.workflow.nodes.TriggerNodeExecutor;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
+import com.jizza.engine.api.mail.MailSender;
+import com.jizza.engine.connectors.http.GuardedHttpClient;
+import com.jizza.engine.persistence.entity.UserEntity;
+import com.jizza.engine.persistence.entity.WorkflowStorageEntity;
+import com.jizza.engine.persistence.repository.UserRepository;
+import com.jizza.engine.persistence.repository.WorkflowStorageRepository;
+import com.jizza.engine.workflow.nodes.ApprovalNodeExecutor;
+import com.jizza.engine.workflow.nodes.FilterNodeExecutor;
+import com.jizza.engine.workflow.nodes.HttpRequestNodeExecutor;
+import com.jizza.engine.workflow.nodes.NotifyNodeExecutor;
+import com.jizza.engine.workflow.nodes.SetVariableNodeExecutor;
+import com.jizza.engine.workflow.nodes.StorageNodeExecutor;
+import com.jizza.engine.workflow.nodes.SwitchNodeExecutor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +84,10 @@ public final class EngineHarness {
   public final List<NotificationDto> raised = new ArrayList<>();
 
   public final WorkflowEntity workflow = new WorkflowEntity();
+  /** Every workflow the engine can find, so a test can add ones to run as steps. */
+  public final List<WorkflowEntity> workflowRows = new ArrayList<>();
+  /** What the engine and the wait step believe the time is. */
+  public final MutableClock clock = new MutableClock();
   public final GeneratedToolEntity sendEmailTool = new GeneratedToolEntity();
 
   /** Counts real invocations of the side-effecting tool, which is what exactly-once is about. */
@@ -72,6 +95,15 @@ public final class EngineHarness {
   public ToolResult nextToolResult = ToolResult.ok(Json.obj().put("sent", true));
   public boolean paused;
   public AutonomyRule toolRule = AutonomyRule.ALLOW;
+
+  /** What the storage step keeps, by key, for this harness's user. */
+  public final java.util.Map<String, WorkflowStorageEntity> stored = new java.util.LinkedHashMap<>();
+  /** Calls the webhook step made: method, url, headers and body. */
+  public final List<Object[]> httpCalls = new ArrayList<>();
+  public GuardedHttpClient.Response nextHttpResponse =
+      new GuardedHttpClient.Response(200, "{\"ok\":true}", java.util.Map.of("content-type", "application/json"));
+  /** Emails the notify step sent: to, subject, body. */
+  public final List<String[]> emails = new ArrayList<>();
 
   public final SagaWorkflowEngine engine;
   public final WorkflowRunRepository runs;
@@ -90,7 +122,9 @@ public final class EngineHarness {
     workflow.setVersion(1);
 
     WorkflowRepository workflows = mock(WorkflowRepository.class);
-    when(workflows.findById(workflow.getId())).thenReturn(Optional.of(workflow));
+    workflowRows.add(workflow);
+    when(workflows.findById(any())).thenAnswer(inv -> workflowRows.stream()
+        .filter(w -> w.getId().equals(inv.getArgument(0))).findFirst());
 
     runs = mock(WorkflowRunRepository.class);
     when(runs.save(any())).thenAnswer(inv -> {
@@ -200,17 +234,108 @@ public final class EngineHarness {
     when(busProvider.getIfAvailable()).thenReturn(bus);
 
     JexlSandbox sandbox = new JexlSandbox();
+    SagaWorkflowEngine[] self = new SagaWorkflowEngine[1];
+    ObjectProvider<SagaWorkflowEngine> engineProvider = mock(ObjectProvider.class);
+    when(engineProvider.getIfAvailable()).thenAnswer(inv -> self[0]);
+    ChildRuns childRuns = new ChildRuns(engineProvider, runs);
     List<NodeExecutor> executors = List.of(
         new TriggerNodeExecutor(),
-        new EndNodeExecutor(),
+        new EndNodeExecutor(sandbox),
+        new ParallelNodeExecutor(),
+        new JoinNodeExecutor(),
+        new WaitNodeExecutor(sandbox, clock),
+        new SubWorkflowNodeExecutor(childRuns, sandbox),
+        new ForEachNodeExecutor(childRuns, sandbox),
         new TransformNodeExecutor(sandbox),
         new BranchNodeExecutor(sandbox),
         new InterventionNodeExecutor(),
         new ConnectorToolNodeExecutor(tools, executor, gate, sandbox),
+        new ApprovalNodeExecutor(sandbox, clock),
+        new FilterNodeExecutor(sandbox),
+        new SwitchNodeExecutor(sandbox),
+        new SetVariableNodeExecutor(sandbox),
+        new StorageNodeExecutor(sandbox, storageRepository(), clock),
+        new HttpRequestNodeExecutor(sandbox, httpClient()),
+        new NotifyNodeExecutor(sandbox, busProvider, mailProvider(), userRepository()),
         new CountingAgentStep());
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
-        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors);
+        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock);
+    self[0] = engine;
+  }
+
+  private WorkflowStorageRepository storageRepository() {
+    WorkflowStorageRepository repo = mock(WorkflowStorageRepository.class);
+    when(repo.findByUserIdAndKey(any(), any())).thenAnswer(inv ->
+        Optional.ofNullable(stored.get(inv.<String>getArgument(1))));
+    when(repo.lockByUserIdAndKey(any(), any())).thenAnswer(inv ->
+        Optional.ofNullable(stored.get(inv.<String>getArgument(1))));
+    when(repo.countByUserId(any())).thenAnswer(inv -> (long) stored.size());
+    when(repo.save(any())).thenAnswer(inv -> {
+      WorkflowStorageEntity row = inv.getArgument(0);
+      stored.put(row.getKey(), row);
+      return row;
+    });
+    org.mockito.Mockito.doAnswer(inv -> {
+      stored.remove(inv.<WorkflowStorageEntity>getArgument(0).getKey());
+      return null;
+    }).when(repo).delete(any());
+    return repo;
+  }
+
+  private GuardedHttpClient httpClient() {
+    GuardedHttpClient http = mock(GuardedHttpClient.class);
+    when(http.send(any(), any(), any(), any(), any())).thenAnswer(inv -> {
+      httpCalls.add(new Object[] {inv.getArgument(0), inv.getArgument(1).toString(),
+          inv.getArgument(2), inv.getArgument(3)});
+      return nextHttpResponse;
+    });
+    return http;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<MailSender> mailProvider() {
+    ObjectProvider<MailSender> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn((to, subject, body) ->
+        emails.add(new String[] {to, subject, body}));
+    return provider;
+  }
+
+  private UserRepository userRepository() {
+    UserRepository users = mock(UserRepository.class);
+    UserEntity me = new UserEntity();
+    me.setEmail("owner@jizza.local");
+    when(users.findById(userId)).thenReturn(Optional.of(me));
+    return users;
+  }
+
+  /** Adds another approved workflow of the same person, for a step to run. */
+  public WorkflowEntity addWorkflow(String name, WorkflowGraph graph) {
+    WorkflowEntity other = new WorkflowEntity();
+    other.setId(UUID.randomUUID());
+    other.setUserId(userId);
+    other.setName(name);
+    other.setGraph(graph.toJson());
+    other.setGraphFingerprint(graph.fingerprint());
+    other.setOrigin(WorkflowOrigin.USER_BUILT);
+    other.setStatus(WorkflowStatus.APPROVED);
+    other.setOwningAgentId(agentId);
+    other.setVersion(1);
+    workflowRows.add(other);
+    return other;
+  }
+
+  /** A clock a test can move forward. */
+  public static final class MutableClock extends java.time.Clock {
+    private Instant now = Instant.parse("2026-10-21T08:00:00Z");
+
+    public void advance(java.time.Duration by) { now = now.plus(by); }
+
+    @Override public java.time.ZoneId getZone() { return java.time.ZoneOffset.UTC; }
+
+    @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+
+    @Override public Instant instant() { return now; }
   }
 
   /** Counts how often an agent step ran, so re-execution after a resume is detectable. */

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, cloneNodes, emptyGraph, fromGraph, insertOnEdge, issues, problems, setNext, targetsFor, tidy, toGraph, unreachable,
+  addAfter, addNode, cloneNodes, emptyGraph, exitsOf, fromDuration, fromGraph, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
+  toDuration, toGraph, unreachable, updateNode,
 } from './canvasModel'
 
 describe('canvasModel', () => {
@@ -79,5 +80,97 @@ describe('canvasModel', () => {
     expect(loose.graph.edges).toHaveLength(1)
     const tidied = tidy(a.graph)
     expect(tidied.nodes.find(n => n.id === a.id)!.x).toBeGreaterThan(tidied.nodes.find(n => n.id === 'start')!.x)
+  })
+
+  it('gives a parallel step lanes that each run, and keeps them through a save', () => {
+    let g = addAfter(emptyGraph(), 'start', null, 'PARALLEL')
+    const split = g.id
+    expect(problems(g.graph)).toEqual([expect.stringContaining('at least two paths')])
+    const left = addAfter(g.graph, split, 'a', 'TRANSFORM')
+    const right = addAfter(left.graph, split, 'b', 'WAIT')
+    g = right
+    const saved = toGraph(g.graph)
+    expect(saved.edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
+    expect(fromGraph(saved).edges.filter(e => e.from === split).map(e => e.branch).sort()).toEqual(['a', 'b'])
+    expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('at least two paths'))
+    expect(problems(g.graph)).toContainEqual(expect.stringContaining('how long to wait'))
+    // A graph with parallel paths can't be shown as a step list.
+    expect(stepsFromGraph(saved)).toBeNull()
+  })
+
+  it('checks wait lengths and the workflow a step runs', () => {
+    const wait = addAfter(emptyGraph(), 'start', null, 'WAIT')
+    const bad = { ...wait.graph, nodes: wait.graph.nodes.map(n => n.id === wait.id ? { ...n, config: { duration: '2 hours' } } : n) }
+    expect(problems(bad)).toContainEqual(expect.stringContaining("can't read"))
+    const good = { ...wait.graph, nodes: wait.graph.nodes.map(n => n.id === wait.id ? { ...n, config: { duration: toDuration(2, 'hours') } } : n) }
+    expect(problems(good)).toEqual([])
+    expect(fromDuration('PT2H')).toEqual({ amount: 2, unit: 'hours' })
+    expect(fromDuration('P3D')).toEqual({ amount: 3, unit: 'days' })
+
+    const each = addAfter(emptyGraph(), 'start', null, 'FOR_EACH')
+    expect(problems(each.graph)).toEqual(expect.arrayContaining([
+      expect.stringContaining('needs a workflow'), expect.stringContaining('list to go through'),
+    ]))
+  })
+
+  it('gives a paths step one exit per case plus "else", and keeps case wires through a save', () => {
+    const sw = addAfter(emptyGraph(), 'start', null, 'SWITCH')
+    const node = sw.graph.nodes.find(n => n.id === sw.id)!
+    expect(exitsOf(node)).toEqual(['case1', 'else'])
+    const cases = [
+      { id: 'case1', label: 'Big', condition: 'input.total > 1000' },
+      { id: nextCaseId([{ id: 'case1', label: 'Big', condition: '' }]), label: 'Small', condition: 'input.total < 10' },
+    ]
+    let g = updateNode(sw.graph, sw.id, { config: { cases } })
+    expect(exitsOf(g.nodes.find(n => n.id === sw.id)!)).toEqual(['case1', 'case2', 'else'])
+    g = addAfter(g, sw.id, 'case2', 'END').graph
+    g = addAfter(g, sw.id, 'else', 'NOTIFY').graph
+    const saved = fromGraph(toGraph(g))
+    expect(saved.edges.filter(e => e.from === sw.id).map(e => e.branch).sort()).toEqual(['case2', 'else'])
+    // Exits stay tied to ids, so renaming a case keeps its wire; dropping it leaves a wire to flag.
+    expect(exitsOf({ type: 'SWITCH', config: { cases: [{ ...cases[0], label: 'Huge' }, cases[1]] } })).toEqual(['case1', 'case2', 'else'])
+    const dropped = updateNode(g, sw.id, { config: { cases: [cases[0]] } })
+    expect(problems(dropped)).toContainEqual(expect.stringContaining('path that no longer exists'))
+    expect(exitsOf({ type: 'BRANCH', config: {} })).toEqual(['true', 'false'])
+    expect(exitsOf({ type: 'PARALLEL', config: {} })).toEqual(['a', 'b', 'c'])
+  })
+
+  it('says what a paths step is missing', () => {
+    const sw = addAfter(emptyGraph(), 'start', null, 'SWITCH')
+    expect(problems(sw.graph)).toEqual([expect.stringContaining('needs a condition for "Path 1"')])
+    const none = updateNode(sw.graph, sw.id, { config: { cases: [] } })
+    expect(problems(none)).toContainEqual(expect.stringContaining('at least one path'))
+    const twins = updateNode(sw.graph, sw.id, { config: { cases: [{ id: 'case1', label: 'A', condition: 'x' }, { id: 'case1', label: 'B', condition: 'y' }] } })
+    expect(problems(twins)).toContainEqual(expect.stringContaining('same id'))
+  })
+
+  it('gives an approval approved and rejected exits and needs the approved one', () => {
+    const ok = addAfter(emptyGraph(), 'start', null, 'APPROVAL')
+    expect(exitsOf({ type: 'APPROVAL', config: {} })).toEqual(['approved', 'rejected'])
+    expect(problems(ok.graph)).toEqual([expect.stringContaining('needs a step for "approved"')])
+    const rejectedOnly = addAfter(ok.graph, ok.id, 'rejected', 'END').graph
+    expect(problems(rejectedOnly)).toEqual([expect.stringContaining('needs a step for "approved"')])
+    const both = addAfter(rejectedOnly, ok.id, 'approved', 'NOTIFY')
+    expect(problems(both.graph)).toEqual([expect.stringContaining('needs a message')])
+    expect(fromGraph(toGraph(both.graph)).edges.filter(e => e.from === ok.id).map(e => e.branch).sort()).toEqual(['approved', 'rejected'])
+    // A step put on the way in carries on from "approved".
+    const inserted = insertOnEdge(both.graph, { from: 'start', to: ok.id, branch: null }, 'APPROVAL')
+    expect(inserted.graph.edges).toContainEqual({ from: inserted.id, to: ok.id, branch: 'approved' })
+  })
+
+  it('checks webhook URLs and the other new steps\' required fields', () => {
+    const set = (type: Parameters<typeof addAfter>[3], config: Record<string, unknown>) => {
+      const r = addAfter(emptyGraph(), 'start', null, type)
+      return problems(updateNode(r.graph, r.id, { config }))
+    }
+    expect(set('HTTP_REQUEST', {})).toEqual([expect.stringContaining('needs a URL.')])
+    expect(set('HTTP_REQUEST', { url: 'example.com/hook' })).toEqual([expect.stringContaining('http:// or https://')])
+    expect(set('HTTP_REQUEST', { url: 'https://example.com/hook' })).toEqual([])
+    expect(set('HTTP_REQUEST', { url: '{{ vars.hook }}' })).toEqual([])
+    expect(set('FILTER', {})).toEqual([expect.stringContaining('needs a condition')])
+    expect(set('STORAGE', { action: 'set', key: 'count' })).toEqual([expect.stringContaining('value to store')])
+    expect(set('STORAGE', { key: 'count' })).toEqual([])
+    expect(set('SET_VARIABLE', { variables: [{ name: 'total', expr: 'nodes.a.sum' }] })).toEqual([])
+    expect(set('SET_VARIABLE', { variables: [{ name: 'bad name', expr: '1' }] })).toEqual([expect.stringContaining('needs a name')])
   })
 })

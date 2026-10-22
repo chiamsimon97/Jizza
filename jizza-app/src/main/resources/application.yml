@@ -155,6 +155,11 @@ jizza:
       routing: ${JIZZA_MODEL_ROUTING:claude-haiku-4-5-20251001}
       standard: ${JIZZA_MODEL_STANDARD:claude-sonnet-5}
       deep: ${JIZZA_MODEL_DEEP:claude-opus-5}
+    # Jizza's simple turns (a greeting, a quick question, a hand-off to one specialist) run on the
+    # routing model, chosen by a short check on that model; everything else stays on standard.
+    routing:
+      enabled: ${JIZZA_CHEAP_ROUTING:true}
+      max-simple-chars: 600
     pricing:
       claude-haiku-4-5-20251001:
         input-per-million: 1.0

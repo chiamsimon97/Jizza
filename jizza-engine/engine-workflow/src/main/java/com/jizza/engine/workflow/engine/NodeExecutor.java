@@ -2,6 +2,7 @@ package com.jizza.engine.workflow.engine;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.workflow.graph.WorkflowNode;
+import java.time.Instant;
 import java.util.UUID;
 
 /** How one kind of node runs. One implementation per {@code NodeType}. */
@@ -36,8 +37,13 @@ public interface NodeExecutor {
    * @param output   the node's result, checkpointed and visible to later nodes
    * @param branch   for a branch node, which outlet was taken
    * @param message  why, when the status is not {@code COMPLETED}
+   * @param wakeAt   for {@code WAIT}, when the step should be tried again
    */
-  record Outcome(Status status, JsonNode output, String branch, String message) {
+  record Outcome(Status status, JsonNode output, String branch, String message, Instant wakeAt) {
+
+    public Outcome(Status status, JsonNode output, String branch, String message) {
+      this(status, output, branch, message, null);
+    }
 
     public enum Status {
       /** The node finished; checkpoint it and move on. */
@@ -49,7 +55,11 @@ public interface NodeExecutor {
       /** The run must stop here until the user supplies an instruction. */
       AWAIT_INSTRUCTION,
       /** The run must stop here until the user approves the action. */
-      AWAIT_PERMISSION
+      AWAIT_PERMISSION,
+      /** This path waits until {@code wakeAt}; other paths carry on. */
+      WAIT,
+      /** This path waits for workflows the step started; other paths carry on. */
+      AWAIT_CHILDREN
     }
 
     public static Outcome completed(JsonNode output) {
@@ -74,6 +84,19 @@ public interface NodeExecutor {
 
     public static Outcome awaitPermission(String prompt) {
       return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt);
+    }
+
+    /** Asks the user to approve, as {@link #awaitPermission}, and stops asking at {@code until}. */
+    public static Outcome awaitApproval(String prompt, Instant until) {
+      return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt, until);
+    }
+
+    public static Outcome waitUntil(Instant wakeAt) {
+      return new Outcome(Status.WAIT, null, null, null, wakeAt);
+    }
+
+    public static Outcome awaitChildren() {
+      return new Outcome(Status.AWAIT_CHILDREN, null, null, null, null);
     }
   }
 }

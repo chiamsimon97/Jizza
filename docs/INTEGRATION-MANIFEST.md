@@ -186,6 +186,44 @@ module.
     detail's key order to jsonb's, because a multi-key detail read back from jsonb hashed
     differently from how it was written.
 
+21. **Parallel paths, waits and nested workflows (`V16__workflow_waiting_runs.sql`).** The saga
+    engine followed one path at a time. A run now keeps a frontier in `workflow_runs.context`: the
+    steps ready to run and the steps parked on a time, on child runs or on a person. `PARALLEL`
+    starts every outgoing path; any step with several incoming paths runs once all of them have
+    resolved, where a path a branch did not take counts as resolved (dead-path elimination), and
+    the skipped steps get `skipped` checkpoints. `JOIN` is that wait as its own step, collecting
+    each path's output. `WAIT` parks a path until a duration or a time (IST when no offset is
+    given); `SUB_WORKFLOW` and `FOR_EACH` start child runs of the same person's workflows, linked
+    through the child's context (`parent`, `depth`, at most 5 deep, no workflow inside itself) and
+    following the usual approval rule. Paths interleave on the run's own worker rather than on
+    threads, so a run keeps one transaction and one activity context; what parallel buys is that a
+    path waiting on a timer, a child or a person no longer holds up the others. The only schema
+    change is the new `waiting` run status (nothing is owed by a person); `RunRecovery` wakes
+    `waiting` and paused runs whose timers are due or whose children finished, and a finishing
+    child wakes its parent directly. With two paths waiting on the person at once, an answer names
+    the step (`"node"`), which `DefaultNotificationBus` copies from the notification. Runs started
+    before this change carry on with the old first-arrival rule (`legacy` in the context).
+
+22. **Cheap routing for Jizza's turns.** `TurnTierSelector` makes one short call on the routing
+    model per message and runs simple turns (greetings, quick questions, a hand-off to one
+    specialist) on that model, everything else on standard. Doubt of any kind (routing off, a deep
+    Jizza, the workflow planner, a long message, a failed check) means standard. The check is
+    recorded as `jizza:routing` spend. `jizza.agents.routing.enabled` turns it off.
+
+23. **Built-in steps that need no agent.** The Zapier and Zoho Flow core actions, so a decided
+    workflow runs without a model deciding anything: `APPROVAL` (approved / rejected paths, an
+    optional timeout that takes a chosen path), `HTTP_REQUEST` (send a webhook through the same
+    `GuardedHttpClient` and egress rules as connectors), `FILTER` (stops its path; the run still
+    ends well), `SWITCH` (Paths: the first matching case, else `else`), `SET_VARIABLE` (read later
+    as `vars.<name>`), `STORAGE` (per-user values between runs, table `workflow_storage`, V17) and
+    `NOTIFY` (the owner only, in the app and/or by email). Text fields take `{{ expression }}`
+    placeholders and every expression can call the `fmt:` helpers (text, numbers, dates, lookups),
+    the only class added to the sandbox's permissions. An approval reuses the permission request
+    and its answer; a rejection picks the path instead of failing the run. Delay, loop and
+    sub-workflow were already covered by `WAIT`, `FOR_EACH` and `SUB_WORKFLOW` (gap 21). A webhook
+    or notify step that dies after sending can send again on resume, like any side effect without
+    an idempotency key.
+
 ## Acceptance suite
 
 `jizza-app/src/test/java/com/jizza/app/e2e` — 107 tests, the whole application booted against a real

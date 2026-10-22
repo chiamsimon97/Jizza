@@ -88,7 +88,10 @@ class MemoryE2eTest extends E2eSupport {
       for (List<Msg> request : model.requests) {
         Msg first = request.get(0);
         if (first.role() == Msg.Role.SYSTEM && first.text().startsWith("Your name is " + agentName + ".")) {
-          return first.text();
+          // The memory block follows the agent's own prompt as a system message of its own, so
+          // the cached prompt stays the same from turn to turn.
+          return request.stream().takeWhile(m -> m.role() == Msg.Role.SYSTEM)
+              .map(Msg::text).collect(java.util.stream.Collectors.joining("\n\n"));
         }
       }
     }

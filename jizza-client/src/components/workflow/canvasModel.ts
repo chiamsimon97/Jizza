@@ -7,6 +7,25 @@
  */
 
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
+  | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
+  | 'APPROVAL' | 'HTTP_REQUEST' | 'FILTER' | 'SWITCH' | 'SET_VARIABLE' | 'STORAGE' | 'NOTIFY'
+
+/**
+ * Which exit of a node an edge leaves from: "true"/"false" on a branch, a lane letter on a
+ * parallel step (every lane runs), "approved"/"rejected" on an approval, a case id or "else" on
+ * a paths step, null on a node with a single exit. A paths step's exits come from its config,
+ * so this is any string; {@link exitsOf} says which ones a node has.
+ */
+export type ExitKey = string | null
+
+/** A parallel step's lanes. Two must be connected; the third is there when needed. */
+export const LANES = ['a', 'b', 'c'] as const
+
+/** One of a paths step's cases. The id is the exit's key and stays put when the label changes. */
+export interface SwitchCase { id: string; label: string; condition: string }
+
+/** The most cases a paths step can have, besides "else". */
+export const MAX_CASES = 5
 
 export const NODE_W = 200
 export const NODE_H = 92
@@ -23,11 +42,11 @@ export interface CanvasNode {
   y: number
 }
 
-/** {@code branch} is "true" or "false" on a branch node's exits, null otherwise. */
+/** {@code branch} names the exit the edge leaves from; see {@link ExitKey}. */
 export interface CanvasEdge {
   from: string
   to: string
-  branch: 'true' | 'false' | null
+  branch: ExitKey
 }
 
 export interface CanvasGraph {
@@ -43,10 +62,27 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   TRANSFORM: { label: 'Transform', desc: 'Reshapes data between steps.', tone: 'bg-violet-600 text-white' },
   BRANCH: { label: 'Branch', desc: 'Splits on a yes/no condition.', tone: 'bg-emerald-600 text-white' },
   END: { label: 'End', desc: 'Finishes the run.', tone: 'bg-gray-400 text-white dark:bg-gray-600' },
+  PARALLEL: { label: 'Parallel', desc: 'Runs several paths at once.', tone: 'bg-teal-600 text-white' },
+  JOIN: { label: 'Join', desc: 'Waits for every path, then carries on.', tone: 'bg-teal-700 text-white' },
+  WAIT: { label: 'Wait', desc: 'Pauses for a while or until a time.', tone: 'bg-orange-500 text-white' },
+  SUB_WORKFLOW: { label: 'Run a workflow', desc: 'Runs another workflow as one step.', tone: 'bg-indigo-600 text-white' },
+  FOR_EACH: { label: 'For each', desc: 'Runs a workflow once per item in a list.', tone: 'bg-fuchsia-600 text-white' },
+  APPROVAL: { label: 'Approval', desc: 'Waits for you to approve or reject.', tone: 'bg-amber-600 text-white' },
+  HTTP_REQUEST: { label: 'Send webhook', desc: 'Calls any URL or API.', tone: 'bg-cyan-600 text-white' },
+  FILTER: { label: 'Filter', desc: 'Carries on only when a condition is true.', tone: 'bg-lime-600 text-white' },
+  SWITCH: { label: 'Paths', desc: 'Picks one of several paths by condition.', tone: 'bg-green-700 text-white' },
+  SET_VARIABLE: { label: 'Set variable', desc: 'Keeps values for later steps.', tone: 'bg-purple-600 text-white' },
+  STORAGE: { label: 'Storage', desc: 'Remembers values between runs.', tone: 'bg-slate-600 text-white' },
+  NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
 }
 
 /** What can be dragged from the palette. Start is added once, automatically. */
-export const PALETTE: NodeType[] = ['AGENT_STEP', 'HUMAN_INTERVENTION', 'CONNECTOR_TOOL', 'TRANSFORM', 'BRANCH', 'END']
+export const PALETTE: NodeType[] = [
+  'AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY', 'CONNECTOR_TOOL', 'HTTP_REQUEST', 'TRANSFORM', 'SET_VARIABLE', 'STORAGE',
+  'BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN', 'WAIT', 'SUB_WORKFLOW', 'FOR_EACH', 'END',
+]
+
+const toExit = (v: unknown): ExitKey => (v === true ? 'true' : v === false ? 'false' : typeof v === 'string' && v ? v : null)
 
 const NODE_TYPES = new Set<string>(Object.keys(NODE_META))
 
@@ -56,8 +92,11 @@ export function newId(type: NodeType): string {
   return `${type.toLowerCase()}_${Date.now().toString(36)}${counter}`
 }
 
+/** A new step. Paths and set-variable steps start with one empty row, so there is something to fill in. */
 export function newNode(type: NodeType, x: number, y: number): CanvasNode {
-  return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config: {}, x, y }
+  const config: Record<string, unknown> = type === 'SWITCH' ? { cases: [{ id: 'case1', label: 'Path 1', condition: '' }] }
+    : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] } : {}
+  return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config, x, y }
 }
 
 export function emptyGraph(): CanvasGraph {
@@ -70,8 +109,7 @@ export function fromGraph(graph: unknown): CanvasGraph {
   if (!g || !Array.isArray(g.nodes) || g.nodes.length === 0) return emptyGraph()
 
   const edges: CanvasEdge[] = (Array.isArray(g.edges) ? g.edges : []).map(e => ({
-    from: String(e.from), to: String(e.to),
-    branch: e.branch === 'true' || e.branch === true ? 'true' : e.branch === 'false' || e.branch === false ? 'false' : null,
+    from: String(e.from), to: String(e.to), branch: toExit(e.branch),
   }))
   const layout = autoLayout(g.nodes.map(n => String(n.id)), edges, g.nodes.find(n => n.type === 'TRIGGER')?.id as string | undefined)
 
@@ -136,16 +174,20 @@ export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeTyp
   const node = newNode(type, at.x, at.y)
   const edges = graph.edges.filter(e => !(e.from === edge.from && e.to === edge.to && e.branch === edge.branch))
   edges.push({ from: edge.from, to: node.id, branch: edge.branch })
-  // A branch's onward path leaves from its "yes" exit; everything else has one exit.
-  if (type !== 'END') edges.push({ from: node.id, to: edge.to, branch: type === 'BRANCH' ? 'true' : null })
+  // The onward path leaves from the first exit: a branch's "yes", a parallel step's first lane,
+  // an approval's "approved", a paths step's first case.
+  if (type !== 'END') edges.push({ from: node.id, to: edge.to, branch: exitsOf(node)[0] })
   return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 /** Adds a step on a given exit of a node, replacing whatever that exit pointed at before. */
-export function addAfter(graph: CanvasGraph, from: string, branch: 'true' | 'false' | null, type: NodeType): { graph: CanvasGraph; id: string } {
+export function addAfter(graph: CanvasGraph, from: string, branch: ExitKey, type: NodeType): { graph: CanvasGraph; id: string } {
   const source = graph.nodes.find(n => n.id === from)
   const siblings = graph.edges.filter(e => e.from === from).length
-  const at = freeSpot(graph, (source?.x ?? 0) + COL_W, (source?.y ?? 0) + (branch === 'false' ? ROW_H : branch === 'true' && siblings ? -ROW_H : 0))
+  // One row down per exit; the first of several goes up a row when something is already connected.
+  const lane = Math.max(0, source ? exitsOf(source).indexOf(branch) : 0)
+  const offset = lane === 0 && branch !== null && siblings ? -ROW_H : lane * ROW_H
+  const at = freeSpot(graph, (source?.x ?? 0) + COL_W, (source?.y ?? 0) + offset)
   const node = newNode(type, at.x, at.y)
   const withNode = { ...graph, nodes: [...graph.nodes, node] }
   return { graph: setNext(withNode, from, branch, node.id), id: node.id }
@@ -176,15 +218,35 @@ export function toGraph(graph: CanvasGraph) {
   }
 }
 
-/** The exits a node has: one, or a yes and a no for a branch. End has none. */
-export function exitsOf(type: NodeType): Array<'true' | 'false' | null> {
-  if (type === 'END') return []
-  if (type === 'BRANCH') return ['true', 'false']
+/**
+ * The exits a node has: one, a yes and a no for a branch, lanes for a parallel step, approved and
+ * rejected for an approval, or one per case plus "else" for a paths step. End has none.
+ */
+export function exitsOf(node: Pick<CanvasNode, 'type' | 'config'>): ExitKey[] {
+  if (node.type === 'END') return []
+  if (node.type === 'BRANCH') return ['true', 'false']
+  if (node.type === 'PARALLEL') return [...LANES]
+  if (node.type === 'APPROVAL') return ['approved', 'rejected']
+  if (node.type === 'SWITCH') return [...casesOf(node.config).map(c => c.id), 'else']
   return [null]
 }
 
+/** A paths step's cases, skipping anything that isn't one. */
+export function casesOf(config: Record<string, unknown>): SwitchCase[] {
+  const cases = Array.isArray(config.cases) ? config.cases as Array<Record<string, unknown>> : []
+  return cases.filter(c => c && typeof c.id === 'string' && c.id).map(c => ({
+    id: String(c.id), label: typeof c.label === 'string' ? c.label : '', condition: typeof c.condition === 'string' ? c.condition : '',
+  }))
+}
+
+/** An id for a new case: one past the highest "caseN", so a removed case's id is never reused. */
+export function nextCaseId(cases: SwitchCase[]): string {
+  const top = Math.max(0, ...cases.map(c => Number(/^case(\d+)$/.exec(c.id)?.[1] ?? 0)))
+  return `case${top + 1}`
+}
+
 /** Points one exit of a node at another node, or clears it. */
-export function setNext(graph: CanvasGraph, from: string, branch: 'true' | 'false' | null, to: string | null): CanvasGraph {
+export function setNext(graph: CanvasGraph, from: string, branch: ExitKey, to: string | null): CanvasGraph {
   const edges = graph.edges.filter(e => !(e.from === from && e.branch === branch))
   return { ...graph, edges: to ? [...edges, { from, to, branch }] : edges }
 }
@@ -195,7 +257,7 @@ export function setNext(graph: CanvasGraph, from: string, branch: 'true' | 'fals
  */
 export function addNode(graph: CanvasGraph, type: NodeType, x: number, y: number, after?: string | null): { graph: CanvasGraph; id: string } {
   const node = newNode(type, x, y)
-  const freeExit = (n: CanvasNode) => exitsOf(n.type).find(b => !graph.edges.some(e => e.from === n.id && e.branch === b))
+  const freeExit = (n: CanvasNode) => exitsOf(n).find(b => !graph.edges.some(e => e.from === n.id && e.branch === b))
   const candidates = graph.nodes.filter(n => freeExit(n) !== undefined)
   const chosen = candidates.find(n => n.id === after)
     ?? candidates.sort((a, b) => dist(a, x, y) - dist(b, x, y))[0]
@@ -234,6 +296,27 @@ export function updateNode(graph: CanvasGraph, id: string, patch: Partial<Canvas
 
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
+/** What a later step reads a set variable as: vars.<name>. */
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+
+/** A webhook's URL: absolute, or a {{ template }} that gives one. */
+const URL_OK = (url: string) => /^https?:\/\//.test(url) || url.startsWith('{{')
+
+/** The ISO-8601 durations the engine reads, such as PT30M, PT2H or P1D. */
+export const ISO_DURATION = /^P(?!$)(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/
+
+/** Writes a number and unit as an ISO-8601 duration, and reads one back; null when it isn't one of these. */
+export function toDuration(amount: number, unit: 'minutes' | 'hours' | 'days'): string {
+  return unit === 'days' ? `P${amount}D` : `PT${amount}${unit === 'hours' ? 'H' : 'M'}`
+}
+
+export function fromDuration(iso: string): { amount: number; unit: 'minutes' | 'hours' | 'days' } | null {
+  const m = /^P(?:(\d+)D|T(\d+)([HM]))$/.exec(iso.trim())
+  if (!m) return null
+  if (m[1]) return { amount: Number(m[1]), unit: 'days' }
+  return { amount: Number(m[2]), unit: m[3] === 'H' ? 'hours' : 'minutes' }
+}
+
 /** One thing wrong with the graph, tied to the step it is about when there is one. */
 export interface Issue { nodeId?: string; message: string }
 
@@ -259,6 +342,43 @@ export function issues(graph: CanvasGraph, label: (n: CanvasNode) => string = n 
         if (!graph.edges.some(e => e.from === n.id && e.branch === b)) add(`${name} needs a step for "${b === 'true' ? 'yes' : 'no'}".`)
       }
     }
+    if (n.type === 'PARALLEL' && graph.edges.filter(e => e.from === n.id).length < 2) add(`${name} needs at least two paths.`)
+    if (n.type === 'WAIT' && !text(n.config.duration) && !text(n.config.until)) add(`${name} needs how long to wait or until when.`)
+    if (n.type === 'WAIT' && text(n.config.duration) && !ISO_DURATION.test(text(n.config.duration))) add(`${name} has a wait length the engine can't read.`)
+    if ((n.type === 'SUB_WORKFLOW' || n.type === 'FOR_EACH') && !text(n.config.workflowId)) add(`${name} needs a workflow to run.`)
+    if (n.type === 'FOR_EACH' && !text(n.config.items)) add(`${name} needs the list to go through.`)
+    if (n.type === 'APPROVAL') {
+      if (!graph.edges.some(e => e.from === n.id && e.branch === 'approved')) add(`${name} needs a step for "approved".`)
+      if (text(n.config.timeout) && !ISO_DURATION.test(text(n.config.timeout))) add(`${name} has a time limit the engine can't read.`)
+    }
+    if (n.type === 'HTTP_REQUEST') {
+      if (!text(n.config.url)) add(`${name} needs a URL.`)
+      else if (!URL_OK(text(n.config.url))) add(`${name} needs a URL starting with http:// or https://.`)
+    }
+    if (n.type === 'FILTER' && !text(n.config.condition)) add(`${name} needs a condition.`)
+    if (n.type === 'SWITCH') {
+      const cases = casesOf(n.config)
+      if (cases.length === 0) add(`${name} needs at least one path.`)
+      if (cases.length > MAX_CASES) add(`${name} can have at most ${MAX_CASES} paths besides "else".`)
+      cases.forEach((c, i) => { if (!text(c.condition)) add(`${name} needs a condition for "${c.label || `path ${i + 1}`}".`) })
+      if (new Set(cases.map(c => c.id)).size !== cases.length) add(`${name} has two paths with the same id.`)
+      const exits = new Set(exitsOf(n))
+      if (graph.edges.some(e => e.from === n.id && !exits.has(e.branch))) add(`${name} has a connection from a path that no longer exists.`)
+    }
+    if (n.type === 'SET_VARIABLE') {
+      const vars = Array.isArray(n.config.variables) ? n.config.variables as Array<Record<string, unknown>> : []
+      if (vars.length === 0) add(`${name} needs at least one variable.`)
+      vars.forEach((v, i) => {
+        if (!VAR_NAME.test(text(v?.name))) add(`${name} needs a name for variable ${i + 1} (letters, digits and _).`)
+        if (!text(v?.expr)) add(`${name} needs an expression for ${text(v?.name) ? `"${text(v.name)}"` : `variable ${i + 1}`}.`)
+      })
+    }
+    if (n.type === 'STORAGE') {
+      if (!text(n.config.key)) add(`${name} needs a key.`)
+      const action = text(n.config.action) || 'get'
+      if ((action === 'set' || action === 'append') && !text(n.config.valueExpr)) add(`${name} needs a value to ${action === 'set' ? 'store' : 'add'}.`)
+    }
+    if (n.type === 'NOTIFY' && !text(n.config.message)) add(`${name} needs a message.`)
   }
   return out
 }

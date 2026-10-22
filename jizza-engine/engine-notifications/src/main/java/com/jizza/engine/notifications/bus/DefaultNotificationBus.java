@@ -221,6 +221,12 @@ public class DefaultNotificationBus implements NotificationBus {
           + "still paused", entity.getId(), entity.getRunId());
       return;
     }
+    // Parallel paths can each be waiting on the person; the step this item is about rides along so
+    // the answer resumes that one.
+    if (payload instanceof com.fasterxml.jackson.databind.node.ObjectNode object
+        && entity.getContext() != null && entity.getContext().path("node").isTextual()) {
+      object.put("node", entity.getContext().get("node").asText());
+    }
     try {
       engine.resume(entity.getRunId(), payload);
     } catch (RuntimeException e) {

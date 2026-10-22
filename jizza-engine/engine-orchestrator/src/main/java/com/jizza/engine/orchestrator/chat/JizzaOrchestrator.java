@@ -39,13 +39,15 @@ public class JizzaOrchestrator implements Orchestrator {
   private final Agent baseAgent;
   private final DelegationRecorder recorder;
   private final UiActionRecorder uiActions;
+  private final TurnTierSelector tiers;
 
   public JizzaOrchestrator(AgentRepository agents, Agent baseAgent, DelegationRecorder recorder,
-                           UiActionRecorder uiActions) {
+                           UiActionRecorder uiActions, TurnTierSelector tiers) {
     this.agents = agents;
     this.baseAgent = baseAgent;
     this.recorder = recorder;
     this.uiActions = uiActions;
+    this.tiers = tiers;
   }
 
   /**
@@ -60,6 +62,7 @@ public class JizzaOrchestrator implements Orchestrator {
 
     String trace = input.userMessageId() == null ? null
         : AccessContext.chatTurn(input.userMessageId()).toTrace();
+    ModelTier tier = tiers.tierFor(userId, jizza, input.message(), input.screen(), input.history());
     recorder.beginTurn();
     if (input.screen() != null) uiActions.beginTurn();
     AgentResult result;
@@ -67,7 +70,7 @@ public class JizzaOrchestrator implements Orchestrator {
     List<UiAction> actions;
     try {
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(input.message(), input.screen()), null, input.history(), ModelTier.STANDARD,
+          withScreen(input.message(), input.screen()), null, input.history(), tier,
           false, trace));
     } finally {
       contributions = recorder.endTurn();

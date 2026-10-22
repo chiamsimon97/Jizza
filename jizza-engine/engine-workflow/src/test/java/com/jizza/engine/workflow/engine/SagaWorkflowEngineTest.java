@@ -399,12 +399,18 @@ class SagaWorkflowEngineTest {
     EngineHarness high = branching();
     high.engine.start(high.workflow.getId(), 1, Json.obj().put("total", 5000), "manual");
     assertThat(high.step(high.runRows.get(0).getId(), "escalate")).isPresent();
-    assertThat(high.step(high.runRows.get(0).getId(), "file")).isEmpty();
+    assertThat(high.step(high.runRows.get(0).getId(), "file"))
+        .as("the path not taken is recorded as skipped, never run")
+        .hasValueSatisfying(step -> assertThat(step.getStatus()).isEqualTo(RunStepStatus.SKIPPED));
 
     EngineHarness low = branching();
     low.engine.start(low.workflow.getId(), 1, Json.obj().put("total", 50), "manual");
     assertThat(low.step(low.runRows.get(0).getId(), "file")).isPresent();
-    assertThat(low.step(low.runRows.get(0).getId(), "escalate")).isEmpty();
+    assertThat(low.step(low.runRows.get(0).getId(), "escalate"))
+        .hasValueSatisfying(step -> assertThat(step.getStatus()).isEqualTo(RunStepStatus.SKIPPED));
+    assertThat(low.runRows.get(0).getStatus())
+        .as("the merge after the branch runs once, without waiting for the side not taken")
+        .isEqualTo(RunStatus.DONE);
   }
 
   // ── approval gate on starting a run ──────────────────────────────────────

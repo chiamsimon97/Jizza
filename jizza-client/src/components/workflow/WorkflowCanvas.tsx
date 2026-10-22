@@ -10,7 +10,7 @@ import 'reactflow/dist/style.css'
 import { Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { api } from '@/lib/api'
-import type { AgentDto, ConnectionDto, GeneratedToolDto, RunDto, RunStepDto } from '@/types'
+import type { AgentDto, ConnectionDto, GeneratedToolDto, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
   NODE_H, NODE_META, NODE_W, PALETTE, addAfter, addNode, cloneNodes, exitsOf, freeSpot, insertOnEdge, issues as findIssues, reaches,
   removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
@@ -19,7 +19,7 @@ import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
   type Exit, type MenuItem, type StepData, type StepRun, type WireData,
 } from './canvasParts'
-import { CanvasInspector, type ToolOption } from './CanvasInspector'
+import { CanvasInspector, type ToolOption, type WorkflowOption } from './CanvasInspector'
 
 interface Props {
   graph: CanvasGraph
@@ -154,6 +154,11 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   // Archived agents too, so a step still pointing at one can say so instead of looking empty.
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const { data: tools } = useQuery({ queryKey: ['workflow-canvas-tools'], queryFn: loadTools, enabled: !readOnly, staleTime: 60_000 })
+  const { data: workflows } = useQuery({
+    queryKey: ['workflow-canvas-workflows'], enabled: !readOnly, staleTime: 60_000,
+    queryFn: () => api.get<WorkflowDto[]>('/api/workflows')
+      .then(ws => ws.map((w): WorkflowOption => ({ id: w.id, name: w.name, status: w.status }))).catch(() => [] as WorkflowOption[]),
+  })
 
   const issueList = useMemo(() => findIssues(graph), [graph])
   const issuesByNode = useMemo(() => {
@@ -333,7 +338,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         issues: issuesByNode.get(n.id) ?? [],
         orphan: orphans.has(n.id),
         run: runInfo?.nodes.get(n.id),
-        freeExits: exitsOf(n.type).filter(b => !used.has(`${n.id}:${handleOf(b)}`)),
+        freeExits: exitsOf(n).filter(b => !used.has(`${n.id}:${handleOf(b)}`)),
         readOnly,
         onAddAfter: (b, at) => onAddAfter(n.id, b, at),
       },
@@ -591,7 +596,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         {/* Over the canvas rather than beside it: resizing the canvas under the pointer would turn
             the click that opened it into a click on empty canvas. */}
         {selected && (
-        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} readOnly={readOnly}
+        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} workflows={workflows} readOnly={readOnly}
           issues={issuesByNode.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)}
           onChange={commit} onRemove={() => { commit(removeNode(graph, selected.id)); select([]) }} onClose={() => select([])} />
         )}
@@ -621,10 +626,12 @@ function applySelection(prev: string[], changes: Array<{ id: string; selected: b
 const MINIMAP: Record<NodeType, string> = {
   TRIGGER: '#111827', AGENT_STEP: 'rgb(var(--brand-500))', HUMAN_INTERVENTION: '#f59e0b', CONNECTOR_TOOL: '#0284c7',
   TRANSFORM: '#7c3aed', BRANCH: '#059669', END: '#9ca3af',
+  PARALLEL: '#0d9488', JOIN: '#0f766e', WAIT: '#f97316', SUB_WORKFLOW: '#4f46e5', FOR_EACH: '#c026d3',
+  APPROVAL: '#d97706', HTTP_REQUEST: '#0891b2', FILTER: '#65a30d', SWITCH: '#15803d', SET_VARIABLE: '#9333ea', STORAGE: '#475569', NOTIFY: '#f43f5e',
 }
 
 const RUN_LABEL: Record<string, string> = {
-  RUNNING: 'Running', PAUSED_WAITING_INSTRUCTION: 'Waiting for you', DONE: 'Last run done', FAILED: 'Last run failed', CANCELLED: 'Last run cancelled',
+  RUNNING: 'Running', PAUSED_WAITING_INSTRUCTION: 'Waiting for you', WAITING: 'Waiting', DONE: 'Last run done', FAILED: 'Last run failed', CANCELLED: 'Last run cancelled',
 }
 
 /** Turns a run into what the canvas shows: each step's state, its output, and which steps ran. */
@@ -634,7 +641,7 @@ function runState(run: RunDto, startId?: string) {
   const nodes = new Map<string, StepRun>()
   for (const [id, s] of steps) nodes.set(id, s.status === 'DONE' ? 'done' : s.status === 'FAILED' ? 'failed' : 'skipped')
   if (run.currentNode && run.status === 'RUNNING') nodes.set(run.currentNode, 'running')
-  if (run.currentNode && run.status === 'PAUSED_WAITING_INSTRUCTION') nodes.set(run.currentNode, 'waiting')
+  if (run.currentNode && (run.status === 'PAUSED_WAITING_INSTRUCTION' || run.status === 'WAITING')) nodes.set(run.currentNode, 'waiting')
   const ran = new Set([...steps].filter(([, s]) => s.status === 'DONE').map(([id]) => id))
   // Start may have no step of its own; it ran if the run started.
   if (startId) { ran.add(startId); if (!nodes.has(startId)) nodes.set(startId, 'done') }
