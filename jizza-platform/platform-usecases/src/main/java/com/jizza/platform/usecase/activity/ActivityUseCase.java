@@ -164,7 +164,8 @@ public class ActivityUseCase {
     if (search == null || search.isBlank()) return i -> true;
     String needle = search.strip().toLowerCase(Locale.ROOT);
     return i -> contains(i.label(), needle) || contains(i.action(), needle)
-        || contains(i.target(), needle) || contains(i.actorName(), needle);
+        || contains(i.target(), needle) || contains(i.actorName(), needle)
+        || contains(i.requestId(), needle);
   }
 
   private static boolean contains(String haystack, String needle) {

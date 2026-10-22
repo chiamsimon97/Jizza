@@ -855,6 +855,120 @@ export interface ChainVerification {
   entries: number
 }
 
+export type ActivitySeverity = 'INFO' | 'NOTICE' | 'WARNING' | 'CRITICAL'
+export type ActorType = 'USER' | 'AGENT' | 'SYSTEM'
+
+/** One audit entry as the activity explorer files it. */
+export interface ActivityItem {
+  id: string
+  createdAt: string
+  action: string
+  label: string
+  category: string
+  group: string
+  severity: ActivitySeverity
+  actorType: ActorType
+  actorId?: string
+  actorName?: string
+  target?: string
+  detail?: unknown
+  requestId?: string
+  hash: string
+}
+
+export interface ActivityGroupCount { key: string; label: string; count: number }
+
+export interface ActivityCategoryCount {
+  key: string
+  label: string
+  icon: string
+  count: number
+  groups: ActivityGroupCount[]
+}
+
+export interface ActivityBucket { start: string; total: number; byCategory: Record<string, number> }
+
+export interface ActivityPage {
+  items: ActivityItem[]
+  total: number
+  categories: ActivityCategoryCount[]
+  severities: Partial<Record<ActivitySeverity, number>>
+  actors: Partial<Record<ActorType, number>>
+  bucketUnit: 'hour' | 'day'
+  buckets: ActivityBucket[]
+  truncated: boolean
+}
+
+export interface ActivityCatalog {
+  categories: ActivityCategoryCount[]
+  severities: ActivitySeverity[]
+  actors: ActorType[]
+}
+
+// ── Run history ───────────────────────────────────────────────────────────────
+export type TriggerKind = 'manual' | 'webhook' | 'schedule' | 'agent' | 'event' | 'subworkflow' | 'other'
+
+export interface RunSummary {
+  id: string
+  workflowId: string
+  workflowName: string
+  version: number
+  triggerSource?: string
+  triggerKind: TriggerKind
+  status: RunStatus
+  startedAt: string
+  endedAt?: string
+  durationMs: number
+  stepCount: number
+  failedSteps: number
+  error?: string
+  failedNode?: string
+  parentRunId?: string
+}
+
+export interface RunHistoryPage {
+  items: RunSummary[]
+  total: number
+  stats: {
+    total: number
+    byStatus: Partial<Record<RunStatus, number>>
+    avgDurationMs: number
+    p95DurationMs: number
+    successRate: number
+  }
+  bucketUnit: 'hour' | 'day'
+  buckets: { start: string; done: number; failed: number; other: number }[]
+  workflows: { id: string; name: string; runs: number; failed: number }[]
+  triggers: Partial<Record<TriggerKind, number>>
+  truncated: boolean
+}
+
+export interface TraceStep {
+  id: string
+  nodeId: string
+  label: string
+  type?: string
+  status: 'DONE' | 'FAILED' | 'SKIPPED'
+  input?: unknown
+  output?: unknown
+  error?: string
+  attempts: number
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+}
+
+export interface RunTrace {
+  run: RunSummary
+  input?: unknown
+  result?: unknown
+  nodes: { id: string; type: string; label: string }[]
+  edges: { from: string; to: string; branch?: string }[]
+  steps: TraceStep[]
+  waitingOn?: string
+  children: RunSummary[]
+}
+
 // ── Usage ─────────────────────────────────────────────────────────────────────
 export interface UsageEntryDto {
   id: string
@@ -882,6 +996,23 @@ export interface UsageSummary {
   withinBudget: boolean
   budgetLimit?: number
   breakdown: ModelBreakdown[]
+}
+
+export type UsageDimension = 'MODEL' | 'AREA' | 'PURPOSE' | 'DAY'
+
+export interface UsageTotals { calls: number; inputTokens: number; outputTokens: number; costUnits: number }
+
+export interface UsageGroup { key: string; label: string; totals: UsageTotals; children: UsageGroup[] }
+
+export interface UsageExplorePage {
+  totals: UsageTotals
+  groups: UsageGroup[]
+  bucketUnit: 'hour' | 'day'
+  buckets: { start: string; calls: number; tokens: number; costUnits: number }[]
+  entries: UsageEntryDto[]
+  models: string[]
+  areas: string[]
+  truncated: boolean
 }
 
 // ── Problem ───────────────────────────────────────────────────────────────────

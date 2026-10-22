@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Workflow, Plus, Shield, Sparkles } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { History, Workflow, Plus, Shield, Sparkles } from 'lucide-react'
 import { WorkflowPlanner } from '@/jizza/WorkflowPlanner'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -29,11 +30,22 @@ export function WorkflowsPage() {
     openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, ...(steps ? { steps } : {}) })
   }
 
+  // The run history links here with ?open=<id> to jump straight into that workflow's builder.
+  const [params, setParams] = useSearchParams()
+  const openId = params.get('open')
+  useEffect(() => {
+    const wf = openId ? data?.find(w => w.id === openId) : undefined
+    if (!wf) return
+    openWorkflow(wf)
+    setParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); return next }, { replace: true })
+  }, [openId, data])
+
   return (
     <div className="page">
       <WorkflowForm />
       <WorkflowPlanner open={planning} onClose={() => setPlanning(false)} />
       <PageHeader icon={Workflow} title="Workflows" description="Multi-step automations and their runs." actions={<>
+        <Link to="/runs" className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><History className="h-4 w-4" />Run history</Link>
         <Button size="sm" variant="secondary" onClick={() => openForm('new_workflow')}><Plus className="h-4 w-4" />New workflow</Button>
         <Button size="sm" onClick={() => setPlanning(true)}><Sparkles className="h-4 w-4" />Plan with Jizza</Button>
       </>} />
@@ -60,6 +72,10 @@ export function WorkflowsPage() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <Link to={`/runs?wf=${wf.id}`} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
+                    <History className="h-4 w-4" />Runs
+                  </Link>
                   <Button size="sm" variant="ghost" aria-expanded={guarding === wf.id}
                     onClick={e => { e.stopPropagation(); setGuarding(guarding === wf.id ? null : wf.id) }}
                     onKeyDown={e => e.stopPropagation()}>

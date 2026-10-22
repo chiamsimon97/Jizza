@@ -782,7 +782,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     step.setOutput(output);
     step.setAttempts(attempts);
     step.setError(error);
-    if (status != RunStepStatus.FAILED) step.setFinishedAt(Instant.now());
+    // For a failed step this is when its latest attempt gave up, so the history can time it.
+    step.setFinishedAt(Instant.now());
     steps.save(step);
   }
 

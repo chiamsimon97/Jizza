@@ -22,7 +22,7 @@ public final class ActivityExplorer {
    * @param groups     {@code category/group} keys to keep; empty for all in the kept categories
    * @param severities severities to keep; empty for all
    * @param actors     actor types to keep; empty for all
-   * @param search     text matched against the label, action, target and actor
+   * @param search     text matched against the label, action, target, actor and request id
    * @param zone       the viewer's time zone, for daily timeline slices
    */
   public record Query(Instant from, Instant to, Set<String> categories, Set<String> groups,

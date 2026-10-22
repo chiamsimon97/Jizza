@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
-  Plug, Workflow, GitBranch, Shield, Activity, BarChart2,
+  Plug, Workflow, GitBranch, Shield, Activity, BarChart2, History,
   ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -42,6 +42,7 @@ const personalSections: NavSection[] = [
     items: [
       { to: '/guardrails', icon: Shield,  label: 'Guardrails' },
       { to: '/activity', icon: Activity,  label: 'Activity' },
+      { to: '/runs',     icon: History,   label: 'Run history' },
       { to: '/usage',    icon: BarChart2, label: 'Usage' },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
