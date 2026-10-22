@@ -9,6 +9,8 @@ import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
 import { matchLocalIntent } from './localIntents'
+import { applyStepConfig, currentContext, useContextStore } from './contextStore'
+import type { Starter } from './commands'
 
 export interface Step {
   label: string
@@ -27,8 +29,8 @@ export interface AssistantMessage {
   streaming?: boolean
   /** What Jizza did on screen for this reply, shown as a trail under the message. */
   steps?: Step[]
-  /** A question Jizza is waiting on, with one-tap answers. */
-  question?: { text: string; options: string[] }
+  /** A question Jizza is waiting on, with one-tap answers, or several to tick when {@code multiple}. */
+  question?: Question
   /** A workflow plan Jizza proposed, saved only if the user approves it. */
   plan?: WorkflowPlan
   /** A new agent or team Jizza drafted, created only if the user says so. */
@@ -37,6 +39,15 @@ export interface AssistantMessage {
   helpers?: { agentId: string; agentName: string }[]
   error?: boolean
   stopped?: boolean
+}
+
+export interface Question {
+  text: string
+  options: string[]
+  /** Several answers can apply: they are ticked, then sent together. */
+  multiple?: boolean
+  /** Choices Jizza answers on the spot, by option, without a round trip (how to start on a step). */
+  guided?: Record<string, string>
 }
 
 /** A job as the Activity panel shows it. */
@@ -98,6 +109,15 @@ interface AssistantState {
   setPlannerOpen: (open: boolean) => void
   /** Records an approved plan, and a line in the conversation saying it was saved. */
   planSaved: (planId: string, workflowId: string, name: string) => void
+  /**
+   * Starts a fresh conversation about one Builder step: opens the dock and offers the ways to
+   * configure it. The step's context must already be pushed.
+   */
+  startStepSession: (stepLabel: string, stepName: string, starters: Starter[]) => void
+  /** The user picked a guided choice: their pick, then Jizza's reply asking for what it needs. */
+  guide: (option: string, reply: string) => void
+  /** "/help" and the like: the user's command and Jizza's answer, without a round trip. */
+  localReply: (command: string, reply: string) => void
 }
 
 let nextId = 1
@@ -110,6 +130,7 @@ function describe(action: UiAction): string {
     case 'ask_user': return 'Waiting for your answer'
     case 'propose_workflow': return 'Proposed a workflow plan'
     case 'propose_agent': return 'Drafted a new agent'
+    case 'configure_step': return `Filled in ${action.payload.label ? `"${action.payload.label}"` : 'the step'}`
   }
 }
 
@@ -145,8 +166,21 @@ function execute(actions: UiAction[], run = true): { steps: Step[]; question?: A
         break
       }
       case 'ask_user':
-        question = { text: action.payload.question, options: action.payload.options ?? [] }
+        question = {
+          text: action.payload.question, options: action.payload.options ?? [],
+          ...(action.payload.multiple && (action.payload.options?.length ?? 0) > 1 ? { multiple: true } : {}),
+        }
         continue
+      case 'configure_step': {
+        const { stepId, config, label } = action.payload ?? {}
+        if (!stepId || !config || typeof config !== 'object') continue
+        // Only on the reply as it arrives: a reloaded conversation must not refill a step.
+        if (run && !applyStepConfig(stepId, config, label)) {
+          steps.push({ label: 'The step was closed, so its settings were not filled in' })
+          continue
+        }
+        break
+      }
       case 'propose_workflow':
         if (!action.payload?.planId || !Array.isArray(action.payload.steps)) continue
         plan = action.payload
@@ -338,9 +372,10 @@ export const useAssistantStore = create<AssistantState>()(
               { id: nextId++, role: 'user', text }],
           }))
 
-          // Instant path: a plain command needs no round trip. Not while planning: there
-          // "create a workflow" is the start of a conversation, not a request for the form.
-          const local = get().plannerOpen ? null : matchLocalIntent(text)
+          const ctx = currentContext(navigator?.currentPage(), get().plannerOpen)
+          // Instant path: a plain command needs no round trip. Not while planning or working on
+          // the Builder: there "create a workflow" is about what is open, not a request for a form.
+          const local = ctx.kind === 'page' ? matchLocalIntent(text) : null
           if (local) {
             const { steps } = execute(local.actions)
             const id = nextId++
@@ -354,7 +389,8 @@ export const useAssistantStore = create<AssistantState>()(
           try {
             const ref = await chatApi.send({
               message: text, clientMessageId,
-              screen: get().plannerOpen ? 'workflow_planner' : navigator?.currentPage() ?? 'chat',
+              screen: ctx.screen,
+              ...(ctx.data ? { context: ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data } : {}),
               ...(incognito ? { incognito: true } : { conversationId }),
             })
             set(s => ({
@@ -427,6 +463,44 @@ export const useAssistantStore = create<AssistantState>()(
           savedPlans: { ...s.savedPlans, [planId]: workflowId },
           messages: [...s.messages, { id: nextId++, role: 'event', text: `You approved the plan. "${name}" is saved as a draft workflow.` }],
         })),
+
+        startStepSession: (stepLabel, stepName, starters) => {
+          // A step gets its own conversation, so an earlier chat doesn't leak into its settings.
+          // The earlier one stays in the history.
+          get().newConversation()
+          const id = nextId++
+          set({
+            dockOpen: true,
+            lastReplyId: id,
+            messages: [{
+              id, role: 'assistant',
+              text: `I'm on your ${stepLabel} step, "${stepName}". I'll fill in its settings for you to review; nothing is saved until you press Save. How would you like to set it up?`,
+              question: {
+                text: 'Choose a way to start, or just tell me what it should do.',
+                options: starters.map(s => s.label),
+                guided: Object.fromEntries(starters.map(s => [s.label, s.reply])),
+              },
+            }],
+          })
+        },
+
+        guide: (option, reply) => {
+          const id = nextId++
+          set(s => ({
+            messages: [...s.messages.map(m => (m.question ? { ...m, question: undefined } : m)),
+              { id: nextId++, role: 'user', text: option }, { id, role: 'assistant', text: reply }],
+            lastReplyId: id,
+          }))
+          // Jizza keeps the choice in mind for the rest of this step's conversation.
+          const { stack, update } = useContextStore.getState()
+          const top = stack[stack.length - 1]
+          if (top?.ctx.kind === 'step') update(top.token, { ...top.ctx, goal: option })
+        },
+
+        localReply: (command, reply) => {
+          const id = nextId++
+          set(s => ({ messages: [...s.messages, { id: nextId++, role: 'user', text: command }, { id, role: 'assistant', text: reply }], lastReplyId: id }))
+        },
       }
     },
     {

@@ -205,4 +205,39 @@ class JizzaOrchestratorTest {
     assertThat(ask("Hi").actions()).isEmpty();
     assertThat(uiActions.active()).isFalse();
   }
+
+  @Test
+  void configuringAStepGivesJizzaTheStepAndOnlyThatStepToFillIn() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      assertThat(req.instruction()).startsWith("POST to https://api.example.com/orders")
+          .contains("Configure using Jizza", "app_configure_step", "\"id\":\"http_1\"",
+              "Never invent a credential")
+          .doesNotContain("page of the Jizza app");
+      assertThat(uiActions.stepInFocus()).isEqualTo("http_1");
+      return AgentResult.of(jizza.getId(), "Jizza", "Filled in.");
+    });
+
+    orchestrator.respond(userId, new Orchestrator.TurnInput("POST to https://api.example.com/orders",
+        JizzaOrchestrator.WORKFLOW_STEP, List.of(), UUID.randomUUID(), Json.read("""
+            {"kind":"step","workflowName":"Orders",
+             "step":{"id":"http_1","type":"HTTP_REQUEST","label":"Send webhook","config":{}}}""")));
+    assertThat(uiActions.active()).isFalse();
+  }
+
+  @Test
+  void inTheBuilderJizzaAnswersAboutTheWorkflowButFillsInNoStep() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      assertThat(req.instruction()).contains("workflow Builder", "Gold Rate Checker")
+          .doesNotContain("app_configure_step");
+      assertThat(uiActions.active()).isTrue();
+      assertThat(uiActions.stepInFocus()).isNull();
+      return AgentResult.of(jizza.getId(), "Jizza", "It checks the rate.");
+    });
+
+    orchestrator.respond(userId, new Orchestrator.TurnInput("What does this do?",
+        JizzaOrchestrator.WORKFLOW_BUILDER, List.of(), UUID.randomUUID(),
+        Json.read("{\"kind\":\"builder\",\"workflowName\":\"Gold Rate Checker\",\"steps\":[]}")));
+  }
 }

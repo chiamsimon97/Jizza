@@ -12,6 +12,7 @@ import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +36,14 @@ public class AppControlToolProvider implements ToolProvider {
   public static final String OPEN_FORM = "app_open_form";
   public static final String ASK_USER = "app_ask_user";
   public static final String SET_THEME = "app_set_theme";
+  /** Offered only while a Builder step's settings are open with Jizza on them. */
+  public static final String CONFIGURE_STEP = "app_configure_step";
 
-  public static final Set<String> TOOL_NAMES = Set.of(NAVIGATE, OPEN_FORM, ASK_USER, SET_THEME);
+  public static final Set<String> TOOL_NAMES = Set.of(NAVIGATE, OPEN_FORM, ASK_USER, SET_THEME,
+      CONFIGURE_STEP);
+
+  /** A step's settings are small; anything bigger is not settings. */
+  static final int MAX_STEP_CONFIG_CHARS = 20_000;
 
   static final List<String> PAGES = List.of("chat", "conversations", "notifications", "agents", "memory",
       "tasks", "connections", "workflows", "procedures", "guardrails", "activity", "runs", "usage");
@@ -55,6 +62,7 @@ public class AppControlToolProvider implements ToolProvider {
   private final AgentRepository agents;
   private final UiActionRecorder recorder;
   private final List<ToolSpec> specs;
+  private final ToolSpec configureStep;
 
   public AppControlToolProvider(AgentRepository agents, UiActionRecorder recorder) {
     this.agents = agents;
@@ -81,18 +89,36 @@ public class AppControlToolProvider implements ToolProvider {
                 + "calling it, end your turn and wait for their reply.",
             JsonSchemas.object(new LinkedHashMap<>(Map.of(
                 "question", JsonSchemas.string("The question, one sentence"),
-                "options", stringArray("Up to five short answers the user can tap"))),
+                "options", stringArray("Up to eight short answers the user can tap"),
+                "multiple", JsonSchemas.bool("True when the user may pick several options "
+                    + "together; they tick them and send them at once"))),
                 List.of("question"))),
         new ToolSpec(SET_THEME,
             "Switch the app's colour theme when the user asks for it.",
             JsonSchemas.object(new LinkedHashMap<>(Map.of(
                 "theme", enumOf("The theme", THEMES))),
                 List.of("theme"))));
+    this.configureStep = new ToolSpec(CONFIGURE_STEP,
+        "Fill in the settings of the Builder step the user opened \"Configure using Jizza\" on. "
+            + "The settings appear in the step's panel unsaved; the user reviews and saves them. "
+            + "Use only the settings the step takes, as the app context lists them.",
+        JsonSchemas.object(new LinkedHashMap<>(Map.of(
+            "stepId", JsonSchemas.string("The id of the step, from the app context"),
+            "config", JsonSchemas.objectSchema("The settings to set, by name. Settings left out "
+                + "stay as they are; null clears one."),
+            "label", JsonSchemas.string("A better name for the step, only if it has the default "
+                + "name"),
+            "summary", JsonSchemas.string("What you filled in, a few words"))),
+            List.of("stepId", "config")));
   }
 
   @Override
   public List<ToolSpec> toolsFor(UUID agentId) {
-    return isOrchestrator(agentId) ? specs : List.of();
+    if (!isOrchestrator(agentId)) return List.of();
+    if (recorder.stepInFocus() == null) return specs;
+    List<ToolSpec> withStep = new ArrayList<>(specs);
+    withStep.add(configureStep);
+    return withStep;
   }
 
   @Override
@@ -112,6 +138,7 @@ public class AppControlToolProvider implements ToolProvider {
       case OPEN_FORM -> openForm(args);
       case ASK_USER -> askUser(args);
       case SET_THEME -> setTheme(args);
+      case CONFIGURE_STEP -> configureStep(args);
       default -> ToolResult.error("Unknown app tool " + call.name());
     };
   }
@@ -141,9 +168,10 @@ public class AppControlToolProvider implements ToolProvider {
     ObjectNode payload = Json.obj().put("question", question);
     ArrayNode options = payload.putArray("options");
     for (JsonNode option : args.path("options")) {
-      if (options.size() == 5) break;
+      if (options.size() == 8) break;
       if (!option.asText().isBlank()) options.add(option.asText());
     }
+    if (args.path("multiple").asBoolean(false) && options.size() > 1) payload.put("multiple", true);
     recorder.record(new UiAction(UiAction.ASK_USER, payload));
     return done("The question is on the user's screen. End your turn now and wait for the answer; "
         + "do not repeat the question in your reply.");
@@ -154,6 +182,30 @@ public class AppControlToolProvider implements ToolProvider {
     if (!THEMES.contains(theme)) return ToolResult.error("Unknown theme '" + theme + "'");
     recorder.record(new UiAction(UiAction.SET_THEME, Json.obj().put("theme", theme)));
     return done("Switched to the " + theme + " theme.");
+  }
+
+  private ToolResult configureStep(JsonNode args) {
+    String stepId = recorder.stepInFocus();
+    if (stepId == null) {
+      return ToolResult.error("No step's settings are open with you on them. Tell the user to "
+          + "choose \"Configure using Jizza\" on the step first.");
+    }
+    if (!stepId.equals(args.path("stepId").asText())) {
+      return ToolResult.error("You can only configure the open step, '" + stepId + "'.");
+    }
+    JsonNode config = args.path("config");
+    if (!config.isObject() || config.isEmpty()) return ToolResult.error("'config' must name at least one setting");
+    if (config.toString().length() > MAX_STEP_CONFIG_CHARS) {
+      return ToolResult.error("Those settings are too large; keep to what the step takes.");
+    }
+    ObjectNode payload = Json.obj().put("stepId", stepId);
+    payload.set("config", config);
+    String label = args.path("label").asText("").strip();
+    if (!label.isEmpty()) payload.put("label", label.length() > 80 ? label.substring(0, 80) : label);
+    if (args.hasNonNull("summary")) payload.put("summary", args.path("summary").asText());
+    recorder.record(new UiAction(UiAction.CONFIGURE_STEP, payload));
+    return done("The settings are filled in on the user's screen, unsaved. Tell them in a sentence "
+        + "or two what you set and anything they still need to fill in, such as a key.");
   }
 
   private static ToolResult done(String note) {

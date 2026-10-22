@@ -84,12 +84,56 @@ class AppControlToolProviderTest {
 
   @Test
   void capsTheChoicesOnAQuestion() {
-    call("app_ask_user", "{\"question\":\"Which day?\",\"options\":[\"Mon\",\"Tue\",\"Wed\",\"Thu\","
-        + "\"Fri\",\"Sat\"]}");
+    call("app_ask_user", "{\"question\":\"Which?\",\"options\":[\"1\",\"2\",\"3\",\"4\","
+        + "\"5\",\"6\",\"7\",\"8\",\"9\"]}");
 
     UiAction ask = recorder.endTurn().get(0);
     assertThat(ask.type()).isEqualTo(UiAction.ASK_USER);
-    assertThat(ask.payload().path("options")).hasSize(5);
+    assertThat(ask.payload().path("options")).hasSize(8);
+    assertThat(ask.payload().has("multiple")).isFalse();
+  }
+
+  @Test
+  void aQuestionCanTakeSeveralAnswers() {
+    call("app_ask_user", """
+        {"question":"Which fields should it send?","options":["Price","Currency","Date"],
+         "multiple":true}""");
+    assertThat(recorder.endTurn().get(0).payload().path("multiple").asBoolean()).isTrue();
+    recorder.beginTurn();
+
+    // One option is nothing to tick.
+    call("app_ask_user", "{\"question\":\"Go?\",\"options\":[\"Yes\"],\"multiple\":true}");
+    assertThat(recorder.endTurn().get(0).payload().has("multiple")).isFalse();
+  }
+
+  @Test
+  void configuresOnlyTheStepWhoseSettingsAreOpen() {
+    assertThat(provider.toolsFor(jizza.getId())).extracting(ToolSpec::name)
+        .doesNotContain("app_configure_step");
+    assertThat(call("app_configure_step", "{\"stepId\":\"http_1\",\"config\":{\"url\":\"https://x\"}}")
+        .ok()).isFalse();
+    recorder.endTurn();
+
+    recorder.beginTurn("http_1");
+    assertThat(provider.toolsFor(jizza.getId())).extracting(ToolSpec::name)
+        .contains("app_configure_step");
+    assertThat(call("app_configure_step", "{\"stepId\":\"other\",\"config\":{\"url\":\"https://x\"}}")
+        .ok()).isFalse();
+    assertThat(call("app_configure_step", "{\"stepId\":\"http_1\",\"config\":{}}").ok()).isFalse();
+    assertThat(call("app_configure_step", """
+        {"stepId":"http_1","label":"Get gold rate",
+         "config":{"method":"GET","url":"https://api.example.com/rates","bodyType":null}}""").ok())
+        .isTrue();
+
+    List<UiAction> actions = recorder.endTurn();
+    assertThat(actions).extracting(UiAction::type).containsExactly(UiAction.CONFIGURE_STEP);
+    assertThat(actions.get(0).payload().path("stepId").asText()).isEqualTo("http_1");
+    assertThat(actions.get(0).payload().path("label").asText()).isEqualTo("Get gold rate");
+    assertThat(actions.get(0).payload().path("config").path("url").asText())
+        .isEqualTo("https://api.example.com/rates");
+    // The next turn starts without a step unless one is open again.
+    recorder.beginTurn();
+    assertThat(recorder.stepInFocus()).isNull();
   }
 
   @Test

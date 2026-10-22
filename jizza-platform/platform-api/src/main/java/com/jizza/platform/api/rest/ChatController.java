@@ -56,7 +56,7 @@ public class ChatController {
   public TurnRef send(@Valid @RequestBody Requests.Turn request) {
     boolean incognito = Boolean.TRUE.equals(request.incognito());
     return chat.send(CurrentUser.userId(), new TurnSubmission(request.conversationId(),
-        request.clientMessageId(), request.message(), request.screen(), incognito));
+        request.clientMessageId(), request.message(), request.screen(), incognito, request.context()));
   }
 
   /** A job and its events after {@code afterSeq}, for catching up after a reconnect or reopening one. */

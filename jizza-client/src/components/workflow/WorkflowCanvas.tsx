@@ -20,6 +20,7 @@ import {
   type Exit, type MenuItem, type StepData, type StepRun, type WireData,
 } from './canvasParts'
 import { CanvasInspector, type ToolOption, type WorkflowOption } from './CanvasInspector'
+import { canConfigureWithJizza } from '@/jizza/commands'
 
 interface Props {
   graph: CanvasGraph
@@ -145,6 +146,8 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   /** Whether the open step settings have changes not yet saved, and whether to open them at the note. */
   const unsaved = useRef(false)
   const [focusNote, setFocusNote] = useState(false)
+  /** The step "Configure using Jizza" was chosen for, so its settings open with Jizza on them. */
+  const [askJizza, setAskJizza] = useState<string | null>(null)
   const [help, setHelp] = useState(false)
   const [paletteQuery, setPaletteQuery] = useState('')
   const connecting = useRef<{ from: string; branch: Exit; done: boolean } | null>(null)
@@ -212,6 +215,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const select = useCallback((nodes: string[], edges: string[] = []) => {
     if (!mayLeave(nodes)) return
     setFocusNote(false)
+    setAskJizza(null)
     setSelNodes(nodes)
     setSelEdges(edges)
   }, [mayLeave])
@@ -376,6 +380,10 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         },
       )
     }
+    if (canConfigureWithJizza(node.type)) {
+      items.unshift({ label: 'Configure using Jizza', onSelect: () => { select([id]); setAskJizza(id) } })
+      if (items.length > 1) items[1] = { ...items[1], divider: true }
+    }
     if (!isStart) {
       items.push(
         { label: note ? 'Edit note' : 'Add note', divider: !branchesFrom(graph, id) && items.length > 0, onSelect: () => { select([id]); setFocusNote(true) } },
@@ -465,7 +473,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     }
     if (selects.length) {
       const next = applySelection(selNodes, selects)
-      if (next !== selNodes && mayLeave(next)) { setFocusNote(false); setSelNodes(next) }
+      if (next !== selNodes && mayLeave(next)) { setFocusNote(false); setAskJizza(null); setSelNodes(next) }
     }
   }, [readOnly, graph, history, selNodes, mayLeave])
 
@@ -679,7 +687,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
             the click that opened it into a click on empty canvas. */}
         {selected && (
         <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} workflows={workflows} readOnly={readOnly}
-          issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} onDirty={onDirty}
+          issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} askJizza={askJizza === selected.id} onDirty={onDirty}
           onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
           onClose={() => { unsaved.current = false; select([]) }} />
         )}

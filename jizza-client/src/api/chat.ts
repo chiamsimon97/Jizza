@@ -4,9 +4,10 @@ import type { JobDto, TurnRef } from '@/types'
 export const chatApi = {
   /**
    * Starts a turn and returns at once; what it does arrives on the socket. {@code screen} is the
-   * page the user is on, so Jizza can act on the app. {@code clientMessageId} makes a retry safe.
+   * page the user is on, so Jizza can act on the app; {@code context}
+   * describes what is open there (the Builder, a step's settings) for this turn only. {@code clientMessageId} makes a retry safe.
    */
-  send: (body: { message: string; conversationId?: string; clientMessageId: string; screen?: string; incognito?: boolean }) =>
+  send: (body: { message: string; conversationId?: string; clientMessageId: string; screen?: string; context?: Record<string, unknown>; incognito?: boolean }) =>
     api.post<TurnRef>('/api/chat/turns', body),
 
   /** A job and its events after {@code afterSeq}. */

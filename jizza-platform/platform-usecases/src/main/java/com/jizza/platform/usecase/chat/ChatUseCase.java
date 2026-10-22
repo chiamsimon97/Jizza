@@ -19,6 +19,9 @@ public class ChatUseCase {
   /** Long enough to paste a document's worth of context; short enough to keep a turn affordable. */
   static final int MAX_MESSAGE_CHARS = 16_000;
 
+  /** What the screen may say about itself: a workflow's steps and settings fit with room to spare. */
+  static final int MAX_CONTEXT_CHARS = 48_000;
+
   private final ChatService chat;
 
   public ChatUseCase(ChatService chat) {
@@ -53,6 +56,12 @@ public class ChatUseCase {
       throw new ValidationException("An incognito message cannot go into a saved conversation");
     }
     String screen = s.screen() == null || s.screen().isBlank() ? null : s.screen().trim();
-    return new TurnSubmission(s.conversationId(), s.clientMessageId(), s.text(), screen, s.incognito());
+    var context = s.context() == null || !s.context().isObject() || screen == null ? null : s.context();
+    if (context != null && context.toString().length() > MAX_CONTEXT_CHARS) {
+      throw new ValidationException("This workflow is too large for Jizza to look at in one go. "
+          + "Open the step you want help with and use Configure using Jizza.");
+    }
+    return new TurnSubmission(s.conversationId(), s.clientMessageId(), s.text(), screen,
+        s.incognito(), context);
   }
 }

@@ -92,6 +92,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_set_theme", ActionType.READ),
       Map.entry("app_propose_workflow", ActionType.READ),
       Map.entry("app_propose_agent", ActionType.READ),
+      // Fills in a Builder step's panel; the user still saves it.
+      Map.entry("app_configure_step", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),

@@ -1,15 +1,19 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Mic, MicOff, Send, ShieldQuestion, Square, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Copy, Mic, MicOff, RotateCcw, Send, ShieldQuestion, Square, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
-import { loadJob, useAssistantStore, type AssistantMessage } from './assistantStore'
+import { loadJob, useAssistantStore, type AssistantMessage, type Question } from './assistantStore'
 import { JizzaOrb } from './JizzaOrb'
 import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { AgentProposalCard } from './AgentProposalCard'
 import { useDictation } from './useSpeech'
+import { ContextChip, useCurrentContext } from './ContextChip'
+import { commandsFor, helpText, matchCommands, type SlashCommand } from './commands'
+import { useContextStore } from './contextStore'
+import { Markdown } from './Markdown'
 
 const SUGGESTIONS = [
   'Create a workflow that summarises my week every Friday',
@@ -37,8 +41,16 @@ interface ConversationProps {
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
-  const { messages, thinking, incognito, send, stop } = useAssistantStore()
+  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation } = useAssistantStore()
   const [input, setInput] = useState('')
+  const { ctx, token } = useCurrentContext()
+  // The slash menu: open while the message is "/" and a command name, with one highlighted.
+  const slash = /^\/(\S*)$/.exec(input)
+  const [menuIndex, setMenuIndex] = useState(0)
+  const [menuClosed, setMenuClosed] = useState(false)
+  const commands = slash && !menuClosed ? matchCommands(ctx, slash[1]) : []
+  useEffect(() => { setMenuIndex(0) }, [slash?.[1]])
+  useEffect(() => { if (!slash) setMenuClosed(false) }, [!!slash]) // eslint-disable-line react-hooks/exhaustive-deps
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -60,9 +72,50 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     e?.preventDefault()
     const text = input.trim()
     if (!text || thinking) return
+    // A command typed out in full runs as if picked from the menu.
+    const typed = /^\/(\S+)$/.exec(text)
+    const command = typed && commandsFor(ctx).find(c => c.name === typed[1].toLowerCase())
+    if (command) return runCommand(command)
     setInput('')
     void send(text)
   }
+
+  function runCommand(command: SlashCommand) {
+    setInput('')
+    if (command.run === 'new') newConversation()
+    else if (command.run === 'help') localReply(`/${command.name}`, helpText(ctx))
+    else if (command.run === 'leave') { if (token !== undefined) useContextStore.getState().pop(token) }
+    else if (command.prompt) { if (!thinking) void send(command.prompt) }
+    else if (command.insert) {
+      setInput(command.insert)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      })
+    }
+  }
+
+  function choose(q: Question, option: string) {
+    const reply = q.guided?.[option]
+    if (reply) guide(option, reply)
+    else void send(option)
+    if (reply) inputRef.current?.focus()
+  }
+
+  const retry = (id: number) => {
+    const i = messages.findIndex(m => m.id === id)
+    const asked = [...messages.slice(0, i)].reverse().find(m => m.role === 'user')
+    if (asked) void send(asked.text)
+  }
+
+  const contextual = ctx.kind === 'builder' || ctx.kind === 'step'
+  const shownIntro = intro ?? (contextual ? {
+    title: ctx.kind === 'step' ? `Let's set up ${ctx.detail ? `"${ctx.detail}"` : 'this step'}` : `Working on ${ctx.detail ? `"${ctx.detail}"` : 'this workflow'}`,
+    text: ctx.kind === 'step'
+      ? 'Tell me what it should do, paste API documentation, or type / for shortcuts. I fill in the settings; you review and save.'
+      : 'Ask me about this workflow, or type / for shortcuts. Open a step\'s menu and choose "Configure using Jizza" to have me fill it in.',
+    suggestions: commandsFor(ctx).filter(c => c.prompt).slice(0, 4).map(c => c.prompt!),
+  } : undefined)
 
   const pad = compact ? 'px-3' : 'px-4 sm:px-6'
   const width = compact ? '' : 'mx-auto max-w-3xl'
@@ -76,16 +129,16 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
               <JizzaOrb size={compact ? 52 : 72} state={dictation.listening ? 'listening' : 'idle'} />
               <div>
                 <h3 className={`${compact ? 'text-lg' : 'text-2xl'} font-semibold tracking-tight text-gray-900 dark:text-gray-100`}>
-                  {intro?.title ?? (incognito ? 'Nothing here is saved' : `${greeting()}. What shall we do?`)}
+                  {shownIntro?.title ?? (incognito ? 'Nothing here is saved' : `${greeting()}. What shall we do?`)}
                 </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {intro?.text ?? (incognito
+                  {shownIntro?.text ?? (incognito
                     ? 'Incognito chats are not stored in your history.'
                     : 'Tell me what you need. I can open pages, draft workflows and tasks, and only stop when I need you.')}
                 </p>
               </div>
               <div className={`stagger grid w-full gap-2 ${compact ? '' : 'max-w-xl sm:grid-cols-2'}`}>
-                {(intro?.suggestions ?? SUGGESTIONS).map(text => (
+                {(shownIntro?.suggestions ?? SUGGESTIONS).map(text => (
                   <button
                     key={text}
                     type="button"
@@ -101,8 +154,9 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
           )}
 
           {messages.map(msg => (
-            <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={t => void send(t)} onOpenJob={onOpenJob}
-              inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()} />
+            <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={option => choose(msg.question!, option)} onOpenJob={onOpenJob}
+              inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
+              onSendMany={text => void send(text)} onRetry={msg.error && !thinking ? () => retry(msg.id) : undefined} />
           ))}
 
           {/* Between sending and the job starting there is no reply bubble yet to show progress in. */}
@@ -117,6 +171,24 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
       </div>
 
       <form onSubmit={submit} className={`${pad} pb-3 pt-2`}>
+        <div className={`${width} relative`}>
+          {commands.length > 0 && (
+            <ul role="listbox" aria-label="Shortcuts"
+              className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+              <li className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Shortcuts for the {ctx.label}</li>
+              {commands.map((c, i) => (
+                <li key={c.name} role="option" aria-selected={i === menuIndex}>
+                  <button type="button" onMouseEnter={() => setMenuIndex(i)} onMouseDown={e => e.preventDefault()} onClick={() => runCommand(c)}
+                    className={`flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${i === menuIndex ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
+                    <span className="font-mono text-xs font-semibold text-brand-700 dark:text-brand-300">/{c.name}</span>
+                    <span className="truncate text-gray-600 dark:text-gray-300">{c.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <ContextChip className="mb-1.5 px-1" />
+        </div>
         <div className={`${width} flex items-end gap-2 rounded-2xl border border-gray-300 bg-white p-2 shadow-sm transition-all focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900`}>
           {dictation.supported && (
             <button
@@ -138,10 +210,21 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             rows={1}
             value={dictation.listening ? dictation.interim : input}
             onChange={e => setInput(e.target.value)}
-            placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : placeholder ?? 'Ask Jizza to do something…'}
+            placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : placeholder ?? (contextual ? 'Ask about this, or type / for shortcuts…' : 'Ask Jizza to do something… (/ for shortcuts)')}
             readOnly={dictation.listening}
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+            onKeyDown={e => {
+              if (commands.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMenuIndex(i => (i + (e.key === 'ArrowDown' ? 1 : commands.length - 1)) % commands.length)
+                  return
+                }
+                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); runCommand(commands[menuIndex] ?? commands[0]); return }
+                if (e.key === 'Escape') { e.preventDefault(); setMenuClosed(true); return }
+              }
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+            }}
           />
           {thinking ? (
             <Button type="button" variant="secondary" onClick={() => void stop()} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Stop" title="Stop">
@@ -155,7 +238,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
         </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
-            Enter to send · Shift+Enter for a new line · Ctrl+K opens Jizza anywhere
+            Enter to send · Shift+Enter for a new line · / for shortcuts · Ctrl+K opens Jizza anywhere
           </p>
         )}
       </form>
@@ -163,9 +246,13 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry }: {
   msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
+  /** Sends several ticked answers together. */
+  onSendMany: (text: string) => void
+  /** Asks again after a reply that failed. */
+  onRetry?: () => void
 }) {
   if (msg.role === 'event') {
     return (
@@ -200,16 +287,23 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
             ))}
           </ul>
         )}
-        <div className={`rounded-2xl rounded-tl-md border px-4 py-2.5 text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
+        <div className={`group/reply relative rounded-2xl rounded-tl-md border px-4 py-2.5 text-sm leading-relaxed shadow-sm ${msg.error ? 'whitespace-pre-wrap' : ''} ${
           msg.error
             ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
             : 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
         }`}>
-          {msg.text}
+          {msg.error ? msg.text : <Markdown text={msg.text} />}
           {msg.streaming && !msg.text && <TypingDots />}
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
+          {!msg.streaming && msg.text && !msg.error && <CopyButton text={msg.text} />}
         </div>
+        {onRetry && (
+          <button type="button" onClick={onRetry}
+            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
+            <RotateCcw className="h-3 w-3" /> Try again
+          </button>
+        )}
         {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
         {msg.proposal && <AgentProposalCard proposal={msg.proposal} />}
         {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
@@ -224,25 +318,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
             <ChevronRight className="h-3 w-3" />
           </button>
         )}
-        {msg.question && (
-          <div className="rounded-2xl border border-brand-300 bg-brand-50/60 p-3 animate-fade-in-up dark:border-brand-700 dark:bg-brand-500/10">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{msg.question.text}</p>
-            {msg.question.options.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {msg.question.options.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => onChoose(option)}
-                    className="rounded-full border border-brand-300 bg-white px-3 py-1 text-sm font-medium text-brand-700 transition-all hover:-translate-y-0.5 hover:bg-brand-500 hover:text-white active:scale-95 dark:border-brand-700 dark:bg-gray-900 dark:text-brand-300 dark:hover:bg-brand-500 dark:hover:text-white"
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {msg.question && <QuestionCard question={msg.question} onChoose={onChoose} onSendMany={onSendMany} />}
       </div>
     </div>
   )
@@ -373,5 +449,64 @@ function Helpers({ helpers }: { helpers: { agentId: string; agentName: string }[
       </div>
       <span className="text-xs text-gray-500 dark:text-gray-400">{label} helped</span>
     </div>
+  )
+}
+
+/**
+ * A question Jizza is waiting on. One answer is a tap; when several can apply they are ticked and
+ * sent together. Typing in the message box answers in the user's own words instead.
+ */
+function QuestionCard({ question, onChoose, onSendMany }: { question: Question; onChoose: (text: string) => void; onSendMany: (text: string) => void }) {
+  const [picked, setPicked] = useState<string[]>([])
+  const toggle = (o: string) => setPicked(p => (p.includes(o) ? p.filter(x => x !== o) : [...p, o]))
+  const sendPicked = () => {
+    const ordered = question.options.filter(o => picked.includes(o))
+    onSendMany(ordered.length === 1 ? ordered[0] : `${ordered.slice(0, -1).join(', ')} and ${ordered[ordered.length - 1]}`)
+  }
+  return (
+    <div className="rounded-2xl border border-brand-300 bg-brand-50/60 p-3 animate-fade-in-up dark:border-brand-700 dark:bg-brand-500/10">
+      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{question.text}</p>
+      {question.multiple && <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">Choose all that apply.</p>}
+      {question.options.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2" role={question.multiple ? 'group' : undefined}>
+          {question.options.map(option => {
+            const on = picked.includes(option)
+            return question.multiple ? (
+              <button key={option} type="button" role="checkbox" aria-checked={on} onClick={() => toggle(option)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all active:scale-95 ${on
+                  ? 'border-brand-500 bg-brand-500 text-white'
+                  : 'border-brand-300 bg-white text-brand-700 hover:border-brand-500 dark:border-brand-700 dark:bg-gray-900 dark:text-brand-300'}`}>
+                <span className={`grid h-3.5 w-3.5 place-items-center rounded-sm border ${on ? 'border-white' : 'border-current'}`}>{on && <Check className="h-2.5 w-2.5" />}</span>
+                {option}
+              </button>
+            ) : (
+              <button key={option} type="button" onClick={() => onChoose(option)}
+                className="rounded-full border border-brand-300 bg-white px-3 py-1 text-sm font-medium text-brand-700 transition-all hover:-translate-y-0.5 hover:bg-brand-500 hover:text-white active:scale-95 dark:border-brand-700 dark:bg-gray-900 dark:text-brand-300 dark:hover:bg-brand-500 dark:hover:text-white">
+                {option}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {question.multiple && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <Button size="sm" disabled={picked.length === 0} onClick={sendPicked}>
+            <Send className="h-3.5 w-3.5" /> {picked.length > 1 ? `Send ${picked.length} choices` : 'Send'}
+          </Button>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">or type your own answer below</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button type="button" aria-label="Copy reply" title={copied ? 'Copied' : 'Copy reply'}
+      onClick={() => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
+      className="absolute -bottom-2.5 right-2 grid h-6 w-6 place-items-center rounded-md border border-gray-200 bg-white text-gray-400 opacity-0 shadow-sm transition-opacity hover:text-gray-700 focus:opacity-100 group-hover/reply:opacity-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:text-gray-200">
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+    </button>
   )
 }

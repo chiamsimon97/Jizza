@@ -62,6 +62,8 @@ public class TurnTierSelector {
     // A Jizza set to think harder runs deep whatever is asked for; no point checking.
     if ("deep".equalsIgnoreCase(jizza.getModelTier())) return ModelTier.STANDARD;
     if (JizzaOrchestrator.WORKFLOW_PLANNER.equals(screen)) return ModelTier.STANDARD;
+    // Configuring a step reads documentation and writes settings: no job for the small model.
+    if (JizzaOrchestrator.WORKFLOW_STEP.equals(screen)) return ModelTier.STANDARD;
     if (message == null || message.isBlank()
         || message.length() > props.getRouting().getMaxSimpleChars()) {
       return ModelTier.STANDARD;
