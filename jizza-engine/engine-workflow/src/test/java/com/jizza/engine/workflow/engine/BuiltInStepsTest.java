@@ -302,6 +302,29 @@ class BuiltInStepsTest {
   }
 
   @Test
+  void eachStepKeepsWhatItWasHandedForTheRunHistory() {
+    EngineHarness harness = new EngineHarness(line(
+        node("hook", NodeType.HTTP_REQUEST, "{\"method\":\"POST\","
+            + "\"url\":\"https://hooks.example.com/orders/{{ input.id }}\","
+            + "\"body\":\"{{ nope.missing }}\"}")));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("id", 7), "manual");
+
+    var trigger = harness.step(run.id(), "start").orElseThrow().getInput();
+    assertThat(trigger.path("received").path("id").asInt()).isEqualTo(7);
+    var hook = harness.step(run.id(), "hook").orElseThrow();
+    assertThat(hook.getInput().path("settings").path("url").asText())
+        .isEqualTo("https://hooks.example.com/orders/7");
+    assertThat(hook.getInput().path("settings").path("method").asText()).isEqualTo("POST");
+    assertThat(hook.getInput().path("received").has("start")).isTrue();
+    // A placeholder that cannot render is kept with the reason rather than hiding the step.
+    assertThat(hook.getInput().path("settings").path("body").path("template").asText())
+        .isEqualTo("{{ nope.missing }}");
+    assertThat(hook.getInput().path("settings").path("body").path("error").asText()).isNotBlank();
+    assertThat(hook.getStartedAt()).isNotNull();
+  }
+
+  @Test
   void aWebhookThatIsRefusedFailsTheStepUnlessToldToCarryOn() {
     WorkflowGraph strict = line(once("hook", NodeType.HTTP_REQUEST,
         "{\"url\":\"https://hooks.example.com\",\"body\":\"hi\"}"));
