@@ -14,7 +14,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** A remote MCP server the user added from the app; see {@code V19__mcp_servers.sql}. */
+/** A remote MCP server the user added from the app; see {@code V20__mcp_servers.sql}. */
 @Entity
 @Table(name = "mcp_servers")
 public class McpServerEntity {
