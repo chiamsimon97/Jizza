@@ -129,10 +129,37 @@ public class WorkflowValidator {
       throw new ValidationException("Webhook step '" + node.id() + "' has method '" + method
           + "'; use GET, POST, PUT, PATCH or DELETE");
     }
-    var headers = node.config().get("headers");
-    if (headers != null && !headers.isNull() && !headers.isObject()) {
-      throw new ValidationException("Webhook step '" + node.id()
-          + "' needs its headers as name and value pairs");
+    for (String pairs : List.of("headers", "queryParams", "fields")) {
+      var value = node.config().get(pairs);
+      if (value != null && !value.isNull() && !value.isObject()) {
+        throw new ValidationException("Webhook step '" + node.id()
+            + "' needs its " + (pairs.equals("queryParams") ? "query parameters" : pairs)
+            + " as name and value pairs");
+      }
+    }
+    String bodyType = node.config().path("bodyType").asText("");
+    if (!List.of("", "json", "form", "raw", "expression", "none").contains(bodyType)) {
+      throw new ValidationException("Webhook step '" + node.id() + "' has body type '" + bodyType
+          + "'; use json, form, raw, expression or none");
+    }
+    if (bodyType.equals("expression")) requireConfig(node, "bodyExpr");
+    String responseType = node.config().path("responseType").asText("auto");
+    if (!List.of("auto", "json", "text").contains(responseType)) {
+      throw new ValidationException("Webhook step '" + node.id() + "' has response type '"
+          + responseType + "'; use auto, json or text");
+    }
+    var auth = node.config().path("auth");
+    String authType = auth.path("type").asText("none");
+    String missing = switch (authType) {
+      case "none" -> null;
+      case "basic" -> auth.path("username").asText("").isBlank() ? "a username" : null;
+      case "bearer" -> auth.path("token").asText("").isBlank() ? "a token" : null;
+      case "apiKey" -> auth.path("name").asText("").isBlank() ? "the API key's name" : null;
+      default -> throw new ValidationException("Webhook step '" + node.id() + "' has sign-in '"
+          + authType + "'; use none, basic, bearer or apiKey");
+    };
+    if (missing != null) {
+      throw new ValidationException("Webhook step '" + node.id() + "' needs " + missing);
     }
   }
 

@@ -302,6 +302,60 @@ class BuiltInStepsTest {
   }
 
   @Test
+  void aWebhookSendsMappedFieldsWithQueryParametersAndSignIn() {
+    EngineHarness harness = new EngineHarness(line(
+        node("hook", NodeType.HTTP_REQUEST, "{\"method\":\"POST\","
+            + "\"url\":\"https://hooks.example.com/orders?src=jizza\","
+            + "\"queryParams\":{\"order id\":\"{{ input.id }}\"},"
+            + "\"auth\":{\"type\":\"bearer\",\"token\":\"t-{{ input.id }}\"},"
+            + "\"bodyType\":\"json\",\"unflatten\":true,\"wrapInArray\":true,"
+            + "\"fields\":{\"order.id\":\"{{ input.id }}\",\"order.note\":\"Total {{ input.total }}\","
+            + "\"tags\":\"{{ input.tags }}\"}}")));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("id", 7).put("total", 42).set("tags", Json.read("[\"a\",\"b\"]")), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.httpCalls).singleElement().satisfies(call -> {
+      assertThat(call[1]).isEqualTo("https://hooks.example.com/orders?src=jizza&order%20id=7");
+      @SuppressWarnings("unchecked")
+      Map<String, String> headers = (Map<String, String>) call[2];
+      assertThat(headers).containsEntry("Authorization", "Bearer t-7")
+          .containsEntry("Content-Type", "application/json");
+      var sent = Json.read((String) call[3]);
+      assertThat(sent.isArray()).isTrue();
+      assertThat(sent.path(0).path("order").path("id").isNumber()).isTrue();
+      assertThat(sent.path(0).path("order").path("note").asText()).isEqualTo("Total 42");
+      assertThat(sent.path(0).path("tags").size()).isEqualTo(2);
+    });
+  }
+
+  @Test
+  void aWebhookSendsFormDataWithBasicSignInAndAnApiKeyInTheQuery() {
+    EngineHarness basic = new EngineHarness(line(
+        node("hook", NodeType.HTTP_REQUEST, "{\"url\":\"https://hooks.example.com\","
+            + "\"auth\":{\"type\":\"basic\",\"username\":\"me\",\"password\":\"secret\"},"
+            + "\"bodyType\":\"form\",\"fields\":{\"name\":\"A & B\",\"id\":\"{{ input.id }}\"}}")));
+    basic.engine.start(basic.workflow.getId(), 1, Json.obj().put("id", 7), "manual");
+    assertThat(basic.httpCalls).singleElement().satisfies(call -> {
+      @SuppressWarnings("unchecked")
+      Map<String, String> headers = (Map<String, String>) call[2];
+      assertThat(headers).containsEntry("Authorization", "Basic bWU6c2VjcmV0")
+          .containsEntry("Content-Type", "application/x-www-form-urlencoded");
+      assertThat(call[3]).isEqualTo("name=A+%26+B&id=7");
+    });
+
+    EngineHarness key = new EngineHarness(line(
+        node("hook", NodeType.HTTP_REQUEST, "{\"method\":\"GET\",\"url\":\"https://hooks.example.com/x\","
+            + "\"auth\":{\"type\":\"apiKey\",\"name\":\"api_key\",\"value\":\"k1\",\"in\":\"query\"},"
+            + "\"responseType\":\"text\"}")));
+    var run = key.engine.start(key.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(key.httpCalls).singleElement()
+        .satisfies(call -> assertThat(call[1]).isEqualTo("https://hooks.example.com/x?api_key=k1"));
+    assertThat(key.step(run.id(), "hook").orElseThrow().getOutput().path("body").isTextual()).isTrue();
+  }
+
+  @Test
   void aWebhookThatIsRefusedFailsTheStepUnlessToldToCarryOn() {
     WorkflowGraph strict = line(once("hook", NodeType.HTTP_REQUEST,
         "{\"url\":\"https://hooks.example.com\",\"body\":\"hi\"}"));

@@ -92,10 +92,15 @@ export function newId(type: NodeType): string {
   return `${type.toLowerCase()}_${Date.now().toString(36)}${counter}`
 }
 
-/** A new step. Paths and set-variable steps start with one empty row, so there is something to fill in. */
+/**
+ * A new step. Paths and set-variable steps start with one empty row, so there is something to fill
+ * in; a wait starts at an hour and a webhook as a JSON POST, which is what their settings show.
+ */
 export function newNode(type: NodeType, x: number, y: number): CanvasNode {
   const config: Record<string, unknown> = type === 'SWITCH' ? { cases: [{ id: 'case1', label: 'Path 1', condition: '' }] }
-    : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] } : {}
+    : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] }
+    : type === 'WAIT' ? { duration: 'PT1H' }
+    : type === 'HTTP_REQUEST' ? { method: 'POST', bodyType: 'json' } : {}
   return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config, x, y }
 }
 
@@ -155,6 +160,107 @@ function autoLayout(ids: string[], edges: CanvasEdge[], start?: string): Map<str
 export function tidy(graph: CanvasGraph): CanvasGraph {
   const at = autoLayout(graph.nodes.map(n => n.id), graph.edges, graph.nodes.find(n => n.type === 'TRIGGER')?.id)
   return { ...graph, nodes: graph.nodes.map(n => ({ ...n, ...(at.get(n.id) ?? {}) })) }
+}
+
+/** Every step reachable from {@code id}, not counting itself. */
+export function descendantsOf(graph: CanvasGraph, id: string): string[] {
+  const seen = new Set<string>()
+  const stack = graph.edges.filter(e => e.from === id).map(e => e.to)
+  while (stack.length) {
+    const next = stack.pop()!
+    if (next === id || seen.has(next)) continue
+    seen.add(next)
+    for (const e of graph.edges) if (e.from === next) stack.push(e.to)
+  }
+  return [...seen]
+}
+
+/** Whether the flow splits at {@code id}: more than one connection leaves it. */
+export function branchesFrom(graph: CanvasGraph, id: string): boolean {
+  return new Set(graph.edges.filter(e => e.from === id).map(e => e.to)).size > 1
+}
+
+/**
+ * Lays out everything after {@code id} as a tree to its right, leaving {@code id} where it is:
+ * one column per step along the longest path, and each step centred beside the steps it leads to,
+ * a row apart, so paths never overlap. Steps reached from several places sit after the last of them.
+ */
+export function arrangeFrom(graph: CanvasGraph, id: string): CanvasGraph {
+  const root = graph.nodes.find(n => n.id === id)
+  const below = new Set(descendantsOf(graph, id))
+  if (!root || below.size === 0) return graph
+  const inside = (n: string) => n === id || below.has(n)
+  const edges = graph.edges.filter(e => inside(e.from) && inside(e.to) && e.to !== id)
+
+  const depth = new Map<string, number>([[id, 0]])
+  for (let i = 0; i <= below.size; i++) {
+    let changed = false
+    for (const e of edges) {
+      const d = depth.get(e.from)
+      if (d !== undefined && (depth.get(e.to) ?? -1) < d + 1) { depth.set(e.to, d + 1); changed = true }
+    }
+    if (!changed) break
+  }
+
+  // A spanning tree: each step hangs off a step one column before it, children in exit order.
+  const byId = new Map(graph.nodes.map(n => [n.id, n]))
+  const exitRank = (e: CanvasEdge) => {
+    const from = byId.get(e.from)
+    return from ? Math.max(0, exitsOf(from).indexOf(e.branch)) : 0
+  }
+  const children = new Map<string, string[]>()
+  const placed = new Set<string>([id])
+  for (const e of [...edges].sort((a, b) => exitRank(a) - exitRank(b))) {
+    if (placed.has(e.to) || depth.get(e.to) !== (depth.get(e.from) ?? 0) + 1) continue
+    placed.add(e.to)
+    children.set(e.from, [...(children.get(e.from) ?? []), e.to])
+  }
+
+  // Leaves are stacked top to bottom, each taking room for its own height; parents sit centred.
+  const top = new Map<string, number>()
+  let cursor = 0
+  const walk = (n: string): number => {
+    const kids = children.get(n) ?? []
+    let at: number
+    if (kids.length === 0) {
+      at = cursor
+      cursor += Math.max(ROW_H, heightOf(byId.get(n)!) + ROW_H - NODE_H)
+    } else {
+      const tops = kids.map(walk)
+      at = (tops[0] + tops[tops.length - 1]) / 2
+    }
+    top.set(n, at)
+    return at
+  }
+  walk(id)
+
+  const shift = top.get(id)!
+  return {
+    ...graph,
+    nodes: graph.nodes.map(n => (n.id !== id && top.has(n.id)
+      ? { ...n, x: root.x + depth.get(n.id)! * COL_W, y: Math.round((root.y + top.get(n.id)! - shift) / 10) * 10 }
+      : n)),
+  }
+}
+
+/** How tall a step's card is: a paths step with many cases grows to fit its exits. */
+function heightOf(n: CanvasNode): number {
+  const exits = exitsOf(n).length
+  return exits > 3 ? Math.max(NODE_H, 40 + exits * 22) : NODE_H
+}
+
+/**
+ * Puts a step's edited copy back into the graph: its settings, and the connections leaving it.
+ * Everything else comes from {@code graph}, so changes made on the canvas meanwhile are kept.
+ */
+export function applyStepEdit(graph: CanvasGraph, edited: CanvasGraph, id: string): CanvasGraph {
+  const node = edited.nodes.find(n => n.id === id)
+  if (!node || !graph.nodes.some(n => n.id === id)) return graph
+  const ids = new Set(graph.nodes.map(n => n.id))
+  return {
+    nodes: graph.nodes.map(n => (n.id === id ? { ...node, x: n.x, y: n.y } : n)),
+    edges: [...graph.edges.filter(e => e.from !== id), ...edited.edges.filter(e => e.from === id && ids.has(e.to))],
+  }
 }
 
 /** The nearest spot at or below (x, y) where a new step would not sit on top of another. */
@@ -320,6 +426,61 @@ export function fromDuration(iso: string): { amount: number; unit: 'minutes' | '
 /** One thing wrong with the graph, tied to the step it is about when there is one. */
 export interface Issue { nodeId?: string; message: string }
 
+/** A setting a step can't run without, left empty or unusable; {@code field} is the config key it is about. */
+export interface FieldIssue { field: string; message: string }
+
+/**
+ * What a step's own settings are missing, field by field. These are the mandatory fields: the step
+ * settings can't be saved until they are filled in. Connections are checked by {@link issues}.
+ */
+export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] {
+  const out: FieldIssue[] = []
+  const add = (field: string, message: string) => out.push({ field, message })
+  if (n.type === 'AGENT_STEP' && !text(n.config.agentId)) add('agentId', `${name} needs an agent.`)
+  if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) add('instruction', `${name} needs an instruction.`)
+  if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add('toolId', `${name} needs a service action.`)
+  if (n.type === 'TRANSFORM' && !text(n.config.expression)) add('expression', `${name} needs an expression.`)
+  if ((n.type === 'BRANCH' || n.type === 'FILTER') && !text(n.config.condition)) add('condition', `${name} needs a condition.`)
+  if (n.type === 'WAIT' && !text(n.config.duration) && !text(n.config.until)) add('until' in n.config ? 'until' : 'duration', `${name} needs how long to wait or until when.`)
+  if (n.type === 'WAIT' && text(n.config.duration) && !ISO_DURATION.test(text(n.config.duration))) add('duration', `${name} has a wait length the engine can't read.`)
+  if ((n.type === 'SUB_WORKFLOW' || n.type === 'FOR_EACH') && !text(n.config.workflowId)) add('workflowId', `${name} needs a workflow to run.`)
+  if (n.type === 'FOR_EACH' && !text(n.config.items)) add('items', `${name} needs the list to go through.`)
+  if (n.type === 'APPROVAL' && text(n.config.timeout) && !ISO_DURATION.test(text(n.config.timeout))) add('timeout', `${name} has a time limit the engine can't read.`)
+  if (n.type === 'HTTP_REQUEST') {
+    if (!text(n.config.url)) add('url', `${name} needs a URL.`)
+    else if (!URL_OK(text(n.config.url))) add('url', `${name} needs a URL starting with http:// or https://.`)
+    const auth = (n.config.auth ?? {}) as Record<string, unknown>
+    if (auth.type === 'basic' && !text(auth.username)) add('auth.username', `${name} needs a username to sign in with.`)
+    if (auth.type === 'bearer' && !text(auth.token)) add('auth.token', `${name} needs a token to sign in with.`)
+    if (auth.type === 'apiKey' && !text(auth.name)) add('auth.name', `${name} needs the API key's name.`)
+    if (auth.type === 'apiKey' && !text(auth.value)) add('auth.value', `${name} needs the API key.`)
+    if (n.config.bodyType === 'expression' && !text(n.config.bodyExpr)) add('bodyExpr', `${name} needs an expression for the body.`)
+    if (n.config.bodyType === 'raw' && !text(n.config.body)) add('body', `${name} needs a body to send.`)
+  }
+  if (n.type === 'SWITCH') {
+    const cases = casesOf(n.config)
+    if (cases.length === 0) add('cases', `${name} needs at least one path.`)
+    if (cases.length > MAX_CASES) add('cases', `${name} can have at most ${MAX_CASES} paths besides "else".`)
+    cases.forEach((c, i) => { if (!text(c.condition)) add(`cases.${c.id}`, `${name} needs a condition for "${c.label || `path ${i + 1}`}".`) })
+    if (new Set(cases.map(c => c.id)).size !== cases.length) add('cases', `${name} has two paths with the same id.`)
+  }
+  if (n.type === 'SET_VARIABLE') {
+    const vars = Array.isArray(n.config.variables) ? n.config.variables as Array<Record<string, unknown>> : []
+    if (vars.length === 0) add('variables', `${name} needs at least one variable.`)
+    vars.forEach((v, i) => {
+      if (!VAR_NAME.test(text(v?.name))) add(`variables.${i}.name`, `${name} needs a name for variable ${i + 1} (letters, digits and _).`)
+      if (!text(v?.expr)) add(`variables.${i}.expr`, `${name} needs an expression for ${text(v?.name) ? `"${text(v.name)}"` : `variable ${i + 1}`}.`)
+    })
+  }
+  if (n.type === 'STORAGE') {
+    if (!text(n.config.key)) add('key', `${name} needs a key.`)
+    const action = text(n.config.action) || 'get'
+    if ((action === 'set' || action === 'append') && !text(n.config.valueExpr)) add('valueExpr', `${name} needs a value to ${action === 'set' ? 'store' : 'add'}.`)
+  }
+  if (n.type === 'NOTIFY' && !text(n.config.message)) add('message', `${name} needs a message.`)
+  return out
+}
+
 /**
  * What would stop the engine accepting this graph, in the user's words, so the canvas can say so
  * before saving and mark the step it is about. The server checks again regardless.
@@ -332,53 +493,18 @@ export function issues(graph: CanvasGraph, label: (n: CanvasNode) => string = n 
   for (const n of graph.nodes) {
     const name = `"${label(n)}"`
     const add = (message: string) => out.push({ nodeId: n.id, message })
-    if (n.type === 'AGENT_STEP' && !text(n.config.agentId)) add(`${name} needs an agent.`)
-    if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) add(`${name} needs an instruction.`)
-    if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add(`${name} needs a service action.`)
-    if (n.type === 'TRANSFORM' && !text(n.config.expression)) add(`${name} needs an expression.`)
+    for (const f of fieldIssues(n, name)) add(f.message)
     if (n.type === 'BRANCH') {
-      if (!text(n.config.condition)) add(`${name} needs a condition.`)
       for (const b of ['true', 'false'] as const) {
         if (!graph.edges.some(e => e.from === n.id && e.branch === b)) add(`${name} needs a step for "${b === 'true' ? 'yes' : 'no'}".`)
       }
     }
     if (n.type === 'PARALLEL' && graph.edges.filter(e => e.from === n.id).length < 2) add(`${name} needs at least two paths.`)
-    if (n.type === 'WAIT' && !text(n.config.duration) && !text(n.config.until)) add(`${name} needs how long to wait or until when.`)
-    if (n.type === 'WAIT' && text(n.config.duration) && !ISO_DURATION.test(text(n.config.duration))) add(`${name} has a wait length the engine can't read.`)
-    if ((n.type === 'SUB_WORKFLOW' || n.type === 'FOR_EACH') && !text(n.config.workflowId)) add(`${name} needs a workflow to run.`)
-    if (n.type === 'FOR_EACH' && !text(n.config.items)) add(`${name} needs the list to go through.`)
-    if (n.type === 'APPROVAL') {
-      if (!graph.edges.some(e => e.from === n.id && e.branch === 'approved')) add(`${name} needs a step for "approved".`)
-      if (text(n.config.timeout) && !ISO_DURATION.test(text(n.config.timeout))) add(`${name} has a time limit the engine can't read.`)
-    }
-    if (n.type === 'HTTP_REQUEST') {
-      if (!text(n.config.url)) add(`${name} needs a URL.`)
-      else if (!URL_OK(text(n.config.url))) add(`${name} needs a URL starting with http:// or https://.`)
-    }
-    if (n.type === 'FILTER' && !text(n.config.condition)) add(`${name} needs a condition.`)
+    if (n.type === 'APPROVAL' && !graph.edges.some(e => e.from === n.id && e.branch === 'approved')) add(`${name} needs a step for "approved".`)
     if (n.type === 'SWITCH') {
-      const cases = casesOf(n.config)
-      if (cases.length === 0) add(`${name} needs at least one path.`)
-      if (cases.length > MAX_CASES) add(`${name} can have at most ${MAX_CASES} paths besides "else".`)
-      cases.forEach((c, i) => { if (!text(c.condition)) add(`${name} needs a condition for "${c.label || `path ${i + 1}`}".`) })
-      if (new Set(cases.map(c => c.id)).size !== cases.length) add(`${name} has two paths with the same id.`)
       const exits = new Set(exitsOf(n))
       if (graph.edges.some(e => e.from === n.id && !exits.has(e.branch))) add(`${name} has a connection from a path that no longer exists.`)
     }
-    if (n.type === 'SET_VARIABLE') {
-      const vars = Array.isArray(n.config.variables) ? n.config.variables as Array<Record<string, unknown>> : []
-      if (vars.length === 0) add(`${name} needs at least one variable.`)
-      vars.forEach((v, i) => {
-        if (!VAR_NAME.test(text(v?.name))) add(`${name} needs a name for variable ${i + 1} (letters, digits and _).`)
-        if (!text(v?.expr)) add(`${name} needs an expression for ${text(v?.name) ? `"${text(v.name)}"` : `variable ${i + 1}`}.`)
-      })
-    }
-    if (n.type === 'STORAGE') {
-      if (!text(n.config.key)) add(`${name} needs a key.`)
-      const action = text(n.config.action) || 'get'
-      if ((action === 'set' || action === 'append') && !text(n.config.valueExpr)) add(`${name} needs a value to ${action === 'set' ? 'store' : 'add'}.`)
-    }
-    if (n.type === 'NOTIFY' && !text(n.config.message)) add(`${name} needs a message.`)
   }
   return out
 }
