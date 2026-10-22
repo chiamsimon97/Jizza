@@ -240,4 +240,23 @@ class JizzaOrchestratorTest {
         JizzaOrchestrator.WORKFLOW_BUILDER, List.of(), UUID.randomUUID(),
         Json.read("{\"kind\":\"builder\",\"workflowName\":\"Gold Rate Checker\",\"steps\":[]}")));
   }
+
+  @Test
+  void aKeyPastedWithApiDocumentationIsMaskedRatherThanSent() {
+    when(baseAgent.run(any())).thenAnswer(inv -> {
+      AgentRequest req = inv.getArgument(0);
+      assertThat(req.instruction()).contains("api_key=[redacted]", "Bearer [redacted]")
+          .doesNotContain("abc123", "tok-9f8e7d6c5b4a");
+      assertThat(req.history()).extracting(Msg::text).containsExactly("curl -H 'Authorization: Bearer [redacted]'");
+      return AgentResult.of(jizza.getId(), "Jizza", "Filled in.");
+    });
+
+    orchestrator.respond(userId, new Orchestrator.TurnInput(
+        "GET https://api.metals.dev/v1/latest?api_key=abc123&currency=INR",
+        JizzaOrchestrator.WORKFLOW_STEP,
+        List.of(Msg.user("curl -H 'Authorization: Bearer tok-9f8e7d6c5b4a'")), UUID.randomUUID(),
+        Json.read("""
+            {"kind":"step","step":{"id":"http_1","type":"HTTP_REQUEST","label":"Send webhook",
+             "config":{"headers":{"Authorization":"Bearer tok-9f8e7d6c5b4a"}}}}""")));
+  }
 }

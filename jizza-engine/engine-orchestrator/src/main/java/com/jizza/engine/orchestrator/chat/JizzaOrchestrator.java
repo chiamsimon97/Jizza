@@ -9,8 +9,10 @@ import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.orchestrator.Orchestrator;
 import com.jizza.engine.api.orchestrator.UiAction;
+import com.jizza.engine.api.util.Redaction;
 import com.jizza.engine.orchestrator.delegation.DelegationRecorder;
 import com.jizza.engine.orchestrator.ui.UiActionRecorder;
 import com.jizza.engine.persistence.entity.AgentEntity;
@@ -63,7 +65,10 @@ public class JizzaOrchestrator implements Orchestrator {
 
     String trace = input.userMessageId() == null ? null
         : AccessContext.chatTurn(input.userMessageId()).toTrace();
-    ModelTier tier = tiers.tierFor(userId, jizza, input.message(), input.screen(), input.history());
+    // A key pasted with API documentation is masked rather than sent (or the turn refused).
+    String message = Redaction.scrub(input.message());
+    List<Msg> history = scrubbed(input.history());
+    ModelTier tier = tiers.tierFor(userId, jizza, message, input.screen(), history);
     recorder.beginTurn();
     if (input.screen() != null) uiActions.beginTurn(stepInFocus(input.screen(), input.context()));
     AgentResult result;
@@ -71,7 +76,7 @@ public class JizzaOrchestrator implements Orchestrator {
     List<UiAction> actions;
     try {
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(input.message(), input.screen(), input.context()), null, input.history(), tier,
+          withScreen(message, input.screen(), input.context()), null, history, tier,
           false, trace));
     } finally {
       contributions = recorder.endTurn();
@@ -148,6 +153,7 @@ public class JizzaOrchestrator implements Orchestrator {
          step, use a {{ nodes.<step id>... }} reference to it. Never invent a credential, token,
          password or key: leave it out, or keep "(set, hidden)" when one is already set, and tell
          the user to paste theirs into the field.
+      Text shown as [redacted] was a credential removed before it reached you: never guess it.
       4. Say in one or two sentences what you filled in and what is left for the user. Your
          settings appear in the step's panel unsaved; the user reviews them and presses Save.
       The workflow runs the step exactly as configured; you are not part of the run.
@@ -174,9 +180,22 @@ public class JizzaOrchestrator implements Orchestrator {
     return message + "\n\n[App context: the user is on the '" + page + "' page of the Jizza app.]";
   }
 
+  /**
+   * What the user wrote, with anything that looks like a credential masked. Pasted API
+   * documentation and cURL commands often carry a key or token; the model is never sent one, so it
+   * is masked here rather than the whole turn being refused.
+   */
+  static List<Msg> scrubbed(List<Msg> history) {
+    return history.stream()
+        .map(m -> m.text() == null || !Redaction.containsSecretLike(m.text()) ? m
+            : new Msg(m.role(), Redaction.scrub(m.text()), m.toolCalls(), m.toolResults(),
+                m.providerContent()))
+        .toList();
+  }
+
   /** The screen's own description, as JSON, cut to a size a turn can afford. */
   static String described(JsonNode context) {
-    String json = context.toString();
+    String json = Redaction.scrub(context.toString());
     return json.length() <= MAX_CONTEXT_CHARS ? json
         : json.substring(0, MAX_CONTEXT_CHARS) + " ...(cut short)";
   }
