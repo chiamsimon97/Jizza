@@ -39,7 +39,7 @@ public class AppControlToolProvider implements ToolProvider {
   public static final Set<String> TOOL_NAMES = Set.of(NAVIGATE, OPEN_FORM, ASK_USER, SET_THEME);
 
   static final List<String> PAGES = List.of("chat", "conversations", "notifications", "agents", "memory",
-      "tasks", "connections", "workflows", "procedures", "guardrails", "activity", "usage");
+      "tasks", "connections", "workflows", "procedures", "guardrails", "activity", "runs", "usage");
   static final List<String> FORMS = List.of("new_workflow", "new_task");
   static final List<String> THEMES = List.of("light", "dark", "sunset");
 

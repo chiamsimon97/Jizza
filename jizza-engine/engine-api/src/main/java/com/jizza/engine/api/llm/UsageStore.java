@@ -19,4 +19,12 @@ public interface UsageStore {
   Summary summary(UUID userId);
 
   List<UsageEntryDto> recent(UUID userId, int limit);
+
+  /** Records created in {@code [from, to)}, most recent first, at most {@code limit}. */
+  default List<UsageEntryDto> between(UUID userId, Instant from, Instant to, int limit) {
+    return recent(userId, limit).stream()
+        .filter(e -> from == null || !e.createdAt().isBefore(from))
+        .filter(e -> to == null || e.createdAt().isBefore(to))
+        .toList();
+  }
 }

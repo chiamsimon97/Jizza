@@ -70,4 +70,14 @@ class DefaultUsageStore implements UsageStore {
             e.getInputTokens(), e.getOutputTokens(), e.getCostUnits(), e.getCreatedAt()))
         .toList();
   }
+
+  @Override
+  public List<UsageEntryDto> between(UUID userId, Instant from, Instant to, int limit) {
+    return repo.findWindow(userId, from == null ? Instant.EPOCH : from,
+        to == null ? Instant.now().plusSeconds(60) : to, PageRequest.of(0, Math.max(1, limit)))
+        .stream()
+        .map(e -> new UsageEntryDto(e.getId(), e.getModel(), e.getPurpose(),
+            e.getInputTokens(), e.getOutputTokens(), e.getCostUnits(), e.getCreatedAt()))
+        .toList();
+  }
 }
