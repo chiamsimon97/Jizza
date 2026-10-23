@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -108,6 +109,7 @@ public class MemoryTransferUseCase {
   private final AgentDirectory agents;
   private final Clock clock;
 
+  @Autowired
   public MemoryTransferUseCase(MemoryStore store, KnowledgeStore knowledge, AgentDirectory agents) {
     this(store, knowledge, agents, Clock.systemUTC());
   }
