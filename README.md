@@ -96,6 +96,8 @@ machine. Two options:
    clients; leave `JIZZA_CALLBACK_BASE_URL` at its default.
 
 The callback base URL is configuration precisely so this swaps cleanly when you host it later.
+MCP servers that sign in with OAuth come back to `/api/mcp/oauth/callback` on the same base URL;
+Jizza registers that address with the server itself.
 
 ---
 
@@ -120,7 +122,7 @@ Two Maven aggregates plus the deployable that assembles them:
 | `jizza-engine/engine-orchestrator` | Jizza, delegation, agent seeding and renaming |
 | `jizza-engine/engine-connectors` | OAuth2 handshake, connection config, the SSRF/egress guard |
 | `jizza-engine/engine-connectors-tools` | API doc → tools, and the auth-injecting idempotent executor |
-| `jizza-engine/engine-mcp` | Tools from the MCP servers the owner configured (`jizza.mcp.servers`), offered to the agents the owner named and run through the Capability Registry like any other tool |
+| `jizza-engine/engine-mcp` | Tools from MCP servers: the ones the owner configured (`jizza.mcp.servers`, stdio or HTTP) and the remote ones added from the app under Connectors, offered to the agents named for each and run through the Capability Registry like any other tool |
 | `jizza-engine/engine-scheduler` | Durable one-time and recurring tasks, DST-safe, no double-fire |
 | `jizza-engine/engine-workflow` | The Postgres saga engine (parallel paths, waits, sub-workflows, for-each, and built-in approval, webhook, filter, paths, variable, storage and notify steps), the JEXL sandbox with `fmt:` helpers, interventions |
 | `jizza-engine/engine-procedures` | Learned-procedure mechanism: binding enforcement, deviation recording |
@@ -156,6 +158,11 @@ GET    /api/permissions              (labels from security/permissions.json)
 GET    /api/agents                   PATCH  /api/agents/{id}          (rename, enable/disable)
 GET    /api/agents/{id}/tools        POST   /api/agents/{id}/capabilities
 POST   /api/chat                     WS     /ws
+
+GET    /api/mcp-servers              POST   /api/mcp-servers        (MCP servers as connectors)
+GET/PATCH/DELETE /api/mcp-servers/{id}   POST …/refresh  …/authorize  …/sign-out
+PATCH  /api/mcp-servers/{id}/tools/{tool}   POST …/tools/{tool}/test
+GET    /api/mcp/oauth/callback       (public: an MCP server's OAuth redirect)
 
 GET    /api/services                 POST   /api/services           (Connector services)
 GET    /api/services/{id}            PATCH  DELETE  POST publish  unpublish
@@ -305,11 +312,12 @@ MANAGEMENT_OTLP_TRACING_ENDPOINT=http://localhost:4318/v1/traces mvn -pl jizza-a
 * **Secrets never enter model context.** The model sees tool *schemas*; the executor injects auth
   server-side. The Anthropic client refuses to send a payload that still looks like it carries
   credential material.
-* **An MCP server is configuration, not something a model or a form can add.** Only the agents the
-  owner names see it, and a tool the owner has not classified under `action-types` is judged the
-  most consequential kind, so it asks every time; what a server says about its own tools is never
-  trusted. The client declares no sampling or elicitation, so a server cannot reach the model or the
-  user outside the agent loop.
+* **Only configuration can start an MCP server on this machine.** A server added from the app is a
+  remote one, reached over https through the egress guard like a connector, with its token or
+  OAuth sign-in stored encrypted. Either way only the agents named for it see it, and a tool nobody
+  has classified (under `action-types`, or on the server's page) is judged the most consequential
+  kind; what a server says about its own tools is never trusted. The client declares no sampling or
+  elicitation, so a server cannot reach the model or the user outside the agent loop.
 * **The model's turns are replayed exactly.** Thinking blocks and their signatures are kept and sent
   back unchanged, so the history only grows at the end (prompt caching and the provider's
   reasoning checks both depend on it).

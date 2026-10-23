@@ -4,7 +4,7 @@ import { Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
-import type { AgentDto, RunStepDto, TeamStep } from '@/types'
+import type { AgentDto, McpServer, RunStepDto, TeamStep } from '@/types'
 import {
   MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, issues as findIssues, nextCaseId, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type SwitchCase,
@@ -41,8 +41,10 @@ function teamOf(output: unknown): TeamStep[] {
  * Changes are kept here until Save, which hands back the edited graph; Close drops them. Save stays
  * off until every mandatory field (see {@link fieldIssues}) has a value.
  */
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
+  /** The MCP servers added under Connectors, for the MCP tool step. */
+  mcpServers?: McpServer[]
   /** Every step of the last run, so earlier steps' real output fields can be mapped in. */
   runSteps?: ReadonlyMap<string, RunStepDto>
   /** Problems the step has beyond its settings, such as an agent that is paused. */
@@ -95,7 +97,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
   latest.current = graph
   const jizzaAvailable = !readOnly && canConfigureWithJizza(node.type)
   const jizzaToken = useJizzaContext(jizzaOn && jizzaAvailable ? stepContext(node, graph, workflowName, {
-    agents, tools, workflows, missing: missing.map(m => m.message),
+    agents, tools, mcpServers, workflows, missing: missing.map(m => m.message),
   }) : null)
   // The chip's ✕ (or /leave) hands Jizza back to the Builder; the button here shows it is off.
   const jizzaLeft = useContextStore(s => jizzaToken !== undefined && !s.stack.some(e => e.token === jizzaToken))
@@ -214,6 +216,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, wo
           </Labelled>
           <JsonField key={node.id} label="Arguments (JSON)" value={node.config.arguments} onChange={v => setConfig({ arguments: v })} />
         </>}
+
+        {node.type === 'MCP_TOOL' && <McpToolFields node={node} servers={mcpServers} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'TRANSFORM' && (
           <Labelled group label="Expression" required missing={isMissing('expression')} hint="JEXL over input, nodes, vars and instructions. Press {} to put in data; click it to format it with a function.">
@@ -694,6 +698,67 @@ function StorageFields({ node, setConfig, mapping }: { node: CanvasNode; setConf
 
 
 /** Edits a JSON value as text, keeping the text while it doesn't parse. */
+/**
+ * An MCP server added under Connectors, one of its tools, and that tool's arguments: one mapped
+ * field per argument its schema names, or JSON when it names none.
+ */
+function McpToolFields({ node, servers, setConfig, isMissing, mapping }: {
+  node: CanvasNode; servers?: McpServer[]; setConfig: (patch: Record<string, unknown>) => void; isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const serverId = typeof node.config.serverId === 'string' ? node.config.serverId : ''
+  const toolName = typeof node.config.tool === 'string' ? node.config.tool : ''
+  const server = servers?.find(s => s.id === serverId)
+  const tool = server?.tools.find(t => t.name === toolName)
+  const args = (node.config.arguments && typeof node.config.arguments === 'object' && !Array.isArray(node.config.arguments)
+    ? node.config.arguments : {}) as Record<string, unknown>
+  const schema = (tool?.inputSchema ?? {}) as { properties?: Record<string, { description?: string; type?: string; enum?: unknown[] }>; required?: string[] }
+  const properties = Object.entries(schema.properties ?? {})
+  const required = new Set(schema.required ?? [])
+  return <>
+    <Labelled label="MCP server" required missing={isMissing('serverId')}
+      hint={servers && servers.length === 0 ? 'No MCP servers yet. Add one under Connectors.' : undefined}>
+      <select className={fieldClass} value={serverId}
+        onChange={e => setConfig({ serverId: e.target.value || undefined, serverName: servers?.find(s => s.id === e.target.value)?.name, tool: undefined, toolLabel: undefined, arguments: undefined })}>
+        <option value="">Choose a server…</option>
+        {serverId && !server && <option value={serverId}>{String(node.config.serverName ?? 'Current server')}</option>}
+        {servers?.map(s => <option key={s.id} value={s.id}>{s.name}{s.enabled ? '' : ' (off)'}</option>)}
+      </select>
+    </Labelled>
+    {serverId && (
+      <Labelled label="Tool" required missing={isMissing('tool')}
+        hint={server && server.tools.length === 0 ? 'This server has no tools yet. Open it under Connectors and check its tools.' : undefined}>
+        <select className={fieldClass} value={toolName}
+          onChange={e => {
+            const t = server?.tools.find(x => x.name === e.target.value)
+            setConfig({ tool: e.target.value || undefined, toolLabel: t?.title || t?.name, arguments: undefined })
+          }}>
+          <option value="">Choose a tool…</option>
+          {toolName && !tool && <option value={toolName}>{String(node.config.toolLabel ?? toolName)}</option>}
+          {server?.tools.filter(t => t.enabled || t.name === toolName).map(t => <option key={t.name} value={t.name}>{t.title || t.name}</option>)}
+        </select>
+      </Labelled>
+    )}
+    {tool?.description && <p className="text-[11px] text-gray-500">{tool.description}</p>}
+    {tool && !tool.actionType && <p className="text-[11px] text-amber-700 dark:text-amber-300">This tool doesn't say what it does yet, so it is treated as moving money. Choose what it does on the server's page under Connectors.</p>}
+    {tool && properties.length > 0 && properties.map(([key, p]) => (
+      <Labelled group key={key} label={key} required={required.has(key)} hint={[p.description, p.enum ? `One of: ${p.enum.join(', ')}` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
+        <MappedField aria-label={key} mode="template" context={mapping} mono={p.type !== 'string'}
+          value={args[key] === undefined || args[key] === null ? '' : typeof args[key] === 'string' ? args[key] as string : JSON.stringify(args[key])}
+          onChange={v => {
+            const next = { ...args }
+            if (v === '') delete next[key]
+            else next[key] = p.type === 'number' || p.type === 'integer' ? (v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
+              : p.type === 'boolean' ? (v === 'true' ? true : v === 'false' ? false : v) : v
+            setConfig({ arguments: next })
+          }} />
+      </Labelled>
+    ))}
+    {tool && properties.length === 0 && (
+      <JsonField key={`${node.id}:${toolName}`} label="Arguments (JSON)" value={node.config.arguments} hint="Text values can use {{ … }} to put in data from earlier steps." onChange={v => setConfig({ arguments: v })} />
+    )}
+  </>
+}
+
 function JsonField({ label, value, hint, onChange }: { label: string; value: unknown; hint?: string; onChange: (v: unknown) => void }) {
   const [textValue, setText] = useState(() => (value === undefined ? '' : JSON.stringify(value, null, 2)))
   const [bad, setBad] = useState(false)

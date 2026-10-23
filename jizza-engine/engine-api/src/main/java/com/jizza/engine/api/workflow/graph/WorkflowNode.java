@@ -25,6 +25,6 @@ public record WorkflowNode(String id, NodeType type, String label, JsonNode conf
     if (type == NodeType.CONNECTOR_TOOL) {
       return config == null || config.path("sideEffecting").asBoolean(true);
     }
-    return false;
+    return type == NodeType.MCP_TOOL;
   }
 }

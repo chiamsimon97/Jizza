@@ -1135,3 +1135,57 @@ export interface ReceivedInvitation {
   createdAt: string
   expiresAt: string
 }
+
+// ── MCP servers (connectors that speak the Model Context Protocol) ─────────────
+
+export type McpAuthType = 'NONE' | 'BEARER' | 'HEADER' | 'OAUTH'
+
+export interface McpTool {
+  /** The server's own name for the tool. */
+  name: string
+  /** What agents see: mcp_<server>__<tool>. */
+  toolName: string
+  title?: string | null
+  description?: string | null
+  inputSchema?: Record<string, unknown> | null
+  enabled: boolean
+  /** What you said it does; null means it is judged as moving money until you choose. */
+  actionType?: ActionType | null
+  /** What the server claims (read-only, destructive); a hint only. */
+  serverHint?: string | null
+}
+
+export interface McpServer {
+  id: string
+  name: string
+  slug: string
+  url: string
+  authType: McpAuthType
+  headerName?: string | null
+  secretPresent: boolean
+  signedIn: boolean
+  enabled: boolean
+  agentKeys: string[]
+  redactArguments: boolean
+  status: 'new' | 'connected' | 'needs_auth' | 'error'
+  lastError?: string | null
+  serverName?: string | null
+  serverVersion?: string | null
+  tools: McpTool[]
+  toolsRefreshedAt?: string | null
+  createdAt?: string | null
+}
+
+export interface McpServerInput {
+  name?: string
+  url?: string
+  authType?: McpAuthType
+  headerName?: string
+  secret?: string
+  enabled?: boolean
+  agentKeys?: string[]
+  redactArguments?: boolean
+  oauthClientId?: string
+  oauthClientSecret?: string
+  oauthScopes?: string
+}

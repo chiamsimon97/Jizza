@@ -1,5 +1,6 @@
 import { NODE_META, upstreamOf, type CanvasGraph, type CanvasNode } from '@/components/workflow/canvasModel'
 import type { JizzaContext } from './contextStore'
+import type { McpServer } from '@/types'
 import { STEP_FIELDS } from './commands'
 
 /** Settings that hold a credential. Jizza is told whether one is set, never what it is. */
@@ -38,6 +39,7 @@ export function builderContext(name: string, graph: CanvasGraph | null, problems
 export function stepContext(node: CanvasNode, graph: CanvasGraph, workflowName: string | undefined, options: {
   agents?: Array<{ id: string; name: string; domain?: string; enabled: boolean }>
   tools?: Array<{ id: string; label: string }>
+  mcpServers?: McpServer[]
   workflows?: Array<{ id: string; name: string }>
   missing: string[]
 }): JizzaContext {
@@ -57,6 +59,12 @@ export function stepContext(node: CanvasNode, graph: CanvasGraph, workflowName: 
       ...(options.missing.length ? { missing: options.missing } : {}),
       ...(node.type === 'AGENT_STEP' && options.agents ? { agents: options.agents.filter(a => a.enabled).slice(0, 40).map(a => ({ id: a.id, name: a.name, domain: a.domain })) } : {}),
       ...(node.type === 'CONNECTOR_TOOL' && options.tools ? { tools: options.tools.slice(0, 80) } : {}),
+      ...(node.type === 'MCP_TOOL' && options.mcpServers ? {
+        mcpServers: options.mcpServers.filter(s => s.enabled).slice(0, 20).map(s => ({
+          id: s.id, name: s.name,
+          tools: s.tools.filter(t => t.enabled).slice(0, 60).map(t => ({ name: t.name, description: t.description?.slice(0, 200), inputSchema: t.inputSchema })),
+        })),
+      } : {}),
       ...((node.type === 'SUB_WORKFLOW' || node.type === 'FOR_EACH') && options.workflows ? { workflows: options.workflows.slice(0, 40).map(w => ({ id: w.id, name: w.name })) } : {}),
     },
   }

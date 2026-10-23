@@ -13,9 +13,12 @@ package com.jizza.engine.api.enums;
  * {@code FILTER} stops its path unless a condition holds, {@code SWITCH} takes the first of several
  * paths whose condition holds, {@code SET_VARIABLE} sets run variables, {@code STORAGE} keeps values
  * between runs, and {@code NOTIFY} tells the user in the app or by email.
+ *
+ * <p>{@code MCP_TOOL} calls one tool of an MCP server added under Connectors, as
+ * {@code CONNECTOR_TOOL} calls a service action, under the same guardrails.
  */
 public enum NodeType {
   TRIGGER, CONNECTOR_TOOL, AGENT_STEP, TRANSFORM, BRANCH, HUMAN_INTERVENTION, END,
   PARALLEL, JOIN, WAIT, SUB_WORKFLOW, FOR_EACH,
-  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY
+  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY, MCP_TOOL
 }

@@ -32,6 +32,10 @@ public class WorkflowValidator {
           }
         }
         case CONNECTOR_TOOL -> requireConfig(node, "toolId");
+        case MCP_TOOL -> {
+          requireConfig(node, "serverId");
+          requireConfig(node, "tool");
+        }
         case AGENT_STEP -> {
           requireConfig(node, "agentId");
           if (node.config() == null

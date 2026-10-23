@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
   AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
-  ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
+  Server, ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
@@ -38,6 +38,7 @@ export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
   PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
   APPROVAL: ShieldCheck, HTTP_REQUEST: Webhook, FILTER: Filter, SWITCH: Signpost, SET_VARIABLE: Braces, STORAGE: Database, NOTIFY: Bell,
+  MCP_TOOL: Server,
 }
 
 const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
@@ -194,6 +195,7 @@ function describe(node: CanvasNode, agent?: AgentDto): string {
     case 'AGENT_STEP': return String(c.instruction ?? (agent ? '' : 'Choose an agent'))
     case 'HUMAN_INTERVENTION': return String(c.prompt ?? 'Pauses and asks you')
     case 'CONNECTOR_TOOL': return c.toolName ? String(c.toolName) : c.toolId ? 'Service action set' : 'Choose a service action'
+    case 'MCP_TOOL': return c.tool ? `${c.serverName ? `${String(c.serverName)} · ` : ''}${String(c.toolLabel ?? c.tool)}` : c.serverId ? 'Choose a tool' : 'Choose an MCP server and tool'
     case 'TRANSFORM': return String(c.expression ?? 'Set an expression')
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
     case 'PARALLEL': return 'Every connected path runs'

@@ -8,6 +8,7 @@ export const STEP_FIELDS: Record<string, string> = {
   AGENT_STEP: 'agentId (id of one of the agents listed under "agents"), instruction (what the agent should do; may use {{ … }} templates)',
   HUMAN_INTERVENTION: 'prompt (what to ask the user when the run reaches this step)',
   CONNECTOR_TOOL: 'toolId (id of one of the service actions listed under "tools"), toolName (its label), arguments (JSON object of the action\'s arguments; values may use {{ … }})',
+  MCP_TOOL: 'serverId (id of one of the servers listed under "mcpServers"), serverName, tool (the tool\'s name on that server), toolLabel, arguments (JSON object keyed by the tool\'s input schema; text values may use {{ … }}, and a value that is just {{ … }} keeps its type)',
   TRANSFORM: 'expression (a JEXL expression over input, nodes, vars and instructions; fmt: helpers such as fmt:upper(s), fmt:round(n, 2))',
   BRANCH: 'condition (a JEXL test over input, nodes and vars, e.g. nodes.check.price < 2000)',
   FILTER: 'condition (a JEXL test; when false this path stops here)',
@@ -61,6 +62,10 @@ export const STEP_STARTERS: Record<string, Starter[]> = {
   ],
   CONNECTOR_TOOL: [
     { label: 'Pick the service action', reply: 'What should happen in the connected service? I\'ll pick the action and fill in its arguments.' },
+    DESCRIBE,
+  ],
+  MCP_TOOL: [
+    { label: 'Pick the MCP tool', reply: 'What should this step do? I\'ll pick the server and tool that fit and fill in its arguments.' },
     DESCRIBE,
   ],
   BRANCH: [{ label: 'Write the condition', reply: 'Say when the workflow should take the "yes" exit, e.g. "the price is below 2000", and I\'ll write the condition.' }],
