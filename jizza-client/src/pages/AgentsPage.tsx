@@ -135,31 +135,57 @@ function AgentCard({ agent, tasks, onToggle }: { agent: AgentDto; tasks: TaskDto
   )
 }
 
-/** The org chart: who reports to whom, starting at Jizza. */
+/** The org chart: who reports to whom, drawn top-down with Jizza at the head. */
 function TeamChart() {
   const navigate = useNavigate()
   const { data: tree, isLoading } = useQuery({ queryKey: ['agents', 'tree'], queryFn: () => agentsApi.tree() })
   if (isLoading || !tree) return <div className="flex justify-center py-16"><Spinner /></div>
+  const size = countAgents(tree) - 1
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <TreeNode node={tree} onOpen={id => navigate(`/agents/${id}`)} />
-      <p className="mt-4 text-xs text-gray-400">Teams go at most four levels below Jizza. Move an agent from its page, under Team.</p>
+    <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="overflow-x-auto px-4 py-8">
+        <div className="org-tree mx-auto w-max min-w-full">
+          <ul><OrgNode node={tree} onOpen={id => navigate(`/agents/${id}`)} /></ul>
+        </div>
+      </div>
+      <p className="border-t border-gray-100 px-4 py-3 text-xs text-gray-400 dark:border-gray-800">
+        {size} {size === 1 ? 'agent reports' : 'agents report'} up to {tree.agent.name}. Teams go at most four levels below Jizza. Move an agent from its page, under Team.
+      </p>
     </div>
   )
 }
 
-function TreeNode({ node, onOpen }: { node: TeamNode; onOpen: (id: string) => void }) {
+function countAgents(node: TeamNode): number {
+  return 1 + node.reports.reduce((n, r) => n + countAgents(r), 0)
+}
+
+function OrgNode({ node, onOpen }: { node: TeamNode; onOpen: (id: string) => void }) {
+  const [open, setOpen] = useState(true)
   const a = node.agent
+  const head = node.depth === 0
+  const role = a.orchestrator ? 'Head of the team' : a.custom ? 'Made by you' : a.domain ?? a.key
+  const team = countAgents(node) - 1
   return (
-    <div className={node.depth > 0 ? 'ml-6 border-l border-gray-200 pl-4 dark:border-gray-700' : ''}>
-      <button type="button" onClick={() => onOpen(a.id)}
-        className="my-1 flex items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800">
-        <AgentLogo agentKey={a.key} avatar={a.avatar} size={28} state={a.enabled ? 'idle' : 'off'} />
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{a.name}</span>
-        <AgentBadges agent={a} />
-        {a.description && !a.orchestrator && <span className="hidden max-w-xs truncate text-xs text-gray-500 sm:inline">{a.description}</span>}
-      </button>
-      {node.reports.map(r => <TreeNode key={r.agent.id} node={r} onOpen={onOpen} />)}
-    </div>
+    <li>
+      <div className="flex flex-col items-center">
+        <button type="button" onClick={() => onOpen(a.id)} title={a.description ?? undefined}
+          className={`flex flex-col items-center rounded-xl border bg-white px-3 py-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-gray-900 ${
+            head ? 'w-44 border-brand-300 ring-2 ring-brand-500/20 dark:border-brand-700' : 'w-36 border-gray-200 dark:border-gray-700'}`}>
+          <AgentLogo agentKey={a.key} avatar={a.avatar} size={head ? 56 : 40} state={a.enabled ? 'idle' : 'off'} />
+          <span className={`mt-2 w-full truncate font-semibold text-gray-900 dark:text-gray-100 ${head ? 'text-base' : 'text-sm'}`}>{a.name}</span>
+          <span className="w-full truncate text-[11px] uppercase tracking-wider text-gray-400 dark:text-gray-500">{role}</span>
+          {!a.enabled && <span className="mt-1 text-[11px] text-gray-400">Paused</span>}
+        </button>
+        {team > 0 && !head && (
+          <button type="button" onClick={() => setOpen(o => !o)}
+            className="relative z-10 -mt-2.5 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+            {open ? 'Hide' : 'Show'} {team}
+          </button>
+        )}
+      </div>
+      {open && node.reports.length > 0 && (
+        <ul>{node.reports.map(r => <OrgNode key={r.agent.id} node={r} onOpen={onOpen} />)}</ul>
+      )}
+    </li>
   )
 }
