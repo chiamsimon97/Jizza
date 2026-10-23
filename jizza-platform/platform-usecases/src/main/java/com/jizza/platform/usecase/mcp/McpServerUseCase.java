@@ -151,7 +151,10 @@ public class McpServerUseCase {
     }
     audit.record(access.userId(), ActorType.USER, null, "mcp_server.tool_tested", existing.name(),
         Json.obj().put("serverId", serverId.toString()).put("tool", tool));
-    return servers.call(serverId, tool, arguments == null ? Json.obj() : arguments);
+    ToolResult result = servers.call(serverId, tool, arguments == null ? Json.obj() : arguments);
+    // A test run is how a tool's output fields are learnt, as a test step is in Zapier.
+    if (result.ok()) servers.learnOutput(serverId, tool, result.output());
+    return result;
   }
 
   /** A server in another account is reported missing, so ids cannot be probed across accounts. */

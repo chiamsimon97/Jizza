@@ -192,6 +192,13 @@ class McpToolProviderTest {
         .content(List.of(new McpSchema.TextContent("{}")))
         .structuredContent(Map.of("count", 2)).build()).output().path("count").asInt())
         .isEqualTo(2);
+    // Kite and many others send JSON as text; it is read as JSON so its fields can be mapped.
+    assertThat(McpToolProvider.toResult(McpSchema.CallToolResult.builder()
+        .content(List.of(new McpSchema.TextContent("[{\"tradingsymbol\":\"INFY\"}]"))).build())
+        .output().path(0).path("tradingsymbol").asText()).isEqualTo("INFY");
+    assertThat(McpToolProvider.toResult(McpSchema.CallToolResult.builder()
+        .content(List.of(new McpSchema.TextContent("{not json}"))).build()).output().asText())
+        .isEqualTo("{not json}");
   }
 
   @Test

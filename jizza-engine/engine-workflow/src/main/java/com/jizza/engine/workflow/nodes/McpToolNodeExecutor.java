@@ -120,7 +120,11 @@ public class McpToolNodeExecutor implements NodeExecutor {
     }
 
     ToolResult result = store.call(serverId, toolName, args);
-    if (result.ok()) return Outcome.completed(result.output());
+    if (result.ok()) {
+      // A tool never tried by hand still teaches later steps its fields on its first run.
+      if (tool.outputSchema() == null) store.learnOutput(serverId, toolName, result.output());
+      return Outcome.completed(result.output());
+    }
     return isRetryable(result.error()) ? Outcome.retryable(result.error())
         : Outcome.permanentFailure(result.error());
   }

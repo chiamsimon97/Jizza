@@ -1175,6 +1175,10 @@ export interface McpTool {
   actionType?: ActionType | null
   /** True while actionType is Jizza's suggestion and you haven't changed it. */
   suggested?: boolean
+  /** The shape of what it returns, as JSON Schema: the server's own, or learnt from a run. */
+  outputSchema?: Record<string, unknown> | null
+  /** Where outputSchema came from. */
+  outputSource?: 'server' | 'learnt' | null
   /** What the server claims (read-only, destructive); a hint only. */
   serverHint?: string | null
 }

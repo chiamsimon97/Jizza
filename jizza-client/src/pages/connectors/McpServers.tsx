@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Bot, FlaskConical, KeyRound, LogIn, LogOut, Plus, Power, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
+import { ArrowLeft, Bot, FlaskConical, KeyRound, LogIn, LogOut, Play, Plus, Power, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -12,7 +12,9 @@ import { ACTION_LABELS, ACTION_TYPES, MODE_BADGE, MODE_LABELS } from '@/componen
 import { mcpApi } from '@/api/mcp'
 import { agentsApi } from '@/api/agents'
 import type { ActionType, AgentDto, McpAuthType, McpServer, McpServerInput, McpTool, ModeLine, ToolRunResult } from '@/types'
-import { Empty, JsonBlock, SectionHeader, Table, errorText } from './shared'
+import { Empty, SectionHeader, Table, errorText } from './shared'
+import { ResultView, schemaFields } from '@/components/connectors/ResultView'
+import { SchemaForm, inputFields } from '@/components/connectors/SchemaForm'
 import { Can } from '@/auth/Can'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -336,6 +338,7 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
                 <p className="font-medium text-gray-900 dark:text-gray-100">{t.title || t.name}</p>
                 <p className="font-mono text-[11px] text-gray-400">{t.name}</p>
                 {t.description && <p className="mt-1 line-clamp-2 max-w-md text-xs text-gray-500 dark:text-gray-400">{t.description}</p>}
+                <p className="mt-1 text-[11px] text-gray-400">{t.outputSchema ? `${schemaFields(t.outputSchema).length} output fields` : 'Try it once to learn its output fields'}</p>
               </td>
               <td className="px-4 py-3 align-top">
                 <input type="checkbox" aria-label={`Use ${t.name}`} disabled={!canModify || update.isPending} checked={t.enabled}
@@ -415,32 +418,108 @@ function diff(before: McpServerInput, after: McpServerInput): McpServerInput {
 }
 
 /** Runs one tool by hand with the arguments you type, to see what it gives back. */
-function TestTool({ server, tool, onClose }: { server: McpServer; tool: McpTool | null; onClose: () => void }) {
-  const [args, setArgs] = useState('{}')
-  const [result, setResult] = useState<ToolRunResult | null>(null)
+function TestTool({ server, tool: picked, onClose }: { server: McpServer; tool: McpTool | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const tool = picked ? server.tools.find(t => t.name === picked.name) ?? picked : null
+  const memoryKey = tool ? `mcp-try:${server.id}:${tool.name}` : ''
+  const [args, setArgs] = useState<Record<string, unknown>>({})
+  const [text, setText] = useState('{}')
+  const [asJson, setAsJson] = useState(false)
+  const [loadedFor, setLoadedFor] = useState('')
+  const [result, setResult] = useState<{ run: ToolRunResult; ms: number } | null>(null)
+  const [copied, setCopied] = useState('')
+  if (tool && loadedFor !== memoryKey) {
+    // The last arguments used for this tool come back, as a test step keeps its sample in Zapier.
+    let last: Record<string, unknown> = {}
+    try { last = JSON.parse(localStorage.getItem(memoryKey) ?? '{}') } catch { /* none kept */ }
+    setLoadedFor(memoryKey); setArgs(last); setText(JSON.stringify(last, null, 2)); setResult(null)
+  }
+  const { required } = inputFields(tool?.inputSchema)
+  const missing = asJson ? [] : required.filter(k => args[k] === undefined || args[k] === '')
   const run = useMutation({
-    mutationFn: () => mcpApi.testTool(server.id, tool!.name, JSON.parse(args || '{}')),
-    onSuccess: setResult,
+    mutationFn: async () => {
+      const body = asJson ? JSON.parse(text || '{}') : args
+      try { localStorage.setItem(memoryKey, JSON.stringify(body)) } catch { /* not kept */ }
+      const started = performance.now()
+      const out = await mcpApi.testTool(server.id, tool!.name, body)
+      return { run: out, ms: Math.round(performance.now() - started) }
+    },
+    onSuccess: r => {
+      setResult(r)
+      // A successful run teaches the tool its output fields; show them.
+      if (r.run.ok) void qc.invalidateQueries({ queryKey: ['mcp-server', server.id] })
+    },
   })
-  const close = () => { setArgs('{}'); setResult(null); onClose() }
-  const properties = (tool?.inputSchema?.properties ?? {}) as Record<string, { description?: string; type?: string }>
+  const close = () => { setResult(null); setLoadedFor(''); onClose() }
+  const switchMode = () => {
+    if (asJson) {
+      try { setArgs(JSON.parse(text || '{}')) } catch { /* keep the form as it was */ }
+    } else {
+      setText(JSON.stringify(args, null, 2))
+    }
+    setAsJson(!asJson)
+  }
+  const copyPath = (path: string) => {
+    void navigator.clipboard?.writeText(path)
+    setCopied(path || 'the whole result')
+  }
+  const outputs = schemaFields(tool?.outputSchema)
   return (
-    <SlideOver open={tool != null} title={`Try ${tool?.title || tool?.name || ''}`} description="This really runs the tool, as you." onClose={close} wide
+    <SlideOver open={tool != null} title={`Try ${tool?.title || tool?.name || ''}`} wide
+      description={tool?.description ? tool.description : 'This really runs the tool, as you.'} onClose={close}
       footer={<>
+        {missing.length > 0 && <span className="mr-auto text-xs text-gray-500">Fill in {missing.join(', ')}</span>}
         <Button variant="ghost" onClick={close}>Close</Button>
-        <Button loading={run.isPending} onClick={() => run.mutate()}>Run</Button>
+        <Button loading={run.isPending} disabled={missing.length > 0} onClick={() => run.mutate()}><Play className="h-4 w-4" />Run</Button>
       </>}>
-      <div className="flex flex-col gap-4">
-        {Object.keys(properties).length > 0 && (
-          <ul className="text-xs text-gray-500 dark:text-gray-400">
-            {Object.entries(properties).map(([k, p]) => <li key={k}><code className="text-gray-800 dark:text-gray-200">{k}</code>{p.type ? ` (${p.type})` : ''}{p.description ? `: ${p.description}` : ''}</li>)}
-          </ul>
-        )}
-        <Field label="Arguments (JSON)">
-          <textarea className={`${fieldClass} font-mono`} rows={6} value={args} onChange={e => setArgs(e.target.value)} />
-        </Field>
+      <div className="flex flex-col gap-5">
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Arguments</h3>
+            <button type="button" className="text-xs text-brand-600 hover:underline dark:text-brand-300" onClick={switchMode}>
+              {asJson ? 'Use the form' : 'Edit as JSON'}
+            </button>
+          </div>
+          {asJson
+            ? <textarea aria-label="Arguments as JSON" className={`${fieldClass} font-mono`} rows={6} value={text} onChange={e => setText(e.target.value)} />
+            : <SchemaForm schema={tool?.inputSchema} value={args} onChange={setArgs} />}
+          <p className="mt-2 text-xs text-gray-400">This really runs the tool, as you. The arguments you last used are kept on this device.</p>
+        </section>
         {run.error && <p className="text-sm text-red-500">{errorText(run.error)}</p>}
-        {result && (result.ok ? <JsonBlock value={result.output} /> : <p className="text-sm text-red-500">{result.error}</p>)}
+        {result && (
+          <section>
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Result</h3>
+              <Badge variant={result.run.ok ? 'success' : 'danger'}>{result.run.ok ? 'Worked' : 'Failed'}</Badge>
+              <span className="text-xs text-gray-400">{result.ms} ms</span>
+              {copied && <span className="ml-auto text-xs text-gray-500">Copied {copied}</span>}
+            </div>
+            {result.run.ok
+              ? <ResultView value={result.run.output} onPath={copyPath} />
+              : <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-200">{result.run.error}</p>}
+          </section>
+        )}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Output fields</h3>
+          <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+            {tool?.outputSource === 'server' ? 'The server says what this tool returns. '
+              : tool?.outputSource === 'learnt' ? 'Learnt from its last successful run. Only the field names and types are kept, never the values. '
+              : 'Run the tool once to learn what it returns. '}
+            Workflow steps after this tool can map these fields.
+          </p>
+          {outputs.length > 0 && (
+            <ul className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+              {outputs.map(f => (
+                <li key={f.path}>
+                  <button type="button" onClick={() => copyPath(f.path)} title="Copy the path"
+                    className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-mono text-[11px] text-violet-800 hover:border-violet-400 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-200">
+                    {f.path}<span className="ml-1 text-violet-400">{f.type}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </SlideOver>
   )
