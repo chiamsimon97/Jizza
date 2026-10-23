@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Hand, Pencil, Repeat, ShieldAlert, ShieldCheck, ShieldX, Workflow } from 'lucide-react'
+import { Check, Hand, Pencil, Plug, Repeat, ShieldAlert, ShieldCheck, ShieldX, Workflow } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { workflowsApi } from '@/api/workflows'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -39,7 +39,7 @@ export function WorkflowPlanCard({ plan, onRevise }: { plan: WorkflowPlan; onRev
     mutationFn: () => workflowsApi.save({
       name: plan.name,
       description: plan.description,
-      graph: toGraph(plan.steps.map(s => ({ kind: s.kind, agentId: s.agentId ?? '', instruction: s.instruction }))),
+      graph: planGraph(plan.steps),
       ...(plan.reuse && keep ? { reuse: { ...plan.reuse, guardrails } } : {}),
     }),
     onSuccess: (wf) => {
@@ -106,6 +106,24 @@ export function WorkflowPlanCard({ plan, onRevise }: { plan: WorkflowPlan; onRev
   )
 }
 
+/**
+ * The plan as a workflow graph. Agent and "ask me" steps are what the builder form makes; a tool
+ * step becomes a service-action step that makes the chat's call again, so it runs without an agent.
+ */
+export function planGraph(steps: WorkflowPlanStep[]) {
+  const graph = toGraph(steps.map(s => ({ kind: s.kind === 'ask' ? 'ask' : 'agent', agentId: s.agentId ?? '', instruction: s.instruction })))
+  const nodes = graph.nodes as { id: string; type: string; label: string; config: Record<string, unknown> }[]
+  steps.forEach((step, i) => {
+    if (step.kind !== 'tool') return
+    const node = nodes.find(n => n.id === `step_${i + 1}`)
+    if (!node) return
+    node.type = 'CONNECTOR_TOOL'
+    node.label = step.instruction || step.toolLabel || `Step ${i + 1}`
+    node.config = { toolId: step.toolId, toolName: step.toolLabel ?? step.toolName, arguments: step.arguments ?? {} }
+  })
+  return graph
+}
+
 function PlanStep({ index, step, agentKey }: { index: number; step: WorkflowPlanStep; agentKey?: string }) {
   const approval = step.changesThings ? APPROVAL[step.approval ?? 'ask'] : null
   return (
@@ -115,9 +133,14 @@ function PlanStep({ index, step, agentKey }: { index: number; step: WorkflowPlan
         <p className="flex items-center gap-1.5 text-xs font-medium text-gray-800 dark:text-gray-200">
           {step.kind === 'ask'
             ? <><Hand className="h-3.5 w-3.5" /> Ask you</>
-            : <><AgentLogo agentKey={agentKey ?? 'other'} size={18} /> {step.agentName ?? 'Agent'}</>}
+            : step.kind === 'tool'
+              ? <><Plug className="h-3.5 w-3.5" /> {step.toolLabel ?? step.toolName} · same call every run</>
+              : <><AgentLogo agentKey={agentKey ?? 'other'} size={18} /> {step.agentName ?? 'Agent'}</>}
         </p>
         <p className="mt-0.5 text-sm text-gray-900 dark:text-gray-100">{step.instruction}</p>
+        {step.kind === 'tool' && step.inputs && step.inputs.length > 0 && (
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Changes each run: {step.inputs.join(', ')}</p>
+        )}
         {step.why && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{step.why}</p>}
         {approval && (
           <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${approval.tone}`}>

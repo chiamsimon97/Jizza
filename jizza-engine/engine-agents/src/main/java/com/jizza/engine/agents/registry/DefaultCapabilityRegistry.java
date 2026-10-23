@@ -69,6 +69,13 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
   private final KillSwitch killSwitch;
   private final AuditLog audit;
   private final ObjectProvider<NotificationBus> notifications;
+  private ServiceCallJournal journal;
+
+  /** Optional: without it nothing is kept for saving a chat's calls as workflow steps. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setJournal(ServiceCallJournal journal) {
+    this.journal = journal;
+  }
 
   public DefaultCapabilityRegistry(ObjectProvider<ToolProvider> providers, AgentRepository agents,
                                    AgentCapabilityRepository capabilities, AutonomyGate autonomyGate,
@@ -288,6 +295,12 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
       result = ToolResult.error(e.getMessage());
     }
     observation.lowCardinalityKeyValue("outcome", result.ok() ? "ok" : "error").stop();
+    if (result.ok() && shown && journal != null) {
+      UUID conversationId = Activity.current()
+          .map(com.jizza.engine.api.activity.ActivitySink::conversationId).orElse(null);
+      journal.record(conversationId, agentId, agent.getName(), call.name(),
+          provider.redactArguments(call.name()) ? null : call.args());
+    }
     if (shown) {
       long ms = (System.nanoTime() - started) / 1_000_000;
       ToolResult finished = result;

@@ -65,6 +65,10 @@ public final class AgentPrompts {
         offer once to save it as a workflow: call app_propose_workflow with "reuse" filled in
         (when to use it, example requests, its inputs and the guardrails that fit). The user
         approves it and picks its guardrails on the card; never save a workflow yourself.
+      - Save the job as the steps that actually did it. Call recent_service_calls first and make
+        each call that did the work a "tool" step, so every run makes the same call without an
+        agent deciding anything; turn the values that change from run to run into inputs. Use an
+        agent step only where judgement is needed or a call cannot run as a step.
       """;
 
   public static String systemPrompt(String agentPrompt, String agentName, boolean orchestrator) {

@@ -87,4 +87,26 @@ describe('WorkflowPlanCard', () => {
     await waitFor(() => expect(screen.getByText('Saved as a draft workflow')).toBeInTheDocument())
     expect((save.mock.calls[0][0] as { reuse?: unknown }).reuse).toBeUndefined()
   })
+
+  it('saves a tool step as a service-action step that repeats the chat\'s call', async () => {
+    save.mockResolvedValue({ id: 'wf-4', name: 'Gold rate checker' })
+    const captured: WorkflowPlan = {
+      planId: 'plan-4', name: 'Gold rate checker',
+      steps: [
+        { kind: 'tool', instruction: 'Get the gold rate', toolId: 'tool-1', toolName: 'metals_get_rate', toolLabel: 'Get metal rate',
+          arguments: { metal: 'gold', city: '{{ input.city }}' }, inputs: ['city'] },
+        { kind: 'agent', agentId: 'kai-id', agentName: 'Kai', instruction: 'Say if it is a good day to buy' },
+      ],
+    }
+    renderWithSnapshot(<WorkflowPlanCard plan={captured} />, makeSnapshot())
+    expect(screen.getByText(/same call every run/)).toBeInTheDocument()
+    expect(screen.getByText('Changes each run: city')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Approve and save/ }))
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    const sent = save.mock.calls[0][0] as { graph: { nodes: { id: string; type: string; config: Record<string, unknown> }[] } }
+    expect(sent.graph.nodes.map(n => n.type)).toEqual(['TRIGGER', 'CONNECTOR_TOOL', 'AGENT_STEP', 'END'])
+    expect(sent.graph.nodes[1]).toMatchObject({ id: 'step_1', config: { toolId: 'tool-1', arguments: { metal: 'gold', city: '{{ input.city }}' } } })
+  })
 })

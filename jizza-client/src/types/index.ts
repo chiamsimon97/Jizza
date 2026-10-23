@@ -429,8 +429,16 @@ export interface LibraryEntry {
 }
 
 export interface WorkflowPlanStep {
-  kind: 'agent' | 'ask'
+  /** tool: makes a service call the chat made, exactly; agent: a specialist decides; ask: asks you. */
+  kind: 'tool' | 'agent' | 'ask'
   instruction: string
+  /** For a tool step: the service action, and what it is called with. */
+  toolId?: string
+  toolName?: string
+  toolLabel?: string
+  arguments?: Record<string, unknown>
+  /** For a tool step: the inputs it reads, which each run is given. */
+  inputs?: string[]
   why?: string
   agentId?: string
   agentKey?: string

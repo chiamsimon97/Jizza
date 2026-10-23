@@ -96,6 +96,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_configure_step", ActionType.READ),
       // Looking the request up in the user's saved workflows.
       Map.entry("find_saved_workflows", ActionType.READ),
+      // Reading back which service calls this conversation made, to save them as steps.
+      Map.entry("recent_service_calls", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),

@@ -92,6 +92,8 @@ public final class EngineHarness {
 
   /** Counts real invocations of the side-effecting tool, which is what exactly-once is about. */
   public int toolInvocations;
+  /** The arguments the last connector step was called with. */
+  public JsonNode lastToolArgs;
   public ToolResult nextToolResult = ToolResult.ok(Json.obj().put("sent", true));
   public boolean paused;
   public AutonomyRule toolRule = AutonomyRule.ALLOW;
@@ -191,6 +193,7 @@ public final class EngineHarness {
         // Mirrors the real executor's contract: a repeated key replays rather than re-sending.
         if (key != null && completed.containsKey(key.key())) return completed.get(key.key());
         toolInvocations++;
+        lastToolArgs = args;
         ToolResult result = nextToolResult;
         if (key != null && result.ok()) completed.put(key.key(), result);
         return result;
