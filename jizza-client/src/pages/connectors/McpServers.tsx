@@ -1,17 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, FlaskConical, KeyRound, LogIn, LogOut, Plus, Power, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Bot, FlaskConical, KeyRound, LogIn, LogOut, Plus, Power, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { SlideOver, Field, fieldClass } from '@/components/ui/SlideOver'
-import { ACTION_LABELS, ACTION_TYPES } from '@/components/guardrails/labels'
+import { ACTION_LABELS, ACTION_TYPES, MODE_BADGE, MODE_LABELS } from '@/components/guardrails/labels'
 import { mcpApi } from '@/api/mcp'
 import { agentsApi } from '@/api/agents'
-import type { ActionType, McpAuthType, McpServer, McpServerInput, McpTool, ToolRunResult } from '@/types'
+import type { ActionType, AgentDto, McpAuthType, McpServer, McpServerInput, McpTool, ModeLine, ToolRunResult } from '@/types'
 import { Empty, JsonBlock, SectionHeader, Table, errorText } from './shared'
 import { Can } from '@/auth/Can'
 import { usePermission } from '@/auth/usePermission'
@@ -25,10 +25,41 @@ export const MCP_AUTH_LABELS: Record<McpAuthType, string> = {
 }
 
 /** Servers people commonly add, filled in with one click. */
-const PRESETS: Array<{ name: string; url: string; authType: McpAuthType; note: string }> = [
-  { name: 'Zerodha Kite', url: 'https://mcp.kite.trade/mcp', authType: 'NONE',
-    note: 'Ask Jizza to log in to Kite first: its login tool gives you a link to sign in with Zerodha.' },
+const PRESETS: Array<{ name: string; url: string; authType: McpAuthType; agentKeys: string[]; note: string }> = [
+  { name: 'Zerodha Kite', url: 'https://mcp.kite.trade/mcp', authType: 'NONE', agentKeys: ['jizza', 'finance'],
+    note: 'Ask Jizza or Kai to log in to Kite first: its login tool gives you a link to sign in with Zerodha.' },
 ]
+
+/** The agents a server can be given to: Jizza first, then the specialists. */
+function useLiveAgents() {
+  const { data } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
+  return (data ?? []).filter(a => a.status !== 'archived')
+    .sort((a, b) => Number(b.orchestrator) - Number(a.orchestrator))
+}
+
+/** One chip per agent; picked ones get the server's tools. */
+function AgentChips({ agents, keys, disabled, onChange }: { agents: AgentDto[]; keys: string[]; disabled?: boolean; onChange: (key: string, on: boolean) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {agents.map(a => {
+        const on = keys.includes(a.key)
+        return (
+          <label key={a.id} className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm ${on ? 'border-brand-400 bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200' : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}>
+            <input type="checkbox" className="sr-only" disabled={disabled} checked={on} onChange={e => onChange(a.key, e.target.checked)} />
+            {a.name}{a.orchestrator ? ' (chat)' : ''}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The names of the agents a server is given to, for a card or a list. */
+export function agentNames(server: McpServer, agents: AgentDto[]): string {
+  if (server.agentKeys.includes('*')) return 'Every agent'
+  const names = server.agentKeys.map(k => agents.find(a => a.key === k)?.name).filter(Boolean)
+  return names.length ? names.join(', ') : 'No agent yet'
+}
 
 export function McpStatusBadge({ server }: { server: McpServer }) {
   if (!server.enabled) return <Badge>Off</Badge>
@@ -46,6 +77,7 @@ export function McpServersSection() {
   const [adding, setAdding] = useState(false)
   const { data, isLoading } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list() })
   const canCreate = usePermission(PERMISSIONS.CONNECTOR_CREATE)
+  const agents = useLiveAgents()
 
   return (
     <section className="mt-10">
@@ -76,6 +108,7 @@ export function McpServersSection() {
               <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
                 <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{server.tools.filter(t => t.enabled).length} of {server.tools.length} tools on</span>
                 <span className="inline-flex items-center gap-1"><KeyRound className="h-3.5 w-3.5" />{server.authType === 'NONE' ? 'No sign-in' : server.authType === 'OAUTH' ? 'OAuth' : 'Token'}</span>
+                <span className="inline-flex items-center gap-1"><Bot className="h-3.5 w-3.5" />{agentNames(server, agents)}</span>
               </div>
             </Card>
           ))}
@@ -117,8 +150,10 @@ function NewMcpServerForm({ open, onClose, onCreated }: { open: boolean; onClose
   const qc = useQueryClient()
   const [value, setValue] = useState<McpServerInput>({ authType: 'NONE' })
   const [note, setNote] = useState<string | null>(null)
+  const agents = useLiveAgents()
+  const keys = value.agentKeys ?? ['jizza']
   const create = useMutation({
-    mutationFn: () => mcpApi.create(value),
+    mutationFn: () => mcpApi.create({ ...value, agentKeys: keys.length ? keys : ['jizza'] }),
     onSuccess: async created => {
       await qc.invalidateQueries({ queryKey: ['mcp-servers'] })
       setValue({ authType: 'NONE' })
@@ -140,7 +175,10 @@ function NewMcpServerForm({ open, onClose, onCreated }: { open: boolean; onClose
       <form id="new-mcp-server" onSubmit={submit} className="flex flex-col gap-4">
         <div className="flex flex-wrap gap-2">
           {PRESETS.map(p => (
-            <button key={p.name} type="button" onClick={() => { setValue({ name: p.name, url: p.url, authType: p.authType }); setNote(p.note) }}
+            <button key={p.name} type="button" onClick={() => {
+              setValue({ name: p.name, url: p.url, authType: p.authType, agentKeys: p.agentKeys.filter(k => k === 'jizza' || agents.some(a => a.key === k)) })
+              setNote(p.note)
+            }}
               className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:border-brand-400 hover:text-brand-700 dark:border-gray-700 dark:text-gray-300">
               {p.name}
             </button>
@@ -151,8 +189,14 @@ function NewMcpServerForm({ open, onClose, onCreated }: { open: boolean; onClose
         <Input label="Server URL" required value={value.url ?? ''} onChange={e => setValue({ ...value, url: e.target.value })} placeholder="https://mcp.example.com/mcp"
           hint="The server's streamable HTTP endpoint. It must be https." />
         <AuthFields value={value} onChange={setValue} />
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Who can use it</span>
+          <AgentChips agents={agents} keys={keys}
+            onChange={(key, on) => setValue({ ...value, agentKeys: on ? [...keys.filter(k => k !== key), key] : keys.filter(k => k !== key) })} />
+          <span className="text-xs text-gray-400">Its tools are offered to these agents in chat, each under its own guardrails. Jizza has it unless you choose otherwise.</span>
+        </div>
         {note && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">{note}</p>}
-        <p className="text-xs text-gray-500 dark:text-gray-400">Next you'll say what each of its tools does (look things up, place orders…). Your guardrails go by that, and a tool you haven't classified is treated as moving money.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Jizza suggests what each of its tools does from its name (looks things up, places orders…), so each agent's guardrails apply at once: a lookup runs under its rule for looking things up. You can change any of them.</p>
         {create.error && <p className="text-sm text-red-500">{errorText(create.error)}</p>}
       </form>
     </SlideOver>
@@ -240,7 +284,7 @@ export function McpServerPage() {
 
 /** Which agents may use the server. Jizza is the one you chat with; the others are your specialists. */
 function AgentsCard({ server, onSaved }: { server: McpServer; onSaved: (s: McpServer) => void }) {
-  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
+  const agents = useLiveAgents()
   const save = useMutation({ mutationFn: (keys: string[]) => mcpApi.update(server.id, { agentKeys: keys }), onSuccess: onSaved })
   const canModify = usePermission(PERMISSIONS.CONNECTOR_MODIFY)
   const all = server.agentKeys.includes('*')
@@ -250,24 +294,12 @@ function AgentsCard({ server, onSaved }: { server: McpServer; onSaved: (s: McpSe
   }
   return (
     <Card padding="lg" className="mb-6">
-      <SectionHeader title="Who can use it" description="Its tools are offered to these agents in chat. Workflow steps can use it whichever you pick." />
+      <SectionHeader title="Who can use it" description="Its tools are offered to these agents in chat, each under its own guardrails. Workflow steps can use it whichever you pick." />
       <label className="mb-3 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input type="checkbox" disabled={!canModify || save.isPending} checked={all} onChange={e => save.mutate(e.target.checked ? ['*'] : ['jizza'])} />
         Every agent
       </label>
-      {!all && (
-        <div className="flex flex-wrap gap-2">
-          {(agents ?? []).filter(a => a.status !== 'archived').map(a => {
-            const on = server.agentKeys.includes(a.key)
-            return (
-              <label key={a.id} className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm ${on ? 'border-brand-400 bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200' : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}>
-                <input type="checkbox" className="sr-only" disabled={!canModify || save.isPending} checked={on} onChange={e => set(a.key, e.target.checked)} />
-                {a.name}{a.orchestrator ? ' (chat)' : ''}
-              </label>
-            )
-          })}
-        </div>
-      )}
+      {!all && <AgentChips agents={agents} keys={server.agentKeys} disabled={!canModify || save.isPending} onChange={set} />}
       {save.error && <p className="mt-2 text-sm text-red-500">{errorText(save.error)}</p>}
     </Card>
   )
@@ -279,10 +311,17 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
     onSuccess: onSaved,
   })
   const canModify = usePermission(PERMISSIONS.CONNECTOR_MODIFY)
+  const agents = useLiveAgents()
+  const given = server.agentKeys.includes('*') ? agents : agents.filter(a => server.agentKeys.includes(a.key))
+  const modes = useQueries({
+    queries: given.map(a => ({ queryKey: ['agent-modes', a.id], queryFn: () => agentsApi.modes(a.id) })),
+  })
+  const ruleFor = (i: number, type: ActionType | null | undefined): ModeLine | undefined =>
+    modes[i]?.data?.find(l => l.actionType === (type ?? 'MONEY'))
   return (
     <Card padding="lg">
       <SectionHeader title="Tools"
-        description="Turn off what you don't want used, and say what each tool does: that is what your guardrails go by. What the server says about its own tools is never taken on trust." />
+        description="Turn off what you don't want used, and check what each tool does: each agent's guardrails go by that. Jizza suggests it from the tool's name; change any that are wrong." />
       {server.tools.some(t => t.enabled && !t.actionType) && (
         <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
           {server.tools.filter(t => t.enabled && !t.actionType).length} tools don't say what they do yet. Until you choose, each is treated as moving money, so by default Jizza won't use it.
@@ -290,7 +329,7 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
       )}
       {server.tools.length === 0 && <Empty>{server.status === 'needs_auth' ? 'Sign in to see the tools.' : 'No tools yet. Press Check tools to ask the server.'}</Empty>}
       {server.tools.length > 0 && (
-        <Table head={['Tool', 'On', 'What it does', '']}>
+        <Table head={['Tool', 'On', 'What it does', 'Under the guardrails', '']}>
           {server.tools.map(t => (
             <tr key={t.name} className={t.enabled ? '' : 'opacity-60'}>
               <td className="px-4 py-3 align-top">
@@ -308,7 +347,22 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
                   {!t.actionType && <option value="">Not set: treated as moving money</option>}
                   {ACTION_TYPES.map(a => <option key={a} value={a}>{ACTION_LABELS[a].label}</option>)}
                 </select>
+                {t.suggested && <p className="mt-1 text-[11px] text-gray-400">Suggested from its name.</p>}
                 {t.serverHint && <p className="mt-1 text-[11px] text-gray-400">The server says it is {t.serverHint}.</p>}
+              </td>
+              <td className="px-4 py-3 align-top">
+                <ul className="flex flex-col gap-1">
+                  {given.map((a, i) => {
+                    const line = ruleFor(i, t.actionType)
+                    return (
+                      <li key={a.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        <span className="min-w-[4rem]">{a.name}</span>
+                        {line ? <Badge variant={MODE_BADGE[line.rule]}>{MODE_LABELS[line.rule]}</Badge> : <span className="text-gray-400">…</span>}
+                      </li>
+                    )
+                  })}
+                  {given.length === 0 && <li className="text-xs text-gray-400">No agent has it</li>}
+                </ul>
               </td>
               <td className="px-4 py-3 text-right align-top">
                 <Can permission={PERMISSIONS.CONNECTOR_MODIFY}>

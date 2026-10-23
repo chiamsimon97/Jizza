@@ -76,6 +76,10 @@ class McpServersE2eTest extends E2eSupport {
     assertThat(server.json().path("serverName").asText()).isEqualTo("stub-kite");
     assertThat(server.json().path("tools").findValuesAsText("toolName"))
         .containsExactly("mcp_kite__login", "mcp_kite__get_holdings", "mcp_kite__place_order");
+    // What each tool does is suggested from its name, so the agents' guardrails apply at once.
+    var tools = server.json().path("tools");
+    assertThat(tools.findValuesAsText("actionType")).containsExactly("READ", "READ", "MONEY");
+    assertThat(tools.get(1).path("suggested").asBoolean()).isTrue();
     assertThat(server.json().path("secretPresent").asBoolean()).isTrue();
     assertThat(server.body()).doesNotContain(TOKEN);
     assertThat(kite.authorizations).contains("Bearer " + TOKEN);
@@ -84,9 +88,7 @@ class McpServersE2eTest extends E2eSupport {
 
   @Test
   void jizzaUsesItsToolsInChat() {
-    assertThat(api.patch("/api/mcp-servers/" + serverId + "/tools/get_holdings",
-        Map.of("actionType", "READ")).ok()).isTrue();
-    assertThat(api.patch("/api/mcp-servers/" + serverId + "/tools/place_order",
+    assertThat(api.patch("/api/mcp-servers/" + serverId + "/tools/login",
         Map.of("enabled", false)).ok()).isTrue();
 
     model.scriptFor("Jizza",
@@ -100,7 +102,8 @@ class McpServersE2eTest extends E2eSupport {
     assertThat(kite.calls).containsExactly("get_holdings {}");
     List<String> offered = model.offeredTools.stream().flatMap(List::stream).map(ToolSpec::name)
         .distinct().toList();
-    // Off, or not yet classified (so judged as moving money, which Jizza never does by default).
+    // A read runs under Jizza's rule for reads; off, or moving money (which Jizza never does by
+    // default), it is not offered.
     assertThat(offered).contains("mcp_kite__get_holdings")
         .doesNotContain("mcp_kite__place_order", "mcp_kite__login");
     assertThat(model.everythingTheModelSaw()).contains("INFY").doesNotContain(TOKEN);
@@ -108,9 +111,9 @@ class McpServersE2eTest extends E2eSupport {
 
   @Test
   void aWorkflowStepCallsATool() {
-    api.patch("/api/mcp-servers/" + serverId + "/tools/place_order", Map.of("actionType", "MONEY"));
     UUID workflowId = approvedWorkflow(Json.obj().put("serverId", serverId).put("tool", "get_holdings"));
-    // Unclassified, so it is judged as moving money and stops rather than running.
+    // Classified as moving money, it stops rather than running.
+    api.patch("/api/mcp-servers/" + serverId + "/tools/get_holdings", Map.of("actionType", "MONEY"));
     var waiting = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
     assertThat(waiting.json().path("status").asText()).as(waiting.body())
         .isEqualTo("PAUSED_WAITING_INSTRUCTION");

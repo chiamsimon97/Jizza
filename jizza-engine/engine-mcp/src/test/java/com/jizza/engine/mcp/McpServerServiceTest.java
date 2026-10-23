@@ -92,9 +92,15 @@ class McpServerServiceTest {
     UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
     service.refreshTools(id);
 
-    // Unclassified tools are offered but the guardrails treat them as the riskiest kind.
-    assertThat(provider.actionTypeOf(jizzaId, "mcp_kite__get_holdings")).isEmpty();
+    // What each tool does is suggested from its name, and the user can change it.
+    McpServerDto listed = service.find(id).orElseThrow();
+    assertThat(listed.tools()).extracting(t -> t.actionType()).containsExactly(ActionType.READ,
+        ActionType.READ, ActionType.MONEY);
+    assertThat(listed.tools()).allMatch(t -> t.suggested());
+    service.updateTool(id, "get_holdings", null, ActionType.UPDATE);
+    assertThat(provider.actionTypeOf(jizzaId, "mcp_kite__get_holdings")).contains(ActionType.UPDATE);
     service.updateTool(id, "get_holdings", null, ActionType.READ);
+    assertThat(service.find(id).orElseThrow().tools().get(1).suggested()).isFalse();
     service.updateTool(id, "place_order", false, null);
 
     assertThat(provider.actionTypeOf(jizzaId, "mcp_kite__get_holdings")).contains(ActionType.READ);

@@ -159,6 +159,7 @@ public class McpServerService implements McpServers, StoredMcpServers {
       McpProperties.Server server = toServer(entity);
       List<McpSchema.Tool> tools = provider.discover(entity.getSlug(), server);
       entity.setTools(toolsJson(tools));
+      entity.setToolSettings(suggestActionTypes(entity.getTools(), entity.getToolSettings()));
       entity.setToolsRefreshedAt(Instant.now());
       McpSchema.Implementation info = provider.serverInfo(entity.getSlug(), server);
       if (info != null) {
@@ -190,7 +191,10 @@ public class McpServerService implements McpServers, StoredMcpServers {
     ObjectNode settings = entity.getToolSettings() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
     ObjectNode one = settings.path(tool) instanceof ObjectNode o ? o : settings.putObject(tool);
     if (enabled != null) one.put("enabled", enabled);
-    if (actionType != null) one.put("actionType", actionType.name().toLowerCase(Locale.ROOT));
+    if (actionType != null) {
+      one.put("actionType", actionType.name().toLowerCase(Locale.ROOT));
+      one.remove("suggested");
+    }
     settings.set(tool, one);
     entity.setToolSettings(settings);
     return toDto(servers.save(entity));
@@ -359,6 +363,25 @@ public class McpServerService implements McpServers, StoredMcpServers {
     return out;
   }
 
+  /**
+   * Fills in what each tool nobody has classified yet probably does, marked as a suggestion, so the
+   * guardrails of the agents it is given to apply from the start. What the user set is kept.
+   */
+  static ObjectNode suggestActionTypes(JsonNode tools, JsonNode current) {
+    ObjectNode settings = current instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    if (tools == null || !tools.isArray()) return settings;
+    for (JsonNode tool : tools) {
+      String name = tool.path("name").asText();
+      ObjectNode one = settings.path(name) instanceof ObjectNode o ? o : Json.obj();
+      if (one.hasNonNull("actionType")) continue;
+      McpToolClassifier.suggest(name, tool.path("hint").asText(null)).ifPresent(type -> {
+        one.put("actionType", type.name().toLowerCase(Locale.ROOT)).put("suggested", true);
+        settings.set(name, one);
+      });
+    }
+    return settings;
+  }
+
   private static List<McpSchema.Tool> knownTools(McpServerEntity entity) {
     if (entity.getTools() == null || !entity.getTools().isArray()) return List.of();
     List<McpSchema.Tool> tools = new ArrayList<>();
@@ -385,7 +408,7 @@ public class McpServerService implements McpServers, StoredMcpServers {
         tools.add(new McpToolDto(name, McpToolProvider.toolName(e.getSlug(), name),
             one.path("title").asText(null), one.path("description").asText(null),
             one.path("inputSchema"), s.path("enabled").asBoolean(true), actionType(s).orElse(null),
-            one.path("hint").asText(null)));
+            s.path("suggested").asBoolean(false), one.path("hint").asText(null)));
       }
     }
     return new McpServerDto(e.getId(), e.getUserId(), e.getWorkspaceId(), e.getName(), e.getSlug(),
