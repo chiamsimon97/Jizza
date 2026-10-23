@@ -28,7 +28,7 @@ export interface WorkflowOption { id: string; name: string; status: string }
 const NARROW_FIELD = fieldClass.replace('w-full', '')
 
 /** Said under every field that takes {{ placeholders }}. */
-const TEMPLATE_HINT = 'Type {{ or press {} to put in data from earlier steps.'
+const TEMPLATE_HINT = 'Type {{, press Ctrl+E, or use {} to put in data from earlier steps.'
 
 /** The hand-offs an agent step recorded in its output, when it asked its team for help. */
 function teamOf(output: unknown): TeamStep[] {

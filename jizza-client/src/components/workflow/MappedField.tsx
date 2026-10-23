@@ -14,7 +14,7 @@ const FORMULA_TONE = 'border-violet-200 bg-violet-50 text-violet-700 hover:borde
 
 /**
  * A field where values from earlier steps show as chips, like Zoho Flow's formula editor. Press
- * the {} button, or type {{ in a text field, to pick a value; click a chip to change it or put it
+ * the {} button or Ctrl+E, or type {{ in a text field, to pick a value; click a chip to change it or put it
  * through a function. The value handed back is the plain text the engine reads.
  */
 export function MappedField({ value, onChange, mode, context, multiline, rows = 3, placeholder, invalid, mono, ...aria }: {
@@ -74,7 +74,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
     <div className="relative min-w-0">
       <div className="group relative">
         <div ref={box} role="textbox" aria-multiline={multiline || undefined} {...aria}
-          contentEditable={!disabled} suppressContentEditableWarning
+          contentEditable={!disabled} suppressContentEditableWarning aria-keyshortcuts="Control+E Meta+E"
           data-placeholder={placeholder}
           onInput={() => {
             remember()
@@ -84,6 +84,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
           onKeyUp={remember} onMouseUp={remember} onBlur={remember}
           onKeyDown={e => {
             if (e.key === 'Escape') { setPicker(false); return }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); remember(); setPicker(v => !v); return }
             if (e.key !== 'Enter') return
             e.preventDefault()
             if (multiline) { remember(); insert(document.createTextNode('\n')) }
@@ -104,7 +105,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
             ${invalid ? '!border-red-400' : ''} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} />
         {!disabled && (
           <button type="button" onMouseDown={e => { e.preventDefault(); e.stopPropagation() }} onClick={() => { remember(); setPicker(v => !v) }}
-            aria-label="Insert data from earlier steps" title="Insert data from earlier steps"
+            aria-label="Insert data from earlier steps" title="Insert data from earlier steps (Ctrl+E)"
             className={`absolute right-1.5 top-[5px] grid h-7 w-7 place-items-center rounded-md text-gray-400 transition-opacity hover:bg-brand-50 hover:text-brand-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 dark:hover:bg-brand-500/10 ${picker ? 'text-brand-600 opacity-100' : 'opacity-0'}`}>
             <Braces className="h-4 w-4" />
           </button>

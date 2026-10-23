@@ -82,4 +82,13 @@ describe('CanvasInspector', () => {
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
     expect(saved.config.message).toBe(`Status {{ nodes.${first.id}.status }}{{ nodes.${first.id}.body }}`)
   })
+
+  it('opens the data picker with Ctrl+E inside a mapped field', () => {
+    const first = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
+    const { graph, id } = addAfter(first.graph, first.id, null, 'NOTIFY')
+    open(graph, id)
+    expect(screen.queryByRole('dialog', { name: 'Insert data' })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message' }), { key: 'e', ctrlKey: true })
+    expect(screen.getByRole('dialog', { name: 'Insert data' })).toBeInTheDocument()
+  })
 })
