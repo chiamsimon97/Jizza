@@ -83,7 +83,7 @@ public class ProcedureController {
   @PostMapping("/{id}/reject")
   @com.jizza.engine.api.util.StepUpRequired
   public Responses.Message reject(@PathVariable UUID id,
-                                  @RequestBody(required = false) Requests.RejectProcedure request) {
+                                  @jakarta.validation.Valid @RequestBody(required = false) Requests.RejectProcedure request) {
     owned(id);
     procedures.reject(id, request == null ? null : request.feedback());
     return new Responses.Message("Rejected. It stays out of use and the agent gets your feedback.");

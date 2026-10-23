@@ -6,6 +6,7 @@ import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
 import { JizzaDock } from '@/jizza/JizzaDock'
 import { StepUpDialog } from './StepUpDialog'
 import { IdleSignOut } from '@/components/security/IdleSignOut'
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 
 const COLLAPSED_KEY = 'jizza-sidebar-collapsed'
 
@@ -65,7 +66,9 @@ export function AppShell() {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <Outlet />
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
 

@@ -72,7 +72,7 @@ export function InvitationsPage() {
       )}
 
       {invitations.length > 0 && (
-        <div className="grid max-w-3xl gap-4">
+        <div className="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">
           {invitations.map(inv => {
             const outcome = outcomes[inv.id]
             return (

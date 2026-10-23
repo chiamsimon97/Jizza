@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { KeyRound, LogOut, Monitor, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { Download, KeyRound, LogOut, Monitor, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react'
 import { authApi } from '@/api/auth'
+import { dataApi, DELETE_CONFIRMATION } from '@/api/data'
 import { endLocalSession } from '@/lib/session'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card } from '@/components/ui/Card'
@@ -22,11 +23,12 @@ export function SecurityPage() {
   return (
     <div className="page">
       <PageHeader icon={ShieldCheck} title="Security"
-        description="Two-step sign-in, recovery codes, signed-in devices and your password." />
-      <div className="grid max-w-3xl gap-4">
+        description="Two-step sign-in, recovery codes, signed-in devices, your password and your data." />
+      <div className="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">
         <TwoStepCard />
         <SessionsCard />
         <PasswordCard />
+        <DataCard />
       </div>
     </div>
   )
@@ -215,6 +217,85 @@ function PasswordCard() {
         {message && <p className="text-sm text-green-600">{message}</p>}
         <Button type="submit" loading={busy} className="justify-self-start">Change password</Button>
       </form>
+    </Card>
+  )
+}
+
+/** Take a copy of everything, or delete the account and all of it. */
+export function DataCard() {
+  const navigate = useNavigate()
+  const [exporting, setExporting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function download() {
+    setExporting(true)
+    setError('')
+    try {
+      const data = await dataApi.export()
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `jizza-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function deleteEverything(e: FormEvent) {
+    e.preventDefault()
+    if (typed !== DELETE_CONFIRMATION) return
+    setBusy(true)
+    setError('')
+    try {
+      await dataApi.hardDelete(typed)
+      endLocalSession()
+      navigate('/login', { replace: true, state: { notice: 'Your account and everything in it has been deleted.' } })
+    } catch (err) {
+      setError(errorText(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card padding="lg">
+      <div className="mb-1 flex items-center gap-2">
+        <Download className="h-5 w-5 text-gray-400" />
+        <h2 className="font-semibold text-gray-900 dark:text-gray-100">Your data</h2>
+      </div>
+      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+        Download a copy of your agents, workflows, memory and activity, or delete your account and everything in it.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" loading={exporting} onClick={download}>
+          <Download className="h-4 w-4" />Download my data
+        </Button>
+        {!confirming && (
+          <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>
+            <Trash2 className="h-4 w-4" />Delete everything
+          </Button>
+        )}
+      </div>
+      {confirming && (
+        <form onSubmit={deleteEverything} className="mt-4 flex flex-col gap-3 rounded-lg border border-red-200 p-3 dark:border-red-900/60">
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            This deletes your account, agents, conversations, memory, workflows and connections. It cannot be undone.
+            Type <strong>{DELETE_CONFIRMATION}</strong> to confirm.
+          </p>
+          <Input label="Confirmation" autoComplete="off" value={typed} onChange={e => setTyped(e.target.value)} />
+          <div className="flex gap-2">
+            <Button type="submit" variant="danger" loading={busy} disabled={typed !== DELETE_CONFIRMATION}>Delete my account</Button>
+            <Button type="button" variant="ghost" onClick={() => { setConfirming(false); setTyped('') }}>Cancel</Button>
+          </div>
+        </form>
+      )}
+      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
     </Card>
   )
 }

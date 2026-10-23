@@ -42,7 +42,7 @@ public class UsageUseCase {
   }
 
   public List<UsageEntryDto> recent(UUID userId, int limit) {
-    return store.recent(userId, Math.min(limit, MAX_ENTRIES));
+    return store.recent(userId, Math.max(1, Math.min(limit, MAX_ENTRIES)));
   }
 
   /** Spend in a range, grouped by one dimension and optionally a second inside it. */

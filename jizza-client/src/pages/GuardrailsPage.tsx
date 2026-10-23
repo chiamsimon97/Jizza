@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
+import { LoadError } from '@/components/ui/EmptyState'
 import { guardrailsApi, type RuleInput } from '@/api/guardrails'
 import { ModeSelect } from '@/components/guardrails/ModeSelect'
 import { LimitsDialog } from '@/components/guardrails/LimitsDialog'
@@ -26,7 +27,7 @@ function agentRule(rules: AutonomyRuleDto[], agentId: string, type: ActionType) 
 
 export function GuardrailsPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: OVERVIEW_KEY, queryFn: guardrailsApi.overview })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: OVERVIEW_KEY, queryFn: guardrailsApi.overview })
   const refresh = () => qc.invalidateQueries({ queryKey: OVERVIEW_KEY })
 
   const saveRule = useMutation({ mutationFn: (rule: RuleInput) => guardrailsApi.saveRule(rule), onSuccess: refresh })
@@ -64,6 +65,7 @@ export function GuardrailsPage() {
         description="Decide what each agent may do on its own, what it asks you first, and what it never does." />
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
+      {isError && <LoadError what="your guardrails" onRetry={() => void refetch()} />}
 
       {data && (
         <div className="space-y-6">

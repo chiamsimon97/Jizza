@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { Can } from '@/auth/Can'
 import { PERMISSIONS } from '@/lib/permissions'
 import { guardrailsApi } from '@/api/guardrails'
@@ -21,7 +21,7 @@ const KEY = ['guardrails', 'organization'] as const
  */
 export function OrganizationGuardrailsPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: KEY, queryFn: guardrailsApi.organizationLocks })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: KEY, queryFn: guardrailsApi.organizationLocks })
   const refresh = () => qc.invalidateQueries({ queryKey: KEY })
   const lock = useMutation({ mutationFn: guardrailsApi.lockForOrganization, onSuccess: refresh })
   const unlock = useMutation({ mutationFn: guardrailsApi.unlockForOrganization, onSuccess: refresh })
@@ -58,7 +58,8 @@ export function OrganizationGuardrailsPage() {
       </Can>
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
-      {!isLoading && (!data || data.length === 0) && (
+      {isError && <LoadError what="the organization's locks" onRetry={() => void refetch()} />}
+      {!isLoading && !isError && (!data || data.length === 0) && (
         <EmptyState icon={Lock} title="No locks yet" description="Members' own guardrails apply as they set them." />
       )}
       {data && data.length > 0 && (

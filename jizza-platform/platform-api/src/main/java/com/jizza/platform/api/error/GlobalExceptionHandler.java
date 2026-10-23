@@ -86,6 +86,76 @@ public class GlobalExceptionHandler {
     return problem;
   }
 
+  /**
+   * A request the client got wrong before any of our code ran: a body that is not JSON, an id
+   * that is not a UUID, a missing parameter or file part, a method or content type the route does
+   * not take. These are the caller's mistake and are answered as such, not as a server failure.
+   */
+  @ExceptionHandler({org.springframework.http.converter.HttpMessageNotReadableException.class,
+      org.springframework.beans.TypeMismatchException.class,
+      org.springframework.web.multipart.MultipartException.class,
+      org.springframework.web.bind.ServletRequestBindingException.class,
+      org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+      org.springframework.web.HttpMediaTypeException.class,
+      org.springframework.web.HttpRequestMethodNotSupportedException.class,
+      org.springframework.web.method.annotation.HandlerMethodValidationException.class,
+      jakarta.validation.ConstraintViolationException.class})
+  public ProblemDetail handleBadRequest(Exception e, HttpServletRequest request) {
+    HttpStatus status = HttpStatus.BAD_REQUEST;
+    String detail = "The request was not valid";
+    if (e instanceof org.springframework.web.ErrorResponse response
+        && response.getStatusCode().is4xxClientError()) {
+      status = HttpStatus.valueOf(response.getStatusCode().value());
+    }
+    if (e instanceof org.springframework.http.converter.HttpMessageNotReadableException) {
+      detail = "The request body is missing or is not valid JSON";
+    } else if (e instanceof org.springframework.beans.TypeMismatchException mismatch) {
+      String name = mismatch instanceof org.springframework.web.method.annotation
+          .MethodArgumentTypeMismatchException arg ? arg.getName() : mismatch.getPropertyName();
+      detail = (name == null ? "A value" : "'" + name + "'") + " is not in the expected format";
+    } else if (e instanceof org.springframework.web.bind.MissingServletRequestParameterException
+        missing) {
+      detail = "'" + missing.getParameterName() + "' is required";
+    } else if (e instanceof org.springframework.web.multipart.support
+        .MissingServletRequestPartException missing) {
+      detail = "'" + missing.getRequestPartName() + "' is required";
+    } else if (e instanceof org.springframework.web.multipart.MultipartException) {
+      detail = "Send this as a multipart file upload";
+    } else if (e instanceof org.springframework.web.HttpMediaTypeNotSupportedException) {
+      detail = "That content type is not accepted here";
+    } else if (e instanceof org.springframework.web.HttpRequestMethodNotSupportedException method) {
+      detail = method.getMethod() + " is not supported here";
+    } else if (e instanceof jakarta.validation.ConstraintViolationException violation) {
+      detail = violation.getConstraintViolations().stream()
+          .map(v -> v.getPropertyPath() + " " + v.getMessage())
+          .reduce((a, b) -> a + "; " + b).orElse(detail);
+    }
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+    problem.setType(java.net.URI.create(JizzaException.TYPE_BASE + "validation"));
+    problem.setTitle("Invalid request");
+    problem.setInstance(java.net.URI.create(request.getRequestURI()));
+    return problem;
+  }
+
+  /**
+   * Two requests changed the same thing at once -- a double click, two tabs, a retried send. The
+   * database kept one; the other is told to try again rather than shown a server failure.
+   */
+  @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+      org.springframework.dao.DataIntegrityViolationException.class})
+  public ProblemDetail handleConflict(Exception e, HttpServletRequest request) {
+    log.info("Conflicting write on {}: {}", request.getRequestURI(), e.getMessage());
+    String detail = e instanceof org.springframework.dao.OptimisticLockingFailureException
+        ? "This was changed by another request at the same time. Reload and try again."
+        : "That conflicts with something already saved. Reload and try again.";
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
+    problem.setType(java.net.URI.create(JizzaException.TYPE_BASE + "conflict"));
+    problem.setTitle("Conflict");
+    problem.setInstance(java.net.URI.create(request.getRequestURI()));
+    problem.setProperty("requestId", org.slf4j.MDC.get("requestId"));
+    return problem;
+  }
+
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception e, HttpServletRequest request) {
     String requestId = org.slf4j.MDC.get("requestId");

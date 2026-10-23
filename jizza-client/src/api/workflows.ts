@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { LibraryEntry, ReuseProfile, RunDto, SkillDto, WorkflowDto } from '@/types'
+import type { LibraryEntry, ReuseProfile, RunDto, RunHistoryPage, SkillDto, WorkflowDto } from '@/types'
 
 export const workflowsApi = {
   list: () =>
@@ -11,8 +11,10 @@ export const workflowsApi = {
   run: (id: string, version?: number, input?: unknown) =>
     api.post<RunDto>(`/api/workflows/${id}/run`, { version, input }),
 
-  runs: (id: string) =>
-    api.get<RunDto[]>(`/api/workflows/${id}/runs`),
+  /** The workflow's most recent run, newest first, from the run history. */
+  latestRuns: (id: string, limit = 1) =>
+    api.get<RunHistoryPage>(`/api/runs?workflowId=${encodeURIComponent(id)}&limit=${limit}`)
+      .then(page => page.items),
 
   getRun: (runId: string) =>
     api.get<RunDto>(`/api/runs/${runId}`),

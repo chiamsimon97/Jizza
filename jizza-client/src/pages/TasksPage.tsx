@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { TASK_STATUS, describeSchedule, linkOf, type TaskLink } from '@/components/workflow/taskModel'
 import type { TaskDto } from '@/types'
 
@@ -31,7 +31,7 @@ const LINK_STYLE: Record<TaskLink['kind'], { icon: typeof Bot; tone: string; bad
 export function TasksPage() {
   const openForm = useFormStore(s => s.open)
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
   const { data: procedures } = useQuery({ queryKey: ['procedures'], queryFn: () => proceduresApi.list() })
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
   const refresh = () => {
@@ -75,7 +75,9 @@ export function TasksPage() {
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
-      {!isLoading && live.length === 0 && (
+      {isError && <LoadError what="your tasks" onRetry={() => void refetch()} />}
+
+      {!isLoading && !isError && live.length === 0 && (
         <EmptyState icon={ListTodo} title="No tasks yet"
           description="Create one, ask Jizza to schedule something, or add an example to see how a task and its procedure work together."
           action={{ label: 'Add an example', onClick: () => example.mutate() }} />

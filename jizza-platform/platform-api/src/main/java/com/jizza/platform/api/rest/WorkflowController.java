@@ -37,11 +37,14 @@ public class WorkflowController {
   private final WorkflowEngine engine;
   private final WorkflowUseCase workflows;
   private final SkillUseCase skills;
+  private final com.jizza.engine.api.orchestrator.AgentDirectory agents;
 
-  public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills) {
+  public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills,
+                            com.jizza.engine.api.orchestrator.AgentDirectory agents) {
     this.engine = engine;
     this.workflows = workflows;
     this.skills = skills;
+    this.agents = agents;
   }
 
   @GetMapping("/workflows")
@@ -56,7 +59,13 @@ public class WorkflowController {
 
   @PostMapping("/workflows")
   public WorkflowDto save(@Valid @RequestBody Requests.WorkflowSave request) {
-    return workflows.save(CurrentUser.userId(), request.id(), request.name(),
+    UUID userId = CurrentUser.userId();
+    if (request.owningAgentId() != null) {
+      agents.byId(request.owningAgentId()).filter(a -> userId.equals(a.userId()))
+          .orElseThrow(() -> new com.jizza.engine.api.error.NotFoundException("Agent",
+              request.owningAgentId()));
+    }
+    return workflows.save(userId, request.id(), request.name(),
         request.description(), request.graph(), request.inputSchema(), request.triggerConfig(),
         request.owningAgentId(), ReuseProfile.from(request.reuse()));
   }
@@ -121,7 +130,7 @@ public class WorkflowController {
    */
   @PostMapping("/runs/{id}/resume")
   @com.jizza.engine.api.util.StepUpRequired
-  public RunDto resume(@PathVariable UUID id, @RequestBody Requests.ResumeRun request) {
+  public RunDto resume(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody Requests.ResumeRun request) {
     ownedRun(id);
     var payload = Json.obj();
     if (request.instruction() != null) payload.put("instruction", request.instruction());

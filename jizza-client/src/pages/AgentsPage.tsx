@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { AgentLogo, AGENT_ACTIVITY, type AgentState } from '@/components/brand/AgentLogo'
 import { AgentBadges } from '@/components/agents/agentParts'
 import { useAssistantStore } from '@/jizza/assistantStore'
@@ -26,7 +26,7 @@ export function AgentsPage() {
   const view = (params.get('view') as View) ?? 'cards'
   const setView = (v: View) => setParams(v === 'cards' ? {} : { view: v })
   const canCreate = usePermission(PERMISSIONS.AGENT_CREATE)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['agents', view === 'archived' ? 'archived' : 'current'],
     queryFn: () => agentsApi.list(view === 'archived' ? 'archived' : undefined),
   })
@@ -67,7 +67,8 @@ export function AgentsPage() {
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
-      {!isLoading && (!data || data.length === 0) && (
+      {isError && <LoadError what="your agents" onRetry={() => void refetch()} />}
+      {!isLoading && !isError && (!data || data.length === 0) && (
         view === 'archived'
           ? <EmptyState icon={Bot} title="Nothing archived" description="Archived agents keep their memory and history, and can be restored." />
           : <EmptyState icon={Bot} title="No agents configured" description="Agents appear here once the system is set up." />
@@ -138,7 +139,8 @@ function AgentCard({ agent, tasks, onToggle }: { agent: AgentDto; tasks: TaskDto
 /** The org chart: who reports to whom, drawn top-down with Jizza at the head. */
 function TeamChart() {
   const navigate = useNavigate()
-  const { data: tree, isLoading } = useQuery({ queryKey: ['agents', 'tree'], queryFn: () => agentsApi.tree() })
+  const { data: tree, isLoading, isError, refetch } = useQuery({ queryKey: ['agents', 'tree'], queryFn: () => agentsApi.tree() })
+  if (isError) return <LoadError what="the team chart" onRetry={() => void refetch()} />
   if (isLoading || !tree) return <div className="flex justify-center py-16"><Spinner /></div>
   const size = countAgents(tree) - 1
   return (

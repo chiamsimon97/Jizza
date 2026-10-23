@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { SlideOver, Field, fieldClass } from '@/components/ui/SlideOver'
 import { servicesApi } from '@/api/services'
 import type { AuthScheme, ServiceInfo } from '@/types'
@@ -22,7 +22,7 @@ import { McpServersSection } from './McpServers'
 export function ConnectorsPage() {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
-  const { data, isLoading } = useQuery({ queryKey: ['services'], queryFn: () => servicesApi.list() })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['services'], queryFn: () => servicesApi.list() })
   const canCreate = usePermission(PERMISSIONS.CONNECTOR_CREATE)
 
   return (
@@ -33,7 +33,8 @@ export function ConnectorsPage() {
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
-      {!isLoading && (!data || data.length === 0) && (
+      {isError && <LoadError what="your services" onRetry={() => void refetch()} />}
+      {!isLoading && !isError && (!data || data.length === 0) && (
         <EmptyState icon={Plug} title="No services yet"
           description="Create a service for any app with an HTTP API, then give your agents its actions."
           action={canCreate ? { label: 'New service', onClick: () => setCreating(true) } : undefined} />
