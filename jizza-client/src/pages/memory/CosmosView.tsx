@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Brain, List, Maximize2, Minus, Orbit, Pause, Play, Plus, RotateCcw, X, ZoomIn } from 'lucide-react'
+import { ArrowDownUp, Brain, List, Maximize2, Minus, Orbit, Pause, Play, Plus, RotateCcw, X, ZoomIn } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -14,6 +14,7 @@ import { CosmosSearchBar, useDebounced } from '@/components/cosmos/CosmosSearchB
 import { CosmosFilters, filterCount, matchesFilters, type CosmosAgentOption } from '@/components/cosmos/CosmosFilters'
 import { CosmosListView } from '@/components/cosmos/CosmosListView'
 import { MemoryPassportDrawer } from '@/components/cosmos/MemoryPassportDrawer'
+import { MemoryTransferPanel } from '@/components/cosmos/MemoryTransferPanel'
 import { useCosmosLayout, type CosmosLayout, type PlacedBody } from '@/components/cosmos/useCosmosLayout'
 
 const ITEMS_PER_BODY = 200
@@ -45,6 +46,7 @@ export function CosmosView() {
   const [includeInactive, setIncludeInactive] = useState(false)
   const reducedMotion = useMemo(() => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches, [])
   const [drift, setDrift] = useState(true)
+  const [transferOpen, setTransferOpen] = useState(false)
 
   const snapshot = useQuery({ queryKey: ['cosmos', 'snapshot'], queryFn: cosmosApi.snapshot })
   const layout = useCosmosLayout(snapshot.data)
@@ -175,6 +177,9 @@ export function CosmosView() {
         description="Everything Jizza remembers about you, which agents can use it, and when they did."
  actions={
           <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setTransferOpen(true)}>
+            <ArrowDownUp className="h-4 w-4" /> Import / export
+          </Button>
           {sun && !empty && (
             <Button size="sm" variant="ghost" onClick={() => askReset(sun)} loading={reset.isPending && reset.variables === sun.body.bodyId}>
               <RotateCcw className="h-4 w-4" /> Reset all
@@ -266,6 +271,7 @@ export function CosmosView() {
       <MemoryPassportDrawer item={selected ? { kind: selected.itemKind, id: selected.id } : null} agents={agents}
         onClose={() => setSelected(null)}
         onLocate={selected ? () => { const n = selected; setSelected(null); locate(n) } : undefined} />
+      <MemoryTransferPanel open={transferOpen} onClose={() => setTransferOpen(false)} />
     </div>
   )
 }

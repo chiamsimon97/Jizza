@@ -155,6 +155,10 @@ public final class Requests {
 
   public record MemorySettings(boolean autoLearn, Integer retentionDays) {}
 
+  /** Memory pasted from another assistant; read only as data, one fact per line. */
+  public record MemoryImport(@NotBlank @jakarta.validation.constraints.Size(max = 200_000) String text,
+                             @jakarta.validation.constraints.Size(max = 60) String provider) {}
+
   public record MemoryPreview(String agentKey, @NotBlank String request) {}
 
   /** Memory Cosmos: let one more agent see a fact. */
