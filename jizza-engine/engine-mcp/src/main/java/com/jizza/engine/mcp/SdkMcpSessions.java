@@ -71,6 +71,11 @@ public class SdkMcpSessions implements McpSession.Factory {
             .endpoint(endpoint)
             .jsonMapper(mapper)
             .requestBuilder(request)
+            // JSON is UTF-8 by definition; some servers (mcp-go, behind Zerodha Kite) refuse
+            // anything but the bare media type, and the SDK adds "; charset=utf-8".
+            .httpRequestCustomizer((builder, method, endpointUri, body, context) -> {
+              if ("POST".equals(method)) builder.setHeader("Content-Type", "application/json");
+            })
             .connectTimeout(server.getRequestTimeout())
             .build();
       }
