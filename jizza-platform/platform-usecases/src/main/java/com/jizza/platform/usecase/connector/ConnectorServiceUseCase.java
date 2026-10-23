@@ -108,6 +108,10 @@ public class ConnectorServiceUseCase {
   @Transactional
   public Info create(Access access, NewService in) {
     String name = required(in.name(), "A service needs a name");
+    if (name.length() > MAX_LABEL) {
+      throw new ValidationException("Service names are limited to " + MAX_LABEL + " characters");
+    }
+    checkAddress(in.baseUrl());
     AuthScheme scheme = in.authScheme() == null ? AuthScheme.NO_AUTH : in.authScheme();
     if (scheme == AuthScheme.OAUTH2) {
       // OAuth needs its URLs and client id before it is valid; those are set on the
@@ -370,6 +374,22 @@ public class ConnectorServiceUseCase {
     if (value.length() > MAX_LABEL) {
       throw new ValidationException("Display names are limited to " + MAX_LABEL + " characters");
     }
+  }
+
+  /**
+   * A base URL given at creation is a web address or a {@code {{variable}}}. Whether plain http is
+   * allowed is the egress guard's decision when the service is called.
+   */
+  private static void checkAddress(String baseUrl) {
+    if (baseUrl == null || baseUrl.isBlank() || baseUrl.startsWith("{{")) return;
+    try {
+      java.net.URI uri = new java.net.URI(baseUrl.trim());
+      String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
+      if ((scheme.equals("https") || scheme.equals("http")) && uri.getHost() != null) return;
+    } catch (java.net.URISyntaxException e) {
+      // falls through to the message below
+    }
+    throw new ValidationException("The base URL must be a web address, like https://api.example.com");
   }
 
   private static String required(String value, String message) {

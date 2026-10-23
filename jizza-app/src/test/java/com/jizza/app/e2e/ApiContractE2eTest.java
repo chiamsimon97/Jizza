@@ -176,6 +176,42 @@ class ApiContractE2eTest extends E2eSupport {
   }
 
   @Test
+  void pagingAndSearchParametersAtTheirBoundariesAreNotServerErrors() {
+    List<String> failures = new ArrayList<>();
+    String huge = "x".repeat(5_000);
+    for (Route route : routes()) {
+      if (route.mutating() || route.hasVars()) continue;
+      for (String query : List.of("limit=-1&offset=-1", "limit=0", "limit=2147483647&offset=2147483647",
+          "limit=abc", "q=" + huge, "q=%27%3B%20drop%20table%20users%3B--", "from=yesterday",
+          "from=2030-01-01T00:00:00Z&to=2000-01-01T00:00:00Z", "tz=Not/AZone")) {
+        String path = route.pattern() + "?" + query;
+        var result = api.get(path);
+        if (result.status() >= 500) {
+          failures.add("GET " + path.substring(0, Math.min(path.length(), 120)) + " -> "
+              + result.status() + " " + abbreviate(result.body()));
+        }
+        if (result.status() == 401) signIn();
+      }
+    }
+    assertThat(failures).as("server errors at parameter boundaries").isEmpty();
+  }
+
+  @Test
+  void anOversizedBodyIsRefusedBeforeItIsRead() {
+    String big = "{\"message\":\"" + "x".repeat(3 * 1024 * 1024) + "\"}";
+    var result = api.sendRaw("POST", "/api/chat/turns", big);
+    assertThat(result.status()).isEqualTo(413);
+    assertThat(result.json().path("title").asText()).isEqualTo("Request too large");
+  }
+
+  @Test
+  void anOverlongChatMessageIsAValidationError() {
+    var result = api.post("/api/chat/turns", Map.of("message", "x".repeat(40_000)));
+    assertThat(result.status()).isEqualTo(400);
+    assertThat(result.body()).contains("message");
+  }
+
+  @Test
   void malformedJsonIsABadRequest() {
     List<String> failures = new ArrayList<>();
     for (Route route : routes()) {

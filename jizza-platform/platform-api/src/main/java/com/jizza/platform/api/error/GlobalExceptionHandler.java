@@ -137,6 +137,25 @@ public class GlobalExceptionHandler {
     return problem;
   }
 
+  /**
+   * Two requests changed the same thing at once -- a double click, two tabs, a retried send. The
+   * database kept one; the other is told to try again rather than shown a server failure.
+   */
+  @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+      org.springframework.dao.DataIntegrityViolationException.class})
+  public ProblemDetail handleConflict(Exception e, HttpServletRequest request) {
+    log.info("Conflicting write on {}: {}", request.getRequestURI(), e.getMessage());
+    String detail = e instanceof org.springframework.dao.OptimisticLockingFailureException
+        ? "This was changed by another request at the same time. Reload and try again."
+        : "That conflicts with something already saved. Reload and try again.";
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
+    problem.setType(java.net.URI.create(JizzaException.TYPE_BASE + "conflict"));
+    problem.setTitle("Conflict");
+    problem.setInstance(java.net.URI.create(request.getRequestURI()));
+    problem.setProperty("requestId", org.slf4j.MDC.get("requestId"));
+    return problem;
+  }
+
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception e, HttpServletRequest request) {
     String requestId = org.slf4j.MDC.get("requestId");
