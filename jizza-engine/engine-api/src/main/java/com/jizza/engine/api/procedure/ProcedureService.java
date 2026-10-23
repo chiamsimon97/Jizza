@@ -8,6 +8,9 @@ import java.util.UUID;
 /** Learned procedures: propose → review → approve/bind → version/rollback (R34–R36). */
 public interface ProcedureService {
 
+  /** The user's learned procedures, newest first, with what the review screen needs to explain them. */
+  List<ProcedureSummary> list(UUID userId);
+
   WorkflowDto propose(UUID agentId, UUID sourceTaskId, String name, String description, JsonNode graph);
 
   void approve(UUID workflowId);
@@ -27,6 +30,14 @@ public interface ProcedureService {
 
   /** Whether a procedure has already been proposed for this job, agent-authored or not. */
   boolean hasProposalFor(UUID sourceTaskId);
+
+  /**
+   * @param sourceTaskTitle the job it was learned from, or null when it came from no job
+   * @param boundVersion the version that job follows now, or null when the job follows none of it
+   * @param agentName the agent that wrote it down
+   */
+  record ProcedureSummary(WorkflowDto workflow, boolean disabled, String reviewFeedback,
+                          String sourceTaskTitle, Integer boundVersion, String agentName) {}
 
   record ProcedureDiff(int fromVersion, int toVersion, List<String> addedNodes,
                        List<String> removedNodes, List<String> changedNodes) {}

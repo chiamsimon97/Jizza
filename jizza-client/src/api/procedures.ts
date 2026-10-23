@@ -1,25 +1,24 @@
 import { api } from '@/lib/api'
-import type { ProcedureHistoryEntry, WorkflowDto } from '@/types'
+import type { ProcedureSummary, WorkflowDto } from '@/types'
 
+/** Workflows an agent learned from a repeating task, and their review (approve, roll back, …). */
 export const proceduresApi = {
-  history: (taskId: string) =>
-    api.get<ProcedureHistoryEntry[]>(`/api/tasks/${taskId}/procedure/history`),
+  list: () =>
+    api.get<ProcedureSummary[]>('/api/procedures'),
 
-  currentGraph: (taskId: string) =>
-    api.get<WorkflowDto>(`/api/tasks/${taskId}/procedure`),
+  /** Every version, oldest first. */
+  history: (id: string) =>
+    api.get<WorkflowDto[]>(`/api/procedures/${id}/history`),
 
-  approve: (taskId: string) =>
-    api.post<void>(`/api/tasks/${taskId}/procedure/approve`),
+  approve: (id: string) =>
+    api.post<{ message: string }>(`/api/procedures/${id}/approve`),
 
-  reject: (taskId: string, feedback?: string) =>
-    api.post<void>(`/api/tasks/${taskId}/procedure/reject`, { feedback }),
+  reject: (id: string, feedback?: string) =>
+    api.post<{ message: string }>(`/api/procedures/${id}/reject`, { feedback }),
 
-  revise: (taskId: string, graph: unknown) =>
-    api.post<void>(`/api/tasks/${taskId}/procedure/revise`, { graph }),
+  rollback: (id: string, toVersion: number) =>
+    api.post<{ message: string }>(`/api/procedures/${id}/rollback?toVersion=${toVersion}`),
 
-  rollback: (taskId: string, version: number) =>
-    api.post<void>(`/api/tasks/${taskId}/procedure/rollback/${version}`),
-
-  disable: (taskId: string) =>
-    api.post<void>(`/api/tasks/${taskId}/procedure/disable`),
+  disable: (id: string) =>
+    api.post<{ message: string }>(`/api/procedures/${id}/disable`),
 }

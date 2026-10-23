@@ -1,6 +1,7 @@
 package com.jizza.engine.procedures.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.procedure.ProcedureService;
 import com.jizza.engine.api.tool.JsonSchemas;
 import com.jizza.engine.api.tool.ToolCall;
@@ -12,6 +13,7 @@ import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -31,16 +33,42 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
   private static final String GRAPH_HELP = """
       The workflow as {"nodes":[...],"edges":[...]}.
 
-      A node is {"id":"unique_id","type":"...","label":"human label","config":{...}} where type is
-      one of: trigger (exactly one, the entry point), connector_tool
-      (config {"toolId":"<generated tool id>","arguments":{...}}), agent_step
-      (config {"agentId":"<agent id>","instruction":"..."}), transform
-      (config {"expression":"<JEXL over input, nodes and instructions>"}), branch
-      (config {"condition":"<JEXL predicate>"}, with edges branch "true" and "false"),
-      human_intervention (config {"prompt":"what to ask"}), end.
+      A node is {"id":"unique_id","type":"TYPE","label":"short human label","config":{...}}.
+      Build it from built-in steps, which run the same way every time. Use AGENT_STEP only where
+      the step really needs judgement on free text, and APPROVAL before anything the user would
+      want to OK first.
 
-      An edge is {"from":"node_id","to":"node_id","branch":null}.
+      Start and finish:
+        TRIGGER (exactly one, the entry point), END.
+      Actions:
+        CONNECTOR_TOOL {"toolId":"<generated tool id>","arguments":{...}}
+        MCP_TOOL {"serverId":"<MCP server id>","tool":"<tool name>","arguments":{...}}
+        HTTP_REQUEST {"url":"https://...","method":"POST","bodyType":"json","fields":{...}}
+        NOTIFY {"message":"...","title":"...","channel":"app|email|both"}
+        AGENT_STEP {"agentId":"<agent id>","instruction":"..."}
+      Logic:
+        FILTER {"condition":"<expression>"} carries on only when true.
+        BRANCH {"condition":"<expression>"} with edges branch "true" and "false".
+        SWITCH {"cases":[{"id":"a","label":"...","condition":"<expression>"}]} with an edge per
+          case id, plus an optional "else" edge.
+        APPROVAL {"prompt":"what to approve"} with edges branch "approved" and "rejected".
+        HUMAN_INTERVENTION {"prompt":"what to ask"} when only the user can decide.
+      Data:
+        SET_VARIABLE {"variables":[{"name":"total","expr":"<expression>"}]}
+        STORAGE {"action":"get|set|increment|append|delete","key":"...","valueExpr":"..."}
+          keeps values between runs.
+        TRANSFORM {"expression":"<expression>"}
+      Flow:
+        WAIT {"duration":"PT1H"} or {"until":"<ISO time>"}
+        PARALLEL then JOIN to run paths at once, SUB_WORKFLOW {"workflowId":"..."},
+        FOR_EACH {"workflowId":"...","items":"<expression giving a list>"}.
+
+      Expressions are JEXL over input (what started the run), nodes.<id> (an earlier step's
+      result) and vars (SET_VARIABLE). Text fields can embed the same with {{ nodes.fetch.total }}.
+
+      An edge is {"from":"node_id","to":"node_id","branch":null}. No loops: repeat with FOR_EACH.
       """;
+
 
   private final ProcedureService procedures;
   private final AgentRepository agents;
@@ -84,7 +112,7 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
     }
     try {
       var proposed = procedures.propose(agentId, sourceTaskId, args.path("name").asText(),
-          args.path("description").asText(null), args.path("graph"));
+          args.path("description").asText(null), normalizeTypes(args.path("graph")));
       return ToolResult.ok(Json.obj()
           .put("workflow_id", proposed.id().toString())
           .put("version", proposed.version())
@@ -93,6 +121,18 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
     } catch (RuntimeException e) {
       return ToolResult.error(e.getMessage());
     }
+  }
+
+  /** Agents often write step types in lower case ("trigger"); the graph stores them upper case. */
+  public static JsonNode normalizeTypes(JsonNode graph) {
+    if (graph == null || !graph.path("nodes").isArray()) return graph;
+    JsonNode copy = graph.deepCopy();
+    for (JsonNode node : copy.path("nodes")) {
+      if (node instanceof ObjectNode object && node.path("type").isTextual()) {
+        object.put("type", node.path("type").asText().trim().toUpperCase(Locale.ROOT));
+      }
+    }
+    return copy;
   }
 
   private boolean isSpecialist(UUID agentId) {

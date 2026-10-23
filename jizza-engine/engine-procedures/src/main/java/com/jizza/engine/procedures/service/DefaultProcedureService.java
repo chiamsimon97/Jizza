@@ -17,6 +17,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.api.workflow.graph.WorkflowNode;
 import com.jizza.engine.persistence.entity.AgentEntity;
+import com.jizza.engine.persistence.entity.ScheduledTaskEntity;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
 import com.jizza.engine.persistence.entity.WorkflowVersionEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
@@ -88,6 +89,27 @@ public class DefaultProcedureService implements ProcedureService {
     this.scheduler = scheduler;
     this.notifications = notifications;
     this.audit = audit;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ProcedureSummary> list(UUID userId) {
+    return workflows.findByUserIdOrderByCreatedAtDesc(userId).stream()
+        .filter(w -> w.getOrigin() == WorkflowOrigin.AGENT_AUTHORED)
+        .map(this::summarize)
+        .toList();
+  }
+
+  private ProcedureSummary summarize(WorkflowEntity workflow) {
+    var task = workflow.getSourceTaskId() == null ? Optional.<ScheduledTaskEntity>empty()
+        : tasks.findById(workflow.getSourceTaskId());
+    Integer bound = task.filter(t -> workflow.getId().equals(t.getBoundWorkflowId()))
+        .map(ScheduledTaskEntity::getBoundVersion).orElse(null);
+    String agentName = workflow.getOwningAgentId() == null ? null
+        : agents.findById(workflow.getOwningAgentId()).map(AgentEntity::getName).orElse(null);
+    return new ProcedureSummary(DefaultWorkflowRegistry.toDto(workflow), workflow.isDisabled(),
+        workflow.getReviewFeedback(), task.map(ScheduledTaskEntity::getTitle).orElse(null), bound,
+        agentName);
   }
 
   @Override

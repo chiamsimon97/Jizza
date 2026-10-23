@@ -745,6 +745,8 @@ export interface WorkflowDto {
   status: string
   version: number
   owningAgentId?: string
+  /** The repeating task an agent learned it from. */
+  sourceTaskId?: string
   createdAt: string
   /** Kept in the workflow library for Jizza to reuse; absent when it is not. */
   reuse?: ReuseProfile
@@ -780,10 +782,16 @@ export interface SkillDto {
 }
 
 // ── Procedures ────────────────────────────────────────────────────────────────
-export interface ProcedureHistoryEntry {
-  version: number
-  status: string
-  createdAt: string
+/** A workflow an agent wrote down from a repeating task, with what the review screen needs. */
+export interface ProcedureSummary {
+  workflow: WorkflowDto
+  disabled: boolean
+  reviewFeedback?: string | null
+  /** The task it was learned from. */
+  sourceTaskTitle?: string | null
+  /** The version that task follows now; absent when the task follows none of it. */
+  boundVersion?: number | null
+  agentName?: string | null
 }
 
 // ── Guardrails ────────────────────────────────────────────────────────────────

@@ -124,6 +124,8 @@ class ProcedureLifecycleTest {
     });
     when(workflows.findById(any())).thenAnswer(inv ->
         workflowRows.stream().filter(w -> w.getId().equals(inv.getArgument(0))).findFirst());
+    when(workflows.findByUserIdOrderByCreatedAtDesc(any())).thenAnswer(inv -> workflowRows.stream()
+        .filter(w -> inv.getArgument(0).equals(w.getUserId())).toList());
     when(workflows.findBySourceTaskId(any())).thenAnswer(inv -> workflowRows.stream()
         .filter(w -> inv.getArgument(0).equals(w.getSourceTaskId())).toList());
 
@@ -211,6 +213,53 @@ class ProcedureLifecycleTest {
     assertThat(raised).hasSize(1);
     assertThat(raised.get(0).kind()).isEqualTo(NotificationKind.WORKFLOW_REVIEW);
     assertThat(raised.get(0).body()).contains("Kai").contains("needs your review");
+  }
+
+  @Test
+  void theListExplainsWhereEachProcedureCameFromAndWhetherItsJobFollowsIt() {
+    var proposed = propose();
+
+    var pending = procedures.list(userId);
+    assertThat(pending).hasSize(1);
+    assertThat(pending.get(0).workflow().id()).isEqualTo(proposed.id());
+    assertThat(pending.get(0).sourceTaskTitle()).isEqualTo("Monthly bill run");
+    assertThat(pending.get(0).agentName()).isEqualTo("Kai");
+    assertThat(pending.get(0).boundVersion()).as("not followed before approval").isNull();
+
+    procedures.approve(proposed.id());
+    assertThat(procedures.list(userId).get(0).boundVersion()).isEqualTo(1);
+
+    procedures.disable(proposed.id());
+    var disabled = procedures.list(userId).get(0);
+    assertThat(disabled.disabled()).isTrue();
+    assertThat(disabled.boundVersion()).isNull();
+  }
+
+  @Test
+  void theListLeavesOutWorkflowsTheUserBuiltThemselves() {
+    WorkflowEntity built = new WorkflowEntity();
+    built.setUserId(userId);
+    built.setName("Mine");
+    built.setGraph(graph("input"));
+    built.setOrigin(WorkflowOrigin.USER_BUILT);
+    built.setStatus(WorkflowStatus.DRAFT);
+    workflows.save(built);
+
+    assertThat(procedures.list(userId)).isEmpty();
+  }
+
+  @Test
+  void lowerCaseStepTypesFromAnAgentAreAccepted() {
+    JsonNode lower = Json.obj().set("nodes", Json.mapper().createArrayNode()
+        .add(Json.obj().put("id", "start").put("type", "trigger"))
+        .add(Json.obj().put("id", "finish").put("type", "end")));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) lower).set("edges",
+        Json.mapper().createArrayNode().add(Json.obj().put("from", "start").put("to", "finish")));
+
+    var proposed = procedures.propose(kai.getId(), task.getId(), "Tiny", null,
+        com.jizza.engine.procedures.tools.ProposeWorkflowToolProvider.normalizeTypes(lower));
+
+    assertThat(proposed.graph().path("nodes").get(0).path("type").asText()).isEqualTo("TRIGGER");
   }
 
   @Test
