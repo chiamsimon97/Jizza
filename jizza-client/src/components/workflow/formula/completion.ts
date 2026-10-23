@@ -6,9 +6,10 @@
 import type { Completion, CompletionContext, CompletionResult, CompletionSection } from '@codemirror/autocomplete'
 import { startCompletion } from '@codemirror/autocomplete'
 import type { EditorView } from '@codemirror/view'
+import { NODE_META } from '../canvasModel'
 import type { DataSource } from '../dataMapping'
 import { analyze, type FormulaScope } from './analyze'
-import { FORMULA_FUNCTIONS, fits, signature, type FormulaFunction } from './functions'
+import { FORMULA_FUNCTIONS, fits, signature, type FormulaFunction, type ValueType } from './functions'
 import { placeholdersIn, tokenize, type Token } from './parser'
 
 export interface CompletionEnv { sources: DataSource[]; scope: FormulaScope }
@@ -20,7 +21,24 @@ export function formulaAround(doc: string, pos: number, template: boolean): { fr
   return p ? { from: p.innerFrom, to: p.innerTo } : null
 }
 
-const section = (name: string, rank: number): CompletionSection => ({ name, rank })
+/** A suggestion, with the type of value it gives for the badge on its right. */
+export type FormulaCompletion = Completion & { valueType?: ValueType }
+
+/** A group heading: the step's colour beside its name, or a plain heading for functions. */
+const section = (name: string, rank: number, tone?: string): CompletionSection => ({
+  name, rank,
+  header: () => {
+    const h = document.createElement('completion-section')
+    if (tone) {
+      const dot = document.createElement('span')
+      dot.className = `cm-fx-section-dot ${tone}`
+      h.append(dot)
+    }
+    h.append(document.createTextNode(name))
+    return h
+  },
+})
+const toneOf = (s: DataSource) => (s.type === 'VARS' ? 'bg-purple-600' : NODE_META[s.type].tone)
 const CATEGORY_RANK: Record<string, number> = { Text: 0, Number: 1, Date: 2, List: 3, Check: 4 }
 
 export function formulaCompletions(env: () => CompletionEnv, template: boolean) {
@@ -53,7 +71,7 @@ export function formulaCompletions(env: () => CompletionEnv, template: boolean) 
 
 /** Fields of a reference, and functions by how well they suit the value before the dot. */
 function afterDot(receiver: string, sources: DataSource[], scope: FormulaScope): Completion[] {
-  const options: Completion[] = []
+  const options: FormulaCompletion[] = []
   const ref = receiver.trim()
   if (ref === 'nodes') {
     sources.filter(s => s.type !== 'VARS' && s.type !== 'TRIGGER').forEach(s => {
@@ -70,7 +88,7 @@ function afterDot(receiver: string, sources: DataSource[], scope: FormulaScope):
       if (!next || seen.has(next)) continue
       seen.add(next)
       const exact = sources.flatMap(x => x.fields).find(x => x.expr === prefix + next)
-      options.push({ label: next, detail: exact?.type ?? 'map', type: 'property', section: section('Fields', 0), boost: 1 })
+      options.push({ label: next, valueType: exact?.type ?? 'map', type: 'property', section: section('Fields', 0), boost: 1 })
     }
   }
   const type = analyze(ref, scope).type
@@ -88,13 +106,11 @@ function afterDot(receiver: string, sources: DataSource[], scope: FormulaScope):
 
 /** At the start of a value: each earlier step's data, the variables, then every function. */
 function anywhere(sources: DataSource[]): Completion[] {
-  const options: Completion[] = []
+  const options: FormulaCompletion[] = []
   sources.forEach((s, i) => {
+    const sec = section(s.label, i, toneOf(s))
     for (const f of s.fields) {
-      options.push({
-        label: f.expr, displayLabel: f.label, detail: f.type && f.type !== 'any' ? f.type : undefined,
-        type: 'variable', section: section(s.label, i), info: () => docFor(f.expr, `${s.label} › ${f.label}`),
-      })
+      options.push({ label: f.expr, displayLabel: f.label, valueType: f.type ?? 'any', type: 'variable', section: sec })
     }
   })
   const base = sources.length
@@ -103,10 +119,11 @@ function anywhere(sources: DataSource[]): Completion[] {
   return options
 }
 
-function functionOption(f: FormulaFunction, chained: boolean, sec: CompletionSection): Completion {
-  const inBrackets = chained ? f.params.length : f.params.length + (f.subject ? 1 : 0)
+function functionOption(f: FormulaFunction, chained: boolean, sec: CompletionSection): FormulaCompletion {
+  const values = [...(!chained && f.subject ? [f.subject] : []), ...f.params]
+  const inBrackets = values.length
   return {
-    label: f.name, detail: `→ ${f.returns}`, type: 'function', section: sec,
+    label: f.name, detail: values.length ? `(${values.map(p => p.name).join(', ')})` : undefined, valueType: f.returns, type: 'function', section: sec,
     info: () => functionDoc(f),
     apply: (view: EditorView, _c: Completion, from: number, to: number) => {
       const text = `${f.name}()`
@@ -118,31 +135,33 @@ function functionOption(f: FormulaFunction, chained: boolean, sec: CompletionSec
   }
 }
 
-function docFor(expr: string, title: string): HTMLElement {
-  const box = document.createElement('div')
-  box.className = 'cm-fx-doc'
-  const h = document.createElement('div')
-  h.className = 'cm-fx-doc-title'
-  h.textContent = title
-  const code = document.createElement('code')
-  code.textContent = expr
-  box.append(h, code)
-  return box
-}
-
-/** The doc popup for a function: its signature, what it does, and an example. */
+/** The doc popup for a function: its signature, what it does, what it takes, and an example. */
 export function functionDoc(f: FormulaFunction): HTMLElement {
-  const box = document.createElement('div')
-  box.className = 'cm-fx-doc'
-  const sig = document.createElement('code')
-  sig.className = 'cm-fx-doc-title'
-  sig.textContent = signature(f)
-  const desc = document.createElement('p')
-  desc.textContent = f.description
-  const ex = document.createElement('p')
-  ex.className = 'cm-fx-doc-example'
-  ex.textContent = `e.g. ${f.example}`
-  box.append(sig, desc, ex)
+  const el = (tag: string, cls: string, text?: string) => {
+    const e = document.createElement(tag)
+    e.className = cls
+    if (text !== undefined) e.textContent = text
+    return e
+  }
+  const box = el('div', 'cm-fx-doc')
+  const head = el('div', 'cm-fx-doc-head')
+  head.append(el('span', 'cm-fx-doc-name', f.name), el('span', `cm-fx-type cm-fx-type-${f.returns}`, f.returns))
+  box.append(head, el('code', 'cm-fx-doc-sig', signature(f)), el('p', 'cm-fx-doc-desc', f.description))
+  const values = [...(f.subject ? [f.subject] : []), ...f.params]
+  if (values.length) {
+    const list = el('ul', 'cm-fx-doc-params')
+    values.forEach((p, i) => {
+      const li = el('li', '')
+      li.append(el('code', '', p.name), el('span', `cm-fx-type cm-fx-type-${p.type}`, p.type))
+      if (i === 0 && f.subject) li.append(el('span', 'cm-fx-doc-note', 'the value before the dot'))
+      else if ('optional' in p && p.optional) li.append(el('span', 'cm-fx-doc-note', 'optional'))
+      list.append(li)
+    })
+    box.append(list)
+  }
+  const ex = el('div', 'cm-fx-doc-example')
+  ex.append(el('span', 'cm-fx-doc-note', 'Example'), el('code', '', f.example))
+  box.append(ex)
   return box
 }
 

@@ -18,7 +18,7 @@ import {
 import type { CanvasGraph } from '../canvasModel'
 import { chipLabel, type DataSource } from '../dataMapping'
 import { analyze, type FormulaScope, type Problem } from './analyze'
-import { callAt, formulaCompletions } from './completion'
+import { callAt, formulaCompletions, type FormulaCompletion } from './completion'
 import { parseFormula, placeholdersIn, referencesIn, tokenize, type Node, type Token } from './parser'
 
 export interface FormulaEnv { graph: CanvasGraph; sources: DataSource[]; scope: FormulaScope }
@@ -40,13 +40,17 @@ export interface FormulaOptions {
 /** Tells the editor its data changed (another step was renamed or ran), so chips and checks redo. */
 export const refreshFormula = StateEffect.define<null>()
 
-/** Every problem in a field, with positions in the field. */
-export function problemsIn(doc: string, template: boolean, scope: FormulaScope): Problem[] {
+/**
+ * Every problem in a field, with positions in the field. {@code typingAt} is the cursor: a
+ * placeholder still empty or open there is being written, so it isn't a problem yet.
+ */
+export function problemsIn(doc: string, template: boolean, scope: FormulaScope, typingAt?: number): Problem[] {
   if (!template) return analyze(doc, scope).problems
   return placeholdersIn(doc).flatMap(p => {
-    if (!p.closed) return [{ from: p.from, to: p.to, severity: 'error' as const, message: 'Close this with }}' }]
     const inner = doc.slice(p.innerFrom, p.innerTo)
-    if (!inner.trim()) return [{ from: p.from, to: p.to, severity: 'error' as const, message: 'This placeholder is empty' }]
+    const typing = typingAt !== undefined && typingAt >= p.innerFrom && typingAt <= p.innerTo
+    if (!p.closed) return typing ? [] : [{ from: p.from, to: p.to, severity: 'error' as const, message: 'Close this with }}' }]
+    if (!inner.trim()) return typing ? [] : [{ from: p.from, to: p.to, severity: 'error' as const, message: 'This placeholder is empty' }]
     return analyze(inner, scope, p.innerFrom).problems
   })
 }
@@ -126,7 +130,7 @@ function decorate(view: EditorView, o: FormulaOptions): { all: DecorationSet; at
   const doc = view.state.doc.toString()
   const env = o.env()
   const heads = view.hasFocus ? view.state.selection.ranges.map(r => r.head) : []
-  const problems = problemsIn(doc, o.template, env.scope)
+  const problems = problemsIn(doc, o.template, env.scope, heads[0])
   const chips: Chip[] = []
   const marks: Array<{ from: number; to: number; cls: string }> = []
 
@@ -267,12 +271,62 @@ const openPlaceholder = EditorView.inputHandler.of((view, from, to, text) => {
   return true
 })
 
+/** Colours come from the app theme's variables, so the editor and its popups follow light, dark and sunset. */
+const SANS = "'Inter', ui-sans-serif, system-ui, sans-serif"
+const MONO = "'JetBrains Mono', ui-monospace, monospace"
 const theme = EditorView.theme({
   '&': { backgroundColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.5rem', overflow: 'visible' },
-  '.cm-content': { padding: '0', caretColor: 'currentColor', fontFamily: 'inherit', minHeight: '1.5rem' },
+  '.cm-content': { padding: '0', caretColor: 'rgb(var(--brand-500))', fontFamily: 'inherit', minHeight: '1.5rem' },
   '.cm-line': { padding: '0' },
+  '.cm-tooltip': {
+    border: '1px solid rgb(var(--fx-border))', borderRadius: '10px', backgroundColor: 'rgb(var(--fx-surface))',
+    color: 'rgb(var(--fx-text))', boxShadow: '0 16px 32px -12px rgb(0 0 0 / .28), 0 2px 6px -2px rgb(0 0 0 / .08)',
+    fontFamily: SANS, fontSize: '12px',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete': { padding: '4px 0' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { borderRadius: '10px', fontFamily: SANS, maxHeight: '17rem', minWidth: '17rem', maxWidth: '24rem' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+    display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px', lineHeight: '18px', borderRadius: '0', color: 'rgb(var(--fx-text))',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'rgb(var(--brand-500) / .12)', color: 'rgb(var(--fx-strong))' },
+  '.cm-tooltip-autocomplete > ul > completion-section': {
+    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 10px 3px', border: 'none', opacity: '1',
+    fontSize: '10px', fontWeight: '600', letterSpacing: '.05em', textTransform: 'uppercase', color: 'rgb(var(--gray-500))',
+  },
+  '.cm-fx-section-dot': { width: '8px', height: '8px', borderRadius: '3px', flex: 'none' },
+  '.cm-completionIcon': {
+    width: '18px', height: '18px', flex: 'none', display: 'grid', placeItems: 'center', padding: '0', marginRight: '0',
+    borderRadius: '5px', fontSize: '11px', fontWeight: '700', opacity: '1', fontFamily: SANS,
+  },
+  '.cm-completionIcon-function': { backgroundColor: 'rgb(124 58 237 / .12)', color: '#7c3aed' },
+  '.cm-completionIcon-function:after': { content: "'ƒ'", fontStyle: 'italic' },
+  '.cm-completionIcon-variable, .cm-completionIcon-property': { backgroundColor: 'rgb(var(--brand-500) / .12)', color: 'rgb(var(--brand-600))' },
+  '.cm-completionIcon-variable:after': { content: "'{}'", fontSize: '9px' },
+  '.cm-completionIcon-property:after': { content: "'·'", fontSize: '16px' },
+  '.cm-completionIcon-keyword': { backgroundColor: 'rgb(var(--gray-500) / .12)', color: 'rgb(var(--gray-600))' },
+  '.cm-completionIcon-keyword:after': { content: "'≡'" },
+  '.cm-completionLabel': { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  '.cm-completionDetail': { marginLeft: '0', fontStyle: 'normal', fontFamily: MONO, fontSize: '10px', color: 'rgb(var(--gray-400))' },
+  '.cm-completionMatchedText': { textDecoration: 'none', fontWeight: '700', color: 'rgb(var(--brand-600))' },
+  '.cm-fx-type': {
+    flex: 'none', borderRadius: '9999px', padding: '0 6px', fontSize: '10px', lineHeight: '16px', fontWeight: '500',
+    backgroundColor: 'rgb(var(--gray-500) / .1)', color: 'rgb(var(--gray-500))',
+  },
+  '.cm-fx-type-text': { backgroundColor: 'rgb(16 185 129 / .12)', color: '#047857' },
+  '.cm-fx-type-number': { backgroundColor: 'rgb(245 158 11 / .14)', color: '#b45309' },
+  '.cm-fx-type-boolean': { backgroundColor: 'rgb(236 72 153 / .12)', color: '#be185d' },
+  '.cm-fx-type-date': { backgroundColor: 'rgb(14 165 233 / .12)', color: '#0369a1' },
+  '.cm-fx-type-list, .cm-fx-type-map': { backgroundColor: 'rgb(124 58 237 / .1)', color: '#6d28d9' },
+  '.cm-tooltip.cm-completionInfo': { padding: '10px 12px', width: '18rem', maxWidth: '18rem' },
+  '.cm-tooltip.cm-completionInfo.cm-completionInfo-right': { marginLeft: '4px' },
+  '.cm-tooltip.cm-completionInfo.cm-completionInfo-left': { marginRight: '4px' },
+  '.cm-tooltip-lint': { padding: '0' },
+  '.cm-diagnostic': { padding: '6px 10px', fontFamily: SANS, fontSize: '12px', borderLeftWidth: '3px' },
+  '.cm-diagnostic-error': { borderLeftColor: '#dc2626' },
+  '.cm-diagnostic-warning': { borderLeftColor: '#d97706' },
+  '.cm-tooltip:has(> .cm-fx-signature)': { borderRadius: '8px' },
 })
 
 export function formulaExtensions(o: FormulaOptions): Extension[] {
@@ -285,12 +339,25 @@ export function formulaExtensions(o: FormulaOptions): Extension[] {
     signatureHint(o.template),
     autocompletion({
       override: [formulaCompletions(() => o.env(), o.template)],
-      icons: false,
+      icons: true,
       maxRenderedOptions: 300,
+      // The type of value on the right of each row, as a coloured badge.
+      addToOptions: [{
+        position: 90,
+        render: c => {
+          const t = (c as FormulaCompletion).valueType
+          if (!t || t === 'any') return null
+          const badge = document.createElement('span')
+          badge.className = `cm-fx-type cm-fx-type-${t}`
+          badge.textContent = t
+          return badge
+        },
+      }],
       // A template's plain text gets no suggestions; inside a formula they come as you type.
       activateOnTyping: true,
     }),
-    linter(view => problemsIn(view.state.doc.toString(), o.template, o.env().scope).map(p => ({ ...p, source: 'formula' })), { delay: 250 }),
+    linter(view => problemsIn(view.state.doc.toString(), o.template, o.env().scope, view.hasFocus ? view.state.selection.main.head : undefined)
+      .map(p => ({ ...p, source: 'formula' })), { delay: 250, needsRefresh: u => u.selectionSet || u.focusChanged }),
     ...(o.placeholder ? [placeholderText(o.placeholder)] : []),
     ...(o.template ? [openPlaceholder] : []),
     ...(o.multiline ? [] : [singleLine]),

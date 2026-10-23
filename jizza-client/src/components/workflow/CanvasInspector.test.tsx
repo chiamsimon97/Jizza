@@ -112,4 +112,16 @@ describe('CanvasInspector', () => {
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
     expect(saved.config.condition).toBe(`nodes.${first.id}.ok.round(0) == 200`)
   })
+
+  it('inserts a function from the function list', () => {
+    const { graph, id } = addAfter(emptyGraph(), 'start', null, 'NOTIFY')
+    const withMessage = { ...graph, nodes: graph.nodes.map(n => (n.id === id ? { ...n, config: { message: 'Hi {{ input.name }}' } } : n)) }
+    const { onSave } = open(withMessage, id)
+    fireEvent.click(screen.getAllByRole('button', { name: /Functions/ })[1])
+    fireEvent.change(screen.getByPlaceholderText('Search functions'), { target: { value: 'upper' } })
+    fireEvent.click(screen.getByRole('button', { name: /^ƒ\s*upper/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config.message).toBe('Hi {{ input.name }}{{ upper() }}')
+  })
 })
