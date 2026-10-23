@@ -1157,8 +1157,10 @@ export interface McpTool {
   description?: string | null
   inputSchema?: Record<string, unknown> | null
   enabled: boolean
-  /** What you said it does; null means it is judged as moving money until you choose. */
+  /** What it does: yours, or Jizza's suggestion from its name. Null is judged as moving money. */
   actionType?: ActionType | null
+  /** True while actionType is Jizza's suggestion and you haven't changed it. */
+  suggested?: boolean
   /** What the server claims (read-only, destructive); a hint only. */
   serverHint?: string | null
 }

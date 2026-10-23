@@ -242,8 +242,13 @@ public class ConnectorServiceUseCase {
     machineName(in.name(), "action");
     label(in.label());
     if (in.apiId() == null) throw new ValidationException("An action must be built on an API");
-    return definitions.saveAction(serviceId, actionId, new ActionInput(in.name(),
+    Action saved = definitions.saveAction(serviceId, actionId, new ActionInput(in.name(),
         in.label().trim(), in.description(), in.apiId(), in.resourceId(), in.enabled()));
+    if (actionId != null) return saved;
+    // A new action goes to Jizza, as a new MCP server does; the user gives it to others.
+    capabilities.grant(agents.orchestrator(access.userId()).id(), CapabilityType.SERVICE_ACTION,
+        saved.id());
+    return actionOf(serviceId, saved.id());
   }
 
   @Transactional
