@@ -1,4 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { notificationsApi } from '@/api/notifications'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, GitBranch, Shield, Activity, BarChart2, History,
@@ -96,6 +98,12 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
   // Until the account is known, show nothing rather than the wrong account's sections. If it can't
   // be loaded at all, fall back to the personal sections; the server still checks every request.
   const sections = snapshot ? sectionsFor(snapshot) : isError ? personalSections : []
+  // What is waiting on the user shows on the Notifications item, red when any of it is urgent.
+  const { data: inbox } = useQuery({
+    queryKey: ['notifications', 'summary'],
+    queryFn: () => notificationsApi.summary(),
+    refetchInterval: 60_000,
+  })
   async function signOut() {
     try { await authApi.logout() } catch { /* session may already be gone */ }
     endLocalSession()
@@ -159,6 +167,16 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
                       />
                       <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-110" />
                       {!collapsed && <span className="truncate">{label}</span>}
+                      {to === '/notifications' && inbox && inbox.needsYou > 0 && (
+                        <span
+                          aria-label={`${inbox.needsYou} waiting on you`}
+                          className={`grid min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[11px] font-semibold leading-5 text-white ${
+                            inbox.urgent > 0 ? 'bg-red-500' : 'bg-brand-500'
+                          } ${collapsed ? 'absolute right-1 top-0.5 min-w-[1rem] px-1 text-[10px] leading-4' : 'ml-auto'}`}
+                        >
+                          {inbox.needsYou > 99 ? '99+' : inbox.needsYou}
+                        </span>
+                      )}
                     </>
                   )}
                 </NavLink>

@@ -67,6 +67,16 @@ public class NotificationEntity {
   @Column(nullable = false)
   private NotificationPriority priority = NotificationPriority.NORMAL;
 
+  /** Filed away by the user; kept for the record but out of the inbox. */
+  private Instant archivedAt;
+
+  /** Hidden from the inbox until then. */
+  private Instant snoozedUntil;
+
+  /** What the user said when declining or asking for changes. */
+  @Column(columnDefinition = "text")
+  private String responseNote;
+
   public UUID getId() { return id; }
   public void setId(UUID id) { this.id = id; }
 
@@ -126,4 +136,13 @@ public class NotificationEntity {
 
   public NotificationPriority getPriority() { return priority; }
   public void setPriority(NotificationPriority priority) { this.priority = priority; }
+
+  public Instant getArchivedAt() { return archivedAt; }
+  public void setArchivedAt(Instant archivedAt) { this.archivedAt = archivedAt; }
+
+  public Instant getSnoozedUntil() { return snoozedUntil; }
+  public void setSnoozedUntil(Instant snoozedUntil) { this.snoozedUntil = snoozedUntil; }
+
+  public String getResponseNote() { return responseNote; }
+  public void setResponseNote(String responseNote) { this.responseNote = responseNote; }
 }

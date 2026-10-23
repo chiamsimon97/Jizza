@@ -117,6 +117,8 @@ public final class Requests {
   public record AnswerNotification(@NotNull com.jizza.engine.api.notification.Answer.Kind kind,
                                    String instruction, String feedback) {}
 
+  public record SnoozeNotification(java.time.Instant until) {}
+
   public record AutonomyPolicy(UUID id, UUID agentId, String toolRef, @NotNull AutonomyRule rule,
                                JsonNode limits, int precedence) {}
 

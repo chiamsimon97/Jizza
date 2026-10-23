@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { queryClient } from '@/lib/queryClient'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Maximize2, Plus, Volume2, VolumeX, X } from 'lucide-react'
 import { useAssistantStore, bindNavigator, loadHistory } from './assistantStore'
@@ -39,7 +40,11 @@ export function JizzaDock() {
   useEffect(() => { void loadHistory() }, [])
 
   // The dock is mounted on every page, so it is where chat events are followed, whichever view shows them.
-  useWebSocket({ onChatEvent: event => useAssistantStore.getState().applyEvent(event) })
+  // New, answered and expired notifications refresh the inbox and the sidebar badge wherever the user is.
+  useWebSocket({
+    onChatEvent: event => useAssistantStore.getState().applyEvent(event),
+    onNotification: () => void queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  })
 
   // Ctrl/Cmd+K summons Jizza from anywhere; Escape dismisses the panel.
   useEffect(() => {

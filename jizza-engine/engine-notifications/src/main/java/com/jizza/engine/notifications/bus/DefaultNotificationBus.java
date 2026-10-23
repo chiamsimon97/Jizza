@@ -150,6 +150,8 @@ public class DefaultNotificationBus implements NotificationBus {
     boolean approved = answer.kind() == Answer.Kind.APPROVE;
     entity.setStatus(approved ? NotificationStatus.APPROVED : NotificationStatus.DENIED);
     entity.setAnsweredAt(Instant.now());
+    entity.setResponseNote(approved ? null : blankToNull(answer.feedback()));
+    entity.setSnoozedUntil(null);
     notifications.save(entity);
 
     audit.record(entity.getUserId(), ActorType.USER, null,
@@ -160,7 +162,9 @@ public class DefaultNotificationBus implements NotificationBus {
     // A permission request that halted a run releases it either way: approving lets the step run,
     // declining lets the run fail cleanly rather than hanging.
     if (entity.getRunId() != null) {
-      resumeRun(entity, Json.obj().put("approved", approved));
+      var payload = Json.obj().put("approved", approved);
+      if (entity.getResponseNote() != null) payload.put("feedback", entity.getResponseNote());
+      resumeRun(entity, payload);
     }
     return toDto(entity);
   }
@@ -182,6 +186,8 @@ public class DefaultNotificationBus implements NotificationBus {
     }
     entity.setStatus(approved ? NotificationStatus.APPROVED : NotificationStatus.DENIED);
     entity.setAnsweredAt(Instant.now());
+    entity.setResponseNote(approved ? null : blankToNull(answer.feedback()));
+    entity.setSnoozedUntil(null);
     notifications.save(entity);
 
     audit.record(entity.getUserId(), ActorType.USER, null,
@@ -201,6 +207,7 @@ public class DefaultNotificationBus implements NotificationBus {
     entity.setStatus(NotificationStatus.SUBMITTED);
     entity.setSubmittedInstruction(answer.instruction());
     entity.setAnsweredAt(Instant.now());
+    entity.setSnoozedUntil(null);
     notifications.save(entity);
 
     audit.record(entity.getUserId(), ActorType.USER, null, "notification.instruction_submitted",
@@ -272,6 +279,74 @@ public class DefaultNotificationBus implements NotificationBus {
     }
   }
 
+  @Override
+  @Transactional
+  public void markUnread(UUID notificationId) {
+    NotificationEntity entity = require(notificationId);
+    if (entity.getStatus() == NotificationStatus.READ) {
+      entity.setStatus(NotificationStatus.UNREAD);
+      notifications.save(entity);
+    }
+  }
+
+  @Override
+  @Transactional
+  public int markAllRead(UUID userId) {
+    List<NotificationEntity> unread =
+        notifications.findByUserIdAndStatusOrderByCreatedAtDesc(userId, NotificationStatus.UNREAD);
+    unread.forEach(n -> n.setStatus(NotificationStatus.READ));
+    notifications.saveAll(unread);
+    return unread.size();
+  }
+
+  @Override
+  @Transactional
+  public NotificationDto archive(UUID notificationId, boolean archived) {
+    NotificationEntity entity = require(notificationId);
+    if (archived && isOpen(entity)) {
+      throw new ValidationException(
+          "This is still waiting on you. Approve or decline it before filing it away.");
+    }
+    entity.setArchivedAt(archived ? Instant.now() : null);
+    if (archived) {
+      entity.setSnoozedUntil(null);
+      if (entity.getStatus() == NotificationStatus.UNREAD) entity.setStatus(NotificationStatus.READ);
+    }
+    notifications.save(entity);
+    return toDto(entity);
+  }
+
+  @Override
+  @Transactional
+  public NotificationDto snooze(UUID notificationId, Instant until) {
+    NotificationEntity entity = require(notificationId);
+    if (until != null) {
+      if (!until.isAfter(Instant.now())) {
+        throw new ValidationException("Pick a time in the future to snooze until");
+      }
+      if (entity.getKind().blocking() && !isOpen(entity)) {
+        throw new ValidationException("That item has already been dealt with");
+      }
+      // A request that expires while hidden would be lost: snooze no longer than it can wait.
+      if (isOpen(entity) && entity.getExpiresAt() != null && until.isAfter(entity.getExpiresAt())) {
+        throw new ValidationException("This request expires before then. Snooze it for less time,"
+            + " or answer it now.");
+      }
+    }
+    entity.setSnoozedUntil(until);
+    notifications.save(entity);
+    return toDto(entity);
+  }
+
+  private static boolean isOpen(NotificationEntity n) {
+    return n.getKind().blocking()
+        && (n.getStatus() == NotificationStatus.UNREAD || n.getStatus() == NotificationStatus.READ);
+  }
+
+  private static String blankToNull(String text) {
+    return text == null || text.isBlank() ? null : text.strip();
+  }
+
   /**
    * Blocks an unattended caller until a permission request is answered. Polls rather than waits on
    * a monitor so the answer can arrive on any process, not only this one.
@@ -320,6 +395,7 @@ public class DefaultNotificationBus implements NotificationBus {
         n.getKind(), n.getBody(), n.getContext(), n.getTaskId(), n.getWorkflowId(), n.getRunId(),
         n.getStatus(), n.getSubmittedInstruction(), n.getExpiresAt(), n.getEscalationState(),
         n.getCreatedAt(), n.getAnsweredAt(),
-        n.getPriority() == null ? NotificationPriority.NORMAL : n.getPriority());
+        n.getPriority() == null ? NotificationPriority.NORMAL : n.getPriority(),
+        n.getArchivedAt(), n.getSnoozedUntil(), n.getResponseNote());
   }
 }

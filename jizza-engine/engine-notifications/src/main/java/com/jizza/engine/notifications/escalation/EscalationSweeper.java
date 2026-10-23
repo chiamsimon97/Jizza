@@ -102,6 +102,11 @@ public class EscalationSweeper {
     // A low-priority item waits for the user's next visit; it is not chased.
     if (item.getPriority() == NotificationPriority.LOW) return;
     if (item.getReminderCount() >= props.getMaxReminders()) return;
+    // The user put it off on purpose; only something urgent is chased through a snooze.
+    if (item.getPriority() != NotificationPriority.URGENT && item.getSnoozedUntil() != null
+        && item.getSnoozedUntil().isAfter(now)) {
+      return;
+    }
     if (item.getLastRemindedAt() != null
         && item.getLastRemindedAt().isAfter(now.minus(props.getReminderCooldown()))) {
       return;

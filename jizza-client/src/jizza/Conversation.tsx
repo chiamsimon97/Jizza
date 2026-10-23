@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, ChevronRight, Copy, Mic, MicOff, RotateCcw, Send, ShieldQuestion, Square, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
+import { queryClient } from '@/lib/queryClient'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -353,6 +354,7 @@ function Approvals({ jobId }: { jobId: string }) {
       setError(err instanceof Error ? err.message : 'That did not go through.')
     } finally {
       setBusy(null)
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] })
     }
   }
 
