@@ -5,14 +5,14 @@ export const tasksApi = {
   list: () =>
     api.get<TaskDto[]>('/api/tasks'),
 
-  create: (task: Omit<TaskDto, 'id' | 'status' | 'nextRunAt'>) =>
+  create: (task: Pick<TaskDto, 'title' | 'agentId' | 'scheduleType' | 'cronOrRrule' | 'runAt' | 'timezone' | 'repetitive'>) =>
     api.post<TaskDto>('/api/tasks', task),
 
   cancel: (id: string) =>
-    api.post<void>(`/api/tasks/${id}/cancel`),
+    api.delete<void>(`/api/tasks/${id}`),
 
   setRepetitive: (id: string, repetitive: boolean) =>
-    api.patch<void>(`/api/tasks/${id}/repetitive`, { repetitive }),
+    api.post<TaskDto>(`/api/tasks/${id}/repetitive`, { repetitive }),
 
   unbindProcedure: (id: string) =>
     api.post<void>(`/api/tasks/${id}/unbind`),

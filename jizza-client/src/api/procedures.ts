@@ -1,10 +1,14 @@
 import { api } from '@/lib/api'
-import type { ProcedureSummary, WorkflowDto } from '@/types'
+import type { ProcedureSummary, TaskDto, WorkflowDto } from '@/types'
 
 /** Workflows an agent learned from a repeating task, and their review (approve, roll back, …). */
 export const proceduresApi = {
   list: () =>
     api.get<ProcedureSummary[]>('/api/procedures'),
+
+  /** Adds a sample repeating task and the procedure learned from it, waiting for review. */
+  addExample: () =>
+    api.post<{ task: TaskDto; procedure: WorkflowDto }>('/api/procedures/example'),
 
   /** Every version, oldest first. */
   history: (id: string) =>
