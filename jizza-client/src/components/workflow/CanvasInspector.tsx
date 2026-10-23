@@ -28,7 +28,7 @@ export interface WorkflowOption { id: string; name: string; status: string }
 const NARROW_FIELD = fieldClass.replace('w-full', '')
 
 /** Said under every field that takes {{ placeholders }}. */
-const TEMPLATE_HINT = 'Type {{ or press {} to put in data from earlier steps.'
+const TEMPLATE_HINT = 'Type {{, press Ctrl+E, or use {} to put in data from earlier steps.'
 
 /** The hand-offs an agent step recorded in its output, when it asked its team for help. */
 function teamOf(output: unknown): TeamStep[] {
@@ -42,6 +42,43 @@ function teamOf(output: unknown): TeamStep[] {
  * Changes are kept here until Save, which hands back the edited graph; Close drops them. Save stays
  * off until every mandatory field (see {@link fieldIssues}) has a value.
  */
+const WIDTH_KEY = 'jizza.stepSettingsWidth'
+const MIN_WIDTH = 360
+const DEFAULT_WIDTH = 560
+
+function savedWidth(): number {
+  try { return Math.max(MIN_WIDTH, Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_WIDTH) } catch { return DEFAULT_WIDTH }
+}
+
+/** The panel's width, changed by dragging its left edge (or the arrow keys on it) and remembered. */
+function usePanelWidth() {
+  const [width, setWidth] = useState(savedWidth)
+  const panel = useRef<HTMLElement>(null)
+  const clamp = (w: number) => {
+    const room = panel.current?.parentElement?.clientWidth ?? window.innerWidth
+    return Math.round(Math.min(Math.max(w, MIN_WIDTH), Math.max(MIN_WIDTH, room * 0.85)))
+  }
+  const keep = (w: number) => { try { localStorage.setItem(WIDTH_KEY, String(w)) } catch { /* just not remembered */ } }
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const start = panel.current?.offsetWidth ?? width
+    let last = start
+    const move = (ev: PointerEvent) => { last = clamp(start + startX - ev.clientX); setWidth(last) }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); keep(last) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next = clamp(width + (e.key === 'ArrowLeft' ? 32 : -32))
+    setWidth(next)
+    keep(next)
+  }
+  return { panel, width, handle: { onPointerDown, onKeyDown } }
+}
+
 export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
   /** The MCP servers added under Connectors, for the MCP tool step. */
@@ -61,6 +98,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   onClose: () => void
 }) {
   const [graph, setGraph] = useState(canvas)
+  const { panel, width, handle } = usePanelWidth()
   const [dirty, setDirty] = useState(false)
   const node = graph.nodes.find(n => n.id === opened.id) ?? opened
   const onChange = (g: CanvasGraph, _key?: string) => { setGraph(g); setDirty(true) }
@@ -134,7 +172,10 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   }, [jizzaOn, node.id])
 
   return (
-    <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-[26rem] max-w-full flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
+    <aside ref={panel} aria-label="Step settings" style={{ width }}
+      className="absolute inset-y-0 right-0 z-10 flex max-w-full flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
+    <div role="separator" aria-orientation="vertical" aria-label="Resize step settings" tabIndex={0} {...handle}
+      className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-brand-500/20 focus-visible:bg-brand-500/30 focus-visible:outline-none" />
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4">
       <div className="flex items-center gap-2">
         <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold ${NODE_META[node.type].tone}`}>
@@ -520,14 +561,14 @@ function PairsField({ value, onChange, namePlaceholder, valuePlaceholder, addLab
   return <>
     {rows.map((r, i) => (
       <div key={i} className="flex items-start gap-1.5">
-        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${NARROW_FIELD} w-28 shrink-0 font-mono text-xs`} value={r.name}
+        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${NARROW_FIELD} h-[2.375rem] w-28 shrink-0 font-mono text-xs`} value={r.name}
           onChange={e => save(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
         <div className="min-w-0 flex-1">
           <MappedField aria-label={`Value ${i + 1}`} placeholder={valuePlaceholder} mode="template" context={mapping} mono value={r.value}
             onChange={v => save(rows.map((x, j) => (j === i ? { ...x, value: v } : x)))} />
         </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i))} aria-label={`Remove row ${i + 1}`}
-          className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+          className="grid h-[2.375rem] w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     ))}
     <button type="button" onClick={() => setRows([...rows, { name: '', value: '' }])}
@@ -647,7 +688,7 @@ function VariableFields({ node, setConfig, mapping }: { node: CanvasNode; setCon
             onChange={v => save(rows.map((x, j) => (j === i ? { ...x, expr: v } : x)), `varExpr:${i}`)} />
         </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i), 'removeVar')} aria-label={`Remove variable ${i + 1}`} disabled={rows.length <= 1}
-          className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+          className="grid h-[2.375rem] w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     ))}
     <button type="button" onClick={() => save([...rows, { name: '', expr: '' }], 'addVar')}

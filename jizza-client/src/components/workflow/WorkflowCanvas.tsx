@@ -594,7 +594,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     <div ref={wrapper}
       onPointerDownCapture={() => { active.current = true }}
       onPointerLeave={() => { if (!fullscreen) active.current = false }}
-      className={`jizza-flow flex overflow-hidden border-gray-200 dark:border-gray-800 ${fullscreen ? 'h-full' : 'h-[calc(100vh-19rem)] min-h-[420px] rounded-xl border'}`}>
+      className={`jizza-flow flex overflow-hidden border-gray-200 dark:border-gray-800 ${fullscreen ? 'h-full' : 'h-[calc(100vh-19rem)] min-h-[560px] rounded-xl border'}`}>
       {!readOnly && (
         <aside className="hidden w-48 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-gray-200 bg-gray-50 p-2.5 dark:border-gray-800 dark:bg-gray-950 sm:flex">
           <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Add a step</p>
