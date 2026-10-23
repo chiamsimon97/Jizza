@@ -8,7 +8,7 @@ import { FUNCTIONS, applyFunction, chipLabel, parse, write, type DataSource, typ
 /** What every mapped field needs to show and insert chips. */
 export interface MappingContext { graph: CanvasGraph; sources: DataSource[] }
 
-const CHIP = 'mx-0.5 inline-flex max-w-full cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-px align-baseline font-sans text-[11px] font-medium leading-5'
+const CHIP = 'mx-0.5 inline-flex max-w-full cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-px align-middle font-sans text-[11px] font-medium leading-4'
 const CHIP_TONE = 'border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-400 dark:border-brand-700/60 dark:bg-brand-500/10 dark:text-brand-200'
 const FORMULA_TONE = 'border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-400 dark:border-violet-700/60 dark:bg-violet-500/10 dark:text-violet-200'
 
@@ -72,7 +72,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
 
   return (
     <div className="relative min-w-0">
-      <div className="flex items-start gap-1">
+      <div className="group relative">
         <div ref={box} role="textbox" aria-multiline={multiline || undefined} {...aria}
           contentEditable={!disabled} suppressContentEditableWarning
           data-placeholder={placeholder}
@@ -99,13 +99,13 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
             if (chip && !disabled) setEditing({ chip, expr: chip.dataset.expr ?? '' })
           }}
           style={multiline ? { minHeight: `${rows * 1.25 + 1}rem` } : undefined}
-          className={`${fieldClass.replace('w-full', '')} min-w-0 flex-1 whitespace-pre-wrap break-words ${mono ? 'font-mono text-xs' : ''} ${multiline ? '' : 'min-h-[2.375rem]'}
+          className={`${fieldClass} min-w-0 whitespace-pre-wrap break-words ${mono ? 'font-mono text-xs' : ''} ${multiline ? '' : 'min-h-[2.375rem]'} ${disabled ? '' : 'pr-10'}
             empty:before:pointer-events-none empty:before:text-gray-400 empty:before:content-[attr(data-placeholder)]
             ${invalid ? '!border-red-400' : ''} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} />
         {!disabled && (
           <button type="button" onMouseDown={e => { e.preventDefault(); e.stopPropagation() }} onClick={() => { remember(); setPicker(v => !v) }}
             aria-label="Insert data from earlier steps" title="Insert data from earlier steps"
-            className="grid h-[2.375rem] w-8 shrink-0 place-items-center rounded-lg border border-gray-300 text-gray-500 hover:border-brand-400 hover:text-brand-600 dark:border-gray-700">
+            className={`absolute right-1.5 top-[5px] grid h-7 w-7 place-items-center rounded-md text-gray-400 transition-opacity hover:bg-brand-50 hover:text-brand-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 dark:hover:bg-brand-500/10 ${picker ? 'text-brand-600 opacity-100' : 'opacity-0'}`}>
             <Braces className="h-4 w-4" />
           </button>
         )}

@@ -520,14 +520,14 @@ function PairsField({ value, onChange, namePlaceholder, valuePlaceholder, addLab
   return <>
     {rows.map((r, i) => (
       <div key={i} className="flex items-start gap-1.5">
-        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${NARROW_FIELD} w-28 shrink-0 font-mono text-xs`} value={r.name}
+        <input aria-label={`${namePlaceholder} ${i + 1}`} placeholder={namePlaceholder} className={`${NARROW_FIELD} h-[2.375rem] w-28 shrink-0 font-mono text-xs`} value={r.name}
           onChange={e => save(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
         <div className="min-w-0 flex-1">
           <MappedField aria-label={`Value ${i + 1}`} placeholder={valuePlaceholder} mode="template" context={mapping} mono value={r.value}
             onChange={v => save(rows.map((x, j) => (j === i ? { ...x, value: v } : x)))} />
         </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i))} aria-label={`Remove row ${i + 1}`}
-          className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+          className="grid h-[2.375rem] w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     ))}
     <button type="button" onClick={() => setRows([...rows, { name: '', value: '' }])}
@@ -647,7 +647,7 @@ function VariableFields({ node, setConfig, mapping }: { node: CanvasNode; setCon
             onChange={v => save(rows.map((x, j) => (j === i ? { ...x, expr: v } : x)), `varExpr:${i}`)} />
         </div>
         <button type="button" onClick={() => save(rows.filter((_, j) => j !== i), 'removeVar')} aria-label={`Remove variable ${i + 1}`} disabled={rows.length <= 1}
-          className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+          className="grid h-[2.375rem] w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     ))}
     <button type="button" onClick={() => save([...rows, { name: '', expr: '' }], 'addVar')}
