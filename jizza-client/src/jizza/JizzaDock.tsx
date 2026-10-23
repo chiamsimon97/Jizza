@@ -103,21 +103,24 @@ export function JizzaDock() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setDockOpen(!dockOpen)}
-        aria-label={dockOpen ? 'Close Jizza' : 'Ask Jizza'}
-        title="Ask Jizza (Ctrl+K)"
-        className={`group fixed bottom-6 z-50 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40 ${
-          inBuilder ? 'left-6 hidden lg:block' : formOpen ? 'right-[38rem] hidden lg:block' : 'right-6'} ${dockOpen ? 'hidden sm:block' : ''}`}
-      >
-        <JizzaOrb size={56} state={thinking ? 'thinking' : 'idle'} />
-        {!dockOpen && (
-          <span className={`pointer-events-none absolute top-1/2 ${inBuilder ? 'left-full ml-3' : 'right-full mr-3'} -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-100 dark:text-gray-900`}>
-            Ask Jizza · Ctrl K
-          </span>
-        )}
-      </button>
+      {/* In the Builder, Ask Jizza sits in the form's footer instead. */}
+      {!inBuilder && (
+        <button
+          type="button"
+          onClick={() => setDockOpen(!dockOpen)}
+          aria-label={dockOpen ? 'Close Jizza' : 'Ask Jizza'}
+          title="Ask Jizza (Ctrl+K)"
+          className={`group fixed bottom-6 z-50 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40 ${
+            formOpen ? 'right-[38rem] hidden lg:block' : 'right-6'} ${dockOpen ? 'hidden sm:block' : ''}`}
+        >
+          <JizzaOrb size={56} state={thinking ? 'thinking' : 'idle'} />
+          {!dockOpen && (
+            <span className={`pointer-events-none absolute top-1/2 right-full mr-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-100 dark:text-gray-900`}>
+              Ask Jizza · Ctrl K
+            </span>
+          )}
+        </button>
+      )}
     </>
   )
 }

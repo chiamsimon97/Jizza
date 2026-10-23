@@ -12,6 +12,7 @@ import { useFormStore } from '@/jizza/formStore'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { useJizzaContext } from '@/jizza/contextStore'
 import { builderContext } from '@/jizza/builderContext'
+import { JizzaOrb } from '@/jizza/JizzaOrb'
 import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
@@ -89,6 +90,7 @@ export function WorkflowForm() {
   const request = useFormStore(s => (s.request?.form === 'new_workflow' ? s.request : null))
   const close = useFormStore(s => s.close)
   const note = useAssistantStore(s => s.note)
+  const setDockOpen = useAssistantStore(s => s.setDockOpen)
   const qc = useQueryClient()
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list() })
 
@@ -232,6 +234,11 @@ export function WorkflowForm() {
       wide={mode === 'canvas'}
       headerExtra={<ModeToggle mode={mode} onChange={switchMode} stepsDisabled={!stepsAvailable} />}
       footer={<>
+        {/* Jizza works on whatever is open here: the workflow, or a step's settings. */}
+        <button type="button" onClick={() => setDockOpen(true)} title="Ask Jizza about this workflow (Ctrl+K)"
+          className="mr-auto inline-flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800">
+          <JizzaOrb size={32} />Ask Jizza
+        </button>
         <Button variant="secondary" onClick={close}>{readOnly ? 'Close' : 'Cancel'}</Button>
         {workflowId && (
           <Button type="button" variant="secondary" onClick={() => { setError(''); run.mutate() }} loading={run.isPending}>

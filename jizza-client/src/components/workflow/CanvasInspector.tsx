@@ -136,7 +136,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
     <aside aria-label="Step settings" className="absolute inset-y-0 right-0 z-10 flex w-[26rem] max-w-full flex-col border-l shadow-xl border-gray-200 bg-white animate-fade-in dark:border-gray-800 dark:bg-gray-900">
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4">
       <div className="flex items-center gap-2">
-        <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${NODE_META[node.type].tone}`}>
+        <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold ${NODE_META[node.type].tone}`}>
           <Icon className="h-3 w-3" />{NODE_META[node.type].label}
         </span>
         <code className="truncate text-[11px] text-gray-400" title="This step's id, used to read its result as nodes.<id>">{node.id}</code>
