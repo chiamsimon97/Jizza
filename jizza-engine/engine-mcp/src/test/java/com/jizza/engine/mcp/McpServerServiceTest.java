@@ -113,6 +113,26 @@ class McpServerServiceTest {
   }
 
   @Test
+  void aWrongEarlierSuggestionIsCorrectedButTheUsersChoiceIsKept() {
+    UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
+    service.refreshTools(id);
+    // As an older classifier left it: reads marked as deleting, one of them the user's own choice.
+    McpServerEntity row = rows.get(id);
+    row.setToolSettings(Json.read("""
+        {"get_holdings":{"actionType":"delete","suggested":true},
+         "login":{"actionType":"update"}}"""));
+
+    assertThat(service.resuggestAll()).isEqualTo(1);
+
+    var tools = service.find(id).orElseThrow().tools();
+    assertThat(tools.get(1).actionType()).isEqualTo(ActionType.READ);
+    assertThat(tools.get(1).suggested()).isTrue();
+    assertThat(tools.get(0).actionType()).isEqualTo(ActionType.UPDATE);
+    assertThat(tools.get(0).suggested()).isFalse();
+    assertThat(service.resuggestAll()).isZero();
+  }
+
+  @Test
   void aToolLearnsItsOutputFieldsFromARun() {
     UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
     service.refreshTools(id);
@@ -198,6 +218,7 @@ class McpServerServiceTest {
       rows.put(e.getId(), e);
       return e;
     });
+    when(repo.findAll()).thenAnswer(inv -> new ArrayList<>(rows.values()));
     when(repo.findById(any())).thenAnswer(inv -> Optional.ofNullable(rows.get(inv.<UUID>getArgument(0))));
     when(repo.findByUserIdOrderByNameAsc(any())).thenAnswer(inv -> rows.values().stream()
         .filter(e -> e.getUserId().equals(inv.getArgument(0))).toList());
