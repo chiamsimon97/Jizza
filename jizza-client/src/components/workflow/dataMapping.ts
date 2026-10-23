@@ -8,6 +8,8 @@
  * them is a chip. Either way the saved value is the plain text the engine reads.
  */
 import { NODE_META, upstreamOf, type CanvasGraph, type CanvasNode, type NodeType } from './canvasModel'
+import type { FormulaScope } from './formula/analyze'
+import type { ValueType } from './formula/functions'
 
 export type MappingMode = 'template' | 'expression'
 
@@ -42,7 +44,7 @@ export function write(segments: Segment[], mode: MappingMode): string {
 }
 
 /** One value a step can map in, such as a webhook's response body. */
-export interface DataField { expr: string; label: string }
+export interface DataField { expr: string; label: string; type?: ValueType }
 
 /** A step (or the run's input, or its variables) and the values it gives later steps. */
 export interface DataSource { id: string; label: string; type: NodeType | 'VARS'; fields: DataField[] }
@@ -66,13 +68,31 @@ export const STEP_OUTPUTS: Partial<Record<NodeType, string[]>> = {
   FOR_EACH: ['count', 'results', 'failed'],
 }
 
-/** Field paths in a value from a past run, two levels deep, such as body.price. */
-function pathsOf(value: unknown, depth = 2, prefix = ''): string[] {
+/** What the known outputs hold, so the formula editor can check and suggest by type. */
+const OUTPUT_TYPES: Record<string, ValueType> = {
+  text: 'text', agent: 'text', truncated: 'boolean', instruction: 'text', decision: 'text', comment: 'text',
+  timedOut: 'boolean', status: 'number', ok: 'boolean', headers: 'map', passed: 'boolean', condition: 'boolean',
+  label: 'text', key: 'text', title: 'text', message: 'text', sent: 'boolean', waitedUntil: 'date', count: 'number',
+  results: 'list', failed: 'list',
+}
+
+/** The type of a value from a past run. */
+export function typeOfValue(value: unknown): ValueType {
+  if (typeof value === 'string') return /^\d{4}-\d{2}-\d{2}(T|$)/.test(value) ? 'date' : 'text'
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'boolean'
+  if (Array.isArray(value)) return 'list'
+  if (value && typeof value === 'object') return 'map'
+  return 'any'
+}
+
+/** Field paths in a value from a past run, two levels deep, such as body.price, with their types. */
+function pathsOf(value: unknown, depth = 2, prefix = ''): Array<{ path: string; type: ValueType }> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || depth === 0) return []
   return Object.entries(value as Record<string, unknown>).slice(0, 40).flatMap(([k, v]) => {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) return []
     const path = prefix ? `${prefix}.${k}` : k
-    return [path, ...pathsOf(v, depth - 1, path)]
+    return [{ path, type: typeOfValue(v) }, ...pathsOf(v, depth - 1, path)]
   })
 }
 
@@ -88,23 +108,39 @@ export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: Readonl
   const sources: DataSource[] = []
   for (const n of upstream) {
     if (n.type === 'TRIGGER') {
-      const fields = pathsOf(outputs?.get(n.id)).map(p => ({ expr: `input.${p}`, label: p }))
-      sources.push({ id: n.id, label: 'Start (the run\'s input)', type: n.type, fields: [{ expr: 'input', label: 'The whole input' }, ...fields] })
+      const fields = pathsOf(outputs?.get(n.id)).map(p => ({ expr: `input.${p.path}`, label: p.path, type: p.type }))
+      sources.push({ id: n.id, label: 'Start (the run\'s input)', type: n.type, fields: [{ expr: 'input', label: 'The whole input', type: 'map' }, ...fields] })
       continue
     }
     if (n.type === 'PARALLEL') continue
     // A step that calls something (an MCP tool) knows its fields from what that thing returns.
     const known = [...(STEP_OUTPUTS[n.type] ?? []), ...(declared?.(n) ?? [])]
     const seen = new Set(known)
-    const ran = pathsOf(outputs?.get(n.id)).filter(p => !seen.has(p))
+    const ran = pathsOf(outputs?.get(n.id)).filter(p => !seen.has(p.path))
+    const ranType = new Map(pathsOf(outputs?.get(n.id)).map(p => [p.path, p.type]))
     sources.push({
       id: n.id, label: n.label || NODE_META[n.type].label, type: n.type,
-      fields: [{ expr: `nodes.${n.id}`, label: 'The whole result' }, ...[...known, ...ran].map(p => ({ expr: `nodes.${n.id}.${p}`, label: p }))],
+      fields: [
+        { expr: `nodes.${n.id}`, label: 'The whole result', type: 'map' },
+        ...known.map(p => ({ expr: `nodes.${n.id}.${p}`, label: p, type: OUTPUT_TYPES[p] ?? ranType.get(p) ?? 'any' })),
+        ...ran.map(p => ({ expr: `nodes.${n.id}.${p.path}`, label: p.path, type: p.type })),
+      ],
     })
   }
   const vars = variablesOf(upstream)
-  if (vars.length) sources.push({ id: 'vars', label: 'Variables', type: 'VARS', fields: vars.map(v => ({ expr: `vars.${v}`, label: v })) })
+  if (vars.length) sources.push({ id: 'vars', label: 'Variables', type: 'VARS', fields: vars.map(v => ({ expr: `vars.${v}`, label: v, type: 'any' as const })) })
   return sources
+}
+
+/** What the formula editor knows about the data in {@code sources}. */
+export function scopeFor(sources: DataSource[]): FormulaScope {
+  const types = new Map(sources.flatMap(s => s.fields.map(f => [f.expr, f.type ?? 'any'] as const)))
+  const steps = new Set(sources.filter(s => s.type !== 'VARS' && s.type !== 'TRIGGER').map(s => s.id))
+  return {
+    typeOf: ref => types.get(ref),
+    hasStep: id => steps.has(id),
+    hasVariable: name => types.has(`vars.${name}`),
+  }
 }
 
 /** The variables set-variable steps keep, which later steps read as vars.<name>. */
@@ -129,27 +165,4 @@ export function chipLabel(expr: string, graph: CanvasGraph): { source?: string; 
   const variable = /^vars\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*)$/.exec(expr)
   if (variable) return { source: 'Variable', field: variable[1], formula: false }
   return { field: expr, formula: true }
-}
-
-/** Common fmt: functions offered when editing a chip; {@code x} is where the value goes. */
-export const FUNCTIONS: Array<{ name: string; template: string; desc: string }> = [
-  { name: 'Upper case', template: 'fmt:upper(x)', desc: 'HELLO' },
-  { name: 'Lower case', template: 'fmt:lower(x)', desc: 'hello' },
-  { name: 'Title case', template: 'fmt:titleCase(x)', desc: 'Hello World' },
-  { name: 'Trim spaces', template: 'fmt:trim(x)', desc: 'Drops spaces at both ends' },
-  { name: 'Default if empty', template: "fmt:defaultIfEmpty(x, '')", desc: 'A fallback for a blank value' },
-  { name: 'To number', template: 'fmt:toNumber(x)', desc: '"₹ 1,234.50" → 1234.5' },
-  { name: 'Round', template: 'fmt:round(x, 2)', desc: 'To 2 decimal places' },
-  { name: 'Format number', template: 'fmt:formatNumber(x, 2)', desc: '1,23,456.50' },
-  { name: 'Format currency', template: "fmt:formatCurrency(x, 'INR')", desc: '₹1,23,456.50' },
-  { name: 'Format date', template: "fmt:formatDate(x, 'dd MMM yyyy')", desc: '22 Oct 2026' },
-  { name: 'Add days', template: 'fmt:addDays(x, 1)', desc: 'A date a day later' },
-  { name: 'Count', template: 'fmt:count(x)', desc: 'How many items' },
-  { name: 'Join', template: "fmt:join(x, ', ')", desc: 'A list as text' },
-  { name: 'First item', template: 'fmt:first(x)', desc: 'The first item of a list' },
-]
-
-/** Wraps an expression in a function from {@link FUNCTIONS}. */
-export function applyFunction(template: string, expr: string): string {
-  return template.replace(/\bx\b/, expr)
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addAfter, emptyGraph } from './canvasModel'
-import { applyFunction, chipLabel, dataSourcesFor, parse, write } from './dataMapping'
+import { chipLabel, dataSourcesFor, parse, scopeFor, write } from './dataMapping'
 
 describe('dataMapping', () => {
   it('cuts a template into text and chips and puts it back', () => {
@@ -33,6 +33,12 @@ describe('dataMapping', () => {
     const fields = sources[1].fields.map(f => f.expr)
     expect(fields).toContain(`nodes.${hook}.status`)
     expect(fields).toContain(`nodes.${hook}.body.price`)
+    // Known outputs and values from the last run come with their types, for the formula editor.
+    const scope = scopeFor(sources)
+    expect(scope.typeOf(`nodes.${hook}.status`)).toBe('number')
+    expect(scope.typeOf(`nodes.${hook}.body.unit`)).toBe('text')
+    expect(scope.hasStep(hook)).toBe(true)
+    expect(scope.hasStep(next.id)).toBe(false)
   })
 
   it('labels a chip with the step name and field, or as a formula', () => {
@@ -40,6 +46,5 @@ describe('dataMapping', () => {
     expect(chipLabel(`nodes.${id}.body.price`, graph)).toEqual({ source: 'Send webhook', field: 'body.price', formula: false })
     expect(chipLabel('input.email', graph)).toEqual({ source: 'Start', field: 'email', formula: false })
     expect(chipLabel('fmt:upper(input.name)', graph).formula).toBe(true)
-    expect(applyFunction("fmt:formatDate(x, 'dd MMM yyyy')", 'input.date')).toBe("fmt:formatDate(input.date, 'dd MMM yyyy')")
   })
 })
