@@ -94,6 +94,16 @@ class BaseAgentTest {
   }
 
   @Test
+  void anotherAccountsAgentIsNeverRun() {
+    var llm = new ScriptedLlm(List.of(text("should not be said")));
+    var stranger = java.util.UUID.randomUUID();
+
+    assertThatThrownBy(() -> agentWith(llm).run(AgentRequest.of(stranger, agent.getId(), "hi")))
+        .isInstanceOf(com.jizza.engine.api.error.NotFoundException.class);
+    assertThat(llm.callCount()).isZero();
+  }
+
+  @Test
   void feedsToolResultsBackIntoTheConversation() {
     var llm = new ScriptedLlm(List.of(toolUse("knowledge_search"), text("done")));
     agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "How am I?"));

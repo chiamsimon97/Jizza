@@ -140,6 +140,48 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     }
   }
 
+  /**
+   * The other way in: not the owner's id in the path, but in a request body, naming something of
+   * the owner's for the caller's own new thing to use.
+   */
+  @Test
+  void anotherAccountsIdsInARequestBodyAreRefused() {
+    String ownersAgent = owned.get("/api/agents/");
+    String ownersWorkflow = owned.get("/api/workflows/");
+    String ownersMemory = owned.get("/api/memory/");
+    String othersAgent = other.get("/api/agents").json().get(0).path("id").asText();
+
+    var task = other.post("/api/tasks", Map.of("title", "Borrowed agent", "agentId", ownersAgent,
+        "scheduleType", "ONE_TIME", "runAt", Instant.now().plusSeconds(86_400).toString()));
+    assertThat(task.status()).as("task with the owner's agent: %s", task.body()).isBetween(400, 404);
+
+    var rule = other.put("/api/guardrails/rules", Map.of("agentId", ownersAgent,
+        "toolRef", "anything", "rule", "ALLOW", "precedence", 1));
+    assertThat(rule.ok()).as("guardrail on the owner's agent: %s", rule.body()).isFalse();
+
+    var simulate = other.post("/api/guardrails/simulate",
+        Map.of("agentId", ownersAgent, "toolRef", "anything"));
+    assertThat(simulate.ok()).as("simulating the owner's agent: %s", simulate.body()).isFalse();
+
+    var workflow = other.post("/api/workflows", Map.of("name", "Borrowed", "owningAgentId",
+        ownersAgent, "graph", com.jizza.engine.api.util.Json.read("""
+            {"nodes":[{"id":"start","type":"TRIGGER"},{"id":"end","type":"END"}],
+             "edges":[{"from":"start","to":"end"}]}""")));
+    assertThat(workflow.ok()).as("workflow owned by the owner's agent: %s", workflow.body())
+        .isFalse();
+
+    var overwrite = other.post("/api/workflows", Map.of("id", ownersWorkflow, "name", "Hijacked",
+        "graph", com.jizza.engine.api.util.Json.read("""
+            {"nodes":[{"id":"start","type":"TRIGGER"},{"id":"end","type":"END"}],
+             "edges":[{"from":"start","to":"end"}]}""")));
+    assertThat(overwrite.ok()).as("saving over the owner's workflow: %s", overwrite.body())
+        .isFalse();
+    assertThat(owner.get("/api/workflows/" + ownersWorkflow).body()).doesNotContain("Hijacked");
+
+    var share = other.post("/api/memory/" + ownersMemory + "/share", Map.of("agentId", othersAgent));
+    assertThat(share.ok()).isFalse();
+  }
+
   @Test
   void listsOnlyEverShowTheCallersOwnThings() {
     for (String list : List.of("/api/conversations", "/api/workflows", "/api/tasks", "/api/memory",

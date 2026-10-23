@@ -59,7 +59,7 @@ export function StepUpDialog() {
           <div className="grid h-9 w-9 place-items-center rounded-lg brand-gradient text-white"><ShieldCheck className="h-5 w-5" /></div>
           <div>
             <h2 className="font-semibold text-gray-900 dark:text-gray-100">Confirm it's you</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">This changes what your agents can reach.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">This is a sensitive action, so enter your password again to carry on.</p>
           </div>
         </div>
         <div className="flex flex-col gap-3">

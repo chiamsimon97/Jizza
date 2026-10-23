@@ -21,7 +21,11 @@ export function AuthenticationTab({ detail, refresh }: TabProps) {
   const { data: conn, isLoading, refetch } = useQuery({ queryKey: ['connection', id], queryFn: () => servicesApi.connection(id) })
 
   const [scheme, setScheme] = useState<AuthScheme>((params.get('scheme') as AuthScheme) ?? detail.service.authScheme)
-  const [form, setForm] = useState<Record<string, string>>({})
+  // Every field starts as a string, so the inputs are controlled from their first render.
+  const [form, setForm] = useState<Record<string, string>>({
+    clientId: '', clientSecret: '', authorizationUrl: '', accessTokenUrl: '', refreshTokenUrl: '',
+    scopes: '', tokenPlacement: 'HEADER', keyName: 'Authorization', keyPrefix: '', keyIn: 'header',
+  })
   const [pkce, setPkce] = useState(false)
 
   useEffect(() => {

@@ -12,7 +12,7 @@ import { workflowsApi } from '@/api/workflows'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { WorkflowGuardrails } from '@/components/guardrails/WorkflowGuardrails'
 import { ReuseSettings } from '@/components/workflow/ReuseSettings'
 
@@ -20,7 +20,7 @@ export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
   const [guarding, setGuarding] = useState<string | null>(null)
   const [planning, setPlanning] = useState(false)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list(),
   })
@@ -53,7 +53,8 @@ export function WorkflowsPage() {
 
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
 
-      {!isLoading && (!data || data.length === 0) && (
+      {isError && <LoadError what="your workflows" onRetry={() => void refetch()} />}
+      {!isLoading && !isError && (!data || data.length === 0) && (
         <EmptyState icon={Workflow} title="No workflows" description="Saved workflows appear here." />
       )}
 

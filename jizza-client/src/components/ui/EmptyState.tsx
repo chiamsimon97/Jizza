@@ -1,4 +1,4 @@
-import { type LucideIcon } from 'lucide-react'
+import { AlertTriangle, type LucideIcon } from 'lucide-react'
 import { Button } from './Button'
 
 interface EmptyStateProps {
@@ -23,6 +23,20 @@ export function EmptyState({ icon: Icon, title, description, action }: EmptyStat
           {action.label}
         </Button>
       )}
+    </div>
+  )
+}
+
+/**
+ * What a list shows when it could not be loaded. Without it a failed load looks exactly like an
+ * empty list, and a user would think their things were gone.
+ */
+export function LoadError({ what, onRetry }: { what: string; onRetry: () => void }) {
+  return (
+    <div role="alert">
+      <EmptyState icon={AlertTriangle} title={`Couldn't load ${what}`}
+        description="Check your connection and try again. Nothing you saved is lost."
+        action={{ label: 'Try again', onClick: onRetry }} />
     </div>
   )
 }

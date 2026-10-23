@@ -6,12 +6,15 @@ import App from './App'
 import './index.css'
 import './store/themeStore'
 import { queryClient } from './lib/queryClient'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <App />
+        <ErrorBoundary fullPage>
+          <App />
+        </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,

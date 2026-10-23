@@ -27,10 +27,13 @@ public class TaskController {
 
   private final SchedulerService scheduler;
   private final TaskUseCase tasks;
+  private final com.jizza.engine.api.orchestrator.AgentDirectory agents;
 
-  public TaskController(SchedulerService scheduler, TaskUseCase tasks) {
+  public TaskController(SchedulerService scheduler, TaskUseCase tasks,
+                        com.jizza.engine.api.orchestrator.AgentDirectory agents) {
     this.scheduler = scheduler;
     this.tasks = tasks;
+    this.agents = agents;
   }
 
   @GetMapping
@@ -45,7 +48,20 @@ public class TaskController {
 
   @PostMapping
   public TaskDto create(@Valid @RequestBody Requests.Task request) {
-    return scheduler.schedule(new TaskSpec(CurrentUser.userId(), request.agentId(), request.title(),
+    // A one-off time already gone would run the moment it is saved, which is never what the person
+    // meant. A minute's grace covers the time spent filling the form in.
+    if (request.scheduleType() == com.jizza.engine.api.enums.ScheduleType.ONE_TIME
+        && request.runAt() != null
+        && request.runAt().isBefore(java.time.Instant.now().minus(java.time.Duration.ofMinutes(1)))) {
+      throw new com.jizza.engine.api.error.ValidationException(
+          "That time has already passed. Pick a time in the future.");
+    }
+    // Only one of the caller's own agents can be given the work.
+    java.util.UUID userId = CurrentUser.userId();
+    agents.byId(request.agentId()).filter(a -> userId.equals(a.userId()))
+        .orElseThrow(() -> new com.jizza.engine.api.error.NotFoundException("Agent",
+            request.agentId()));
+    return scheduler.schedule(new TaskSpec(userId, request.agentId(), request.title(),
         request.payload(), request.scheduleType(), request.cronOrRrule(), request.runAt(),
         request.timezone(), Boolean.TRUE.equals(request.repetitive())));
   }

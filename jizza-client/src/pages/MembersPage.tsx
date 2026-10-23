@@ -70,7 +70,7 @@ export function MembersPage() {
         <p className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/40 dark:text-green-300">{notice}</p>
       )}
 
-      <div className="grid max-w-5xl gap-6">
+      <div className="grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-6">
         <MembersTable />
         <RequestsSection onSent={setNotice} />
 

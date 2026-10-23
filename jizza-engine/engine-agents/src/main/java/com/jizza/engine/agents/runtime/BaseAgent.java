@@ -106,6 +106,11 @@ public class BaseAgent implements Agent {
   private AgentResult runInContext(AgentRequest req) {
     AgentEntity agent = agents.findById(req.agentId())
         .orElseThrow(() -> new NotFoundException("Agent", req.agentId()));
+    // An agent only ever works for the account that owns it, whatever named it: a task, a
+    // workflow step or a delegation. Someone else's agent is treated as not existing.
+    if (req.userId() != null && !req.userId().equals(agent.getUserId())) {
+      throw new NotFoundException("Agent", req.agentId());
+    }
 
     // A trial may run a draft or paused agent, since nothing it does is carried out.
     boolean trialOfUnfinished = req.dryRun() && !"archived".equals(agent.getStatus());

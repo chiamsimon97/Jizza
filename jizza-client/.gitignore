@@ -5,3 +5,6 @@ dist
 .DS_Store
 *.log
 *.tsbuildinfo
+e2e/.auth/
+e2e-report/
+test-results/

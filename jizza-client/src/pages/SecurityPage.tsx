@@ -24,7 +24,7 @@ export function SecurityPage() {
     <div className="page">
       <PageHeader icon={ShieldCheck} title="Security"
         description="Two-step sign-in, recovery codes, signed-in devices, your password and your data." />
-      <div className="grid max-w-3xl gap-4">
+      <div className="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">
         <TwoStepCard />
         <SessionsCard />
         <PasswordCard />

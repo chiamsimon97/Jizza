@@ -142,7 +142,7 @@ export function UsagePage() {
       {data && data.groups.length === 0 && <EmptyState icon={BarChart2} title="No usage" description="No model calls in this range." />}
 
       {data && data.groups.length > 0 && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <section>
             <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">By {DIMENSIONS.find(d => d.key === groupBy)?.label.toLowerCase()}</h2>
             <Card padding="none" className="overflow-hidden">

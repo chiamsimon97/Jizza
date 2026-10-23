@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { Field, fieldClass } from '@/components/ui/SlideOver'
 import { Input } from '@/components/ui/Input'
 import { ModeSelect } from '@/components/guardrails/ModeSelect'
@@ -27,7 +27,7 @@ const blank = (i: number): AgentBlueprint => ({
  */
 export function OrganizationAgentTemplatesPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: KEY, queryFn: orgAgentTemplatesApi.list })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: KEY, queryFn: orgAgentTemplatesApi.list })
   const [editing, setEditing] = useState<OrgAgentTemplate | 'new' | null>(null)
   const [error, setError] = useState('')
   const refresh = () => qc.invalidateQueries({ queryKey: KEY })
@@ -41,6 +41,7 @@ export function OrganizationAgentTemplatesPage() {
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {editing && <TemplateEditor template={editing === 'new' ? null : editing} onDone={() => { setEditing(null); void refresh() }} />}
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
+      {isError && <LoadError what="templates" onRetry={() => void refetch()} />}
       {!isLoading && data?.length === 0 && !editing && (
         <EmptyState icon={Bot} title="No templates yet" description="Make one to give every member the same well-set-up agent." />
       )}
