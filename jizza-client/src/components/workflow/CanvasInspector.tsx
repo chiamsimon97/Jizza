@@ -11,6 +11,7 @@ import {
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 import { dataSourcesFor } from './dataMapping'
+import { schemaFields } from '@/components/connectors/ResultView'
 import { MappedField, type MappingContext } from './MappedField'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { registerStepTarget, useContextStore, useJizzaContext } from '@/jizza/contextStore'
@@ -76,7 +77,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
-  const mapping: MappingContext = useMemo(() => ({ graph: canvas, sources: dataSourcesFor(canvas, opened.id, outputs) }), [canvas, opened.id, outputs])
+  const mapping: MappingContext = useMemo(() => ({ graph: canvas, sources: dataSourcesFor(canvas, opened.id, outputs, n => mcpOutputFields(n, mcpServers)) }), [canvas, opened.id, outputs, mcpServers])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
@@ -702,6 +703,13 @@ function StorageFields({ node, setConfig, mapping }: { node: CanvasNode; setConf
  * An MCP server added under Connectors, one of its tools, and that tool's arguments: one mapped
  * field per argument its schema names, or JSON when it names none.
  */
+/** What an MCP tool step gives later steps: its tool's output fields. */
+function mcpOutputFields(node: CanvasNode, servers?: McpServer[]): string[] {
+  if (node.type !== 'MCP_TOOL') return []
+  const tool = servers?.find(s => s.id === node.config.serverId)?.tools.find(t => t.name === node.config.tool)
+  return schemaFields(tool?.outputSchema).map(f => f.path)
+}
+
 function McpToolFields({ node, servers, setConfig, isMissing, mapping }: {
   node: CanvasNode; servers?: McpServer[]; setConfig: (patch: Record<string, unknown>) => void; isMissing: (f: string) => boolean; mapping: MappingContext
 }) {
@@ -739,6 +747,13 @@ function McpToolFields({ node, servers, setConfig, isMissing, mapping }: {
       </Labelled>
     )}
     {tool?.description && <p className="text-[11px] text-gray-500">{tool.description}</p>}
+    {tool && (
+      <p className="text-[11px] text-gray-500">
+        {tool.outputSchema
+          ? `Later steps can map its ${schemaFields(tool.outputSchema).length} output fields.`
+          : 'Try this tool once on its server page under Connectors, and later steps can map its output fields.'}
+      </p>
+    )}
     {tool && !tool.actionType && <p className="text-[11px] text-amber-700 dark:text-amber-300">This tool doesn't say what it does yet, so it is treated as moving money. Choose what it does on the server's page under Connectors.</p>}
     {tool && properties.length > 0 && properties.map(([key, p]) => (
       <Labelled group key={key} label={key} required={required.has(key)} hint={[p.description, p.enum ? `One of: ${p.enum.join(', ')}` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>

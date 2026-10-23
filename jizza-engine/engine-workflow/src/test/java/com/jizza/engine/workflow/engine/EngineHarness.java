@@ -115,9 +115,9 @@ public final class EngineHarness {
       com.jizza.engine.api.mcp.McpAuthType.NONE, null, false, false, true, List.of("jizza"), false,
       "connected", null, null, null, List.of(
           new com.jizza.engine.api.mcp.McpToolDto("get_quote", "mcp_kite__get_quote", null, null,
-              Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, false, null),
+              Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, false, null, null, null),
           new com.jizza.engine.api.mcp.McpToolDto("place_order", "mcp_kite__place_order", null,
-              null, Json.obj(), false, null, false, null)), null, null);
+              null, Json.obj(), false, null, false, null, null, null)), null, null);
 
   public final SagaWorkflowEngine engine;
   public final WorkflowRunRepository runs;

@@ -79,9 +79,11 @@ function pathsOf(value: unknown, depth = 2, prefix = ''): string[] {
 /**
  * What a step can map in: the run's input, each step before it with the fields it gives, and the
  * variables set before it. {@code outputs} are the steps' outputs from the last run, which add the
- * fields a step actually returned, such as the keys of a webhook's response body.
+ * fields a step actually returned, such as the keys of a webhook's response body. {@code declared}
+ * gives the fields a step is known to return before it has run, such as an MCP tool's output fields.
  */
-export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: ReadonlyMap<string, unknown>): DataSource[] {
+export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: ReadonlyMap<string, unknown>,
+  declared?: (node: CanvasNode) => string[]): DataSource[] {
   const upstream = upstreamOf(graph, id)
   const sources: DataSource[] = []
   for (const n of upstream) {
@@ -91,7 +93,8 @@ export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: Readonl
       continue
     }
     if (n.type === 'PARALLEL') continue
-    const known = STEP_OUTPUTS[n.type] ?? []
+    // A step that calls something (an MCP tool) knows its fields from what that thing returns.
+    const known = [...(STEP_OUTPUTS[n.type] ?? []), ...(declared?.(n) ?? [])]
     const seen = new Set(known)
     const ran = pathsOf(outputs?.get(n.id)).filter(p => !seen.has(p))
     sources.push({

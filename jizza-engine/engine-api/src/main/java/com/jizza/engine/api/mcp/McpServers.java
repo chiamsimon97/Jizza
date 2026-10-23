@@ -46,4 +46,10 @@ public interface McpServers {
 
   /** Calls one of the server's tools by its own name. The caller has already judged the call. */
   ToolResult call(UUID serverId, String tool, JsonNode arguments);
+
+  /**
+   * Keeps the shape of what a tool returned as its output fields, for a tool whose server does
+   * not declare them, so workflow steps after it can map them. Only the shape is kept.
+   */
+  default void learnOutput(UUID serverId, String tool, JsonNode output) { }
 }

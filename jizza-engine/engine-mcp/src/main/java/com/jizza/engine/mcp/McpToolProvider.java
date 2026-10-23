@@ -1,6 +1,7 @@
 package com.jizza.engine.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import com.jizza.engine.api.autonomy.ActionTypeSource;
 import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.tool.JsonSchemas;
@@ -301,7 +302,24 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
       return ToolResult.error(text.isEmpty() ? "The MCP tool reported an error" : text.toString());
     }
     if (result.structuredContent() != null) return ToolResult.ok(Json.toNode(result.structuredContent()));
-    return ToolResult.ok(text.toString());
+    return ToolResult.ok(asJson(text.toString()));
+  }
+
+  /**
+   * Many servers (Kite among them) return JSON as text. It is read as JSON, so a workflow step can
+   * map its fields and the page can show it as data rather than as one long string.
+   */
+  static JsonNode asJson(String text) {
+    String trimmed = text.strip();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")
+        || trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        return Json.mapper().readTree(trimmed);
+      } catch (Exception e) {
+        // Text that only looks like JSON stays text.
+      }
+    }
+    return TextNode.valueOf(text);
   }
 
   // ── One server's connection ───────────────────────────────────────────────────

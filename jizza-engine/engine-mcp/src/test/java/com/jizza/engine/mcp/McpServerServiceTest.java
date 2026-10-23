@@ -113,6 +113,23 @@ class McpServerServiceTest {
   }
 
   @Test
+  void aToolLearnsItsOutputFieldsFromARun() {
+    UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
+    service.refreshTools(id);
+    assertThat(service.find(id).orElseThrow().tools().get(1).outputSchema()).isNull();
+
+    service.learnOutput(id, "get_holdings", Json.read("[{\"tradingsymbol\":\"INFY\",\"quantity\":10}]"));
+
+    var tool = service.find(id).orElseThrow().tools().get(1);
+    assertThat(tool.outputSource()).isEqualTo("learnt");
+    assertThat(tool.outputSchema().path("items").path("properties").has("tradingsymbol")).isTrue();
+    assertThat(tool.outputSchema().toString()).doesNotContain("INFY");
+    // Text teaches nothing.
+    service.learnOutput(id, "login", Json.mapper().getNodeFactory().textNode("open this link"));
+    assertThat(service.find(id).orElseThrow().tools().get(0).outputSchema()).isNull();
+  }
+
+  @Test
   void aTokenIsSentAsTheUserChoseAndNeverShown() {
     UUID id = service.create(userId, workspaceId, settings("Docs", McpAuthType.BEARER, null,
         "secret-token")).id();

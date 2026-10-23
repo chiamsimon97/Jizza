@@ -201,6 +201,21 @@ public class McpServerService implements McpServers, StoredMcpServers {
   }
 
   @Override
+  @Transactional
+  public void learnOutput(UUID serverId, String tool, JsonNode output) {
+    if (output == null || output.isNull() || output.isTextual()) return;
+    McpServerEntity entity = servers.findById(serverId).orElse(null);
+    if (entity == null || knownTools(entity).stream().noneMatch(t -> t.name().equals(tool))) return;
+    ObjectNode settings = entity.getToolSettings() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    ObjectNode one = settings.path(tool) instanceof ObjectNode o ? o : settings.putObject(tool);
+    one.set("outputSchema", McpOutputSchema.infer(output));
+    one.put("outputLearntAt", Instant.now().toString());
+    settings.set(tool, one);
+    entity.setToolSettings(settings);
+    servers.save(entity);
+  }
+
+  @Override
   public ToolResult call(UUID serverId, String tool, JsonNode arguments) {
     McpServerEntity entity = servers.findById(serverId).orElse(null);
     if (entity == null) return ToolResult.error("That MCP server no longer exists");
@@ -355,6 +370,9 @@ public class McpServerService implements McpServers, StoredMcpServers {
       if (tool.title() != null) one.put("title", tool.title());
       if (tool.description() != null) one.put("description", tool.description());
       one.set("inputSchema", tool.inputSchema() == null ? Json.obj() : Json.toNode(tool.inputSchema()));
+      if (tool.outputSchema() != null && !tool.outputSchema().isEmpty()) {
+        one.set("outputSchema", Json.toNode(tool.outputSchema()));
+      }
       if (tool.annotations() != null) {
         if (Boolean.TRUE.equals(tool.annotations().readOnlyHint())) one.put("hint", "read-only");
         else if (Boolean.TRUE.equals(tool.annotations().destructiveHint())) one.put("hint", "destructive");
@@ -405,10 +423,14 @@ public class McpServerService implements McpServers, StoredMcpServers {
       for (JsonNode one : e.getTools()) {
         String name = one.path("name").asText();
         JsonNode s = settings.path(name);
+        boolean declared = one.path("outputSchema").isObject();
+        JsonNode output = declared ? one.get("outputSchema")
+            : s.path("outputSchema").isObject() ? s.get("outputSchema") : null;
         tools.add(new McpToolDto(name, McpToolProvider.toolName(e.getSlug(), name),
             one.path("title").asText(null), one.path("description").asText(null),
             one.path("inputSchema"), s.path("enabled").asBoolean(true), actionType(s).orElse(null),
-            s.path("suggested").asBoolean(false), one.path("hint").asText(null)));
+            s.path("suggested").asBoolean(false), output,
+            output == null ? null : declared ? "server" : "learnt", one.path("hint").asText(null)));
       }
     }
     return new McpServerDto(e.getId(), e.getUserId(), e.getWorkspaceId(), e.getName(), e.getSlug(),

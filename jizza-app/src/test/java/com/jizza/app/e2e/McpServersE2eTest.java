@@ -87,6 +87,20 @@ class McpServersE2eTest extends E2eSupport {
   }
 
   @Test
+  void tryingAToolTeachesItsOutputFields() {
+    var run = api.post("/api/mcp-servers/" + serverId + "/tools/get_holdings/test", Json.obj());
+    assertThat(run.ok()).as(run.body()).isTrue();
+    assertThat(run.json().path("output").path("holdings").path(0).path("symbol").asText())
+        .isEqualTo("INFY");
+
+    var tool = api.get("/api/mcp-servers/" + serverId).json().path("tools").get(1);
+    assertThat(tool.path("outputSource").asText()).isEqualTo("learnt");
+    assertThat(tool.path("outputSchema").path("properties").path("holdings").path("items")
+        .path("properties").has("symbol")).isTrue();
+    assertThat(tool.path("outputSchema").toString()).doesNotContain("INFY");
+  }
+
+  @Test
   void jizzaUsesItsToolsInChat() {
     assertThat(api.patch("/api/mcp-servers/" + serverId + "/tools/login",
         Map.of("enabled", false)).ok()).isTrue();
