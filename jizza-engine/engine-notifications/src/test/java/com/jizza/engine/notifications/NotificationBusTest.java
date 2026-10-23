@@ -372,4 +372,91 @@ class NotificationBusTest {
     assertThat(bus.answer(raised.id(), Answer.approve()).status())
         .isEqualTo(NotificationStatus.APPROVED);
   }
+
+  @Test
+  void aDeclineReasonIsKeptAndHandedToThePausedRun() {
+    UUID runId = UUID.randomUUID();
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.forRun(userId, "Send the invoice?", null, runId));
+
+    var answered = bus.answer(raised.id(), Answer.deny("  wrong amount "));
+
+    assertThat(answered.responseNote()).isEqualTo("wrong amount");
+    var payload = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+    verify(engine).resume(eq(runId), payload.capture());
+    assertThat(payload.getValue().path("feedback").asText()).isEqualTo("wrong amount");
+  }
+
+  @Test
+  void somethingStillWaitingOnTheUserCannotBeFiledAwayButAnAnsweredOneCan() {
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.info(userId, "approve?"));
+
+    assertThatThrownBy(() -> bus.archive(raised.id(), true))
+        .isInstanceOf(ValidationException.class);
+
+    bus.answer(raised.id(), Answer.deny(null));
+    var filed = bus.archive(raised.id(), true);
+    assertThat(filed.archivedAt()).isNotNull();
+    assertThat(bus.archive(raised.id(), false).archivedAt()).isNull();
+  }
+
+  @Test
+  void filingAnUpdateAwayAlsoMarksItRead() {
+    var raised = bus.raise(NotificationKind.INFO, agentId, NotificationContext.info(userId, "fyi"));
+
+    var filed = bus.archive(raised.id(), true);
+
+    assertThat(filed.status()).isEqualTo(NotificationStatus.READ);
+  }
+
+  @Test
+  void aRequestCannotBeSnoozedPastItsExpiry() {
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        new NotificationContext(userId, "approve?", null, null, null, null, Duration.ofHours(2)));
+
+    assertThatThrownBy(() -> bus.snooze(raised.id(), Instant.now().plus(Duration.ofHours(3))))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> bus.snooze(raised.id(), Instant.now().minusSeconds(5)))
+        .isInstanceOf(ValidationException.class);
+
+    var snoozed = bus.snooze(raised.id(), Instant.now().plus(Duration.ofHours(1)));
+    assertThat(snoozed.snoozedUntil()).isNotNull();
+    assertThat(bus.snooze(raised.id(), null).snoozedUntil()).isNull();
+  }
+
+  @Test
+  void answeringClearsASnooze() {
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.info(userId, "approve?"));
+    bus.snooze(raised.id(), Instant.now().plus(Duration.ofMinutes(30)));
+
+    assertThat(bus.answer(raised.id(), Answer.approve()).snoozedUntil()).isNull();
+  }
+
+  @Test
+  void readItemsCanBeMarkedUnreadAgainAndAllMarkedReadAtOnce() {
+    when(notifications.findByUserIdAndStatusOrderByCreatedAtDesc(any(), any())).thenAnswer(inv ->
+        rows.stream().filter(r -> r.getUserId().equals(inv.<UUID>getArgument(0))
+            && r.getStatus() == inv.<NotificationStatus>getArgument(1)).toList());
+    var first = bus.raise(NotificationKind.INFO, agentId, NotificationContext.info(userId, "one"));
+    bus.raise(NotificationKind.INFO, agentId, NotificationContext.info(userId, "two"));
+
+    assertThat(bus.markAllRead(userId)).isEqualTo(2);
+    assertThat(bus.get(first.id()).status()).isEqualTo(NotificationStatus.READ);
+
+    bus.markUnread(first.id());
+    assertThat(bus.get(first.id()).status()).isEqualTo(NotificationStatus.UNREAD);
+  }
+
+  @Test
+  void aSnoozedItemIsNotChasedUnlessUrgent() {
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        new NotificationContext(userId, "approve?", null, null, null, null, Duration.ofMinutes(20)));
+    bus.snooze(raised.id(), Instant.now().plus(Duration.ofMinutes(10)));
+
+    sweeper.sweep();
+
+    assertThat(bus.get(raised.id()).escalationState()).isEqualTo(EscalationState.NONE);
+  }
 }

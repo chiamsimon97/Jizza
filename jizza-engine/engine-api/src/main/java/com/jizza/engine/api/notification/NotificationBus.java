@@ -21,6 +21,29 @@ public interface NotificationBus {
 
   void markRead(UUID notificationId);
 
+  /** Puts a read item back to unread, to come back to it later. Answered items stay answered. */
+  default void markUnread(UUID notificationId) {
+    throw new UnsupportedOperationException("Not supported by this notification bus");
+  }
+
+  /** Marks every unread item of the user's read, returning how many changed. */
+  default int markAllRead(UUID userId) {
+    throw new UnsupportedOperationException("Not supported by this notification bus");
+  }
+
+  /**
+   * Files an item away, or brings it back. Something still waiting on an answer cannot be filed:
+   * the work behind it would sit paused until it expired.
+   */
+  default NotificationDto archive(UUID notificationId, boolean archived) {
+    throw new UnsupportedOperationException("Not supported by this notification bus");
+  }
+
+  /** Hides an item from the inbox until {@code until}; null brings it back now. */
+  default NotificationDto snooze(UUID notificationId, java.time.Instant until) {
+    throw new UnsupportedOperationException("Not supported by this notification bus");
+  }
+
   /**
    * Block until a permission request is answered, or the wait budget elapses.
    *

@@ -545,21 +545,41 @@ export type NotificationKind =
   | 'WORKFLOW_REVIEW'
   | 'INSTRUCTION_REQUIRED'
 
-export type NotificationStatus = 'PENDING' | 'READ' | 'ANSWERED' | 'EXPIRED'
+/** UNREAD and READ are still open; the rest record how a request ended. */
+export type NotificationStatus = 'UNREAD' | 'READ' | 'APPROVED' | 'DENIED' | 'SUBMITTED' | 'EXPIRED'
+
+export type NotificationPriority = 'URGENT' | 'NORMAL' | 'LOW'
 
 export interface NotificationDto {
   id: string
   kind: NotificationKind
-  sourceAgentId?: string
-  sourceAgentName?: string
-  body?: string
+  sourceAgentId?: string | null
+  sourceAgentName?: string | null
+  body?: string | null
   /** URGENT reaches the user straight away; LOW is never chased. */
-  priority?: 'URGENT' | 'NORMAL' | 'LOW'
-  context?: Record<string, unknown>
+  priority?: NotificationPriority
+  context?: Record<string, unknown> | null
+  taskId?: string | null
+  workflowId?: string | null
+  runId?: string | null
   status: NotificationStatus
-  expiresAt?: string
-  escalationState?: string
+  /** What the user wrote back to a question. */
+  submittedInstruction?: string | null
+  /** Why the user declined or asked for changes. */
+  responseNote?: string | null
+  expiresAt?: string | null
+  escalationState?: string | null
   createdAt: string
+  answeredAt?: string | null
+  archivedAt?: string | null
+  snoozedUntil?: string | null
+}
+
+/** The counts behind the sidebar badge and the inbox header. */
+export interface NotificationSummary {
+  needsYou: number
+  urgent: number
+  unread: number
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────

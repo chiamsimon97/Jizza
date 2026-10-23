@@ -35,6 +35,11 @@ public class NotificationController {
     return notifications.list(CurrentUser.userId(), unreadOnly);
   }
 
+  @GetMapping("/summary")
+  public NotificationUseCase.Summary summary() {
+    return notifications.summary(CurrentUser.userId());
+  }
+
   @GetMapping("/{id}")
   public NotificationDto get(@PathVariable UUID id) {
     return owned(id);
@@ -44,6 +49,36 @@ public class NotificationController {
   public Responses.Message markRead(@PathVariable UUID id) {
     notifications.markRead(CurrentUser.userId(), id);
     return new Responses.Message("Marked as read.");
+  }
+
+  @PostMapping("/{id}/unread")
+  public Responses.Message markUnread(@PathVariable UUID id) {
+    notifications.markUnread(CurrentUser.userId(), id);
+    return new Responses.Message("Marked as unread.");
+  }
+
+  @PostMapping("/read-all")
+  public Responses.Message markAllRead() {
+    int changed = notifications.markAllRead(CurrentUser.userId());
+    return new Responses.Message(changed == 1 ? "1 item marked as read."
+        : changed + " items marked as read.");
+  }
+
+  @PostMapping("/{id}/archive")
+  public NotificationDto archive(@PathVariable UUID id) {
+    return notifications.archive(CurrentUser.userId(), id, true);
+  }
+
+  @PostMapping("/{id}/unarchive")
+  public NotificationDto unarchive(@PathVariable UUID id) {
+    return notifications.archive(CurrentUser.userId(), id, false);
+  }
+
+  /** Hides an item until the given time; an empty {@code until} brings it back now. */
+  @PostMapping("/{id}/snooze")
+  public NotificationDto snooze(@PathVariable UUID id,
+                                @RequestBody Requests.SnoozeNotification request) {
+    return notifications.snooze(CurrentUser.userId(), id, request.until());
   }
 
   /**

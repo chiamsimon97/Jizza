@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.enums.EscalationState;
 import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.NotificationPriority;
 import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.notification.Answer;
@@ -71,5 +72,50 @@ class NotificationUseCaseTest {
   void listDelegatesStraightThrough() {
     useCase.list(userId, true);
     verify(bus).list(userId, true);
+  }
+
+  @Test
+  void anotherUsersItemCannotBeFiledOrSnoozed() {
+    UUID somebodyElse = UUID.randomUUID();
+
+    assertThatThrownBy(() -> useCase.archive(somebodyElse, notificationId, true))
+        .isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> useCase.snooze(somebodyElse, notificationId, Instant.now()))
+        .isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> useCase.markUnread(somebodyElse, notificationId))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  @Test
+  void theSummaryCountsWhatIsWaitingLeavingOutSnoozedAndFiledItems() {
+    Instant now = Instant.now();
+    var open = item(NotificationKind.PERMISSION_REQUEST, NotificationStatus.UNREAD,
+        NotificationPriority.URGENT, null, null);
+    var openRead = item(NotificationKind.INSTRUCTION_REQUIRED, NotificationStatus.READ,
+        NotificationPriority.NORMAL, null, null);
+    var snoozed = item(NotificationKind.PERMISSION_REQUEST, NotificationStatus.UNREAD,
+        NotificationPriority.URGENT, null, now.plusSeconds(600));
+    var answered = item(NotificationKind.PERMISSION_REQUEST, NotificationStatus.APPROVED,
+        NotificationPriority.NORMAL, null, null);
+    var update = item(NotificationKind.INFO, NotificationStatus.UNREAD,
+        NotificationPriority.NORMAL, null, null);
+    var filed = item(NotificationKind.INFO, NotificationStatus.UNREAD,
+        NotificationPriority.NORMAL, now, null);
+    when(bus.list(userId, false)).thenReturn(
+        java.util.List.of(open, openRead, snoozed, answered, update, filed));
+
+    var summary = useCase.summary(userId);
+
+    assertThat(summary.needsYou()).isEqualTo(2);
+    assertThat(summary.urgent()).isEqualTo(1);
+    assertThat(summary.unread()).isEqualTo(2);
+  }
+
+  private NotificationDto item(NotificationKind kind, NotificationStatus status,
+                               NotificationPriority priority, Instant archivedAt,
+                               Instant snoozedUntil) {
+    return new NotificationDto(UUID.randomUUID(), userId, null, "Jizza", kind, "x", null, null,
+        null, null, status, null, null, EscalationState.NONE, Instant.now(), null, priority,
+        archivedAt, snoozedUntil, null);
   }
 }
