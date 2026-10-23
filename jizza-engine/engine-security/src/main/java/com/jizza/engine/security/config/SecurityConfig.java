@@ -37,7 +37,7 @@ public class SecurityConfig {
   public static final String[] PUBLIC_ENDPOINTS = {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
       "/api/auth/recover", "/api/auth/recover/**", "/api/auth/invitations/*",
-      "/api/oauth/callback", "/api/webhooks/**",
+      "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/**",
       "/actuator/health", "/actuator/health/**", "/actuator/info"
   };
 
@@ -69,6 +69,7 @@ public class SecurityConfig {
             // both are authenticated by their own single-use secrets instead.
             .ignoringRequestMatchers(
                 new AntPathRequestMatcher("/api/oauth/callback"),
+                new AntPathRequestMatcher("/api/mcp/oauth/callback"),
                 new AntPathRequestMatcher("/api/webhooks/**")))
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .headers(headers -> headers

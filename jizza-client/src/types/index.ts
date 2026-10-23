@@ -375,6 +375,8 @@ export type UiAction =
   | { type: 'propose_agent'; payload: AgentProposal }
   /** Settings for the Builder step Jizza was opened on; they land in its panel unsaved. */
   | { type: 'configure_step'; payload: { stepId: string; label?: string; config: Record<string, unknown>; summary?: string } }
+  /** Jizza ran one of the user's saved workflows instead of building a new one. */
+  | { type: 'reused_workflow'; payload: { workflowId: string; name: string; runId: string; status: string } }
 
 /** A new agent, or a team, Jizza drafted; it exists only once the user creates it. */
 export interface AgentProposal {
@@ -393,6 +395,37 @@ export interface WorkflowPlan {
   steps: WorkflowPlanStep[]
   /** Defaults Jizza picked that the user didn't state. */
   assumptions?: string[]
+  /** Set when Jizza offers to keep a job it just did, so it can reuse it next time. */
+  reuse?: ReuseProfile
+}
+
+/** What Jizza keeps about a saved workflow to recognise and reuse it. */
+export interface ReuseProfile {
+  /** When this workflow is the right one. */
+  summary?: string
+  examples?: string[]
+  inputs?: { name: string; description?: string; required?: boolean }[]
+  guardrails?: ReuseGuardrails
+  learnedFrom?: { conversationId?: string; savedAt?: string }
+}
+
+export interface ReuseGuardrails {
+  /** Jizza asks before each run it starts from a chat. */
+  confirmBeforeRun: boolean
+  /** A scheduled task doing this job may run it on its own. */
+  allowScheduled: boolean
+  maxRunsPerDay?: number
+  rules?: string[]
+}
+
+/** A workflow in the library, as the server describes it. */
+export interface LibraryEntry {
+  workflowId: string
+  name: string
+  description?: string
+  status: string
+  version: number
+  profile?: ReuseProfile
 }
 
 export interface WorkflowPlanStep {
@@ -705,6 +738,8 @@ export interface WorkflowDto {
   version: number
   owningAgentId?: string
   createdAt: string
+  /** Kept in the workflow library for Jizza to reuse; absent when it is not. */
+  reuse?: ReuseProfile
 }
 
 export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'WAITING' | 'DONE' | 'FAILED' | 'CANCELLED'
@@ -1099,4 +1134,58 @@ export interface ReceivedInvitation {
   invitedByEmail: string
   createdAt: string
   expiresAt: string
+}
+
+// ── MCP servers (connectors that speak the Model Context Protocol) ─────────────
+
+export type McpAuthType = 'NONE' | 'BEARER' | 'HEADER' | 'OAUTH'
+
+export interface McpTool {
+  /** The server's own name for the tool. */
+  name: string
+  /** What agents see: mcp_<server>__<tool>. */
+  toolName: string
+  title?: string | null
+  description?: string | null
+  inputSchema?: Record<string, unknown> | null
+  enabled: boolean
+  /** What you said it does; null means it is judged as moving money until you choose. */
+  actionType?: ActionType | null
+  /** What the server claims (read-only, destructive); a hint only. */
+  serverHint?: string | null
+}
+
+export interface McpServer {
+  id: string
+  name: string
+  slug: string
+  url: string
+  authType: McpAuthType
+  headerName?: string | null
+  secretPresent: boolean
+  signedIn: boolean
+  enabled: boolean
+  agentKeys: string[]
+  redactArguments: boolean
+  status: 'new' | 'connected' | 'needs_auth' | 'error'
+  lastError?: string | null
+  serverName?: string | null
+  serverVersion?: string | null
+  tools: McpTool[]
+  toolsRefreshedAt?: string | null
+  createdAt?: string | null
+}
+
+export interface McpServerInput {
+  name?: string
+  url?: string
+  authType?: McpAuthType
+  headerName?: string
+  secret?: string
+  enabled?: boolean
+  agentKeys?: string[]
+  redactArguments?: boolean
+  oauthClientId?: string
+  oauthClientSecret?: string
+  oauthScopes?: string
 }

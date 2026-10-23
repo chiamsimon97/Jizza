@@ -245,7 +245,7 @@ class JizzaOrchestratorTest {
   void aKeyPastedWithApiDocumentationIsMaskedRatherThanSent() {
     when(baseAgent.run(any())).thenAnswer(inv -> {
       AgentRequest req = inv.getArgument(0);
-      assertThat(req.instruction()).contains("api_key=[redacted]", "Bearer [redacted]")
+      assertThat(req.instruction()).contains("api_key=[redacted]", "\"Authorization\":\"[redacted]\"")
           .doesNotContain("abc123", "tok-9f8e7d6c5b4a");
       assertThat(req.history()).extracting(Msg::text).containsExactly("curl -H 'Authorization: Bearer [redacted]'");
       return AgentResult.of(jizza.getId(), "Jizza", "Filled in.");

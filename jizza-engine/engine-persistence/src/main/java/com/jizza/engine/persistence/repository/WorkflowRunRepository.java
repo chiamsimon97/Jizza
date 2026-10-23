@@ -16,6 +16,14 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
   List<WorkflowRunEntity> findByStatus(RunStatus status);
   List<WorkflowRunEntity> findByWorkflowIdAndStatus(UUID workflowId, RunStatus status);
 
+  /** How many runs of a workflow started since {@code since} with a trigger like {@code pattern}. */
+  @Query("""
+      select count(r) from WorkflowRunEntity r
+       where r.workflowId = :workflowId and r.createdAt >= :since and r.triggerSource like :pattern
+      """)
+  long countStartedSince(@Param("workflowId") UUID workflowId, @Param("since") Instant since,
+                         @Param("pattern") String pattern);
+
   /** Runs that started in {@code [from, to)}, newest first, without their context. */
   @Query("""
       select new com.jizza.engine.persistence.repository.WorkflowRunRow(

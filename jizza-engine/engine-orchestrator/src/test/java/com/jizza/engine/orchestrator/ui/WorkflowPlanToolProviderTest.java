@@ -83,6 +83,29 @@ class WorkflowPlanToolProviderTest {
   }
 
   @Test
+  void anOfferToSaveCarriesWhatToKeepForReuseWithSafeDefaults() {
+    ToolResult result = propose("""
+        {"name":"Gold rate checker",
+         "steps":[{"kind":"agent","agent_key":"finance","instruction":"Fetch today's gold rate"}],
+         "reuse":{"when_to_use":"When I ask for today's gold rate",
+                  "examples":["check the gold rate","gold price today", " "],
+                  "inputs":[{"name":"city name","description":"Where","required":true}],
+                  "guardrails":{"rules":["Never buy anything"]}}}
+        """);
+
+    assertThat(result.ok()).isTrue();
+    JsonNode reuse = recorder.endTurn().get(0).payload().path("reuse");
+    recorder.beginTurn();
+    assertThat(reuse.path("summary").asText()).isEqualTo("When I ask for today's gold rate");
+    assertThat(reuse.path("examples")).hasSize(2);
+    assertThat(reuse.path("inputs").get(0).path("name").asText()).isEqualTo("city_name");
+    assertThat(reuse.path("guardrails").path("confirmBeforeRun").asBoolean())
+        .as("asking first unless the user says otherwise").isTrue();
+    assertThat(reuse.path("guardrails").path("allowScheduled").asBoolean()).isFalse();
+    assertThat(reuse.path("guardrails").path("rules").get(0).asText()).isEqualTo("Never buy anything");
+  }
+
+  @Test
   void recordsThePlanWithRealAgentsAndWhereItWillStopForTheUser() {
     ToolResult result = propose("""
         {"name":"Gold rate checker","description":"Checks gold each morning",

@@ -14,11 +14,13 @@ import com.jizza.engine.api.orchestrator.Orchestrator;
 import com.jizza.engine.api.orchestrator.UiAction;
 import com.jizza.engine.api.util.Redaction;
 import com.jizza.engine.orchestrator.delegation.DelegationRecorder;
+import com.jizza.engine.orchestrator.library.LibraryHints;
 import com.jizza.engine.orchestrator.ui.UiActionRecorder;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,6 +45,7 @@ public class JizzaOrchestrator implements Orchestrator {
   private final DelegationRecorder recorder;
   private final UiActionRecorder uiActions;
   private final TurnTierSelector tiers;
+  private LibraryHints libraryHints;
 
   public JizzaOrchestrator(AgentRepository agents, Agent baseAgent, DelegationRecorder recorder,
                            UiActionRecorder uiActions, TurnTierSelector tiers) {
@@ -51,6 +54,12 @@ public class JizzaOrchestrator implements Orchestrator {
     this.recorder = recorder;
     this.uiActions = uiActions;
     this.tiers = tiers;
+  }
+
+  /** Optional: without it Jizza still has find_saved_workflows, just no head start. */
+  @Autowired(required = false)
+  void setLibraryHints(LibraryHints libraryHints) {
+    this.libraryHints = libraryHints;
   }
 
   /**
@@ -75,8 +84,9 @@ public class JizzaOrchestrator implements Orchestrator {
     List<DelegationRecorder.Contribution> contributions;
     List<UiAction> actions;
     try {
+      String annotated = libraryHints == null ? message : libraryHints.annotate(userId, message);
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(message, input.screen(), input.context()), null, history, tier,
+          withScreen(annotated, input.screen(), input.context()), null, history, tier,
           false, trace));
     } finally {
       contributions = recorder.endTurn();

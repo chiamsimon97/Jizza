@@ -66,6 +66,15 @@ public class GuardrailsUseCase {
   private final AuditLog audit;
   private final AutonomyUseCase autonomy;
 
+  /** MCP servers, for the guardrails of a workflow's MCP tool steps; absent in narrow harnesses. */
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.mcp.McpServers> mcpServers;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setMcpServers(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.mcp.McpServers> mcpServers) {
+    this.mcpServers = mcpServers;
+  }
+
   public GuardrailsUseCase(AutonomyGate gate, AutonomyPolicyStore policies,
                            GuardrailSettingsStore settings, AgentDirectory agents,
                            WorkflowRegistry workflows, ToolCatalog tools, AuditLog audit,
@@ -123,6 +132,18 @@ public class GuardrailsUseCase {
         Decision d = gate.evaluate(ctx);
         steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
             tool.name(), d.actionType(), d));
+      } else if (node.type() == NodeType.MCP_TOOL) {
+        UUID actor = workflow.owningAgentId() != null ? workflow.owningAgentId() : jizza;
+        var tool = mcpToolOf(node);
+        if (tool == null) {
+          steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
+              null, null, Decision.deny("The MCP tool this step calls no longer exists", "no-tool")));
+          continue;
+        }
+        Decision d = gate.evaluate(new GuardrailContext(actor, tool.toolName(), null, workflow.id(),
+            workflow.version(), node.id(), true, tool.actionType()));
+        steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
+            tool.toolName(), d.actionType(), d));
       } else if (node.type() == NodeType.AGENT_STEP) {
         UUID agentId = uuid(node.config() == null ? null : node.config().path("agentId"));
         // An agent step chooses its tools as it runs; each is judged then, inside this workflow.
@@ -134,6 +155,15 @@ public class GuardrailsUseCase {
         .filter(rule -> workflowId.equals(rule.workflowId())).toList();
     return new WorkflowGuardrails(workflow.id(), workflow.name(), workflow.version(),
         workflow.owningAgentId(), steps, rules);
+  }
+
+  private com.jizza.engine.api.mcp.McpToolDto mcpToolOf(WorkflowNode node) {
+    var store = mcpServers == null ? null : mcpServers.getIfAvailable();
+    UUID serverId = uuid(node.config() == null ? null : node.config().path("serverId"));
+    if (store == null || serverId == null) return null;
+    String name = node.config().path("tool").asText(null);
+    return store.find(serverId).flatMap(s -> s.tools().stream()
+        .filter(t -> t.name().equals(name)).findFirst()).orElse(null);
   }
 
   /** What would happen if an agent made this call now. Reads the rules; spends nothing. */

@@ -10,8 +10,11 @@ import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
+import com.jizza.engine.api.workflow.library.ReuseProfile;
+import com.jizza.engine.api.workflow.library.WorkflowLibrary;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,10 +32,16 @@ public class WorkflowUseCase {
 
   private final WorkflowRegistry workflows;
   private final AuditLog audit;
+  private WorkflowLibrary library;
 
   public WorkflowUseCase(WorkflowRegistry workflows, AuditLog audit) {
     this.workflows = workflows;
     this.audit = audit;
+  }
+
+  @Autowired(required = false)
+  public void setLibrary(WorkflowLibrary library) {
+    this.library = library;
   }
 
   @Transactional(readOnly = true)
@@ -55,6 +64,18 @@ public class WorkflowUseCase {
   public WorkflowDto save(UUID userId, UUID workflowId, String name, String description,
                           JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
                           UUID owningAgentId) {
+    return save(userId, workflowId, name, description, graph, inputSchema, triggerConfig,
+        owningAgentId, null);
+  }
+
+  /**
+   * As above, also keeping it in the workflow library when {@code reuse} is given: what the user
+   * approved on a plan Jizza offered to save, guardrails included.
+   */
+  @Transactional
+  public WorkflowDto save(UUID userId, UUID workflowId, String name, String description,
+                          JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
+                          UUID owningAgentId, ReuseProfile reuse) {
     boolean creating = workflowId == null;
     if (!creating) {
       WorkflowDto existing = ownedBy(userId, workflowId);
@@ -74,7 +95,28 @@ public class WorkflowUseCase {
     audit.record(userId, ActorType.USER, owningAgentId,
         creating ? "workflow.created" : "workflow.saved", saved.name(),
         Json.obj().put("workflowId", saved.id().toString()).put("version", saved.version()));
+    if (reuse != null && library != null) {
+      library.describe(userId, saved.id(), reuse);
+      return ownedBy(userId, saved.id());
+    }
     return saved;
+  }
+
+  /** What the library keeps for reusing a workflow, as the user set it; null takes it out. */
+  @Transactional
+  public WorkflowLibrary.Match describe(UUID userId, UUID workflowId, ReuseProfile reuse) {
+    ownedBy(userId, workflowId);
+    return requireLibrary().describe(userId, workflowId, reuse);
+  }
+
+  @Transactional(readOnly = true)
+  public List<WorkflowLibrary.Match> library(UUID userId) {
+    return requireLibrary().list(userId);
+  }
+
+  private WorkflowLibrary requireLibrary() {
+    if (library == null) throw new IllegalStateException("The workflow library is not available");
+    return library;
   }
 
   public WorkflowDto ownedBy(UUID userId, UUID workflowId) {

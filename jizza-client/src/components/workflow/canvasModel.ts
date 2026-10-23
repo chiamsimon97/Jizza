@@ -9,6 +9,7 @@
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
   | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
   | 'APPROVAL' | 'HTTP_REQUEST' | 'FILTER' | 'SWITCH' | 'SET_VARIABLE' | 'STORAGE' | 'NOTIFY'
+  | 'MCP_TOOL'
 
 /**
  * Which exit of a node an edge leaves from: "true"/"false" on a branch, a lane letter on a
@@ -74,13 +75,23 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   SET_VARIABLE: { label: 'Set variable', desc: 'Keeps values for later steps.', tone: 'bg-purple-600 text-white' },
   STORAGE: { label: 'Storage', desc: 'Remembers values between runs.', tone: 'bg-slate-600 text-white' },
   NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
+  MCP_TOOL: { label: 'MCP tool', desc: 'Calls a tool on an MCP server you added.', tone: 'bg-violet-700 text-white' },
 }
 
-/** What can be dragged from the palette. Start is added once, automatically. */
-export const PALETTE: NodeType[] = [
-  'AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY', 'CONNECTOR_TOOL', 'HTTP_REQUEST', 'TRANSFORM', 'SET_VARIABLE', 'STORAGE',
-  'BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN', 'WAIT', 'SUB_WORKFLOW', 'FOR_EACH', 'END',
+/** The palette's steps, grouped by what they do. Start is added once, automatically. */
+export const PALETTE_GROUPS: Array<{ title: string; types: NodeType[] }> = [
+  { title: 'Agents and people', types: ['AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY'] },
+  { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST'] },
+  { title: 'Data', types: ['TRANSFORM', 'SET_VARIABLE', 'STORAGE'] },
+  { title: 'Conditions and paths', types: ['BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN'] },
+  { title: 'Flow control', types: ['WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END'] },
 ]
+
+/** What can be dragged from the palette, in group order. */
+export const PALETTE: NodeType[] = PALETTE_GROUPS.flatMap(g => g.types)
+
+/** The title of the group a step type is listed under. */
+export const groupOf = (type: NodeType): string => PALETTE_GROUPS.find(g => g.types.includes(type))?.title ?? ''
 
 const toExit = (v: unknown): ExitKey => (v === true ? 'true' : v === false ? 'false' : typeof v === 'string' && v ? v : null)
 
@@ -439,6 +450,8 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
   if (n.type === 'AGENT_STEP' && !text(n.config.agentId)) add('agentId', `${name} needs an agent.`)
   if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) add('instruction', `${name} needs an instruction.`)
   if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add('toolId', `${name} needs a service action.`)
+  if (n.type === 'MCP_TOOL' && !text(n.config.serverId)) add('serverId', `${name} needs an MCP server.`)
+  if (n.type === 'MCP_TOOL' && text(n.config.serverId) && !text(n.config.tool)) add('tool', `${name} needs a tool to call.`)
   if (n.type === 'TRANSFORM' && !text(n.config.expression)) add('expression', `${name} needs an expression.`)
   if ((n.type === 'BRANCH' || n.type === 'FILTER') && !text(n.config.condition)) add('condition', `${name} needs a condition.`)
   if (n.type === 'WAIT' && !text(n.config.duration) && !text(n.config.until)) add('until' in n.config ? 'until' : 'duration', `${name} needs how long to wait or until when.`)

@@ -1,12 +1,13 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
   AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
-  ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
+  Server, ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
 
 export type Exit = ExitKey
 /** How a step did in the run shown on the canvas. */
@@ -37,6 +38,7 @@ export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
   PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
   APPROVAL: ShieldCheck, HTTP_REQUEST: Webhook, FILTER: Filter, SWITCH: Signpost, SET_VARIABLE: Braces, STORAGE: Database, NOTIFY: Bell,
+  MCP_TOOL: Server,
 }
 
 const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
@@ -69,7 +71,7 @@ export interface StepData {
   menuOpen: boolean
   onAddAfter: (branch: Exit, at: { x: number; y: number }) => void
   /** Opens the step's options menu next to its button; none on a read-only canvas. */
-  onMenu?: (at: { x: number; y: number }) => void
+  onMenu?: (at: MenuAt) => void
 }
 
 const RUN_RING: Record<StepRun, string> = {
@@ -108,7 +110,8 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
               onClick={e => {
                 e.stopPropagation()
                 const r = e.currentTarget.getBoundingClientRect()
-                onMenu({ x: r.right + 6, y: r.top })
+                // Beside the button, or on its left when there is no room on the right.
+                onMenu({ x: r.right + 6, y: r.top, flipX: r.left - 6 })
               }}
               className={`nodrag -my-0.5 -mr-1 grid h-5 w-5 place-items-center rounded transition-opacity hover:bg-black/15 focus-visible:opacity-100 ${
                 menuOpen ? 'bg-black/15 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -192,6 +195,7 @@ function describe(node: CanvasNode, agent?: AgentDto): string {
     case 'AGENT_STEP': return String(c.instruction ?? (agent ? '' : 'Choose an agent'))
     case 'HUMAN_INTERVENTION': return String(c.prompt ?? 'Pauses and asks you')
     case 'CONNECTOR_TOOL': return c.toolName ? String(c.toolName) : c.toolId ? 'Service action set' : 'Choose a service action'
+    case 'MCP_TOOL': return c.tool ? `${c.serverName ? `${String(c.serverName)} · ` : ''}${String(c.toolLabel ?? c.tool)}` : c.serverId ? 'Choose a tool' : 'Choose an MCP server and tool'
     case 'TRANSFORM': return String(c.expression ?? 'Set an expression')
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
     case 'PARALLEL': return 'Every connected path runs'
@@ -308,7 +312,9 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
   const left = Math.min(at.x, window.innerWidth - 272)
   const top = Math.min(at.y, window.innerHeight - 340)
 
-  return (
+  // In document.body: the slide-over around the canvas keeps a transform from its open animation,
+  // which would place a "fixed" element against the panel instead of the window.
+  return createPortal(
     <div ref={box} role="dialog" aria-label={title} style={{ left, top }}
       className="fixed z-[70] w-64 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl animate-fade-in dark:border-gray-700 dark:bg-gray-900">
       <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</p>
@@ -327,10 +333,12 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
       <ul role="listbox" className="max-h-64 overflow-y-auto">
         {options.map(({ type: t, agent }, i) => {
           const Icon = NODE_ICON[t]
-          const first = agent && !options[i - 1]?.agent
+          const group = agent ? 'Your agents' : groupOf(t)
+          const prev = options[i - 1]
+          const heading = !prev || (prev.agent ? 'Your agents' : groupOf(prev.type)) !== group
           return (
             <li key={agent ? `agent:${agent.id}` : t} role="option" aria-selected={i === active}>
-              {first && <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Agents</p>}
+              {heading && <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{group}</p>}
               <button type="button" onMouseEnter={() => setActive(i)} onClick={() => onPick(t, agent)}
                 className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left ${i === active ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
                 {agent
@@ -346,7 +354,8 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
         })}
         {options.length === 0 && <li className="px-2 py-3 text-center text-xs text-gray-500">No step matches “{query}”.</li>}
       </ul>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -355,15 +364,21 @@ export interface MenuItem { label: string; shortcut?: string; danger?: boolean; 
   divider?: boolean }
 
 /** A right-click menu. */
-export function ContextMenu({ at, items, onClose }: { at: { x: number; y: number }; items: MenuItem[]; onClose: () => void }) {
+/** Where a menu opens; {@code flipX} is where its right edge goes when it doesn't fit to the right of {@code x}. */
+export interface MenuAt { x: number; y: number; flipX?: number }
+
+const MENU_W = 208
+
+export function ContextMenu({ at, items, onClose }: { at: MenuAt; items: MenuItem[]; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
     window.addEventListener('pointerdown', away, true)
     return () => window.removeEventListener('pointerdown', away, true)
   }, [onClose])
-  return (
-    <div ref={box} role="menu" style={{ left: Math.min(at.x, window.innerWidth - 220), top: Math.min(at.y, window.innerHeight - items.length * 34 - 16) }}
+  // In document.body, for the same reason as StepPicker: otherwise it opens away from the step.
+  return createPortal(
+    <div ref={box} role="menu" style={{ left: at.x + MENU_W + 12 > window.innerWidth && at.flipX !== undefined ? Math.max(8, at.flipX - MENU_W) : Math.min(at.x, window.innerWidth - MENU_W - 12), top: Math.min(at.y, window.innerHeight - items.length * 34 - 16) }}
       className="fixed z-[70] w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-xl animate-fade-in dark:border-gray-700 dark:bg-gray-900">
       {items.map(item => (<div key={item.label}>
         {item.divider && <div role="separator" className="my-1 h-px bg-gray-200 dark:bg-gray-700" />}
@@ -376,6 +391,7 @@ export function ContextMenu({ at, items, onClose }: { at: { x: number; y: number
           {item.shortcut && <kbd className="text-[11px] text-gray-400">{item.shortcut}</kbd>}
         </button>
       </div>))}
-    </div>
+    </div>,
+    document.body,
   )
 }

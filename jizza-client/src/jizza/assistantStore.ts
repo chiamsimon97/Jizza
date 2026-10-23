@@ -131,6 +131,7 @@ function describe(action: UiAction): string {
     case 'propose_workflow': return 'Proposed a workflow plan'
     case 'propose_agent': return 'Drafted a new agent'
     case 'configure_step': return `Filled in ${action.payload.label ? `"${action.payload.label}"` : 'the step'}`
+    case 'reused_workflow': return `Ran your saved workflow "${action.payload.name}"`
   }
 }
 

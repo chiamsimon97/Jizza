@@ -11,6 +11,9 @@ public interface McpSession extends AutoCloseable {
 
   McpSchema.CallToolResult callTool(String name, Map<String, Object> arguments);
 
+  /** Who the server says it is, once connected; null when it did not say. */
+  default McpSchema.Implementation serverInfo() { return null; }
+
   @Override
   void close();
 
