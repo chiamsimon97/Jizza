@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, GitBranch, History, ListChecks, PenLine, PlayCircle, Power, RotateCcw, ShieldCheck, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, GitBranch, History, ListChecks, PenLine, PlayCircle, Power, RotateCcw, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { proceduresApi } from '@/api/procedures'
 import type { ProcedureSummary, WorkflowDto } from '@/types'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -26,24 +27,42 @@ const SECTIONS: Array<{ state: ProcedureState; title: string; hint: string }> = 
  * approval before its task follows it, and every later change comes back here for review.
  */
 export function ProceduresPage() {
+  const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['procedures'],
     queryFn: () => proceduresApi.list(),
   })
+  const example = useMutation({
+    mutationFn: () => proceduresApi.addExample(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['procedures'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+
+  // Tasks link here with ?open=<procedure id>: that card opens and comes into view.
+  const [params] = useSearchParams()
+  const openId = params.get('open') ?? example.data?.procedure.id ?? null
+  useEffect(() => {
+    if (openId && data) document.getElementById(`procedure-${openId}`)?.scrollIntoView({ block: 'center' })
+  }, [openId, data])
 
   return (
     <div className="page">
       <PageHeader icon={GitBranch} title="Procedures"
-        description="Steps your agents learned from repeating tasks. Nothing runs until you approve it." />
+        description="Steps your agents learned from repeating tasks. Nothing runs until you approve it."
+        actions={<Button size="sm" variant="secondary" loading={example.isPending} onClick={() => example.mutate()}><Sparkles className="h-4 w-4" />Add an example</Button>} />
 
       <HowItWorks />
 
+      {example.error && <p className="mb-3 text-sm text-red-600">{(example.error as Error).message}</p>}
       {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
       {error && <p className="text-sm text-red-600">Could not load procedures: {(error as Error).message}</p>}
 
       {!isLoading && !error && (!data || data.length === 0) && (
         <EmptyState icon={GitBranch} title="No procedures yet"
-          description="Mark a scheduled task as repeating. After it next runs, its agent writes down the steps and they appear here for you to review." />
+          description="On the Tasks page, turn on Learn the steps for a repeating task. After it next runs, its agent writes down the steps and they appear here for you to review."
+          action={{ label: 'Add an example', onClick: () => example.mutate() }} />
       )}
 
       {data && data.length > 0 && SECTIONS.map(section => {
@@ -56,7 +75,7 @@ export function ProceduresPage() {
             </h2>
             <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{section.hint}</p>
             <div className="stagger space-y-2">
-              {items.map(p => <ProcedureCard key={p.workflow.id} procedure={p} />)}
+              {items.map(p => <ProcedureCard key={p.workflow.id} procedure={p} focused={p.workflow.id === openId} />)}
             </div>
           </section>
         )
@@ -86,11 +105,11 @@ function HowItWorks() {
   )
 }
 
-function ProcedureCard({ procedure: p }: { procedure: ProcedureSummary }) {
+function ProcedureCard({ procedure: p, focused }: { procedure: ProcedureSummary; focused: boolean }) {
   const qc = useQueryClient()
   const info = stateOf(p)
   const wf = p.workflow
-  const [open, setOpen] = useState(info.state === 'review')
+  const [open, setOpen] = useState(info.state === 'review' || focused)
   const [diagram, setDiagram] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -112,26 +131,31 @@ function ProcedureCard({ procedure: p }: { procedure: ProcedureSummary }) {
 
   const steps = stepsOf(wf.graph)
   const source = [
-    p.sourceTaskTitle && `From task "${p.sourceTaskTitle}"`,
-    p.agentName && `written by ${p.agentName}`,
+    p.agentName && `Written by ${p.agentName}`,
     `version ${wf.version}`,
   ].filter(Boolean).join(' · ')
 
   return (
-    <Card padding="md">
+    <Card padding="md" id={`procedure-${wf.id}`} className={focused ? 'ring-2 ring-brand-400' : ''}>
       <div className="flex items-start justify-between gap-3">
-        <button type="button" className="flex min-w-0 flex-1 items-start gap-2 text-left"
-          aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />}
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <button type="button" aria-expanded={open} aria-label={open ? 'Hide the steps' : 'Show the steps'} onClick={() => setOpen(!open)}>
+            {open ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />}
+          </button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{wf.name}</p>
+              <button type="button" onClick={() => setOpen(!open)} className="text-left text-sm font-medium text-gray-900 hover:underline dark:text-gray-100">{wf.name}</button>
               <Badge variant={info.tone}>{info.badge}</Badge>
             </div>
             {wf.description && <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">{wf.description}</p>}
-            <p className="mt-0.5 text-xs text-gray-400">{source}</p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              {wf.sourceTaskId && (p.sourceTaskTitle
+                ? <>Learned from the task <Link to={`/tasks?focus=${wf.sourceTaskId}`} onClick={e => e.stopPropagation()} className="font-medium text-brand-600 hover:underline dark:text-brand-400">{p.sourceTaskTitle}</Link> · </>
+                : <>Its task was deleted · </>)}
+              {source}
+            </p>
           </div>
-        </button>
+        </div>
         <div className="flex shrink-0 gap-2">
           {info.state === 'review' && <>
             <Button size="sm" loading={approve.isPending} onClick={() => approve.mutate()}><Check className="h-4 w-4" />Approve</Button>

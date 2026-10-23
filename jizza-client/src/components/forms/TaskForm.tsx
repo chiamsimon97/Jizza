@@ -9,6 +9,7 @@ import { Field, SlideOver, fieldClass } from '@/components/ui/SlideOver'
 import { useFormStore } from '@/jizza/formStore'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { matchAgent, str } from './agentMatch'
+import { toEngineCron } from '@/components/workflow/taskModel'
 
 const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -33,6 +34,7 @@ export function TaskForm() {
   const [runAt, setRunAt] = useState('')
   const [cron, setCron] = useState('')
   const [timezone, setTimezone] = useState(localZone)
+  const [learn, setLearn] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -44,6 +46,7 @@ export function TaskForm() {
     setRunAt(str(f.run_at) ? toLocalInput(str(f.run_at)) : '')
     setCron(str(f.cron))
     setTimezone(str(f.timezone) || localZone)
+    setLearn(f.repetitive === true || f.repetitive === 'true')
     setError('')
   }, [request?.nonce, agents]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -53,9 +56,9 @@ export function TaskForm() {
       agentId,
       scheduleType: schedule === 'once' ? 'ONE_TIME' : 'RECURRING',
       runAt: schedule === 'once' ? new Date(runAt).toISOString() : undefined,
-      cronOrRrule: schedule === 'recurring' ? cron.trim() : undefined,
+      cronOrRrule: schedule === 'recurring' ? toEngineCron(cron) : undefined,
       timezone,
-      repetitive: false,
+      repetitive: schedule === 'recurring' && learn,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -122,6 +125,15 @@ export function TaskForm() {
           <Field label="Schedule (cron)" hint="Minute hour day month weekday, e.g. 0 8 * * 1-5 for 8am on weekdays" highlight={hi && !!cron}>
             <input className={`${fieldClass} font-mono`} value={cron} onChange={e => setCron(e.target.value)} placeholder="0 8 * * *" />
           </Field>
+        )}
+        {schedule === 'recurring' && (
+          <label className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" className="mt-0.5" checked={learn} onChange={e => setLearn(e.target.checked)} />
+            <span>
+              <span className="font-medium">Learn the steps</span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400">After the first run, the agent writes down what it did as a procedure. Once you approve it under Procedures, every later run follows those exact steps.</span>
+            </span>
+          </label>
         )}
         <Field label="Time zone" highlight={hi && !!request?.fields.timezone}>
           <input className={fieldClass} value={timezone} onChange={e => setTimezone(e.target.value)} />

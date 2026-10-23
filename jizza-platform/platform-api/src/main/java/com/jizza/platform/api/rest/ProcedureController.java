@@ -6,6 +6,7 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.procedure.ProcedureService;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.platform.usecase.procedure.ProcedureExampleUseCase;
 import com.jizza.platform.usecase.procedure.ProcedureReviewUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
@@ -34,12 +35,23 @@ public class ProcedureController {
   private final ProcedureService procedures;
   private final WorkflowRegistry registry;
   private final ProcedureReviewUseCase review;
+  private final ProcedureExampleUseCase example;
 
   public ProcedureController(ProcedureService procedures, WorkflowRegistry registry,
-                             ProcedureReviewUseCase review) {
+                             ProcedureReviewUseCase review, ProcedureExampleUseCase example) {
     this.procedures = procedures;
     this.registry = registry;
     this.review = review;
+    this.example = example;
+  }
+
+  /**
+   * Adds a sample repeating task and the procedure its agent learned from it, waiting for review,
+   * so the user can see how the two connect. Nothing in it reaches outside Jizza.
+   */
+  @PostMapping("/example")
+  public ProcedureExampleUseCase.Example addExample() {
+    return example.create(CurrentUser.userId());
   }
 
   @GetMapping

@@ -572,9 +572,15 @@ export interface TaskDto {
   runAt?: string
   nextRunAt?: string
   status: string
+  /** Its agent writes down the steps it takes as a procedure for you to review. */
   repetitive: boolean
+  /** The approved procedure it follows step by step, when it has one. */
   boundWorkflowId?: string
+  boundVersion?: number
+  agentName?: string
   timezone?: string
+  lastRunAt?: string
+  lastResult?: string
 }
 
 // ── Connections ───────────────────────────────────────────────────────────────
