@@ -17,6 +17,9 @@ public final class Requests {
 
   private Requests() {}
 
+  /** The longest chat message or run instruction accepted, in characters. */
+  public static final int MAX_MESSAGE = 32_000;
+
   // Bounded so an oversized field cannot make the server spend Argon2 time on it.
   /**
    * {@code accountType} defaults to an Individual account. An Organization account needs
@@ -59,22 +62,23 @@ public final class Requests {
                                @NotBlank @Size(max = 256) String newPassword) {}
 
   /** {@code screen} is the app page the message was sent from, when it came from the app. */
-  public record Chat(@NotBlank String message, UUID conversationId, String screen) {}
+  public record Chat(@NotBlank @Size(max = MAX_MESSAGE) String message, UUID conversationId,
+                     @Size(max = 200) String screen) {}
 
   /**
    * A message sent as a background turn. {@code clientMessageId} makes a retried send safe;
    * {@code context} is what is open on the screen, such as the Builder step being configured.
    */
-  public record Turn(@NotBlank String message, UUID conversationId, UUID clientMessageId,
-                     String screen, Boolean incognito, JsonNode context) {}
+  public record Turn(@NotBlank @Size(max = MAX_MESSAGE) String message, UUID conversationId,
+                     UUID clientMessageId, @Size(max = 200) String screen, Boolean incognito, JsonNode context) {}
 
-  public record ConversationCreate(String title) {}
+  public record ConversationCreate(@Size(max = 200) String title) {}
 
-  public record ConversationPatch(String title, Boolean pinned, Boolean archived) {}
+  public record ConversationPatch(@Size(max = 200) String title, Boolean pinned, Boolean archived) {}
 
-  public record AgentPatch(String name, Boolean enabled) {}
+  public record AgentPatch(@Size(max = 80) String name, Boolean enabled) {}
 
-  public record Connection(@NotBlank String serviceName, @NotNull AuthScheme authScheme,
+  public record Connection(@NotBlank @Size(max = 200) String serviceName, @NotNull AuthScheme authScheme,
                            String clientId, String clientSecret, String authorizationUrl,
                            String accessTokenUrl, String refreshTokenUrl, String scopes,
                            String scopeSeparator, Boolean pkce, Boolean unifiedCallback,
@@ -94,28 +98,31 @@ public final class Requests {
                                 @NotNull UUID capabilityRef) {}
 
   /** {@code reuse}: keep it in the workflow library with these guardrails (a {@code ReuseProfile}). */
-  public record WorkflowSave(UUID id, @NotBlank String name, String description,
+  public record WorkflowSave(UUID id, @NotBlank @Size(max = 200) String name,
+                             @Size(max = 4000) String description,
                              @NotNull JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
                              UUID owningAgentId, JsonNode reuse) {}
 
-  public record SaveAsSkill(@NotBlank String name, String description, JsonNode parameterSchema) {}
+  public record SaveAsSkill(@NotBlank @Size(max = 200) String name,
+                            @Size(max = 4000) String description, JsonNode parameterSchema) {}
 
   public record RunWorkflow(Integer version, JsonNode input) {}
 
-  public record ResumeRun(String instruction, Boolean approved) {}
+  public record ResumeRun(@Size(max = MAX_MESSAGE) String instruction, Boolean approved) {}
 
   public record ReviseProcedure(@NotNull JsonNode graph) {}
 
-  public record RejectProcedure(String feedback) {}
+  public record RejectProcedure(@Size(max = 4000) String feedback) {}
 
-  public record Task(@NotBlank String title, @NotNull UUID agentId, JsonNode payload,
+  public record Task(@NotBlank @Size(max = 200) String title, @NotNull UUID agentId, JsonNode payload,
                      @NotNull ScheduleType scheduleType, String cronOrRrule, Instant runAt,
                      String timezone, Boolean repetitive) {}
 
   public record TaskRepetitive(boolean repetitive) {}
 
   public record AnswerNotification(@NotNull com.jizza.engine.api.notification.Answer.Kind kind,
-                                   String instruction, String feedback) {}
+                                   @Size(max = MAX_MESSAGE) String instruction,
+                                   @Size(max = 4000) String feedback) {}
 
   public record SnoozeNotification(java.time.Instant until) {}
 
@@ -161,7 +168,7 @@ public final class Requests {
   public record MemoryImport(@NotBlank @jakarta.validation.constraints.Size(max = 200_000) String text,
                              @jakarta.validation.constraints.Size(max = 60) String provider) {}
 
-  public record MemoryPreview(String agentKey, @NotBlank String request) {}
+  public record MemoryPreview(String agentKey, @NotBlank @Size(max = 4000) String request) {}
 
   /** Memory Cosmos: let one more agent see a fact. */
   public record ShareMemory(@NotNull UUID agentId) {}

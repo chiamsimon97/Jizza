@@ -52,20 +52,34 @@ public final class ApiClient {
   public Result delete(String path) { return send("DELETE", path, null); }
 
   public Result send(String method, String path, Object body) {
+    return send(method, path, body == null ? null : Json.write(body), true);
+  }
+
+  /** Sends {@code rawBody} exactly as given, e.g. malformed JSON. */
+  public Result sendRaw(String method, String path, String rawBody) {
+    return send(method, path, rawBody, true);
+  }
+
+  /** As {@link #send}, but leaves the CSRF header off, as a forged cross-site request would. */
+  public Result sendWithoutCsrf(String method, String path, Object body) {
+    return send(method, path, body == null ? null : Json.write(body), false);
+  }
+
+  private Result send(String method, String path, String body, boolean withCsrf) {
     HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
         .timeout(Duration.ofSeconds(60))
         .header("accept", "application/json");
 
     if (body != null) {
       request.header("content-type", "application/json");
-      request.method(method, HttpRequest.BodyPublishers.ofString(Json.write(body)));
+      request.method(method, HttpRequest.BodyPublishers.ofString(body));
     } else {
       request.method(method, HttpRequest.BodyPublishers.noBody());
     }
     if (!cookies.isEmpty()) request.header("cookie", cookieHeader());
     // Spring's cookie CSRF repository expects the token echoed in a header on mutating requests.
     String csrf = cookies.get("XSRF-TOKEN");
-    if (csrf != null && !"GET".equals(method)) request.header("X-XSRF-TOKEN", csrf);
+    if (withCsrf && csrf != null && !"GET".equals(method)) request.header("X-XSRF-TOKEN", csrf);
 
     try {
       HttpResponse<String> response = http.send(request.build(),

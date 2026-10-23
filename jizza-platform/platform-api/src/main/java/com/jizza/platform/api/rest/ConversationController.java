@@ -43,7 +43,7 @@ public class ConversationController {
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
-  public ConversationSummaryDto create(@RequestBody(required = false) Requests.ConversationCreate body) {
+  public ConversationSummaryDto create(@jakarta.validation.Valid @RequestBody(required = false) Requests.ConversationCreate body) {
     return conversations.create(CurrentUser.userId(), body == null ? null : body.title());
   }
 
@@ -53,7 +53,7 @@ public class ConversationController {
   }
 
   @PatchMapping("/{id}")
-  public ConversationSummaryDto update(@PathVariable UUID id, @RequestBody Requests.ConversationPatch body) {
+  public ConversationSummaryDto update(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody Requests.ConversationPatch body) {
     return conversations.update(CurrentUser.userId(), id, body.title(), body.pinned(), body.archived());
   }
 

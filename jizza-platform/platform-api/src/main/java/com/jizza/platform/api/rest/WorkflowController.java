@@ -121,7 +121,7 @@ public class WorkflowController {
    */
   @PostMapping("/runs/{id}/resume")
   @com.jizza.engine.api.util.StepUpRequired
-  public RunDto resume(@PathVariable UUID id, @RequestBody Requests.ResumeRun request) {
+  public RunDto resume(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody Requests.ResumeRun request) {
     ownedRun(id);
     var payload = Json.obj();
     if (request.instruction() != null) payload.put("instruction", request.instruction());

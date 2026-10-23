@@ -112,10 +112,10 @@ export function WorkflowForm() {
   const [runId, setRunId] = useState<string | null>(null)
   const { data: runs } = useQuery({
     queryKey: ['workflow-runs', workflowId],
-    queryFn: () => workflowsApi.runs(workflowId!),
+    queryFn: () => workflowsApi.latestRuns(workflowId!),
     enabled: !!workflowId && mode === 'canvas',
   })
-  const latestRunId = runId ?? [...(runs ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.id ?? null
+  const latestRunId = runId ?? runs?.[0]?.id ?? null
   const { data: shownRun } = useQuery({
     queryKey: ['run', latestRunId],
     queryFn: () => workflowsApi.getRun(latestRunId!),
