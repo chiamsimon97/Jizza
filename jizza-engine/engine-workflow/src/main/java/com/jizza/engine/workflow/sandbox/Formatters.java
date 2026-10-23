@@ -66,6 +66,35 @@ public final class Formatters {
 
   public static boolean contains(Object s, Object part) { return text(s).contains(text(part)); }
 
+  public static boolean startsWith(Object s, Object part) { return text(s).startsWith(text(part)); }
+
+  public static boolean endsWith(Object s, Object part) { return text(s).endsWith(text(part)); }
+
+  /** How many characters the text has, or how many items a list or map has. */
+  public static int length(Object value) {
+    if (value instanceof Collection<?> || value instanceof Map<?, ?> || value != null && value.getClass().isArray()) {
+      return count(value);
+    }
+    return text(value).length();
+  }
+
+  /** The text from {@code start} (counted from 0) to its end. */
+  public static String substring(Object s, Number start) { return substring(s, start, null); }
+
+  /** The text from {@code start} up to, but not including, {@code end}; out-of-range ends are clamped. */
+  public static String substring(Object s, Number start, Number end) {
+    String value = text(s);
+    int from = Math.min(value.length(), Math.max(0, start == null ? 0 : start.intValue()));
+    int to = end == null ? value.length() : Math.min(value.length(), Math.max(from, end.intValue()));
+    return value.substring(from, to);
+  }
+
+  /** Where {@code part} first appears in the text, counted from 0, or -1. */
+  public static int indexOf(Object s, Object part) { return text(s).indexOf(text(part)); }
+
+  /** Any value as text: lists and maps as they print, null as empty. */
+  public static String toText(Object value) { return text(value); }
+
   public static List<String> split(Object s, Object separator) {
     String sep = text(separator);
     if (text(s).isEmpty()) return List.of();
@@ -158,6 +187,21 @@ public final class Formatters {
     return x == null ? y : y == null ? x : Math.max(x, y);
   }
 
+  public static Double abs(Object value) {
+    Double n = toNumber(value);
+    return n == null ? null : Math.abs(n);
+  }
+
+  public static Double ceil(Object value) {
+    Double n = toNumber(value);
+    return n == null ? null : Math.ceil(n);
+  }
+
+  public static Double floor(Object value) {
+    Double n = toNumber(value);
+    return n == null ? null : Math.floor(n);
+  }
+
   // ── dates ───────────────────────────────────────────────────────────────
 
   /** The current moment, as an ISO-8601 time with India's offset. */
@@ -212,6 +256,22 @@ public final class Formatters {
     return addTime(date, days == null ? 0 : days.longValue());
   }
 
+  public static String subtractDays(Object date, Number days) {
+    return addTime(date, days == null ? 0 : -days.longValue());
+  }
+
+  public static String addMonths(Object date, Number months) {
+    return addTime(date, "P" + (months == null ? 0 : months.longValue()) + "M");
+  }
+
+  public static String addHours(Object date, Number hours) {
+    return addTime(date, "PT" + (hours == null ? 0 : hours.longValue()) + "H");
+  }
+
+  public static String addMinutes(Object date, Number minutes) {
+    return addTime(date, "PT" + (minutes == null ? 0 : minutes.longValue()) + "M");
+  }
+
   /** Whole days from the first date to the second; negative if the second is earlier. */
   public static Long daysBetween(Object from, Object to) {
     ZonedDateTime a = moment(from, null);
@@ -258,6 +318,22 @@ public final class Formatters {
   public static List<Object> unique(Object items) {
     return list(items).stream().filter(Objects::nonNull).distinct().toList();
   }
+
+  public static List<Object> reverse(Object items) {
+    List<Object> all = list(items);
+    java.util.Collections.reverse(all);
+    return all;
+  }
+
+  /** The items in order: numbers by value, anything else by its text. */
+  public static List<Object> sort(Object items) {
+    List<Object> all = new ArrayList<>(list(items).stream().filter(Objects::nonNull).toList());
+    all.sort((a, b) -> a instanceof Number x && b instanceof Number y
+        ? Double.compare(x.doubleValue(), y.doubleValue()) : text(a).compareTo(text(b)));
+    return all;
+  }
+
+  public static boolean isNotEmpty(Object value) { return !isEmpty(value); }
 
   public static boolean isEmpty(Object value) {
     if (value == null) return true;

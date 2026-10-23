@@ -19,7 +19,9 @@ import org.apache.commons.jexl3.introspection.JexlPermissions;
 import org.springframework.stereotype.Component;
 
 /**
- * The Transform node's expression sandbox (R9). Apache Commons JEXL3, locked down so a workflow can
+ * The Transform node's expression sandbox (R9). Expressions are formulas as the builder writes
+ * them, with chained functions ({@code input.name.trim().upper()}), which {@link FormulaRewriter}
+ * turns into the {@code fmt:} calls JEXL runs. Apache Commons JEXL3, locked down so a workflow can
  * shape data and nothing else.
  *
  * <p>Four independent restrictions, because any one of them alone would be a single point of
@@ -86,7 +88,7 @@ public class JexlSandbox {
     }
     JexlExpression compiled;
     try {
-      compiled = engine.createExpression(expression);
+      compiled = engine.createExpression(FormulaRewriter.toJexl(expression));
     } catch (JexlException e) {
       throw new SandboxViolationException("The transform expression is not valid: "
           + rootMessage(e));

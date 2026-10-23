@@ -262,14 +262,14 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         {node.type === 'MCP_TOOL' && <McpToolFields node={node} servers={mcpServers} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'TRANSFORM' && (
-          <Labelled group label="Expression" required missing={isMissing('expression')} hint="JEXL over input, nodes, vars and instructions. Press {} to put in data; click it to format it with a function.">
+          <Labelled group label="Expression" required missing={isMissing('expression')} hint="A formula over earlier steps' data. Press {} or Ctrl+E for data, chain functions with a dot, e.g. a name chip then .trim().upper()">
             <MappedField aria-label="Expression" mode="expression" context={mapping} multiline rows={4} mono invalid={isMissing('expression')} value={str('expression')} onChange={v => setConfig({ expression: v })} />
           </Labelled>
         )}
 
         {node.type === 'BRANCH' && (
-          <Labelled group label="Condition" required missing={isMissing('condition')} hint="A JEXL test, e.g. a price chip followed by < 2000">
-            <MappedField aria-label="Condition" mode="expression" context={mapping} multiline mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
+          <Labelled group label="Condition" required missing={isMissing('condition')} hint="A formula that is true or false, e.g. a price chip followed by < 2000">
+            <MappedField aria-label="Condition" mode="expression" context={mapping} mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
           </Labelled>
         )}
 
@@ -301,7 +301,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
             </label>
           </>}
           {node.type === 'SUB_WORKFLOW' && (
-            <Labelled group label="Input (optional)" hint="A JEXL expression for the workflow's input, e.g. {'amount': followed by a total chip and }">
+            <Labelled group label="Input (optional)" hint="A formula for the workflow's input, e.g. {'amount': followed by a total chip and }">
               <MappedField aria-label="Input" mode="expression" context={mapping} mono value={str('inputExpr')} onChange={v => setConfig({ inputExpr: v || undefined })} />
             </Labelled>
           )}
@@ -312,8 +312,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         {node.type === 'HTTP_REQUEST' && <WebhookFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'FILTER' && (
-          <Labelled group label="Carry on only if" required missing={isMissing('condition')} hint="A JEXL test. When it is false this path stops here.">
-            <MappedField aria-label="Carry on only if" mode="expression" context={mapping} multiline mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
+          <Labelled group label="Carry on only if" required missing={isMissing('condition')} hint="A formula that is true or false. When it is false this path stops here.">
+            <MappedField aria-label="Carry on only if" mode="expression" context={mapping} mono invalid={isMissing('condition')} value={str('condition')} onChange={v => setConfig({ condition: v })} />
           </Labelled>
         )}
 
@@ -509,7 +509,7 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
           </Labelled>
         </>}
         {bodyType === 'expression' && (
-          <Labelled group label="Body expression" required missing={isMissing('bodyExpr')} hint="JEXL that gives the body, sent as JSON, e.g. {'total': followed by a chip and }.">
+          <Labelled group label="Body expression" required missing={isMissing('bodyExpr')} hint="A formula that gives the body, sent as JSON, e.g. {'total': followed by a chip and }.">
             <MappedField aria-label="Body expression" mode="expression" context={mapping} multiline mono invalid={isMissing('bodyExpr')} value={s('bodyExpr')} onChange={v => setConfig({ bodyExpr: v || undefined })} />
           </Labelled>
         )}
@@ -668,11 +668,11 @@ function SwitchFields({ node, graph, onChange, mapping }: { node: CanvasNode; gr
       <button type="button" onClick={() => save([...cases, { id: nextCaseId(cases), label: `Path ${cases.length + 1}`, condition: '' }], 'addCase')}
         className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3.5 w-3.5" /> Add a path</button>
     )}
-    <p className="-mt-1 text-[11px] text-gray-400">Conditions are JEXL tests. Press {'{}'} to put in data from earlier steps.</p>
+    <p className="-mt-1 text-[11px] text-gray-400">Conditions are formulas that are true or false. Press {'{}'} or Ctrl+E to put in data from earlier steps.</p>
   </>
 }
 
-/** The variables a set-variable step keeps: a name and a JEXL expression each. */
+/** The variables a set-variable step keeps: a name and a formula each. */
 function VariableFields({ node, setConfig, mapping }: { node: CanvasNode; setConfig: SetConfig; mapping: MappingContext }) {
   const rows = (Array.isArray(node.config.variables) ? node.config.variables as Array<Record<string, unknown>> : [])
     .map(v => ({ name: typeof v?.name === 'string' ? v.name : '', expr: typeof v?.expr === 'string' ? v.expr : '' }))
@@ -693,7 +693,7 @@ function VariableFields({ node, setConfig, mapping }: { node: CanvasNode; setCon
     ))}
     <button type="button" onClick={() => save([...rows, { name: '', expr: '' }], 'addVar')}
       className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3.5 w-3.5" /> Add a variable</button>
-    <p className="-mt-1 text-[11px] text-gray-400">Expressions are JEXL. Press {'{}'} to put in data, and click it to format it, e.g. as a date.</p>
+    <p className="-mt-1 text-[11px] text-gray-400">Values are formulas. Press {'{}'} to put in data, then add functions with a dot, e.g. .formatDate('dd MMM').</p>
   </>
 }
 
@@ -715,7 +715,7 @@ function StorageFields({ node, setConfig, mapping }: { node: CanvasNode; setConf
       <MappedField aria-label="Key" mode="template" context={mapping} mono value={typeof c.key === 'string' ? c.key : ''} onChange={v => setConfig({ key: v })} />
     </Labelled>
     {(action === 'set' || action === 'append') && (
-      <Labelled group label={action === 'set' ? 'Value to save' : 'Value to add'} required hint="Data from an earlier step, or a JEXL expression.">
+      <Labelled group label={action === 'set' ? 'Value to save' : 'Value to add'} required hint="Data from an earlier step, or a formula.">
         <MappedField aria-label={action === 'set' ? 'Value to save' : 'Value to add'} mode="expression" context={mapping} mono value={typeof c.valueExpr === 'string' ? c.valueExpr : ''} onChange={v => setConfig({ valueExpr: v })} />
       </Labelled>
     )}

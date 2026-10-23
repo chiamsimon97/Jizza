@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { EditorView } from '@codemirror/view'
 import { CanvasInspector } from './CanvasInspector'
 import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
 
-/** Types into a field where earlier steps' data shows as chips. */
+/** Types into a field where earlier steps' data shows as chips (a CodeMirror editor). */
 function type(box: HTMLElement, text: string) {
-  box.textContent = text
-  fireEvent.input(box)
+  const view = EditorView.findFromDOM(box)!
+  act(() => { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: 'input.type' }) })
 }
 
 function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn()) {
@@ -90,5 +91,25 @@ describe('CanvasInspector', () => {
     expect(screen.queryByRole('dialog', { name: 'Insert data' })).not.toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message' }), { key: 'e', ctrlKey: true })
     expect(screen.getByRole('dialog', { name: 'Insert data' })).toBeInTheDocument()
+  })
+
+  it('writes a condition as a formula: references are chips, and a chip can be pointed at other data', () => {
+    const first = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
+    const { graph, id } = addAfter(first.graph, first.id, null, 'FILTER')
+    const withCondition = { ...graph, nodes: graph.nodes.map(n => (n.id === id ? { ...n, config: { condition: `nodes.${first.id}.status.round(0) == 200` } } : n)) }
+    const { onSave } = open(withCondition, id)
+    const box = screen.getByRole('textbox', { name: 'Carry on only if' })
+    const chip = box.querySelector<HTMLElement>('[data-chip]')!
+    expect(chip).toHaveTextContent('Send webhook›status')
+    // The function after the chip is script, coloured as a function.
+    expect(box.querySelector('.cm-fx-fn')).toHaveTextContent('round')
+
+    fireEvent.mouseDown(chip)
+    expect(screen.getByText('Point this chip at other data')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Send webhook' }))
+    fireEvent.click(screen.getByRole('button', { name: /^ok/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config.condition).toBe(`nodes.${first.id}.ok.round(0) == 200`)
   })
 })
