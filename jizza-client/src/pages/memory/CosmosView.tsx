@@ -18,6 +18,8 @@ import { MemoryTransferPanel } from '@/components/cosmos/MemoryTransferPanel'
 import { useCosmosLayout, type CosmosLayout, type PlacedBody } from '@/components/cosmos/useCosmosLayout'
 
 const ITEMS_PER_BODY = 200
+/** Orbit speeds on offer; at 1× the innermost planet goes round about every 24 seconds. */
+const SPEEDS = [0.25, 1, 4, 16]
 
 /**
  * The Memory Cosmos: everything Jizza remembers about the user, drawn as a solar system. Jizza is the
@@ -46,6 +48,7 @@ export function CosmosView() {
   const [includeInactive, setIncludeInactive] = useState(false)
   const reducedMotion = useMemo(() => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches, [])
   const [drift, setDrift] = useState(true)
+  const [speed, setSpeed] = useState(1)
   const [transferOpen, setTransferOpen] = useState(false)
 
   const snapshot = useQuery({ queryKey: ['cosmos', 'snapshot'], queryFn: cosmosApi.snapshot })
@@ -219,11 +222,11 @@ export function CosmosView() {
       )}
 
       {snapshot.data && layout.bodies.length > 0 && view === 'sky' && (
-        <div className="relative h-[calc(100vh-15rem)] min-h-[420px] overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+        <div className="relative h-[calc(100vh-15rem)] min-h-[420px] overflow-hidden rounded-xl border border-gray-200 bg-[#03040a] dark:border-gray-800">
           <CosmosCanvas ref={canvas} layout={layout} links={snapshot.data.links} itemsByBody={itemsByBody}
             selectedBodyId={selectedBodyId} selectedItemKey={selected ? itemKey(selected) : null}
             highlight={highlight} matches={matches} dimmedAgentKeys={dimmedAgentKeys} drift={drift && !reducedMotion}
-            paused={selected != null}
+            paused={selected != null} speed={speed}
             onSelectBody={setSelectedBodyId} onSelectItem={n => { setSelected(n); setSelectedBodyId(n.parentBodyId) }}
             onNeedItems={needItems} />
           <Legend />
@@ -243,12 +246,24 @@ export function CosmosView() {
             <CanvasButton label="Zoom in" onClick={() => canvas.current?.zoomBy(1.5)}><Plus className="h-4 w-4" /></CanvasButton>
             <CanvasButton label="Zoom out" onClick={() => canvas.current?.zoomBy(1 / 1.5)}><Minus className="h-4 w-4" /></CanvasButton>
             <CanvasButton label="Show everything" onClick={() => canvas.current?.fit()}><Maximize2 className="h-4 w-4" /></CanvasButton>
-            {!reducedMotion && (
-              <CanvasButton label={drift ? 'Pause the orbits' : 'Play the orbits'} onClick={() => setDrift(d => !d)}>
-                {drift ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </CanvasButton>
-            )}
           </div>
+          {!reducedMotion && (
+            <div role="group" aria-label="Orbit speed"
+              className="absolute right-3 top-3 flex items-center gap-0.5 rounded-lg border border-gray-700 bg-gray-900/85 p-0.5 text-xs text-gray-200 shadow-sm backdrop-blur">
+              <button type="button" aria-label={drift ? 'Pause the orbits' : 'Play the orbits'} title={drift ? 'Pause the orbits' : 'Play the orbits'}
+                onClick={() => setDrift(d => !d)} className="grid h-7 w-7 place-items-center rounded-md hover:bg-gray-800">
+                {drift ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              </button>
+              {SPEEDS.map(s => (
+                <button key={s} type="button" aria-pressed={drift && speed === s} title={`Orbit speed ${s}×`}
+                  onClick={() => { setSpeed(s); setDrift(true) }}
+                  className={`h-7 min-w-[2.25rem] rounded-md px-1.5 font-medium tabular-nums ${
+                    drift && speed === s ? 'bg-brand-500/30 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
+                  {s < 1 ? '¼' : s}×
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -289,9 +304,9 @@ function hasMoons(layout: CosmosLayout, b: PlacedBody) {
 }
 
 const BODY_KIND: Record<string, string> = {
-  SUN: 'The sun · everything Jizza remembers', AGENT: 'Planet · an agent', SUBJECT: 'Moon · a person, place or thing',
-  NOTES: 'Moon · this agent’s own notes', FILE: 'Moon · a file', CONNECTOR: 'Moon · a connector',
-  WORKFLOW: 'Moon · a workflow', SKILL: 'Moon · a skill',
+  SUN: 'The star · everything Jizza remembers', AGENT: 'Planet · an agent', SUBJECT: 'Moon · a person, place or thing',
+  NOTES: 'Ice moon · this agent’s own notes', FILE: 'Asteroid · a file', CONNECTOR: 'Space station · a connector',
+  WORKFLOW: 'Comet · a workflow', SKILL: 'Pulsar · a skill',
 }
 
 /** The selected body: what it is, how much is remembered there, and what you can do with it. */
@@ -342,15 +357,15 @@ function CanvasButton({ label, pressed, onClick, children }: { label: string; pr
 
 function Legend() {
   return (
-    <details className="absolute bottom-3 left-3 max-w-[16rem] rounded-lg border border-gray-200 bg-white/90 px-3 py-2 text-xs text-gray-600 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
+    <details className="absolute bottom-3 left-3 max-w-[18rem] rounded-lg border border-gray-200 bg-white/90 px-3 py-2 text-xs text-gray-600 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
       <summary className="cursor-pointer font-medium text-gray-800 dark:text-gray-100">How to read the sky</summary>
       <ul className="mt-2 flex flex-col gap-1">
-        <li>Jizza is the sun; each agent is a planet in its own colour, slowly orbiting.</li>
-        <li>Point at anything to hold the sky still; click a planet or moon to open it.</li>
-        <li>Moons are people, places and things, notes, files, connectors and workflows.</li>
-        <li>Dots are facts, squares are an agent’s notes. Zoom in to see them.</li>
+        <li>Jizza is the star at the centre; each agent is a planet on its own elliptical orbit, moving faster as it swings closer in.</li>
+        <li>Round each planet: moons are people, places and things, ice moons its notes, asteroids files, space stations connectors, comets workflows and pulsars skills.</li>
+        <li>Specks of stardust are facts, shards are notes. Zoom in to see them.</li>
+        <li>Point at anything for details and to hold the sky still; click it to fly there and follow it. Drag to let go.</li>
         <li>Bigger means agents use it more; faint means not used lately.</li>
-        <li>A grey dot with a lock is restricted: no agent can use it.</li>
+        <li>A grey speck with a lock is restricted: no agent can use it.</li>
         <li>An amber dashed ring is waiting for you to confirm.</li>
       </ul>
     </details>
