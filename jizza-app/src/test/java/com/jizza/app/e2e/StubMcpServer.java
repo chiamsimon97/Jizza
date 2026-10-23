@@ -15,6 +15,9 @@ import java.util.List;
  * A remote MCP server on loopback, speaking streamable HTTP with plain JSON replies, shaped like
  * Zerodha's Kite server: a login tool, a read and an order. Real HTTP and the real MCP client, so
  * the session, the auth header and the tool calls behave as they will against a real server.
+ *
+ * <p>It is as strict as Kite's server (mcp-go): a body must be sent as exactly
+ * {@code application/json}, and it answers protocol version 2025-03-26 whatever the client asks.
  */
 public final class StubMcpServer implements AutoCloseable {
 
@@ -48,6 +51,10 @@ public final class StubMcpServer implements AutoCloseable {
       send(exchange, exchange.getRequestMethod().equals("DELETE") ? 200 : 405, null);
       return;
     }
+    if (!"application/json".equals(exchange.getRequestHeaders().getFirst("Content-Type"))) {
+      send(exchange, 400, "Invalid content type: must be 'application/json'");
+      return;
+    }
     JsonNode request = Json.read(new String(exchange.getRequestBody().readAllBytes(),
         StandardCharsets.UTF_8));
     if (!request.has("id")) {
@@ -59,7 +66,7 @@ public final class StubMcpServer implements AutoCloseable {
     ObjectNode result = reply.putObject("result");
     switch (request.path("method").asText()) {
       case "initialize" -> {
-        result.put("protocolVersion", request.path("params").path("protocolVersion").asText());
+        result.put("protocolVersion", "2025-03-26");
         result.putObject("capabilities").putObject("tools");
         result.putObject("serverInfo").put("name", "stub-kite").put("version", "1.0");
         exchange.getResponseHeaders().add("Mcp-Session-Id", "session-1");

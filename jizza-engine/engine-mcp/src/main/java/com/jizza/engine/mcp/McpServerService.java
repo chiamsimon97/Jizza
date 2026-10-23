@@ -168,8 +168,8 @@ public class McpServerService implements McpServers, StoredMcpServers {
       entity.setStatus("connected");
       entity.setLastError(null);
     } catch (RuntimeException e) {
-      String message = Redaction.scrub(String.valueOf(e.getMessage()));
-      log.info("MCP server '{}' could not be reached: {}", entity.getName(), message);
+      String message = Redaction.scrub(describe(e));
+      log.info("MCP server '{}' could not be reached: {}", entity.getName(), message, e);
       boolean unauthorised = message.contains("401") || message.contains("403")
           || message.toLowerCase(Locale.ROOT).contains("unauthorized");
       entity.setStatus(unauthorised && authType(entity) == McpAuthType.OAUTH ? "needs_auth" : "error");
@@ -422,6 +422,22 @@ public class McpServerService implements McpServers, StoredMcpServers {
     String slug = base;
     for (int n = 2; servers.existsByUserIdAndSlug(userId, slug); n++) slug = base + "_" + n;
     return slug;
+  }
+
+  /**
+   * The SDK wraps the reason in "Client failed to initialize ...", which says nothing; the causes
+   * underneath say what the server answered.
+   */
+  static String describe(Throwable error) {
+    List<String> parts = new ArrayList<>();
+    for (Throwable t = error; t != null && parts.size() < 4; t = t.getCause()) {
+      String message = t.getMessage();
+      if (message == null || message.isBlank() || message.startsWith("Client failed to initialize")) {
+        continue;
+      }
+      if (parts.stream().noneMatch(p -> p.contains(message))) parts.add(message.strip());
+    }
+    return parts.isEmpty() ? String.valueOf(error.getMessage()) : String.join(": ", parts);
   }
 
   private static String abbreviate(String text) {
