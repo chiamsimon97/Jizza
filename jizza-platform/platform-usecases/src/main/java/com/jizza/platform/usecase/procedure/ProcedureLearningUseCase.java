@@ -38,9 +38,14 @@ public class ProcedureLearningUseCase {
       What happened: %s
 
       Write down how this job is done, as a workflow, and submit it with propose_workflow so the
-      user can review it. Capture the actual steps you take, in order, using connector tools you
-      already hold and agent steps for judgement. Where a step needs a decision only the user can
-      make, use a human_intervention node rather than guessing.
+      user can review it. Capture the actual steps you take, in order, so the job runs the same way
+      every time: connector tools you already hold for actions, and built-in steps (FILTER, BRANCH,
+      SWITCH, SET_VARIABLE, STORAGE, NOTIFY) for the logic in between. Use an AGENT_STEP only where
+      a step truly needs judgement on free text. Put an APPROVAL step before anything the user
+      would want to OK first, and a HUMAN_INTERVENTION step where only the user can decide.
+
+      Give every step a short, plain label the user will understand (for example "Get this week's
+      invoices"), and a one or two sentence description of what the whole workflow does.
 
       Set source_task_id to %s. Submit exactly one proposal, then stop: it does not take effect
       until the user approves it.

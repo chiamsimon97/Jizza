@@ -42,6 +42,11 @@ public class ProcedureController {
     this.review = review;
   }
 
+  @GetMapping
+  public List<ProcedureService.ProcedureSummary> list() {
+    return procedures.list(CurrentUser.userId());
+  }
+
   @GetMapping("/{id}/history")
   public List<WorkflowDto> history(@PathVariable UUID id) {
     owned(id);
