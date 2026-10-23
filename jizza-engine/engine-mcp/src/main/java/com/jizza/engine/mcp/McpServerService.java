@@ -373,9 +373,9 @@ public class McpServerService implements McpServers, StoredMcpServers {
       if (tool.outputSchema() != null && !tool.outputSchema().isEmpty()) {
         one.set("outputSchema", Json.toNode(tool.outputSchema()));
       }
-      if (tool.annotations() != null) {
-        if (Boolean.TRUE.equals(tool.annotations().readOnlyHint())) one.put("hint", "read-only");
-        else if (Boolean.TRUE.equals(tool.annotations().destructiveHint())) one.put("hint", "destructive");
+      // "Destructive" is MCP's default for a tool that says nothing, so only "read-only" is news.
+      if (tool.annotations() != null && Boolean.TRUE.equals(tool.annotations().readOnlyHint())) {
+        one.put("hint", "read-only");
       }
     }
     return out;
@@ -383,7 +383,8 @@ public class McpServerService implements McpServers, StoredMcpServers {
 
   /**
    * Fills in what each tool nobody has classified yet probably does, marked as a suggestion, so the
-   * guardrails of the agents it is given to apply from the start. What the user set is kept.
+   * guardrails of the agents it is given to apply from the start. An earlier suggestion is made
+   * again, so a better guess replaces it; what the user set is kept.
    */
   static ObjectNode suggestActionTypes(JsonNode tools, JsonNode current) {
     ObjectNode settings = current instanceof ObjectNode o ? o.deepCopy() : Json.obj();
@@ -391,13 +392,36 @@ public class McpServerService implements McpServers, StoredMcpServers {
     for (JsonNode tool : tools) {
       String name = tool.path("name").asText();
       ObjectNode one = settings.path(name) instanceof ObjectNode o ? o : Json.obj();
-      if (one.hasNonNull("actionType")) continue;
-      McpToolClassifier.suggest(name, tool.path("hint").asText(null)).ifPresent(type -> {
-        one.put("actionType", type.name().toLowerCase(Locale.ROOT)).put("suggested", true);
-        settings.set(name, one);
-      });
+      if (one.hasNonNull("actionType") && !one.path("suggested").asBoolean(false)) continue;
+      one.remove("actionType");
+      one.remove("suggested");
+      McpToolClassifier.suggest(name, tool.path("description").asText(null))
+          .or(() -> "read-only".equals(tool.path("hint").asText(null))
+              ? Optional.of(ActionType.READ) : Optional.empty())
+          .ifPresent(type ->
+              one.put("actionType", type.name().toLowerCase(Locale.ROOT)).put("suggested", true));
+      if (one.isEmpty()) settings.remove(name);
+      else settings.set(name, one);
     }
     return settings;
+  }
+
+  /**
+   * Makes every server's suggestions again from the tools it last listed, so a better classifier
+   * corrects what an older one guessed without anyone pressing Check tools.
+   */
+  @Transactional
+  public int resuggestAll() {
+    int changed = 0;
+    for (McpServerEntity entity : servers.findAll()) {
+      ObjectNode before = entity.getToolSettings() instanceof ObjectNode o ? o : Json.obj();
+      ObjectNode after = suggestActionTypes(entity.getTools(), before);
+      if (after.equals(before)) continue;
+      entity.setToolSettings(after);
+      servers.save(entity);
+      changed++;
+    }
+    return changed;
   }
 
   private static List<McpSchema.Tool> knownTools(McpServerEntity entity) {
@@ -430,7 +454,9 @@ public class McpServerService implements McpServers, StoredMcpServers {
             one.path("title").asText(null), one.path("description").asText(null),
             one.path("inputSchema"), s.path("enabled").asBoolean(true), actionType(s).orElse(null),
             s.path("suggested").asBoolean(false), output,
-            output == null ? null : declared ? "server" : "learnt", one.path("hint").asText(null)));
+            output == null ? null : declared ? "server" : "learnt",
+            // Older listings kept "destructive", MCP's default for a tool that says nothing.
+            "read-only".equals(one.path("hint").asText()) ? "read-only" : null));
       }
     }
     return new McpServerDto(e.getId(), e.getUserId(), e.getWorkspaceId(), e.getName(), e.getSlug(),
