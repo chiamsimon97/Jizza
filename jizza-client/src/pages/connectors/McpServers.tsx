@@ -350,7 +350,7 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
                   {!t.actionType && <option value="">Not set: treated as moving money</option>}
                   {ACTION_TYPES.map(a => <option key={a} value={a}>{ACTION_LABELS[a].label}</option>)}
                 </select>
-                {t.suggested && <p className="mt-1 text-[11px] text-gray-400">Suggested from its name.</p>}
+                {t.suggested && <p className="mt-1 text-[11px] text-gray-400">Suggested from its name and description.</p>}
                 {t.serverHint && <p className="mt-1 text-[11px] text-gray-400">The server says it is {t.serverHint}.</p>}
               </td>
               <td className="px-4 py-3 align-top">
