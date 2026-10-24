@@ -4,6 +4,7 @@ import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { OtpInput } from '@/components/ui/OtpInput'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { destinationAfterSignIn } from '@/auth/signIn'
 
@@ -17,13 +18,18 @@ export function MfaPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
+  function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    verify(code)
+  }
+
+  async function verify(entered: string) {
+    if (loading) return
     if (!mfaToken) { navigate('/login'); return }
     setError('')
     setLoading(true)
     try {
-      const result = await authApi.verifyMfa({ mfaToken: mfaToken, code: code.trim() })
+      const result = await authApi.verifyMfa({ mfaToken: mfaToken, code: entered.trim() })
       if (result.userId) {
         setAuthenticated(result.userId, result.enrollmentRequired)
         if (result.enrollmentRequired) {
@@ -67,22 +73,17 @@ export function MfaPage() {
             onChange={e => setCode(e.target.value)}
           />
         ) : (
-          <Input
+          <OtpInput
             key="totp"
             label="Code"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]{6}"
-            maxLength={6}
-            autoComplete="one-time-code"
-            required
             autoFocus
             value={code}
-            onChange={e => setCode(e.target.value)}
+            onChange={setCode}
+            onComplete={verify}
           />
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
-        <Button type="submit" loading={loading}>Verify</Button>
+        <Button type="submit" loading={loading} disabled={!useRecovery && code.length < 6}>Verify</Button>
         <button type="button" className="text-sm text-brand-600 hover:underline dark:text-brand-400"
           onClick={() => { setUseRecovery(r => !r); setCode('') }}>
           {useRecovery ? 'Use my authenticator app instead' : 'Lost your phone? Use a recovery code'}

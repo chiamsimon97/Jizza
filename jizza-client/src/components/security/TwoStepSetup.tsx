@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { authApi } from '@/api/auth'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { OtpInput } from '@/components/ui/OtpInput'
 import { RecoveryCodesPanel } from './RecoveryCodesPanel'
 import type { MfaSetup } from '@/types'
 
@@ -39,16 +39,22 @@ export function TwoStepSetup({ onFinished, onCancel }: { onFinished: () => void;
       .catch(() => setQr(''))
   }, [setup])
 
-  async function confirm(e: FormEvent) {
+  function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    confirm(code)
+  }
+
+  async function confirm(entered: string) {
+    if (busy) return
     setError('')
     setBusy(true)
     try {
-      const result = await authApi.confirmMfa(code.replace(/\s/g, ''))
+      const result = await authApi.confirmMfa(entered)
       setCodes(result.codes)
       setSetup(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code did not work')
+      setCode('')
     } finally {
       setBusy(false)
     }
@@ -73,7 +79,7 @@ export function TwoStepSetup({ onFinished, onCancel }: { onFinished: () => void;
   }
 
   return (
-    <form onSubmit={confirm} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-400">
         <li>Scan this code with your authenticator app.</li>
         <li>Enter the 6-digit code it shows.</li>
@@ -92,11 +98,10 @@ export function TwoStepSetup({ onFinished, onCancel }: { onFinished: () => void;
           {setup.secret.replace(/(.{4})/g, '$1 ').trim()}
         </code>
       )}
-      <Input label="Code from the app" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}"
-        maxLength={7} required autoFocus value={code} onChange={e => setCode(e.target.value)} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      <OtpInput label="Code from the app" autoFocus error={error || undefined}
+        value={code} onChange={c => { setCode(c); setError('') }} onComplete={confirm} />
       <div className="flex gap-2">
-        <Button type="submit" loading={busy}>Turn on</Button>
+        <Button type="submit" loading={busy} disabled={code.length < 6}>Turn on</Button>
         {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
     </form>
