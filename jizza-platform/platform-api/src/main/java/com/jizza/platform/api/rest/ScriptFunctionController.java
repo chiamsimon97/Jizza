@@ -1,6 +1,7 @@
 package com.jizza.platform.api.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.workflow.FormulaPreview;
 import com.jizza.engine.api.workflow.functions.ScriptFunctionDraft;
@@ -63,6 +64,7 @@ public class ScriptFunctionController {
   /** Runs the function as the editor holds it, saved or not. */
   @PostMapping("/test")
   public FormulaPreview.Result test(@RequestBody TestRequest request) {
+    if (request == null || request.function() == null) throw new ValidationException("Send the function to test");
     return functions.test(CurrentUser.userId(), request.function(), request.args());
   }
 }
