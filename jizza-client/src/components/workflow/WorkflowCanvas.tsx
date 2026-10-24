@@ -10,6 +10,7 @@ import 'reactflow/dist/style.css'
 import { ChevronDown, Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
+import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { api } from '@/lib/api'
 import type { AgentDto, ConnectionDto, GeneratedToolDto, McpServer, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
@@ -164,6 +165,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const { data: tools } = useQuery({ queryKey: ['workflow-canvas-tools'], queryFn: loadTools, enabled: !readOnly, staleTime: 60_000 })
   // Without connector access the list is empty rather than an error.
   const { data: mcpServers } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list().catch(() => [] as McpServer[]), enabled: !readOnly, staleTime: 30_000 })
+  const { data: functions } = useQuery({ queryKey: ['functions'], queryFn: () => functionsApi.list().catch(() => [] as ScriptFunction[]), staleTime: 30_000 })
   const { data: workflows } = useQuery({
     queryKey: ['workflow-canvas-workflows'], enabled: !readOnly, staleTime: 60_000,
     queryFn: () => api.get<WorkflowDto[]>('/api/workflows')
@@ -707,7 +709,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
         {/* Over the canvas rather than beside it: resizing the canvas under the pointer would turn
             the click that opened it into a click on empty canvas. */}
         {selected && (
-        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} workflows={workflows} readOnly={readOnly}
+        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows} readOnly={readOnly}
           issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} askJizza={askJizza === selected.id} onDirty={onDirty}
           onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
           onClose={() => { unsaved.current = false; select([]) }} />

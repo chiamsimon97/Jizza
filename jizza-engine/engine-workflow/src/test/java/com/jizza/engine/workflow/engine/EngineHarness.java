@@ -262,7 +262,7 @@ public final class EngineHarness {
         new SubWorkflowNodeExecutor(childRuns, sandbox),
         new ForEachNodeExecutor(childRuns, sandbox),
         new TransformNodeExecutor(sandbox),
-        new com.jizza.engine.workflow.nodes.ScriptNodeExecutor(sandbox),
+        new com.jizza.engine.workflow.nodes.ScriptNodeExecutor(sandbox, null),
         new BranchNodeExecutor(sandbox),
         new InterventionNodeExecutor(),
         new ConnectorToolNodeExecutor(tools, executor, gate, sandbox),

@@ -17,10 +17,11 @@ public interface FormulaPreview {
   Result preview(String formula, boolean template, JsonNode data);
 
   /**
-   * Runs a Script step's settings ({@code inputs}, {@code script}, {@code outputs}) as the step
-   * would, with its inputs mapped from the sample run data.
+   * Runs a Script step's settings as the step would, with its inputs mapped from the sample run
+   * data: a saved function ({@code functionId} and {@code inputs} by name) of {@code userId}'s, or
+   * an inline script ({@code inputs}, {@code script}, {@code outputs}).
    */
-  Result previewScript(JsonNode step, JsonNode data);
+  Result previewScript(java.util.UUID userId, JsonNode step, JsonNode data);
 
   /**
    * @param value what the formula gave, or null when it failed

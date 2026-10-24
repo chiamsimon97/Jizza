@@ -38,7 +38,7 @@ class ScriptStepTest {
         var greeting = 'Hi ' + customer.trim().titleCase();
         return {'total': total, 'greeting': greeting, 'ignored': true};
         """;
-    var out = ScriptStep.run(sandbox, Json.read(step(script)), run);
+    var out = ScriptStep.run(sandbox, null, null, Json.read(step(script)), run);
     assertThat(out.path("total").asDouble()).isEqualTo(240);
     assertThat(out.path("greeting").asText()).isEqualTo("Hi Asha Rao");
     assertThat(out.has("ignored")).as("only declared outputs come out").isFalse();
@@ -46,13 +46,13 @@ class ScriptStepTest {
 
   @Test
   void saysWhatIsWrongWithAScript() {
-    assertThatThrownBy(() -> ScriptStep.run(sandbox, Json.read(step("var x = 1; while (true) { x = x + 1; }")), run))
+    assertThatThrownBy(() -> ScriptStep.run(sandbox, null, null, Json.read(step("var x = 1; while (true) { x = x + 1; }")), run))
         .isInstanceOf(SandboxViolationException.class).hasMessageContaining("while and do loops are not allowed");
-    assertThatThrownBy(() -> ScriptStep.run(sandbox, Json.read(step("lines.count()")), run))
+    assertThatThrownBy(() -> ScriptStep.run(sandbox, null, null, Json.read(step("lines.count()")), run))
         .hasMessageContaining("should end with return");
-    assertThatThrownBy(() -> ScriptStep.run(sandbox, Json.read(step("return {'total': 'lots'};")), run))
+    assertThatThrownBy(() -> ScriptStep.run(sandbox, null, null, Json.read(step("return {'total': 'lots'};")), run))
         .hasMessageContaining("'total' should be a number");
-    assertThatThrownBy(() -> ScriptStep.run(sandbox, Json.read(step("nodes.fetch")), run))
+    assertThatThrownBy(() -> ScriptStep.run(sandbox, null, null, Json.read(step("nodes.fetch")), run))
         .as("a script sees its inputs, not the whole run").isInstanceOf(SandboxViolationException.class);
   }
 

@@ -7,7 +7,7 @@ import { Compartment, EditorState, Transaction } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, tooltips } from '@codemirror/view'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { formulaTheme } from './editor'
-import { scriptCompletions, scriptFunctionDocs, scriptHighlighting, scriptLanguage, scriptProblems, type ScriptInput } from './script'
+import { scriptCompletions, scriptFunctionDocs, scriptHighlighting, scriptLanguage, scriptProblems, type ScriptFunctionInfo, type ScriptInput } from './script'
 
 const FRAME = fieldClass.replace(/\bfocus:/g, 'focus-within:')
 const external = Transaction.userEvent.of('external')
@@ -27,8 +27,10 @@ const scriptTheme = EditorView.theme({
  * the step's inputs, its own variables, keywords and functions with docs, and problems underlined
  * as you type. The engine checks the rest when the step runs, or on Test.
  */
-export function ScriptEditor({ value, onChange, inputs, rows = 12, invalid, ...aria }: {
+export function ScriptEditor({ value, onChange, inputs, functions, rows = 12, invalid, ...aria }: {
   value: string; onChange: (v: string) => void; inputs: ScriptInput[]; rows?: number; invalid?: boolean
+  /** The person's saved functions, which the script calls as fn.<name>(…); unknown ones are flagged when given. */
+  functions?: ScriptFunctionInfo[]
   'aria-label'?: string
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -37,6 +39,8 @@ export function ScriptEditor({ value, onChange, inputs, rows = 12, invalid, ...a
   emit.current = onChange
   const known = useRef(inputs)
   known.current = inputs
+  const callable = useRef(functions)
+  callable.current = functions
   const editable = useRef(new Compartment())
 
   useEffect(() => {
@@ -48,9 +52,9 @@ export function ScriptEditor({ value, onChange, inputs, rows = 12, invalid, ...a
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), history(), indentOnInput(), bracketMatching(), closeBrackets(),
           scriptLanguage, scriptHighlighting, formulaTheme, scriptTheme, tooltips({ parent: document.body }),
-          autocompletion({ override: [scriptCompletions(() => known.current)], icons: true }),
+          autocompletion({ override: [scriptCompletions(() => known.current, () => callable.current ?? [])], icons: true }),
           scriptFunctionDocs,
-          linter(v => scriptProblems(v.state.doc.toString(), known.current), { delay: 300 }), lintGutter(),
+          linter(v => scriptProblems(v.state.doc.toString(), known.current, callable.current), { delay: 300 }), lintGutter(),
           placeholder("var total = 0;\nfor (var line : lines) {\n  total = total + line.amount;\n}\nreturn {'total': total};"),
           keymap.of([...closeBracketsKeymap, ...completionKeymap, indentWithTab, { key: 'Mod-/', run: toggleComment }, ...defaultKeymap, ...historyKeymap]),
           editable.current.of([]),

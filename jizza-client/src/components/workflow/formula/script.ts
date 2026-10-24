@@ -85,6 +85,30 @@ export const scriptHighlighting = syntaxHighlighting(highlight)
 /** A value the script reads: one of its inputs, by name. */
 export interface ScriptInput { name: string; type: ValueType }
 
+/** One of the person's saved functions, which a script calls as fn.<name>(…), its inputs in order. */
+export interface ScriptFunctionInfo { name: string; inputs: ScriptInput[]; returnType: ValueType; description?: string }
+
+/** How a saved function reads: fn.orderTotal(lines, rate) → map. */
+export const functionSignature = (f: ScriptFunctionInfo) => `fn.${f.name}(${f.inputs.map(i => i.name).join(', ')}) → ${f.returnType}`
+
+/** How many arguments a call passes: commas at the top level of the brackets after {@code open}. */
+function argumentCount(code: string, open: number): number {
+  let depth = 0
+  let count = 0
+  let any = false
+  for (let i = open; i < code.length; i++) {
+    const c = code[i]
+    if (c === '(' || c === '[' || c === '{') { depth++; continue }
+    if (c === ')' || c === ']' || c === '}') {
+      if (--depth === 0) return any ? count + 1 : 0
+      continue
+    }
+    if (depth === 1 && c === ',') count++
+    else if (depth === 1 && !/\s/.test(c)) any = true
+  }
+  return any ? count + 1 : 0
+}
+
 /** The script with comments and the inside of strings blanked out, same length, for checks. */
 function codeOnly(doc: string): string {
   return doc.replace(/\/\*[\s\S]*?(\*\/|$)|\/\/[^\n]*|##[^\n]*|'(?:[^'\\\n]|\\.)*'?|"(?:[^"\\\n]|\\.)*"?/g,
@@ -97,7 +121,7 @@ export function localsOf(doc: string): string[] {
 }
 
 /** Problems a script has before it runs: refused loops, unknown functions, brackets that don't close. */
-export function scriptProblems(doc: string, inputs: ScriptInput[]): Diagnostic[] {
+export function scriptProblems(doc: string, inputs: ScriptInput[], functions?: ScriptFunctionInfo[]): Diagnostic[] {
   const code = codeOnly(doc)
   const out: Diagnostic[] = []
   for (const m of code.matchAll(/\b(while|do|function|new)\b/g)) {
@@ -107,8 +131,20 @@ export function scriptProblems(doc: string, inputs: ScriptInput[]): Diagnostic[]
   const known = new Set([...inputs.map(i => i.name), ...localsOf(doc)])
   for (const m of code.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
     const name = m[1]
-    if (['if', 'for', 'while', 'function', 'return', 'empty', 'size'].includes(name) || functionNamed(name)) continue
     const from = m.index!
+    if (/\bfn\s*\.\s*$/.test(code.slice(0, from))) {
+      // fn.<name>(…): one of the person's own functions, checked when the list of them is known.
+      const f = functions?.find(x => x.name === name)
+      if (functions && !f) out.push({ from, to: from + name.length, severity: 'error', message: `There is no function called fn.${name}` })
+      if (f) {
+        const given = argumentCount(code, code.indexOf('(', from + name.length))
+        if (given > f.inputs.length) {
+          out.push({ from, to: from + name.length, severity: 'error', message: `fn.${name} takes ${f.inputs.length} input${f.inputs.length === 1 ? '' : 's'}${f.inputs.length ? ` (${f.inputs.map(i => i.name).join(', ')})` : ''} but is given ${given}` })
+        }
+      }
+      continue
+    }
+    if (['if', 'for', 'while', 'function', 'return', 'empty', 'size'].includes(name) || functionNamed(name)) continue
     out.push({ from, to: from + name.length, severity: known.has(name) ? 'warning' : 'error', message: `There is no function called ${name}` })
   }
   const stack: Array<{ ch: string; at: number }> = []
@@ -139,12 +175,24 @@ const KEYWORD_SNIPPETS: Completion[] = [
 const TYPE_RANK: Record<string, number> = { variable: 3, keyword: 1, function: 0 }
 
 /** Suggestions: after a dot, functions to chain; elsewhere inputs, the script's variables, keywords and functions. */
-export function scriptCompletions(inputs: () => ScriptInput[]) {
+export function scriptCompletions(inputs: () => ScriptInput[], functions: () => ScriptFunctionInfo[] = () => []) {
   return (ctx: CompletionContext): CompletionResult | null => {
     const word = ctx.matchBefore(/[A-Za-z_$][\w$]*/)
     const line = ctx.state.doc.lineAt(ctx.pos)
     const before = line.text.slice(0, (word?.from ?? ctx.pos) - line.from)
     if (/\/\/|##/.test(before) || (((before.match(/'/g) ?? []).length % 2) === 1)) return null
+    if (/(^|[^\w$.])fn\s*\.\s*$/.test(before)) {
+      return {
+        from: word?.from ?? ctx.pos,
+        options: functions().map(f => ({
+          label: f.name, type: 'function', detail: `→ ${f.returnType}`, info: [functionSignature(f), f.description].filter(Boolean).join('\n'),
+          apply: (view: EditorView, _c: Completion, from: number, to: number) => view.dispatch({
+            changes: { from, to, insert: `${f.name}()` }, selection: { anchor: from + f.name.length + 1 }, userEvent: 'input.complete',
+          }),
+        })),
+        validFor: /^[\w$]*$/,
+      }
+    }
     const chained = /\.\s*$/.test(before)
     if (!word && !chained && !ctx.explicit) return null
     const from = word?.from ?? ctx.pos
@@ -159,6 +207,7 @@ export function scriptCompletions(inputs: () => ScriptInput[]) {
     const vars: Completion[] = [
       ...inputs().map(i => ({ label: i.name, type: 'variable', detail: `input · ${i.type}`, boost: 2 })),
       ...localsOf(doc).filter(v => !inputs().some(i => i.name === v)).map(v => ({ label: v, type: 'variable', detail: 'var', boost: 1 })),
+      ...(functions().length ? [{ label: 'fn', type: 'keyword', detail: 'your functions', info: 'Call one of your functions: fn.name(inputs…)' }] : []),
     ]
     return {
       from,

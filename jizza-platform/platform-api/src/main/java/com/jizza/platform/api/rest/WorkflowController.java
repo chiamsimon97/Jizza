@@ -63,7 +63,7 @@ public class WorkflowController {
   /** What a Script step gives with sample data, for the builder's Test button. Same sandbox as a run. */
   @PostMapping("/formula/script-preview")
   public FormulaPreview.Result previewScript(@Valid @RequestBody Requests.PreviewScript request) {
-    return formulas.previewScript(request.step(), request.data());
+    return formulas.previewScript(CurrentUser.userId(), request.step(), request.data());
   }
 
   @GetMapping("/workflows")

@@ -125,8 +125,9 @@ export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: Readonl
     }
     if (n.type === 'PARALLEL') continue
     // A step that calls something (an MCP tool) knows its fields from what that thing returns.
-    // A script gives the outputs it declares, typed.
-    const extra = [...(declared?.(n) ?? []), ...(n.type === 'SCRIPT' ? fieldsOf(n.config, 'outputs').filter(f => f.name).map(f => ({ path: f.name, type: f.type })) : [])]
+    // A script saved with its own code gives the outputs it declares, typed; one that runs a
+    // function gives what the function returns, which comes through declared.
+    const extra = [...(declared?.(n) ?? []), ...(n.type === 'SCRIPT' && !n.config.functionId ? fieldsOf(n.config, 'outputs').filter(f => f.name).map(f => ({ path: f.name, type: f.type })) : [])]
       .map(d => (typeof d === 'string' ? { path: d } : d))
     const declaredType = new Map(extra.filter(d => d.type).map(d => [d.path, d.type!]))
     const known = [...(STEP_OUTPUTS[n.type] ?? []), ...extra.map(d => d.path)]

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { notificationsApi } from '@/api/notifications'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
-  Plug, Workflow, GitBranch, Shield, Activity, BarChart2, History,
+  Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
   ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -35,6 +35,7 @@ const personalSections: NavSection[] = [
       { to: '/memory',      icon: Brain,     label: 'Memory' },
       { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
       { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
+      { to: '/functions',   icon: Braces,    label: 'Functions' },
       { to: '/procedures',  icon: GitBranch, label: 'Procedures' },
       { to: '/connectors',  icon: Plug,      label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
     ],

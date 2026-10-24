@@ -31,6 +31,11 @@ public final class ModuleContract {
 
   private ModuleContract() {}
 
+  /** Whether {@code name} can name an input or output: letters, digits and _, starting with a letter. */
+  public static boolean isName(String name) {
+    return name != null && NAME.matcher(name).matches();
+  }
+
   /**
    * One input or output.
    *
@@ -76,7 +81,9 @@ public final class ModuleContract {
       List<String> keys = switch (node.type()) {
         case TRIGGER -> List.of("inputs");
         case END -> List.of("outputs");
-        case SCRIPT -> List.of("inputs", "outputs");
+        // A step that runs a saved function maps its inputs by name; the function declares them.
+        case SCRIPT -> node.config() != null && node.config().hasNonNull("functionId")
+            ? List.<String>of() : List.of("inputs", "outputs");
         default -> List.of();
       };
       for (String key : keys) validateFields(node, key);

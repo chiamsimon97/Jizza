@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.error.SandboxViolationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.FormulaPreview;
+import com.jizza.engine.api.workflow.functions.ScriptFunctions;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -17,15 +18,17 @@ public class SandboxFormulaPreview implements FormulaPreview {
   private static final Set<String> ROOTS = Set.of("input", "nodes", "vars", "instructions");
 
   private final JexlSandbox sandbox;
+  private final ScriptFunctions functions;
 
-  public SandboxFormulaPreview(JexlSandbox sandbox) {
+  public SandboxFormulaPreview(JexlSandbox sandbox, ScriptFunctions functions) {
     this.sandbox = sandbox;
+    this.functions = functions;
   }
 
   @Override
-  public Result previewScript(JsonNode step, JsonNode data) {
+  public Result previewScript(java.util.UUID userId, JsonNode step, JsonNode data) {
     try {
-      JsonNode value = ScriptStep.run(sandbox, step, variables(data));
+      JsonNode value = ScriptStep.run(sandbox, functions, userId, step, variables(data));
       return new Result(value, typeOf(value), null);
     } catch (SandboxViolationException e) {
       return new Result(null, null, e.getMessage());

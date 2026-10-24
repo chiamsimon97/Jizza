@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { ExternalLink, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import type { AgentDto, McpServer, RunStepDto, TeamStep } from '@/types'
 import {
-  MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, issues as findIssues, nextCaseId, toDuration, updateNode,
+  MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
@@ -17,6 +17,9 @@ import { schemaFields } from '@/components/connectors/ResultView'
 import { MappedField, type MappingContext } from './MappedField'
 import { ScriptEditor } from './formula/ScriptEditor'
 import { formulaApi, type FormulaPreview } from '@/api/formula'
+import { functionsApi, type ScriptFunction } from '@/api/functions'
+import { queryClient } from '@/lib/queryClient'
+import { infoOf, resultFields } from '@/components/functions/functionModel'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { registerStepTarget, useContextStore, useJizzaContext } from '@/jizza/contextStore'
 import { stepContext } from '@/jizza/builderContext'
@@ -83,10 +86,12 @@ function usePanelWidth() {
   return { panel, width, handle: { onPointerDown, onKeyDown } }
 }
 
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, functions, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
   /** The MCP servers added under Connectors, for the MCP tool step. */
   mcpServers?: McpServer[]
+  /** The person's functions under Functions, for the Script step. */
+  functions?: ScriptFunction[]
   /** Every step of the last run, so earlier steps' real output fields can be mapped in. */
   runSteps?: ReadonlyMap<string, RunStepDto>
   /** Problems the step has beyond its settings, such as an agent that is paused. */
@@ -114,7 +119,10 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const child = node.type === 'SUB_WORKFLOW' ? workflows?.find(w => w.id === node.config.workflowId) : undefined
   // A module's required inputs that have no default must be mapped; the module is only known here.
   const unmapped = moduleInputs(child?.graph).filter(f => f.required && f.default === undefined && !mappedInputs(node)[f.name]?.trim())
-  const missing = [...fieldIssues(node), ...unmapped.map(f => ({ field: `inputs.${f.name}`, message: `"${node.label}" needs a value for the input "${f.name}".` }))]
+  // Likewise a function's required inputs, for a Script step that runs one.
+  const fn = node.type === 'SCRIPT' ? functions?.find(f => f.id === node.config.functionId) : undefined
+  const unmappedFn = (fn?.inputs ?? []).filter(f => f.required && f.default === undefined && !mappedInputs(node)[f.name]?.trim())
+  const missing = [...fieldIssues(node), ...[...unmapped, ...unmappedFn].map(f => ({ field: `inputs.${f.name}`, message: `"${node.label}" needs a value for the input "${f.name}".` }))]
   const isMissing = (field: string) => missing.some(m => m.field === field || m.field.startsWith(`${field}.`))
   const issues = [...findIssues(graph).filter(i => i.nodeId === node.id).map(i => i.message), ...extraIssues]
   const setConfig = (patch: Record<string, unknown>, _key?: string) =>
@@ -124,9 +132,9 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
   const mapping: MappingContext = useMemo(() => ({
     graph: canvas,
-    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...moduleOutputFields(n, workflows)]),
+    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
     sample: sampleOf(canvas, outputs),
-  }), [canvas, opened.id, outputs, mcpServers, workflows])
+  }), [canvas, opened.id, outputs, mcpServers, workflows, functions])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
@@ -147,7 +155,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   latest.current = graph
   const jizzaAvailable = !readOnly && canConfigureWithJizza(node.type)
   const jizzaToken = useJizzaContext(jizzaOn && jizzaAvailable ? stepContext(node, graph, workflowName, {
-    agents, tools, mcpServers, workflows, missing: missing.map(m => m.message),
+    agents, tools, mcpServers, workflows, functions, missing: missing.map(m => m.message),
   }) : null)
   // The chip's ✕ (or /leave) hands Jizza back to the Builder; the button here shows it is off.
   const jizzaLeft = useContextStore(s => jizzaToken !== undefined && !s.stack.some(e => e.token === jizzaToken))
@@ -315,7 +323,9 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         </>}
 
         {node.type === 'TRIGGER' && <ContractFields kind="inputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
-        {node.type === 'SCRIPT' && <ScriptFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'SCRIPT' && (isInlineScript(node.config)
+          ? <ScriptFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} functions={functions} />
+          : <FunctionCallFields key={str('functionId')} node={node} functions={functions} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />)}
         {node.type === 'END' && <ContractFields kind="outputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} mapping={mapping} />}
@@ -756,6 +766,102 @@ function mappedInputs(node: CanvasNode): Record<string, string> {
   return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, string> : {}
 }
 
+/** What a Script step that runs a function gives later steps: a map's keys, or result. */
+function functionOutputFields(node: CanvasNode, functions?: ScriptFunction[]): DeclaredField[] {
+  if (node.type !== 'SCRIPT' || !node.config.functionId) return []
+  const f = functions?.find(x => x.id === node.config.functionId)
+  return f ? resultFields(f).map(r => ({ path: r.path, type: r.type })) : []
+}
+
+/**
+ * A Script step: pick one of your functions under Functions, map each of its inputs from earlier
+ * steps, and see what later steps can map from its result. Test runs it with the last run's data.
+ */
+function FunctionCallFields({ node, functions, setConfig, isMissing, mapping }: {
+  node: CanvasNode; functions?: ScriptFunction[]; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const id = typeof node.config.functionId === 'string' ? node.config.functionId : ''
+  const fn = functions?.find(f => f.id === id)
+  const values = mappedInputs(node)
+  const [result, setResult] = useState<FormulaPreview | null>(null)
+  const [testing, setTesting] = useState(false)
+  const set = (name: string, v: string) => {
+    const next = { ...values }
+    if (v) next[name] = v
+    else delete next[name]
+    setConfig({ inputs: next }, `inputs:${name}`)
+  }
+  const pick = (value: string) => {
+    const f = functions?.find(x => x.id === value)
+    // Inputs the new function also takes keep their mapping.
+    const kept = Object.fromEntries(Object.entries(values).filter(([k]) => f?.inputs.some(i => i.name === k)))
+    setConfig({ functionId: value || undefined, functionName: f?.name, inputs: kept })
+    setResult(null)
+  }
+  const test = async () => {
+    setTesting(true)
+    try {
+      setResult(await formulaApi.previewScript({ functionId: id, inputs: values }, mapping.sample ?? { input: {}, nodes: {} }))
+    } catch (e) {
+      setResult({ value: null, type: null, error: e instanceof Error ? e.message : 'The test could not run.' })
+    } finally {
+      setTesting(false)
+    }
+  }
+  const outputs = fn ? resultFields(fn) : []
+  return <>
+    <Labelled label="Function" required missing={isMissing('functionId')}
+      hint={functions && functions.length === 0 ? 'You have no functions yet. Make one under Functions.' : fn?.description ?? undefined}>
+      <select aria-label="Function" className={fieldClass} value={id} onChange={e => pick(e.target.value)}>
+        <option value="">Choose a function…</option>
+        {id && !fn && <option value={id}>{node.config.functionName ? `fn.${String(node.config.functionName)} (deleted)` : 'Deleted function'}</option>}
+        {functions?.map(f => <option key={f.id} value={f.id}>fn.{f.name}({f.inputs.map(i => i.name).join(', ')}) → {f.returnType}</option>)}
+      </select>
+    </Labelled>
+    <div className="flex flex-wrap gap-3 text-xs">
+      {fn && <Link to={`/functions/${fn.id}`} target="_blank" className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-300"><ExternalLink className="h-3 w-3" />Open in Functions</Link>}
+      <Link to="/functions/new" target="_blank" className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3 w-3" />New function</Link>
+    </div>
+    {fn && fn.inputs.length > 0 && (
+      <Section title="Inputs">
+        {fn.inputs.map(f => (
+          <Labelled group key={f.name} label={f.name} required={f.required && f.default === undefined} missing={isMissing(`inputs.${f.name}`)}
+            hint={[f.description, TYPE_HINT[f.type], f.default !== undefined ? `Leave empty for ${JSON.stringify(f.default)}.` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
+            <MappedField aria-label={`Input ${f.name}`} mode="template" context={mapping} mono={f.type !== 'text'} invalid={isMissing(`inputs.${f.name}`)}
+              value={values[f.name] ?? ''} onChange={v => set(f.name, v)} />
+          </Labelled>
+        ))}
+        <p className="text-[11px] text-gray-400">A value that is just {'{{ … }}'} keeps its type. Text is read as the type the function asks for.</p>
+      </Section>
+    )}
+    {fn && (
+      <Section title="Result">
+        <p className="text-[11px] text-gray-500">Later steps can map these from this step:</p>
+        <ul className="flex flex-wrap gap-1">
+          {outputs.map(f => (
+            <li key={f.path} title={`nodes.${node.id}.${f.path}`}
+              className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+              {f.path}<span className="ml-1 text-[10px] text-violet-400">{f.type}</span>
+            </li>
+          ))}
+          {outputs.length === 0 && <li className="text-[11px] text-gray-500">The function returns a map but lists no keys. Add them under Functions.</li>}
+        </ul>
+        <div className="flex min-w-0 items-start gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={test} disabled={testing}>
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Test
+          </Button>
+          <p className="min-w-0 pt-1 text-[11px] text-gray-500">{mapping.sample ? 'Runs the function with the last run\'s data.' : 'No run yet, so inputs mapped from earlier steps are empty.'}</p>
+        </div>
+        {result && (
+          <div role="status" className={`rounded-lg border p-2 text-[11px] ${result.error ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50'}`}>
+            {result.error ?? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-gray-700 dark:text-gray-200">{JSON.stringify(result.value, null, 2)}</pre>}
+          </div>
+        )}
+      </Section>
+    )}
+  </>
+}
+
 /** What a module step gives later steps: the outputs its module declares, with their types. */
 function moduleOutputFields(node: CanvasNode, workflows?: WorkflowOption[]): DeclaredField[] {
   if (node.type !== 'SUB_WORKFLOW') return []
@@ -896,9 +1002,34 @@ function ContractFields({ kind, node, setConfig, isMissing, mapping }: {
  * outputs it returns, which later steps map like any other step's fields. Test runs it in the
  * engine's sandbox over the last run's data.
  */
-function ScriptFields({ node, setConfig, isMissing, mapping }: {
-  node: CanvasNode; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext
+function ScriptFields({ node, setConfig, isMissing, mapping, functions }: {
+  node: CanvasNode; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext; functions?: ScriptFunction[]
 }) {
+  const [moving, setMoving] = useState<string | null>(null)
+  // Scripts now live under Functions: this one becomes a function there, and the step runs it.
+  const moveToFunctions = async () => {
+    setMoving('')
+    try {
+      const base = (node.label || 'script').replace(/[^A-Za-z0-9_]+(.)?/g, (_m, c: string | undefined) => (c ? c.toUpperCase() : '')).replace(/^[^A-Za-z]+/, '') || 'script'
+      const taken = new Set((functions ?? []).map(f => f.name))
+      let name = base.charAt(0).toLowerCase() + base.slice(1)
+      for (let n = 2; taken.has(name); n++) name = `${base.charAt(0).toLowerCase() + base.slice(1)}${n}`
+      const outs = fieldsOf(node.config, 'outputs').filter(f => f.name)
+      const created = await functionsApi.create({
+        name, description: `Moved from the workflow step "${node.label}".`,
+        inputs: inputs.filter(i => i.name).map(i => ({ name: i.name, type: i.type })),
+        script, returnType: outs.length ? 'map' : 'any', returnFields: outs.map(o => ({ path: o.name, type: o.type })),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['functions'] })
+      setConfig({
+        functionId: created.id, functionName: created.name, script: undefined, outputs: undefined,
+        inputs: Object.fromEntries(inputs.filter(i => i.name && i.value).map(i => [i.name, i.value!])),
+      }, 'move')
+      setMoving(null)
+    } catch (e) {
+      setMoving(e instanceof Error ? e.message : 'Could not move the script.')
+    }
+  }
   const inputs = fieldsOf(node.config, 'inputs')
   const outputs = fieldsOf(node.config, 'outputs')
   const script = typeof node.config.script === 'string' ? node.config.script : ''
@@ -947,6 +1078,11 @@ function ScriptFields({ node, setConfig, isMissing, mapping }: {
     </button>
   )
   return <>
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+      <p>Scripts now live under Functions, where other workflows and functions can reuse them. This step still runs its own script.</p>
+      <Button type="button" size="sm" variant="secondary" className="mt-1.5" loading={moving === ''} onClick={moveToFunctions}>Move to Functions</Button>
+      {moving && <p className="mt-1 text-red-600 dark:text-red-400">{moving}</p>}
+    </div>
     <Section title="Inputs">
       <p className="text-[11px] text-gray-500">Values from earlier steps the script works on. The script reads each one by its name.</p>
       {inputs.map((r, i) => row('inputs', inputs, r, i))}
@@ -955,7 +1091,7 @@ function ScriptFields({ node, setConfig, isMissing, mapping }: {
     <Section title="Script">
       <Labelled group label="Script" required missing={isMissing('script')}
         hint="var, if/else and for (var item : list) { } with every formula function. End with return {'name': value} giving the outputs below. Ctrl+Space suggests, Ctrl+/ comments a line.">
-        <ScriptEditor aria-label="Script" value={script} inputs={inputs.filter(f => f.name).map(f => ({ name: f.name, type: f.type }))}
+        <ScriptEditor aria-label="Script" value={script} inputs={inputs.filter(f => f.name).map(f => ({ name: f.name, type: f.type }))} functions={functions?.map(infoOf)}
           invalid={isMissing('script')} onChange={v => setConfig({ script: v }, 'script')} />
       </Labelled>
       <div className="flex min-w-0 items-start gap-2">

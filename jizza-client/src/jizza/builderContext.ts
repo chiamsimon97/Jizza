@@ -1,4 +1,5 @@
 import { NODE_META, upstreamOf, type CanvasGraph, type CanvasNode } from '@/components/workflow/canvasModel'
+import type { ScriptFunction } from '@/api/functions'
 import type { JizzaContext } from './contextStore'
 import type { McpServer } from '@/types'
 import { STEP_FIELDS } from './commands'
@@ -41,6 +42,7 @@ export function stepContext(node: CanvasNode, graph: CanvasGraph, workflowName: 
   tools?: Array<{ id: string; label: string }>
   mcpServers?: McpServer[]
   workflows?: Array<{ id: string; name: string }>
+  functions?: ScriptFunction[]
   missing: string[]
 }): JizzaContext {
   const kind = NODE_META[node.type].label
@@ -63,6 +65,12 @@ export function stepContext(node: CanvasNode, graph: CanvasGraph, workflowName: 
         mcpServers: options.mcpServers.filter(s => s.enabled).slice(0, 20).map(s => ({
           id: s.id, name: s.name,
           tools: s.tools.filter(t => t.enabled).slice(0, 60).map(t => ({ name: t.name, description: t.description?.slice(0, 200), inputSchema: t.inputSchema })),
+        })),
+      } : {}),
+      ...(node.type === 'SCRIPT' && options.functions ? {
+        functions: options.functions.slice(0, 60).map(f => ({
+          id: f.id, name: f.name, description: f.description?.slice(0, 200), inputs: f.inputs.map(i => ({ name: i.name, type: i.type, required: i.required })),
+          returns: f.returnType, ...(f.returnType === 'map' ? { keys: f.returnFields.map(k => k.path) } : {}),
         })),
       } : {}),
       ...((node.type === 'SUB_WORKFLOW' || node.type === 'FOR_EACH') && options.workflows ? { workflows: options.workflows.slice(0, 40).map(w => ({ id: w.id, name: w.name })) } : {}),
