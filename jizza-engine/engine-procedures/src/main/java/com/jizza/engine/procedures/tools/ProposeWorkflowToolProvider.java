@@ -40,6 +40,10 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
 
       Start and finish:
         TRIGGER (exactly one, the entry point), END.
+        A workflow meant to be reused as a module declares what it takes and gives:
+        TRIGGER {"inputs":[{"name":"email","type":"text|number|boolean|date|list|map",
+          "required":true,"description":"...","default":...}]}, read as input.<name>;
+        END {"outputs":[{"name":"total","type":"number","value":"{{ nodes.sum }}"}]}.
       Actions:
         CONNECTOR_TOOL {"toolId":"<generated tool id>","arguments":{...}}
         MCP_TOOL {"serverId":"<MCP server id>","tool":"<tool name>","arguments":{...}}
@@ -60,11 +64,15 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
         TRANSFORM {"expression":"<expression>"}
       Flow:
         WAIT {"duration":"PT1H"} or {"until":"<ISO time>"}
-        PARALLEL then JOIN to run paths at once, SUB_WORKFLOW {"workflowId":"..."},
+        PARALLEL then JOIN to run paths at once,
+        SUB_WORKFLOW {"workflowId":"...","inputs":{"<input name>":"{{ ... }}"}} runs a module;
+          later steps read its outputs as nodes.<id>.<output name>.
         FOR_EACH {"workflowId":"...","items":"<expression giving a list>"}.
 
-      Expressions are JEXL over input (what started the run), nodes.<id> (an earlier step's
-      result) and vars (SET_VARIABLE). Text fields can embed the same with {{ nodes.fetch.total }}.
+      Expressions are Jizza formulas over input (what started the run), nodes.<id> (an earlier
+      step's result) and vars (SET_VARIABLE), with functions chained on a value:
+      input.name.trim().titleCase(), items.where('status', 'paid').sumOf('amount').
+      Text fields can embed the same with {{ nodes.fetch.total }}.
 
       An edge is {"from":"node_id","to":"node_id","branch":null}. No loops: repeat with FOR_EACH.
       """;

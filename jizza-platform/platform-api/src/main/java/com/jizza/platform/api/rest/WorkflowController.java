@@ -8,6 +8,7 @@ import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workflow.FormulaPreview;
 import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.api.workflow.library.ReuseProfile;
 import com.jizza.engine.api.workflow.library.WorkflowLibrary;
@@ -38,13 +39,25 @@ public class WorkflowController {
   private final WorkflowUseCase workflows;
   private final SkillUseCase skills;
   private final com.jizza.engine.api.orchestrator.AgentDirectory agents;
+  private final FormulaPreview formulas;
 
   public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills,
-                            com.jizza.engine.api.orchestrator.AgentDirectory agents) {
+                            com.jizza.engine.api.orchestrator.AgentDirectory agents,
+                            FormulaPreview formulas) {
     this.engine = engine;
     this.workflows = workflows;
     this.skills = skills;
     this.agents = agents;
+    this.formulas = formulas;
+  }
+
+  /**
+   * What a formula gives against sample data, for the builder's live preview. It runs in the same
+   * sandbox as a workflow step, over only the data sent with it.
+   */
+  @PostMapping("/formula/preview")
+  public FormulaPreview.Result previewFormula(@Valid @RequestBody Requests.PreviewFormula request) {
+    return formulas.preview(request.formula(), Boolean.TRUE.equals(request.template()), request.data());
   }
 
   @GetMapping("/workflows")

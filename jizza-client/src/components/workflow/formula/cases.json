@@ -1,0 +1,38 @@
+{
+  "about": "Formulas the editor and the engine must agree on. The client checks that each parses (or not); the engine checks what each gives. Add a case here when either side changes.",
+  "data": {
+    "input": {
+      "name": "  asha rao ",
+      "total": "1,250.50",
+      "due": "2026-10-21",
+      "lines": [
+        { "sku": "A", "status": "paid", "amount": 30 },
+        { "sku": "B", "status": "due", "amount": 12.5 },
+        { "sku": "C", "status": "paid", "amount": 10 }
+      ],
+      "customer": { "name": "Asha", "email": "asha@x.in", "phone": "99" }
+    },
+    "nodes": { "fetch": { "status": 200, "body": { "price": 1500 } } },
+    "vars": { "tier": "gold" }
+  },
+  "cases": [
+    { "formula": "input.name.trim().titleCase()", "result": "Asha Rao" },
+    { "formula": "titleCase(trim(input.name))", "result": "Asha Rao" },
+    { "formula": "fmt:upper(vars.tier)", "result": "GOLD" },
+    { "formula": "input.total.toNumber() > 1000 and vars.tier == 'gold'", "result": true },
+    { "formula": "nodes.fetch.body.price * 2", "result": 3000 },
+    { "formula": "nodes.fetch.status == 200 ? 'ok' : 'failed'", "result": "ok" },
+    { "formula": "input.due.addDays(3).formatDate('dd MMM yyyy')", "result": "24 Oct 2026" },
+    { "formula": "input.lines.where('status', 'paid').pluck('sku')", "result": ["A", "C"] },
+    { "formula": "input.lines.sumOf('amount')", "result": 52.5 },
+    { "formula": "input.lines.sortBy('amount').first().sku", "result": "C" },
+    { "formula": "input.lines.groupBy('status').keys()", "result": ["paid", "due"] },
+    { "formula": "input.customer.pick('name, email')", "result": { "name": "Asha", "email": "asha@x.in" } },
+    { "formula": "merge(input.customer.pick('name'), {'vip': true})", "result": { "name": "Asha", "vip": true } },
+    { "formula": "{'name': input.customer.name, 'skus': input.lines.pluck('sku').join('-')}", "result": { "name": "Asha", "skus": "A-B-C" } },
+    { "formula": "input.missing ?? 'none'", "result": "none" },
+    { "formula": "input.name.upper(", "parses": false },
+    { "formula": "'open", "parses": false },
+    { "formula": "x = 1", "parses": false }
+  ]
+}

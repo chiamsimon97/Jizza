@@ -16,6 +16,7 @@ import { JizzaOrb } from '@/jizza/JizzaOrb'
 import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
+import { moduleInputs } from '@/components/workflow/moduleContract'
 
 interface Step {
   key: number
@@ -177,9 +178,18 @@ export function WorkflowForm() {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not save the workflow'),
   })
 
+  // A workflow that declares inputs asks for them before a run, as a module's caller would give them.
+  const declaredInputs = mode === 'canvas' ? moduleInputs(canvasToGraph(canvas)) : []
+  const [askInputs, setAskInputs] = useState(false)
+  const [runInput, setRunInput] = useState<Record<string, string>>({})
+  useEffect(() => { setAskInputs(false); setRunInput({}) }, [request?.nonce])
+
   const run = useMutation({
-    mutationFn: () => workflowsApi.run(workflowId!),
+    mutationFn: () => workflowsApi.run(workflowId!, undefined, declaredInputs.length
+      ? Object.fromEntries(Object.entries(runInput).filter(([, v]) => v.trim() !== ''))
+      : undefined),
     onSuccess: (r) => {
+      setAskInputs(false)
       if (r?.id) setRunId(r.id)
       setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). ${mode === 'canvas' ? 'Its progress shows on the canvas.' : "You'll see it in Activity and Notifications."}`)
     },
@@ -241,7 +251,7 @@ export function WorkflowForm() {
         </button>
         <Button variant="secondary" onClick={close}>{readOnly ? 'Close' : 'Cancel'}</Button>
         {workflowId && (
-          <Button type="button" variant="secondary" onClick={() => { setError(''); run.mutate() }} loading={run.isPending}>
+          <Button type="button" variant="secondary" onClick={() => { setError(''); if (declaredInputs.length && !askInputs) setAskInputs(true); else run.mutate() }} loading={run.isPending}>
             <Play className="h-4 w-4" />Run now
           </Button>
         )}
@@ -308,6 +318,25 @@ export function WorkflowForm() {
         </div>}
         </fieldset>
         {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} />}
+        {askInputs && declaredInputs.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 animate-fade-in dark:border-gray-800 dark:bg-gray-950">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Inputs for this run</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {declaredInputs.map(f => (
+                <Field key={f.name} label={`${f.name}${f.required && f.default === undefined ? ' *' : ''}`} hint={f.description}>
+                  <input className={fieldClass} aria-label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
+                    placeholder={f.default !== undefined ? `Default: ${typeof f.default === 'string' ? f.default : JSON.stringify(f.default)}` : f.type === 'any' ? '' : f.type}
+                    onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))} />
+                </Field>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-500">The saved version runs. Lists and fields are written as JSON, such as ["a", "b"].</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setAskInputs(false)}>Cancel</Button>
+              <Button type="button" size="sm" onClick={() => { setError(''); run.mutate() }} loading={run.isPending}><Play className="h-4 w-4" />Start run</Button>
+            </div>
+          </div>
+        )}
         {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>

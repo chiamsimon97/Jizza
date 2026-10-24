@@ -108,6 +108,9 @@ public final class Requests {
 
   public record RunWorkflow(Integer version, JsonNode input) {}
 
+  /** A formula to try against sample run data ({@code input}, {@code nodes}, {@code vars}). */
+  public record PreviewFormula(@NotBlank @Size(max = 10_000) String formula, Boolean template, JsonNode data) {}
+
   public record ResumeRun(@Size(max = MAX_MESSAGE) String instruction, Boolean approved) {}
 
   public record ReviseProcedure(@NotNull JsonNode graph) {}

@@ -205,6 +205,9 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       throw new ValidationException("Workflow '" + workflow.getName() + "' is disabled");
     }
 
+    // A module's declared inputs: defaults filled in, values typed, required ones present.
+    input = com.jizza.engine.api.workflow.graph.ModuleContract.prepareInput(graph, input);
+
     RunContext context = RunContext.start(input);
     context.startFrontier(graph.trigger().id(), false);
     setUp.accept(context);

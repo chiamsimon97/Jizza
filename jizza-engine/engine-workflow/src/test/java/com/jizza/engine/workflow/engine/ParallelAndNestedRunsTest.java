@@ -270,6 +270,64 @@ class ParallelAndNestedRunsTest {
         .as("the parent's own result is its end step's input").isEqualTo(42);
   }
 
+  /** A module: declares an amount it needs and the result it gives. */
+  private static WorkflowGraph doublingModule() {
+    return new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, "{\"inputs\":[{\"name\":\"amount\",\"type\":\"number\","
+                + "\"required\":true},{\"name\":\"label\",\"type\":\"text\",\"default\":\"total\"}]}"),
+            node("finish", NodeType.END, "{\"outputs\":[{\"name\":\"doubled\",\"type\":\"number\","
+                + "\"value\":\"{{ input.amount * 2 }}\"},{\"name\":\"summary\",\"type\":\"text\","
+                + "\"value\":\"{{ input.label }} is {{ input.amount * 2 }}\"}]}")),
+        List.of(edge("start", "finish")));
+  }
+
+  private static WorkflowGraph moduleCaller(UUID child, String inputsJson) {
+    return new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("call", NodeType.SUB_WORKFLOW, "{\"workflowId\":\"" + child + "\",\"inputs\":" + inputsJson + "}"),
+            node("after", NodeType.TRANSFORM, "{\"expression\":\"nodes.call.doubled + 1\"}"),
+            node("finish", NodeType.END, null)),
+        List.of(edge("start", "call"), edge("call", "after"), edge("after", "finish")));
+  }
+
+  @Test
+  void aModuleTakesItsMappedInputsAndLaterStepsMapItsOutputs() {
+    EngineHarness harness = new EngineHarness(doubler());
+    WorkflowEntity module = harness.addWorkflow("Double it", doublingModule());
+    // The amount arrives as text and the module declares a number, so it is read as one.
+    setGraph(harness.workflow, moduleCaller(module.getId(), "{\"amount\":\"{{ input.total }}\",\"label\":\"\"}"));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("total", "21"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    var call = harness.step(run.id(), "call").orElseThrow().getOutput();
+    assertThat(call.path("doubled").asInt()).isEqualTo(42);
+    assertThat(call.path("summary").asText()).as("a blank mapping leaves the default").isEqualTo("total is 42");
+    assertThat(harness.step(run.id(), "after").orElseThrow().getOutput().asInt()).isEqualTo(43);
+  }
+
+  @Test
+  void aModuleStepFailsByNameWhenARequiredInputIsMissing() {
+    EngineHarness harness = new EngineHarness(doubler());
+    WorkflowEntity module = harness.addWorkflow("Double it", doublingModule());
+    setGraph(harness.workflow, moduleCaller(module.getId(), "{\"amount\":\"{{ input.nothing }}\"}"));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isNotEqualTo(RunStatus.DONE);
+    assertThat(harness.step(run.id(), "call").orElseThrow().getError()).contains("needs the input amount");
+  }
+
+  @Test
+  void aRunOfAModuleIsCheckedAgainstItsInputs() {
+    EngineHarness harness = new EngineHarness(doublingModule());
+    assertThatThrownBy(() -> harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("amount", "lots"), "manual"))
+        .hasMessageContaining("'amount' should be a number");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj().put("amount", 5), "manual");
+    assertThat(RunContext.of(harness.run(run.id()).getContext()).result().path("doubled").asInt()).isEqualTo(10);
+  }
+
   @Test
   void aParentWaitsForAChildThatAsksThePersonAndCarriesOnWhenItFinishes() {
     EngineHarness harness = new EngineHarness(doubler());

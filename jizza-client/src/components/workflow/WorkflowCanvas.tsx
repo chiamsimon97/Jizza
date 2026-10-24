@@ -167,7 +167,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const { data: workflows } = useQuery({
     queryKey: ['workflow-canvas-workflows'], enabled: !readOnly, staleTime: 60_000,
     queryFn: () => api.get<WorkflowDto[]>('/api/workflows')
-      .then(ws => ws.map((w): WorkflowOption => ({ id: w.id, name: w.name, status: w.status }))).catch(() => [] as WorkflowOption[]),
+      .then(ws => ws.map((w): WorkflowOption => ({ id: w.id, name: w.name, status: w.status, graph: w.graph }))).catch(() => [] as WorkflowOption[]),
   })
 
   const issueList = useMemo(() => findIssues(graph), [graph])

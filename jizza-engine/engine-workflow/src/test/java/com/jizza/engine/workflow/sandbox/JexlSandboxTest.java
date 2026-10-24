@@ -151,4 +151,34 @@ class JexlSandboxTest {
         sandbox, vars)).isEqualTo("Hi Priya, 84 for gold!");
     assertThat(Templates.render("no placeholders", sandbox, vars)).isEqualTo("no placeholders");
   }
+
+  @Test
+  void reshapesListsAndMapsWithFunctionsRatherThanLoops() {
+    Map<String, Object> vars = Map.of("input", Map.of("lines", List.of(
+        Map.of("sku", "A", "status", "paid", "amount", 30),
+        Map.of("sku", "B", "status", "due", "amount", 12.5),
+        Map.of("sku", "C", "status", "paid", "amount", 10)),
+        "customer", Map.of("name", "Asha", "email", "asha@x.in", "phone", "99")));
+    assertThat(sandbox.evaluate("input.lines.where('status', 'paid').pluck('sku')", vars).toString())
+        .isEqualTo("[\"A\",\"C\"]");
+    assertThat(sandbox.evaluate("input.lines.sumOf('amount')", vars).asDouble()).isEqualTo(52.5);
+    assertThat(sandbox.evaluate("input.lines.sortBy('amount').first().sku", vars).asText()).isEqualTo("C");
+    assertThat(sandbox.evaluate("input.lines.groupBy('status').keys()", vars).toString())
+        .isEqualTo("[\"paid\",\"due\"]");
+    assertThat(sandbox.evaluate("input.customer.pick('name, email')", vars).toString())
+        .isEqualTo("{\"name\":\"Asha\",\"email\":\"asha@x.in\"}");
+    assertThat(sandbox.evaluate("merge(input.customer.pick('name'), {'vip': true}).values()", vars).toString())
+        .isEqualTo("[\"Asha\",true]");
+  }
+
+  @Test
+  void aFormulaGivesAValueAndCannotAssign() {
+    refuses("x = 1");
+    refuses("input.a = 2");
+  }
+
+  @Test
+  void refusesAFormulaThatIsTooLong() {
+    refuses("1 + ".repeat(JexlSandbox.MAX_LENGTH / 4 + 1) + "1");
+  }
 }

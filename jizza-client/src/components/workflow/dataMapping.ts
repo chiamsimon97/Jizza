@@ -10,6 +10,7 @@
 import { NODE_META, upstreamOf, type CanvasGraph, type CanvasNode, type NodeType } from './canvasModel'
 import type { FormulaScope } from './formula/analyze'
 import type { ValueType } from './formula/functions'
+import { moduleInputs } from './moduleContract'
 
 export type MappingMode = 'template' | 'expression'
 
@@ -45,6 +46,9 @@ export function write(segments: Segment[], mode: MappingMode): string {
 
 /** One value a step can map in, such as a webhook's response body. */
 export interface DataField { expr: string; label: string; type?: ValueType }
+
+/** A field a step is known to give before it has run, such as a module's output. */
+export interface DeclaredField { path: string; type?: ValueType }
 
 /** A step (or the run's input, or its variables) and the values it gives later steps. */
 export interface DataSource { id: string; label: string; type: NodeType | 'VARS'; fields: DataField[] }
@@ -100,21 +104,30 @@ function pathsOf(value: unknown, depth = 2, prefix = ''): Array<{ path: string; 
  * What a step can map in: the run's input, each step before it with the fields it gives, and the
  * variables set before it. {@code outputs} are the steps' outputs from the last run, which add the
  * fields a step actually returned, such as the keys of a webhook's response body. {@code declared}
- * gives the fields a step is known to return before it has run, such as an MCP tool's output fields.
+ * gives the fields a step is known to return before it has run, such as an MCP tool's output fields
+ * or a module's outputs, with their types where known. The run's input lists the inputs the start
+ * step declares.
  */
 export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: ReadonlyMap<string, unknown>,
-  declared?: (node: CanvasNode) => string[]): DataSource[] {
+  declared?: (node: CanvasNode) => Array<string | DeclaredField>): DataSource[] {
   const upstream = upstreamOf(graph, id)
   const sources: DataSource[] = []
   for (const n of upstream) {
     if (n.type === 'TRIGGER') {
-      const fields = pathsOf(outputs?.get(n.id)).map(p => ({ expr: `input.${p.path}`, label: p.path, type: p.type }))
+      const inputs = moduleInputs(graph)
+      const named = new Set(inputs.map(f => f.name))
+      const fields = [
+        ...inputs.map(f => ({ expr: `input.${f.name}`, label: f.name, type: f.type })),
+        ...pathsOf(outputs?.get(n.id)).filter(p => !named.has(p.path)).map(p => ({ expr: `input.${p.path}`, label: p.path, type: p.type })),
+      ]
       sources.push({ id: n.id, label: 'Start (the run\'s input)', type: n.type, fields: [{ expr: 'input', label: 'The whole input', type: 'map' }, ...fields] })
       continue
     }
     if (n.type === 'PARALLEL') continue
     // A step that calls something (an MCP tool) knows its fields from what that thing returns.
-    const known = [...(STEP_OUTPUTS[n.type] ?? []), ...(declared?.(n) ?? [])]
+    const extra = (declared?.(n) ?? []).map(d => (typeof d === 'string' ? { path: d } : d))
+    const declaredType = new Map(extra.filter(d => d.type).map(d => [d.path, d.type!]))
+    const known = [...(STEP_OUTPUTS[n.type] ?? []), ...extra.map(d => d.path)]
     const seen = new Set(known)
     const ran = pathsOf(outputs?.get(n.id)).filter(p => !seen.has(p.path))
     const ranType = new Map(pathsOf(outputs?.get(n.id)).map(p => [p.path, p.type]))
@@ -122,7 +135,7 @@ export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: Readonl
       id: n.id, label: n.label || NODE_META[n.type].label, type: n.type,
       fields: [
         { expr: `nodes.${n.id}`, label: 'The whole result', type: 'map' },
-        ...known.map(p => ({ expr: `nodes.${n.id}.${p}`, label: p, type: OUTPUT_TYPES[p] ?? ranType.get(p) ?? 'any' })),
+        ...known.map(p => ({ expr: `nodes.${n.id}.${p}`, label: p, type: declaredType.get(p) ?? OUTPUT_TYPES[p] ?? ranType.get(p) ?? 'any' })),
         ...ran.map(p => ({ expr: `nodes.${n.id}.${p.path}`, label: p.path, type: p.type })),
       ],
     })

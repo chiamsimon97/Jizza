@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EditorView } from '@codemirror/view'
-import { CanvasInspector } from './CanvasInspector'
+import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
 
 /** Types into a field where earlier steps' data shows as chips (a CodeMirror editor). */
@@ -11,10 +11,10 @@ function type(box: HTMLElement, text: string) {
   act(() => { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: 'input.type' }) })
 }
 
-function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn()) {
+function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(), workflows?: WorkflowOption[]) {
   render(
     <MemoryRouter>
-      <CanvasInspector node={graph.nodes.find(n => n.id === id)!} graph={graph} issues={[]} readOnly={false}
+      <CanvasInspector node={graph.nodes.find(n => n.id === id)!} graph={graph} issues={[]} readOnly={false} workflows={workflows}
         onDirty={() => {}} onSave={onSave} onClose={onClose} />
     </MemoryRouter>,
   )
@@ -22,6 +22,39 @@ function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(
 }
 
 describe('CanvasInspector', () => {
+  it('maps a module\'s inputs one field each and waits for the required ones', () => {
+    const module: WorkflowOption = {
+      id: 'wf-double', name: 'Double it', status: 'APPROVED', graph: {
+        nodes: [
+          { id: 'start', type: 'TRIGGER', config: { inputs: [{ name: 'amount', type: 'number', required: true }, { name: 'label', type: 'text', default: 'total' }] } },
+          { id: 'end', type: 'END', config: { outputs: [{ name: 'doubled', type: 'number', value: '{{ input.amount * 2 }}' }] } },
+        ],
+      },
+    }
+    const { graph, id } = addAfter(emptyGraph(), 'start', null, 'SUB_WORKFLOW')
+    const withModule = { ...graph, nodes: graph.nodes.map(n => (n.id === id ? { ...n, config: { workflowId: 'wf-double' } } : n)) }
+    const { onSave } = open(withModule, id, vi.fn(), vi.fn(), [module])
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+    expect(screen.getByText('doubled')).toBeInTheDocument()
+
+    type(screen.getByRole('textbox', { name: 'Input amount' }), '{{ input.total }}')
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config).toMatchObject({ workflowId: 'wf-double', inputs: { amount: '{{ input.total }}' } })
+  })
+
+  it('declares a workflow\'s inputs on its Start step', () => {
+    const graph = emptyGraph()
+    const { onSave } = open(graph, 'start')
+    fireEvent.click(screen.getByRole('button', { name: 'Add an input' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name of input 1' }), { target: { value: 'customer email' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Required' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect((onSave.mock.calls[0][0] as CanvasGraph).nodes[0].config.inputs).toEqual([{ name: 'customer_email', type: 'text', required: true }])
+  })
+
   it('has Close and Save instead of Remove step, and saves only once the mandatory fields are filled', () => {
     const { graph, id } = addAfter(emptyGraph(), 'start', null, 'HTTP_REQUEST')
     const { onSave } = open(graph, id)

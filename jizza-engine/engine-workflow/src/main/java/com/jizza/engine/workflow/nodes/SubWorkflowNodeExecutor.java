@@ -10,6 +10,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.WorkflowRunEntity;
 import com.jizza.engine.workflow.engine.NodeExecutor;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
+import com.jizza.engine.workflow.sandbox.Templates;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -17,8 +18,10 @@ import org.springframework.stereotype.Component;
 /**
  * Runs another of the person's workflows as one step, and completes with what that run produced.
  *
- * <p>The child's input is {@code inputExpr} evaluated over this run, or the literal {@code input},
- * or nothing. The child is started once and its id kept in the step's state, so a restart or a
+ * <p>The child's input is its declared inputs mapped from this run ({@code inputs}, a value with
+ * {@code {{ … }}} placeholders per input name; a blank one is left out so the child's default
+ * applies), or {@code inputExpr} evaluated over this run, or the literal {@code input}, or nothing.
+ * The child checks the inputs it declares, so a missing required one fails this step with its name. The child is started once and its id kept in the step's state, so a restart or a
  * retry reads the same child instead of starting another. While the child waits (on a person, a
  * timer, its own children) this path waits too, and the child finishing wakes it.
  */
@@ -70,6 +73,19 @@ public class SubWorkflowNodeExecutor implements NodeExecutor {
 
   private JsonNode inputFor(Execution execution) {
     JsonNode config = execution.node().config();
+    if (config.path("inputs").isObject() && !config.path("inputs").isEmpty()) {
+      ObjectNode input = Json.obj();
+      for (var field : config.get("inputs").properties()) {
+        String template = field.getValue().isTextual() ? field.getValue().asText() : null;
+        if (template == null) {
+          if (!field.getValue().isNull()) input.set(field.getKey(), field.getValue());
+          continue;
+        }
+        if (template.isBlank()) continue;
+        input.set(field.getKey(), Templates.renderValue(template, sandbox, execution.context().variables()));
+      }
+      return input;
+    }
     if (config.hasNonNull("inputExpr")) {
       return sandbox.evaluate(config.get("inputExpr").asText(), execution.context().variables());
     }

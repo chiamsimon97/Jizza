@@ -6,7 +6,7 @@
 /** What a value is, as far as the editor can tell. Dates are text in ISO form, so text works as a date. */
 export type ValueType = 'text' | 'number' | 'boolean' | 'date' | 'list' | 'map' | 'any'
 
-export type FunctionCategory = 'Text' | 'Number' | 'Date' | 'List' | 'Check'
+export type FunctionCategory = 'Text' | 'Number' | 'Date' | 'List' | 'Map' | 'Check'
 
 export interface FormulaFunction {
   name: string
@@ -24,6 +24,7 @@ const num = (name = 'number') => ({ name, type: 'number' as const })
 const date = (name = 'date') => ({ name, type: 'date' as const })
 const list = (name = 'list') => ({ name, type: 'list' as const })
 const any = (name = 'value') => ({ name, type: 'any' as const })
+const map = (name = 'map') => ({ name, type: 'map' as const })
 
 export const FORMULA_FUNCTIONS: FormulaFunction[] = [
   // text
@@ -76,7 +77,16 @@ export const FORMULA_FUNCTIONS: FormulaFunction[] = [
   { name: 'unique', category: 'List', subject: list(), params: [], returns: 'list', description: 'The items without repeats.', example: '[1, 1, 2].unique() → [1, 2]' },
   { name: 'sort', category: 'List', subject: list(), params: [], returns: 'list', description: 'The items in order.', example: '[3, 1, 2].sort() → [1, 2, 3]' },
   { name: 'reverse', category: 'List', subject: list(), params: [], returns: 'list', description: 'The items back to front.', example: '[1, 2, 3].reverse() → [3, 2, 1]' },
-  { name: 'lookup', category: 'List', subject: { name: 'table', type: 'map' }, params: [text('key'), any('fallback')], returns: 'any', description: 'The value for a key in a table, or the fallback.', example: "{'IN': 'India'}.lookup('IN', '?') → India" },
+  { name: 'where', category: 'List', subject: list(), params: [text('field'), any('value')], returns: 'list', description: 'The items whose field has this value, such as the paid invoices.', example: "items.where('status', 'paid')" },
+  { name: 'sortBy', category: 'List', subject: list(), params: [text('field')], returns: 'list', description: 'The items in order of one field. Add .reverse() for largest first.', example: "items.sortBy('amount')" },
+  { name: 'sumOf', category: 'List', subject: list(), params: [text('field')], returns: 'number', description: 'One field of every item added up.', example: "items.sumOf('amount') → 52.5" },
+  { name: 'groupBy', category: 'List', subject: list(), params: [text('field')], returns: 'map', description: 'The items in groups by one field, as a map from each value to its items.', example: "items.groupBy('status')" },
+  // maps
+  { name: 'pick', category: 'Map', subject: map(), params: [any('keys')], returns: 'map', description: 'Only some keys of a map: a list, or names with commas.', example: "customer.pick('name, email')" },
+  { name: 'merge', category: 'Map', subject: map('a'), params: [map('b')], returns: 'map', description: 'Two maps as one. Where both have a key, the second wins.', example: "merge(customer, {'vip': true})" },
+  { name: 'keys', category: 'Map', subject: map(), params: [], returns: 'list', description: 'The names of the keys in a map.', example: "{'a': 1, 'b': 2}.keys() → [a, b]" },
+  { name: 'values', category: 'Map', subject: map(), params: [], returns: 'list', description: 'The values in a map.', example: "{'a': 1, 'b': 2}.values() → [1, 2]" },
+  { name: 'lookup', category: 'Map', subject: { name: 'table', type: 'map' }, params: [text('key'), any('fallback')], returns: 'any', description: 'The value for a key in a table, or the fallback.', example: "{'IN': 'India'}.lookup('IN', '?') → India" },
   // checks
   { name: 'isEmpty', category: 'Check', subject: any(), params: [], returns: 'boolean', description: 'Whether the value is missing, blank or an empty list.', example: "''.isEmpty() → true" },
   { name: 'isNotEmpty', category: 'Check', subject: any(), params: [], returns: 'boolean', description: 'Whether the value has something in it.', example: "'x'.isNotEmpty() → true" },

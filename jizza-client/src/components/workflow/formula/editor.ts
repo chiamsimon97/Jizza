@@ -12,13 +12,14 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { linter } from '@codemirror/lint'
 import { EditorState, Prec, StateEffect, StateField, Transaction, type Extension } from '@codemirror/state'
 import {
-  Decoration, EditorView, ViewPlugin, WidgetType, keymap, placeholder as placeholderText, showTooltip, tooltips,
+  Decoration, EditorView, ViewPlugin, WidgetType, hoverTooltip, keymap, placeholder as placeholderText, showTooltip, tooltips,
   type DecorationSet, type Tooltip, type ViewUpdate,
 } from '@codemirror/view'
 import type { CanvasGraph } from '../canvasModel'
 import { chipLabel, type DataSource } from '../dataMapping'
 import { analyze, type FormulaScope, type Problem } from './analyze'
 import { callAt, formulaCompletions, type FormulaCompletion } from './completion'
+import { functionNamed, signature } from './functions'
 import { parseFormula, placeholdersIn, referencesIn, tokenize, type Node, type Token } from './parser'
 
 export interface FormulaEnv { graph: CanvasGraph; sources: DataSource[]; scope: FormulaScope }
@@ -251,6 +252,50 @@ function signatureHint(template: boolean) {
 
 const focusChanged = StateEffect.define<boolean>()
 
+/**
+ * Hovering a function's name shows what it does: its signature, a sentence and an example, from
+ * the same catalog as the suggestions. In a template only the formulas inside {{ }} count.
+ */
+export function functionAt(doc: string, pos: number, template: boolean): { from: number; to: number; name: string } | null {
+  let src = doc
+  let offset = 0
+  if (template) {
+    const p = placeholdersIn(doc).find(x => pos >= x.innerFrom && pos <= x.innerTo)
+    if (!p) return null
+    src = doc.slice(p.innerFrom, p.innerTo)
+    offset = p.innerFrom
+  }
+  const tokens = tokenize(src, offset)
+  const i = tokens.findIndex(t => t.kind === 'name' && pos >= t.from && pos <= t.to)
+  if (i < 0 || tokens[i + 1]?.text !== '(' || !functionNamed(tokens[i].text)) return null
+  return { from: tokens[i].from, to: tokens[i].to, name: tokens[i].text }
+}
+
+function functionDocs(template: boolean): Extension {
+  return hoverTooltip((view, pos) => {
+    const hit = functionAt(view.state.doc.toString(), pos, template)
+    const f = hit && functionNamed(hit.name)
+    if (!hit || !f) return null
+    return {
+      pos: hit.from, end: hit.to, above: true,
+      create: () => {
+        const dom = document.createElement('div')
+        dom.className = 'cm-fx-doc'
+        const line = (tag: string, cls: string, text: string) => {
+          const el = document.createElement(tag)
+          el.className = cls
+          el.textContent = text
+          dom.append(el)
+        }
+        line('code', 'cm-fx-doc-sig', signature(f))
+        line('p', 'cm-fx-doc-text', f.description)
+        line('code', 'cm-fx-doc-example', f.example)
+        return { dom }
+      },
+    }
+  }, { hoverTime: 350 })
+}
+
 /** Keeps a one-line field on one line: pasted line breaks become spaces. */
 const singleLine = EditorState.transactionFilter.of(tr => {
   if (!tr.docChanged) return tr
@@ -327,6 +372,10 @@ const theme = EditorView.theme({
   '.cm-diagnostic-error': { borderLeftColor: '#dc2626' },
   '.cm-diagnostic-warning': { borderLeftColor: '#d97706' },
   '.cm-tooltip:has(> .cm-fx-signature)': { borderRadius: '8px' },
+  '.cm-fx-doc': { display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 10px', maxWidth: '18rem' },
+  '.cm-fx-doc-sig': { fontFamily: MONO, fontSize: '11px', color: '#7c3aed' },
+  '.cm-fx-doc-text': { margin: '0', lineHeight: '1.4' },
+  '.cm-fx-doc-example': { fontFamily: MONO, fontSize: '10px', color: 'rgb(var(--gray-500))' },
 })
 
 export function formulaExtensions(o: FormulaOptions): Extension[] {
@@ -337,6 +386,7 @@ export function formulaExtensions(o: FormulaOptions): Extension[] {
     tooltips({ parent: document.body }),
     chipPlugin(o),
     signatureHint(o.template),
+    functionDocs(o.template),
     autocompletion({
       override: [formulaCompletions(() => o.env(), o.template)],
       icons: true,
