@@ -102,6 +102,11 @@ public class DefaultPermissionEvaluator implements PermissionEvaluator {
         pending, catalog.version());
   }
 
+  @Override
+  public boolean isSuperAdmin(UUID userId) {
+    return userId != null && superAdminInSession(userId);
+  }
+
   /** The super admin's override only counts inside a request whose session passed two-step. */
   private boolean superAdminInSession(UUID userId) {
     var principal = CurrentUser.principal();

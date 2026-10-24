@@ -28,6 +28,9 @@ import { SecurityPage } from '@/pages/SecurityPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 import { MembersPage } from '@/pages/MembersPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
+import { PublicListingPage } from '@/pages/PublicListingPage'
+import { ListingReviewsPage } from '@/pages/ListingReviewsPage'
+import { DiscoverPage, DiscoverProfilePage } from '@/pages/DiscoverPage'
 import { RequirePermission } from '@/auth/RequirePermission'
 import { PersonalOnly } from '@/auth/PersonalOnly'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -71,6 +74,12 @@ export default function App() {
 
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/invitations" element={<InvitationsPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/discover/:orgId" element={<DiscoverProfilePage />} />
+          <Route path="/admin/listings" element={<ListingReviewsPage />} />
+          <Route element={<RequirePermission permission={PERMISSIONS.LISTING_MANAGE} />}>
+            <Route path="/organization/listing" element={<PublicListingPage />} />
+          </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.MEMBERS_VIEW} />}>
             <Route path="/members" element={<MembersPage />} />
           </Route>

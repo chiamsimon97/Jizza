@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   AGENT_TEMPLATE_VIEW: 'agent_template_view',
   AGENT_TEMPLATE_MANAGE: 'agent_template_manage',
   AGENT_TEMPLATE_INSTALL: 'agent_template_install',
+  LISTING_MANAGE: 'listing_manage',
 } as const
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -45,6 +46,7 @@ export const PERMISSION_MODULE: Record<PermissionName, string> = {
   agent_template_view: 'agent_templates',
   agent_template_manage: 'agent_templates',
   agent_template_install: 'agent_templates',
+  listing_manage: 'listing',
 }
 
 export const ROLE_LABELS = {

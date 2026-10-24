@@ -47,4 +47,28 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Account: Acme' })).toBeInTheDocument()
     expect(screen.getByText('Organization · Admin')).toBeInTheDocument()
   })
+
+  it('shows Discover in a Personal account', () => {
+    expect(renderSidebar(makeSnapshot('PERSONAL')).getByRole('link', { name: 'Discover' })).toBeInTheDocument()
+  })
+
+  it('shows Public listing to an organization Owner', () => {
+    expect(renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER')).getByRole('link', { name: 'Public listing' })).toBeInTheDocument()
+  })
+
+  it('hides Public listing from a Developer', () => {
+    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'DEVELOPER'))
+    expect(nav.getByRole('link', { name: 'Discover' })).toBeInTheDocument()
+    expect(nav.queryByRole('link', { name: 'Public listing' })).not.toBeInTheDocument()
+  })
+
+  it('shows Listing reviews only to the Super Admin', () => {
+    expect(renderSidebar(makeSnapshot('PERSONAL')).queryByRole('link', { name: 'Listing reviews' })).not.toBeInTheDocument()
+  })
+
+  it('shows Listing reviews to the Super Admin in any account', () => {
+    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER', { platformRole: 'SUPER_ADMIN' }))
+    expect(nav.getByText('Platform')).toBeInTheDocument()
+    expect(nav.getByRole('link', { name: 'Listing reviews' })).toBeInTheDocument()
+  })
 })

@@ -14,6 +14,12 @@ public interface PermissionEvaluator {
   /** The caller's role, permissions and accounts, for the client. */
   com.jizza.engine.api.workspace.AuthorizationSnapshot snapshot(UUID userId, UUID workspaceId);
 
+  /**
+   * Whether the caller is acting as the platform's super admin: the role, in a request whose
+   * session passed two-step sign-in. Platform-wide reviews (public listings) are gated on this.
+   */
+  boolean isSuperAdmin(UUID userId);
+
   /** Throws {@link com.jizza.engine.api.error.PermissionDeniedException} unless allowed. */
   default void require(UUID userId, UUID workspaceId, String permission) {
     if (!isAllowed(userId, workspaceId, permission)) {

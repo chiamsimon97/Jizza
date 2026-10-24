@@ -4,7 +4,8 @@ import { notificationsApi } from '@/api/notifications'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
-  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, type LucideIcon,
+  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck,
+  type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { endLocalSession } from '@/lib/session'
@@ -16,7 +17,11 @@ import { PERMISSIONS } from '@/lib/permissions'
 import type { AuthorizationSnapshot } from '@/types'
 import { AccountSwitcher } from './AccountSwitcher'
 
-interface NavItem { to: string; icon: LucideIcon; label: string; permission?: string }
+interface NavItem {
+  to: string; icon: LucideIcon; label: string; permission?: string
+  /** Shown only to the platform's Super Admin. */
+  superAdmin?: boolean
+}
 interface NavSection { title: string; items: NavItem[] }
 
 /** The Individual account's sections. Connectors appear only with `connector_view`. */
@@ -26,6 +31,7 @@ const personalSections: NavSection[] = [
     items: [
       { to: '/chat',          icon: MessageSquare, label: 'Chat' },
       { to: '/notifications', icon: Bell,          label: 'Notifications' },
+      { to: '/discover',      icon: Compass,       label: 'Discover' },
     ],
   },
   {
@@ -58,6 +64,7 @@ const organizationSections: NavSection[] = [
     title: 'Organization',
     items: [
       { to: '/members',    icon: Users, label: 'Members',    permission: PERMISSIONS.MEMBERS_VIEW },
+      { to: '/organization/listing', icon: Globe, label: 'Public listing', permission: PERMISSIONS.LISTING_MANAGE },
       { to: '/connectors', icon: Plug,  label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
       { to: '/organization/guardrails', icon: Shield, label: 'Guardrails', permission: PERMISSIONS.GUARDRAILS_VIEW },
       { to: '/organization/agent-templates', icon: Bot, label: 'Agent templates', permission: PERMISSIONS.AGENT_TEMPLATE_MANAGE },
@@ -67,17 +74,30 @@ const organizationSections: NavSection[] = [
     title: 'Account',
     items: [
       { to: '/notifications',     icon: Bell,        label: 'Notifications' },
+      { to: '/discover',          icon: Compass,     label: 'Discover' },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },
 ]
 
+/** Platform-wide work, whichever account is active. */
+const platformSection: NavSection = {
+  title: 'Platform',
+  items: [
+    { to: '/admin/listings', icon: ClipboardCheck, label: 'Listing reviews', superAdmin: true },
+  ],
+}
+
 /** The sidebar's sections for the active account, with items the role can't open left out. */
 export function sectionsFor(snapshot: AuthorizationSnapshot): NavSection[] {
   const granted = new Set(snapshot.permissions)
+  const superAdmin = snapshot.platformRole === 'SUPER_ADMIN'
   const base = snapshot.activeWorkspace.type === 'ORGANIZATION' ? organizationSections : personalSections
-  return base
-    .map(section => ({ ...section, items: section.items.filter(i => !i.permission || granted.has(i.permission)) }))
+  return [...base, platformSection]
+    .map(section => ({
+      ...section,
+      items: section.items.filter(i => (!i.permission || granted.has(i.permission)) && (!i.superAdmin || superAdmin)),
+    }))
     .filter(section => section.items.length > 0)
 }
 
