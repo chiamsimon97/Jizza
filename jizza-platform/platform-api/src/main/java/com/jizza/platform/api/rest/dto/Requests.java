@@ -109,6 +109,9 @@ public final class Requests {
   public record RunWorkflow(Integer version, JsonNode input) {}
 
   /** A formula to try against sample run data ({@code input}, {@code nodes}, {@code vars}). */
+  /** A Script step's settings ({@code inputs}, {@code script}, {@code outputs}) to try against sample run data. */
+  public record PreviewScript(@NotNull JsonNode step, JsonNode data) {}
+
   public record PreviewFormula(@NotBlank @Size(max = 10_000) String formula, Boolean template, JsonNode data) {}
 
   public record ResumeRun(@Size(max = MAX_MESSAGE) String instruction, Boolean approved) {}

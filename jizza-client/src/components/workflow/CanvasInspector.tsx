@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
@@ -15,6 +15,8 @@ import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type Modu
 import type { ValueType } from './formula/functions'
 import { schemaFields } from '@/components/connectors/ResultView'
 import { MappedField, type MappingContext } from './MappedField'
+import { ScriptEditor } from './formula/ScriptEditor'
+import { formulaApi, type FormulaPreview } from '@/api/formula'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { registerStepTarget, useContextStore, useJizzaContext } from '@/jizza/contextStore'
 import { stepContext } from '@/jizza/builderContext'
@@ -313,6 +315,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         </>}
 
         {node.type === 'TRIGGER' && <ContractFields kind="inputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'SCRIPT' && <ScriptFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
         {node.type === 'END' && <ContractFields kind="outputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} mapping={mapping} />}
@@ -886,6 +889,93 @@ function ContractFields({ kind, node, setConfig, isMissing, mapping }: {
       </button>
     </Section>
   )
+}
+
+/**
+ * A Script step: inputs mapped from earlier steps, a few lines of Jizza script over them, and the
+ * outputs it returns, which later steps map like any other step's fields. Test runs it in the
+ * engine's sandbox over the last run's data.
+ */
+function ScriptFields({ node, setConfig, isMissing, mapping }: {
+  node: CanvasNode; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const inputs = fieldsOf(node.config, 'inputs')
+  const outputs = fieldsOf(node.config, 'outputs')
+  const script = typeof node.config.script === 'string' ? node.config.script : ''
+  const [result, setResult] = useState<FormulaPreview | null>(null)
+  const [testing, setTesting] = useState(false)
+  useEffect(() => setResult(null), [node.id])
+  const save = (key: 'inputs' | 'outputs', next: ModuleField[], why: string) => setConfig({ [key]: next }, why)
+  const edit = (key: 'inputs' | 'outputs', rows: ModuleField[], i: number, patch: Partial<ModuleField>) =>
+    save(key, rows.map((r, j) => (j === i ? { ...r, ...patch } : r)), `${key}:${i}`)
+  const test = async () => {
+    setTesting(true)
+    try {
+      setResult(await formulaApi.previewScript({ inputs, script, outputs }, mapping.sample ?? { input: {}, nodes: {} }))
+    } catch (e) {
+      setResult({ value: null, type: null, error: e instanceof Error ? e.message : 'The test could not run.' })
+    } finally {
+      setTesting(false)
+    }
+  }
+  const row = (key: 'inputs' | 'outputs', rows: ModuleField[], r: ModuleField, i: number) => {
+    const what = key === 'inputs' ? 'input' : 'output'
+    return (
+      <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+        <div className="flex items-center gap-1.5">
+          <input aria-label={`Name of script ${what} ${i + 1}`} placeholder="name"
+            className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs ${isMissing(`${key}.${i}.name`) ? '!border-red-400' : ''}`}
+            value={r.name} onChange={e => edit(key, rows, i, { name: e.target.value.replace(/\s+/g, '_') })} />
+          <select aria-label={`Type of script ${what} ${i + 1}`} className={`${NARROW_FIELD} w-32 shrink-0`} value={r.type}
+            onChange={e => edit(key, rows, i, { type: e.target.value as ValueType })}>
+            {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <button type="button" onClick={() => save(key, rows.filter((_, j) => j !== i), `remove:${key}`)} aria-label={`Remove script ${what} ${i + 1}`}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+        </div>
+        {key === 'inputs' && (
+          <MappedField aria-label={`Value of script input ${i + 1}`} placeholder="Map data from earlier steps" mode="template" context={mapping} mono
+            invalid={isMissing(`inputs.${i}.value`)} value={r.value ?? ''} onChange={v => edit(key, rows, i, { value: v })} />
+        )}
+      </div>
+    )
+  }
+  const add = (key: 'inputs' | 'outputs', rows: ModuleField[]) => (
+    <button type="button" onClick={() => save(key, [...rows, { name: '', type: key === 'inputs' ? 'text' : 'any', ...(key === 'inputs' ? { value: '' } : {}) }], `add:${key}`)}
+      className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300">
+      <Plus className="h-3.5 w-3.5" /> {key === 'inputs' ? 'Add an input' : 'Add an output'}
+    </button>
+  )
+  return <>
+    <Section title="Inputs">
+      <p className="text-[11px] text-gray-500">Values from earlier steps the script works on. The script reads each one by its name.</p>
+      {inputs.map((r, i) => row('inputs', inputs, r, i))}
+      {add('inputs', inputs)}
+    </Section>
+    <Section title="Script">
+      <Labelled group label="Script" required missing={isMissing('script')}
+        hint="var, if/else and for (var item : list) { } with every formula function. End with return {'name': value} giving the outputs below. Ctrl+Space suggests, Ctrl+/ comments a line.">
+        <ScriptEditor aria-label="Script" value={script} inputs={inputs.filter(f => f.name).map(f => ({ name: f.name, type: f.type }))}
+          invalid={isMissing('script')} onChange={v => setConfig({ script: v }, 'script')} />
+      </Labelled>
+      <div className="flex min-w-0 items-start gap-2">
+        <Button type="button" size="sm" variant="secondary" onClick={test} disabled={testing || !script.trim()}>
+          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Test
+        </Button>
+        <p className="min-w-0 pt-1 text-[11px] text-gray-500">{mapping.sample ? 'Runs the script with the last run\'s data.' : 'No run yet, so inputs mapped from earlier steps are empty.'}</p>
+      </div>
+      {result && (
+        <div role="status" className={`rounded-lg border p-2 text-[11px] ${result.error ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50'}`}>
+          {result.error ?? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-gray-700 dark:text-gray-200">{JSON.stringify(result.value, null, 2)}</pre>}
+        </div>
+      )}
+    </Section>
+    <Section title="Outputs">
+      <p className="text-[11px] text-gray-500">The keys of the map the script returns. Later steps map each one from this step.</p>
+      {outputs.map((r, i) => row('outputs', outputs, r, i))}
+      {add('outputs', outputs)}
+    </Section>
+  </>
 }
 
 /** Edits a JSON value as text, keeping the text while it doesn't parse. */

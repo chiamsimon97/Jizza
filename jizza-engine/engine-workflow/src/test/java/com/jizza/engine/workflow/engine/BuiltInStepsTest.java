@@ -419,4 +419,20 @@ class BuiltInStepsTest {
     assertThat(harness.emails).singleElement()
         .satisfies(mail -> assertThat(mail).containsExactly("owner@jizza.local", "Order 7", "Total 42"));
   }
+
+  @Test
+  void aScriptStepGivesItsOutputsToLaterSteps() {
+    WorkflowGraph graph = line(
+        node("calc", NodeType.SCRIPT, "{\"inputs\":[{\"name\":\"amounts\",\"type\":\"list\",\"value\":\"{{ input.amounts }}\"}],"
+            + "\"script\":\"var total = 0;\\nfor (var a : amounts) { total = total + a; }\\nreturn {'total': total};\","
+            + "\"outputs\":[{\"name\":\"total\",\"type\":\"number\"}]}"),
+        transform("after", "nodes.calc.total * 2"));
+    EngineHarness harness = new EngineHarness(graph);
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().set("amounts", Json.read("[1, 2, 3.5]")), "manual");
+    assertThat(run.status()).as(String.valueOf(harness.run(run.id()).getError()))
+        .isEqualTo(RunStatus.DONE);
+    assertThat(harness.step(run.id(), "calc").orElseThrow().getOutput().path("total").asDouble()).isEqualTo(6.5);
+    assertThat(harness.step(run.id(), "after").orElseThrow().getOutput().asDouble()).isEqualTo(13);
+  }
 }

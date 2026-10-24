@@ -71,8 +71,13 @@ export function isModule(graph: unknown): boolean {
   return moduleInputs(graph).length > 0 || moduleOutputs(graph).length > 0
 }
 
-/** Problems with a step's declared fields, as [field key, message]. */
-export function contractIssues(config: Record<string, unknown>, key: 'inputs' | 'outputs', name: string): Array<[string, string]> {
+/**
+ * Problems with a step's declared fields, as [field key, message]. {@code needsValue} says whether
+ * each field must be mapped to a value: an end step's outputs and a script's inputs must, a start
+ * step's inputs and a script's outputs (which the script returns) need not.
+ */
+export function contractIssues(config: Record<string, unknown>, key: 'inputs' | 'outputs', name: string,
+  needsValue = key === 'outputs'): Array<[string, string]> {
   const out: Array<[string, string]> = []
   const fields = fieldsOf(config, key)
   const what = key === 'inputs' ? 'input' : 'output'
@@ -82,7 +87,7 @@ export function contractIssues(config: Record<string, unknown>, key: 'inputs' | 
     if (!FIELD_NAME.test(f.name)) out.push([`${key}.${i}.name`, `${name} needs a name for ${what} ${i + 1} (letters, digits and _, starting with a letter).`])
     else if (seen.has(f.name)) out.push([`${key}.${i}.name`, `${name} has two ${key} named "${f.name}".`])
     seen.add(f.name)
-    if (key === 'outputs' && !f.value?.trim()) out.push([`${key}.${i}.value`, `${name} needs a value for ${f.name ? `"${f.name}"` : `output ${i + 1}`}.`])
+    if (needsValue && !f.value?.trim()) out.push([`${key}.${i}.value`, `${name} needs a value for ${f.name ? `"${f.name}"` : `${what} ${i + 1}`}.`])
   })
   return out
 }

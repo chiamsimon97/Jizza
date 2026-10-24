@@ -11,7 +11,7 @@ import { contractIssues } from './moduleContract'
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
   | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
   | 'APPROVAL' | 'HTTP_REQUEST' | 'FILTER' | 'SWITCH' | 'SET_VARIABLE' | 'STORAGE' | 'NOTIFY'
-  | 'MCP_TOOL'
+  | 'MCP_TOOL' | 'SCRIPT'
 
 /**
  * Which exit of a node an edge leaves from: "true"/"false" on a branch, a lane letter on a
@@ -74,6 +74,7 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   HTTP_REQUEST: { label: 'Send webhook', desc: 'Calls any URL or API.', tone: 'bg-cyan-600 text-white' },
   FILTER: { label: 'Filter', desc: 'Carries on only when a condition is true.', tone: 'bg-lime-600 text-white' },
   SWITCH: { label: 'Paths', desc: 'Picks one of several paths by condition.', tone: 'bg-green-700 text-white' },
+  SCRIPT: { label: 'Script', desc: 'Runs a few lines of script on inputs you map; later steps map its outputs.', tone: 'bg-violet-800 text-white' },
   SET_VARIABLE: { label: 'Set variable', desc: 'Keeps values for later steps.', tone: 'bg-purple-600 text-white' },
   STORAGE: { label: 'Storage', desc: 'Remembers values between runs.', tone: 'bg-slate-600 text-white' },
   NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
@@ -84,7 +85,7 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
 export const PALETTE_GROUPS: Array<{ title: string; types: NodeType[] }> = [
   { title: 'Agents and people', types: ['AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY'] },
   { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST'] },
-  { title: 'Data', types: ['TRANSFORM', 'SET_VARIABLE', 'STORAGE'] },
+  { title: 'Data', types: ['TRANSFORM', 'SCRIPT', 'SET_VARIABLE', 'STORAGE'] },
   { title: 'Conditions and paths', types: ['BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN'] },
   { title: 'Flow control', types: ['WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END'] },
 ]
@@ -112,6 +113,7 @@ export function newId(type: NodeType): string {
 export function newNode(type: NodeType, x: number, y: number): CanvasNode {
   const config: Record<string, unknown> = type === 'SWITCH' ? { cases: [{ id: 'case1', label: 'Path 1', condition: '' }] }
     : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] }
+    : type === 'SCRIPT' ? { inputs: [], script: '', outputs: [] }
     : type === 'WAIT' ? { duration: 'PT1H' }
     : type === 'HTTP_REQUEST' ? { method: 'POST', bodyType: 'json' } : {}
   return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config, x, y }
@@ -474,6 +476,11 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
   }
   if (n.type === 'TRIGGER') contractIssues(n.config, 'inputs', name).forEach(([f, m]) => add(f, m))
   if (n.type === 'END') contractIssues(n.config, 'outputs', name).forEach(([f, m]) => add(f, m))
+  if (n.type === 'SCRIPT') {
+    if (!text(n.config.script)) add('script', `${name} needs a script.`)
+    contractIssues(n.config, 'inputs', name, true).forEach(([f, m]) => add(f, m))
+    contractIssues(n.config, 'outputs', name, false).forEach(([f, m]) => add(f, m))
+  }
   if (n.type === 'SWITCH') {
     const cases = casesOf(n.config)
     if (cases.length === 0) add('cases', `${name} needs at least one path.`)

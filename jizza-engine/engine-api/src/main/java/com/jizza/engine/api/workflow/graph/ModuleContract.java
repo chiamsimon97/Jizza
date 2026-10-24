@@ -73,25 +73,33 @@ public final class ModuleContract {
   /** Checks the declared inputs and outputs: names, types, no repeats. */
   public static void validate(WorkflowGraph graph) {
     for (WorkflowNode node : graph.nodes()) {
-      String key = node.type() == NodeType.TRIGGER ? "inputs" : node.type() == NodeType.END ? "outputs" : null;
-      if (key == null) continue;
-      JsonNode raw = node.config() == null ? null : node.config().get(key);
-      if (raw == null || raw.isNull()) continue;
-      if (!raw.isArray()) throw new ValidationException("Step '" + node.id() + "' has " + key + " that are not a list");
-      if (raw.size() > MAX_FIELDS) {
-        throw new ValidationException("Step '" + node.id() + "' has more than " + MAX_FIELDS + " " + key);
+      List<String> keys = switch (node.type()) {
+        case TRIGGER -> List.of("inputs");
+        case END -> List.of("outputs");
+        case SCRIPT -> List.of("inputs", "outputs");
+        default -> List.of();
+      };
+      for (String key : keys) validateFields(node, key);
+    }
+  }
+
+  private static void validateFields(WorkflowNode node, String key) {
+    JsonNode raw = node.config() == null ? null : node.config().get(key);
+    if (raw == null || raw.isNull()) return;
+    if (!raw.isArray()) throw new ValidationException("Step '" + node.id() + "' has " + key + " that are not a list");
+    if (raw.size() > MAX_FIELDS) {
+      throw new ValidationException("Step '" + node.id() + "' has more than " + MAX_FIELDS + " " + key);
+    }
+    Set<String> seen = new HashSet<>();
+    String what = key.equals("inputs") ? "input" : "output";
+    for (Field f : fields(node.config(), key)) {
+      if (!NAME.matcher(f.name()).matches()) {
+        throw new ValidationException("The " + what + " named '" + f.name() + "' needs a name of letters, "
+            + "digits and _, starting with a letter");
       }
-      Set<String> seen = new HashSet<>();
-      String what = key.equals("inputs") ? "input" : "output";
-      for (Field f : fields(node.config(), key)) {
-        if (!NAME.matcher(f.name()).matches()) {
-          throw new ValidationException("The " + what + " named '" + f.name() + "' needs a name of letters, "
-              + "digits and _, starting with a letter");
-        }
-        if (!seen.add(f.name())) throw new ValidationException("There are two " + what + "s named '" + f.name() + "'");
-        if (key.equals("outputs") && (f.value() == null || f.value().isBlank())) {
-          throw new ValidationException("The output '" + f.name() + "' needs a value");
-        }
+      if (!seen.add(f.name())) throw new ValidationException("There are two " + what + "s named '" + f.name() + "'");
+      if (node.type() == NodeType.END && (f.value() == null || f.value().isBlank())) {
+        throw new ValidationException("The output '" + f.name() + "' needs a value");
       }
     }
   }
@@ -163,7 +171,7 @@ public final class ModuleContract {
   }
 
   /** The value as the type, reading text where it can; null when it cannot be that type. */
-  static JsonNode coerce(JsonNode value, String type) {
+  public static JsonNode coerce(JsonNode value, String type) {
     String text = value.isTextual() ? value.asText().strip() : null;
     switch (type) {
       case "number":
@@ -203,7 +211,7 @@ public final class ModuleContract {
     }
   }
 
-  private static String typeName(String type) {
+  public static String typeName(String type) {
     return switch (type) {
       case "number" -> "a number";
       case "boolean" -> "true or false";

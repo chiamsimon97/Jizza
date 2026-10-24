@@ -160,7 +160,16 @@ public final class FormulaRewriter {
     while (i < s.length()) {
       char c = s.charAt(i);
       int start = i;
-      if (Character.isWhitespace(c)) {
+      if ((c == '/' && i + 1 < s.length() && s.charAt(i + 1) == '/')
+          || (c == '#' && i + 1 < s.length() && s.charAt(i + 1) == '#')) {
+        // a script's line comment, kept as it is and never rewritten
+        while (i < s.length() && s.charAt(i) != '\n') i++;
+        out.add(new Token(Kind.SPACE, s.substring(start, i)));
+      } else if (c == '/' && i + 1 < s.length() && s.charAt(i + 1) == '*') {
+        int end = s.indexOf("*/", i + 2);
+        i = end < 0 ? s.length() : end + 2;
+        out.add(new Token(Kind.SPACE, s.substring(start, i)));
+      } else if (Character.isWhitespace(c)) {
         while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
         out.add(new Token(Kind.SPACE, s.substring(start, i)));
       } else if (c == '\'' || c == '"') {

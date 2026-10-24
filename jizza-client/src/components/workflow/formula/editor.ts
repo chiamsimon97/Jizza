@@ -319,7 +319,7 @@ const openPlaceholder = EditorView.inputHandler.of((view, from, to, text) => {
 /** Colours come from the app theme's variables, so the editor and its popups follow light, dark and sunset. */
 const SANS = "'Inter', ui-sans-serif, system-ui, sans-serif"
 const MONO = "'JetBrains Mono', ui-monospace, monospace"
-const theme = EditorView.theme({
+export const formulaTheme = EditorView.theme({
   '&': { backgroundColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.5rem', overflow: 'visible' },
@@ -382,7 +382,7 @@ export function formulaExtensions(o: FormulaOptions): Extension[] {
   return [
     history(),
     EditorView.lineWrapping,
-    theme,
+    formulaTheme,
     tooltips({ parent: document.body }),
     chipPlugin(o),
     signatureHint(o.template),

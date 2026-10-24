@@ -23,14 +23,18 @@ public class SandboxFormulaPreview implements FormulaPreview {
   }
 
   @Override
-  public Result preview(String formula, boolean template, JsonNode data) {
-    Map<String, Object> variables = new HashMap<>();
-    for (String root : ROOTS) {
-      JsonNode value = data == null ? null : data.get(root);
-      variables.put(root, value == null || value.isNull()
-          ? (root.equals("input") ? null : new HashMap<>())
-          : Json.mapper().convertValue(value, Object.class));
+  public Result previewScript(JsonNode step, JsonNode data) {
+    try {
+      JsonNode value = ScriptStep.run(sandbox, step, variables(data));
+      return new Result(value, typeOf(value), null);
+    } catch (SandboxViolationException e) {
+      return new Result(null, null, e.getMessage());
     }
+  }
+
+  @Override
+  public Result preview(String formula, boolean template, JsonNode data) {
+    Map<String, Object> variables = variables(data);
     try {
       JsonNode value = template
           ? Templates.renderValue(formula, sandbox, variables)
@@ -39,6 +43,17 @@ public class SandboxFormulaPreview implements FormulaPreview {
     } catch (SandboxViolationException e) {
       return new Result(null, null, e.getMessage());
     }
+  }
+
+  private static Map<String, Object> variables(JsonNode data) {
+    Map<String, Object> variables = new HashMap<>();
+    for (String root : ROOTS) {
+      JsonNode value = data == null ? null : data.get(root);
+      variables.put(root, value == null || value.isNull()
+          ? (root.equals("input") ? null : new HashMap<>())
+          : Json.mapper().convertValue(value, Object.class));
+    }
+    return variables;
   }
 
   static String typeOf(JsonNode value) {

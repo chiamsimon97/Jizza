@@ -22,6 +22,7 @@ public class WorkflowValidator {
     for (WorkflowNode node : graph.nodes()) {
       switch (node.type()) {
         case TRANSFORM -> requireConfig(node, "expression");
+        case SCRIPT -> requireConfig(node, "script");
         case BRANCH -> {
           requireConfig(node, "condition");
           List<WorkflowEdge> outgoing = graph.outgoing(node.id());
