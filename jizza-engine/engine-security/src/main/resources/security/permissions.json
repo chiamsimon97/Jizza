@@ -118,6 +118,19 @@
   },
   // ========== GUARDRAILS PERMISSIONS END ==========
 
+  // ========== LISTING PERMISSIONS BEGIN ==========
+  {
+    "name": "listing_manage",
+    "label": "Manage the public listing",
+    "description": "Edit the organization's public profile, send it for review, and withdraw or unlist it.",
+    "category": "read_and_write",
+    "module": "listing",
+    "dependencies": [],
+    "permittedAccountTypes": ["organization"],
+    "permittedRoles": ["owner", "admin"]
+  },
+  // ========== LISTING PERMISSIONS END ==========
+
   // ========== AGENTS PERMISSIONS BEGIN ==========
   {
     "name": "agent_view",

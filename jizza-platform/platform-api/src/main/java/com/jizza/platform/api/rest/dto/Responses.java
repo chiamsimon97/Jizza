@@ -56,4 +56,37 @@ public final class Responses {
   /** A permission's metadata from permissions.json, without who it is granted to. */
   public record Permission(String name, String label, String description, String category,
                            String module, List<String> dependencies) {}
+
+  // ── Public organizations ──────────────────────────────────────────────────
+
+  public record ListingProfile(String displayName, String description, String category,
+                               String logoUrl, String website) {}
+
+  public record ListingReview(UUID id, com.jizza.engine.api.enums.ListingAction action,
+                              String actorEmail, String note, java.time.Instant createdAt) {}
+
+  /**
+   * An organization's listing as its Owner, Admin or a Super Admin sees it. {@code draft} is the
+   * profile being edited; {@code approved} the version on Discover, or null.
+   */
+  public record Listing(UUID workspaceId, String workspaceName,
+                        com.jizza.engine.api.enums.ListingStatus status, ListingProfile draft,
+                        ListingProfile approved, boolean visible, boolean changesSinceApproval,
+                        java.time.Instant submittedAt, java.time.Instant listedAt,
+                        List<ListingReview> history, Long submissionsLeftToday) {}
+
+  public record ListingCategories(List<String> categories) {}
+
+  /** One organization on Discover: its approved profile and nothing else. */
+  public record DirectoryEntry(UUID id, ListingProfile profile, java.time.Instant listedAt) {}
+
+  public record DirectoryPage(List<DirectoryEntry> items, long total, int page, int pageSize) {}
+
+  /** A profile page, with where the caller stands: a member, waiting on a request, or neither. */
+  public record DirectoryProfile(UUID id, ListingProfile profile, java.time.Instant listedAt,
+                                 boolean member, JoinRequest pendingRequest) {}
+
+  public record JoinRequest(UUID id, UUID workspaceId, String workspaceName, String email,
+                            String message, com.jizza.engine.api.enums.JoinRequestStatus status,
+                            java.time.Instant createdAt, java.time.Instant decidedAt) {}
 }

@@ -191,4 +191,18 @@ public final class Requests {
   public record MoveNote(@NotNull UUID toAgentId) {}
 
   public record PromoteNote(com.jizza.engine.api.enums.MemoryCategory category, boolean removeNote) {}
+
+  // ── Public organizations ──────────────────────────────────────────────────
+
+  /** The organization's public profile. Fully checked in {@code PublicListingUseCase}. */
+  public record ListingProfile(@NotBlank @Size(max = 100) String displayName,
+                               @Size(max = 500) String description,
+                               @Size(max = 40) String category,
+                               @Size(max = 500) String logoUrl,
+                               @Size(max = 500) String website) {}
+
+  /** A reviewer's reason (required for reject and suspend) or note. */
+  public record ReviewNote(@Size(max = 1000) String note) {}
+
+  public record AskToJoin(@Size(max = 500) String message) {}
 }
