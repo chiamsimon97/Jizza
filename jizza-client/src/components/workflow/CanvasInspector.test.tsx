@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { EditorView } from '@codemirror/view'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
+import type { ScriptFunction } from '@/api/functions'
 
 /** Types into a field where earlier steps' data shows as chips (a CodeMirror editor). */
 function type(box: HTMLElement, text: string) {
@@ -22,28 +23,32 @@ function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(
 }
 
 describe('CanvasInspector', () => {
-  it('sets up a Script step: a mapped input, a multi-line script and a declared output', () => {
+  it('runs a saved function from a Script step: pick it, map its inputs, see the result keys', () => {
+    const fn: ScriptFunction = {
+      id: 'fn-1', name: 'orderTotal', description: 'Adds up the lines', script: 'return {}', returnType: 'map',
+      inputs: [{ name: 'lines', type: 'list', required: true }, { name: 'rate', type: 'number', default: 0.1 }],
+      returnFields: [{ path: 'total', type: 'number' }, { path: 'customer.email', type: 'text' }],
+      usedBy: [], createdAt: '', updatedAt: '',
+    }
     const { graph, id } = addAfter(emptyGraph(), 'start', null, 'SCRIPT')
-    const { onSave } = open(graph, id)
+    const onSave = vi.fn()
+    render(
+      <MemoryRouter>
+        <CanvasInspector node={graph.nodes.find(n => n.id === id)!} graph={graph} issues={[]} readOnly={false} functions={[fn]}
+          onDirty={() => {}} onSave={onSave} onClose={() => {}} />
+      </MemoryRouter>,
+    )
     const save = screen.getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add an input' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name of script input 1' }), { target: { value: 'lines' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Type of script input 1' }), { target: { value: 'list' } })
-    type(screen.getByRole('textbox', { name: 'Value of script input 1' }), '{{ input.lines }}')
-    type(screen.getByRole('textbox', { name: 'Script' }), "var total = 0;\nfor (var line : lines) {\n  total = total + line;\n}\nreturn {'total': total};")
-    fireEvent.click(screen.getByRole('button', { name: 'Add an output' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name of script output 1' }), { target: { value: 'total' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Type of script output 1' }), { target: { value: 'number' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'fn-1' } })
+    expect(screen.getByText('customer.email')).toBeInTheDocument()
+    // lines is required and has no default, so it must be mapped; rate has a default.
+    expect(save).toBeDisabled()
+    type(screen.getByRole('textbox', { name: 'Input lines' }), '{{ input.lines }}')
     expect(save).toBeEnabled()
     fireEvent.click(save)
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
-    expect(saved.config).toEqual({
-      inputs: [{ name: 'lines', type: 'list', value: '{{ input.lines }}' }],
-      script: "var total = 0;\nfor (var line : lines) {\n  total = total + line;\n}\nreturn {'total': total};",
-      outputs: [{ name: 'total', type: 'number' }],
-    })
+    expect(saved.config).toEqual({ functionId: 'fn-1', functionName: 'orderTotal', inputs: { lines: '{{ input.lines }}' } })
   })
 
   it('maps a module\'s inputs one field each and waits for the required ones', () => {

@@ -199,8 +199,10 @@ function describe(node: CanvasNode, agent?: AgentDto): string {
     case 'MCP_TOOL': return c.tool ? `${c.serverName ? `${String(c.serverName)} · ` : ''}${String(c.toolLabel ?? c.tool)}` : c.serverId ? 'Choose a tool' : 'Choose an MCP server and tool'
     case 'TRANSFORM': return String(c.expression ?? 'Set an expression')
     case 'SCRIPT': {
+      if (c.functionName) return `Runs fn.${String(c.functionName)}`
+      if (typeof c.script !== 'string') return 'Choose a function'
       const outs = fieldsOf(c, 'outputs').map(f => f.name).filter(Boolean)
-      return !String(c.script ?? '').trim() ? 'Write a script' : outs.length ? `Gives ${outs.join(', ')}` : 'Runs a script'
+      return !c.script.trim() ? 'Write a script' : outs.length ? `Gives ${outs.join(', ')}` : 'Runs a script'
     }
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
     case 'PARALLEL': return 'Every connected path runs'

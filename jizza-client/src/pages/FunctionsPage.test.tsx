@@ -1,0 +1,57 @@
+import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { Route, Routes } from 'react-router-dom'
+import { EditorView } from '@codemirror/view'
+import { renderWithSnapshot, makeSnapshot } from '@/test/utils'
+import { functionsApi, type ScriptFunction } from '@/api/functions'
+import { FunctionsPage } from './FunctionsPage'
+
+const page = (route: string) => renderWithSnapshot(
+  <Routes><Route path="/functions/:functionId?" element={<FunctionsPage />} /></Routes>, makeSnapshot(), route)
+
+const saved: ScriptFunction = {
+  id: 'fn-1', name: 'withTax', description: null, inputs: [{ name: 'amount', type: 'number' }], script: 'amount * 1.1',
+  returnType: 'number', returnFields: [], usedBy: ['Invoices'], createdAt: '', updatedAt: '1',
+}
+
+describe('Functions page', () => {
+  it('makes a function: inputs, a script that calls another, a test, and map keys taken from the test', async () => {
+    vi.spyOn(functionsApi, 'list').mockResolvedValue([saved])
+    const test = vi.spyOn(functionsApi, 'test').mockResolvedValue({ value: { total: 11, customer: { email: 'a@b.c' } }, type: 'map', error: null })
+    const create = vi.spyOn(functionsApi, 'create').mockResolvedValue({ ...saved, id: 'fn-2', name: 'orderTotal' })
+    page('/functions/new')
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Link name' }), { target: { value: 'orderTotal' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add an input' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name of input 1' }), { target: { value: 'lines' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Type of input 1' }), { target: { value: 'list' } })
+    const view = EditorView.findFromDOM(screen.getByRole('textbox', { name: 'Script' }))!
+    const script = "var t = 0;\nfor (var l : lines) { t = t + l.price; }\nreturn {'total': fn.withTax(t), 'customer': {'email': 'a@b.c'}};"
+    act(() => { view.dispatch({ changes: { from: 0, insert: script }, userEvent: 'input.type' }) })
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Test value for lines' }), { target: { value: '[{"price": 10}]' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Run test' }))
+    await waitFor(() => expect(test).toHaveBeenCalled())
+    expect(test.mock.calls[0][1]).toEqual({ lines: [{ price: 10 }] })
+    fireEvent.click(await screen.findByRole('button', { name: 'Use these keys' }))
+    expect(screen.getByRole('combobox', { name: 'Return type' })).toHaveValue('map')
+    expect(screen.getByRole('textbox', { name: 'Key 3' })).toHaveValue('customer.email')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create function' }))
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(create.mock.calls[0][0]).toMatchObject({
+      name: 'orderTotal', inputs: [{ name: 'lines', type: 'list' }], script, returnType: 'map',
+      returnFields: [{ path: 'total', type: 'number' }, { path: 'customer', type: 'map' }, { path: 'customer.email', type: 'text' }],
+    })
+  })
+
+  it('says which workflows use a function before deleting it', async () => {
+    vi.spyOn(functionsApi, 'list').mockResolvedValue([saved])
+    const remove = vi.spyOn(functionsApi, 'remove').mockResolvedValue(undefined)
+    page('/functions/fn-1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expect(screen.getByText(/"Invoices" run it/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('fn-1'))
+  })
+})

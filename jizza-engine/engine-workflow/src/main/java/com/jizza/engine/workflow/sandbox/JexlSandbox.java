@@ -11,7 +11,10 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import com.jizza.engine.api.workflow.functions.ScriptFunctionDto;
+import java.util.ArrayDeque;
 import org.apache.commons.jexl3.JexlBuilder;
+import org.apache.commons.jexl3.JexlContext;
 import org.apache.commons.jexl3.JexlEngine;
 import org.apache.commons.jexl3.JexlException;
 import org.apache.commons.jexl3.JexlExpression;
@@ -122,6 +125,7 @@ public class JexlSandbox {
         .strict(true)
         .silent(false)
         .safe(false)
+        .cache(512)                   // parsed formulas and scripts, by their text
         .cancellable(true);           // the timeout's interrupt stops evaluation
   }
 
@@ -132,6 +136,44 @@ public class JexlSandbox {
    * @throws SandboxViolationException on a syntax error, a blocked construct, or a timeout
    */
   public JsonNode runScript(String script, Map<String, Object> variables) {
+    return runScript(script, variables, FunctionLookup.NONE);
+  }
+
+  /** {@link #runScript(String, Map)}, where the script may call the functions {@code functions} finds. */
+  public JsonNode runScript(String script, Map<String, Object> variables, FunctionLookup functions) {
+    org.apache.commons.jexl3.JexlScript compiled = compileScript(script);
+    FunctionCalls calls = new FunctionCalls(this, functions, new ArrayDeque<>());
+    return run(context -> compiled.execute(context), variables, calls, "script");
+  }
+
+  /**
+   * Runs a saved (or drafted) function with {@code args}, its inputs by name: defaults filled in,
+   * required ones checked, each read as its type, and the result read as the return type. The
+   * functions it calls are found with {@code functions}.
+   */
+  public JsonNode runFunction(ScriptFunctionDto function, Map<String, JsonNode> args, FunctionLookup functions) {
+    org.apache.commons.jexl3.JexlScript compiled = compileScript(function.script());
+    Map<String, Object> variables = ScriptFunctionRunner.arguments(function, args);
+    ArrayDeque<String> stack = new ArrayDeque<>();
+    stack.push(function.name() == null ? "" : function.name());
+    FunctionCalls calls = new FunctionCalls(this, functions, stack);
+    return ScriptFunctionRunner.result(function, run(context -> compiled.execute(context), variables, calls, "function"));
+  }
+
+  /** A function called from a running script: on the caller's thread and within its time limit. */
+  JsonNode invokeInline(ScriptFunctionDto function, Map<String, JsonNode> args, FunctionCalls calls) {
+    org.apache.commons.jexl3.JexlScript compiled = compileScript(function.script());
+    ScriptContext context = new ScriptContext(calls);
+    ScriptFunctionRunner.arguments(function, args).forEach(context::set);
+    return ScriptFunctionRunner.result(function, Json.toNode(compiled.execute(context)));
+  }
+
+  /** Throws when {@code script} could not run: empty, too long, a while/do loop, or not valid. */
+  public void check(String script) {
+    compileScript(script);
+  }
+
+  private org.apache.commons.jexl3.JexlScript compileScript(String script) {
     if (script == null || script.isBlank()) throw new SandboxViolationException("The script is empty");
     if (script.length() > MAX_SCRIPT_LENGTH) {
       throw new SandboxViolationException("The script is longer than " + MAX_SCRIPT_LENGTH + " characters");
@@ -147,7 +189,7 @@ public class JexlSandbox {
     } catch (JexlException e) {
       throw new SandboxViolationException("The script is not valid: " + rootMessage(e));
     }
-    return run(context -> compiled.execute(context), variables, "script");
+    return compiled;
   }
 
   /**
@@ -169,12 +211,26 @@ public class JexlSandbox {
       throw new SandboxViolationException("The transform expression is not valid: "
           + rootMessage(e));
     }
-    return run(compiled::evaluate, variables, "transform");
+    return run(compiled::evaluate, variables, null, "transform");
+  }
+
+  /** A script's variables, and the {@code fn} namespace its function calls go through. */
+  private static final class ScriptContext extends MapContext implements JexlContext.NamespaceResolver {
+    private final FunctionCalls calls;
+
+    ScriptContext(FunctionCalls calls) {
+      this.calls = calls;
+    }
+
+    @Override
+    public Object resolveNamespace(String name) {
+      return "fn".equals(name) ? calls : null;
+    }
   }
 
   private JsonNode run(java.util.function.Function<MapContext, Object> body, Map<String, Object> variables,
-                       String what) {
-    MapContext context = new MapContext();
+                       FunctionCalls calls, String what) {
+    MapContext context = calls == null ? new MapContext() : new ScriptContext(calls);
     if (variables != null) variables.forEach(context::set);
 
     Future<Object> future;
@@ -195,6 +251,10 @@ public class JexlSandbox {
       throw new SandboxViolationException("The " + what + " was interrupted");
     } catch (java.util.concurrent.ExecutionException e) {
       Throwable cause = e.getCause();
+      // A called function's own error (a missing input, a wrong return type) reads as it is.
+      for (Throwable c = cause; c != null && c.getCause() != c; c = c.getCause()) {
+        if (c instanceof SandboxViolationException violation) throw violation;
+      }
       if (cause instanceof JexlException.Cancel) {
         throw new SandboxViolationException(
             "The " + what + " took longer than " + TIMEOUT_MILLIS + "ms and was stopped");

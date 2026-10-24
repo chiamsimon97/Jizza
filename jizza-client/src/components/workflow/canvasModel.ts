@@ -74,7 +74,7 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   HTTP_REQUEST: { label: 'Send webhook', desc: 'Calls any URL or API.', tone: 'bg-cyan-600 text-white' },
   FILTER: { label: 'Filter', desc: 'Carries on only when a condition is true.', tone: 'bg-lime-600 text-white' },
   SWITCH: { label: 'Paths', desc: 'Picks one of several paths by condition.', tone: 'bg-green-700 text-white' },
-  SCRIPT: { label: 'Script', desc: 'Runs a few lines of script on inputs you map; later steps map its outputs.', tone: 'bg-violet-800 text-white' },
+  SCRIPT: { label: 'Script', desc: 'Runs one of your functions: map its inputs; later steps map its result.', tone: 'bg-violet-800 text-white' },
   SET_VARIABLE: { label: 'Set variable', desc: 'Keeps values for later steps.', tone: 'bg-purple-600 text-white' },
   STORAGE: { label: 'Storage', desc: 'Remembers values between runs.', tone: 'bg-slate-600 text-white' },
   NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
@@ -113,7 +113,6 @@ export function newId(type: NodeType): string {
 export function newNode(type: NodeType, x: number, y: number): CanvasNode {
   const config: Record<string, unknown> = type === 'SWITCH' ? { cases: [{ id: 'case1', label: 'Path 1', condition: '' }] }
     : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] }
-    : type === 'SCRIPT' ? { inputs: [], script: '', outputs: [] }
     : type === 'WAIT' ? { duration: 'PT1H' }
     : type === 'HTTP_REQUEST' ? { method: 'POST', bodyType: 'json' } : {}
   return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config, x, y }
@@ -444,6 +443,9 @@ export interface Issue { nodeId?: string; message: string }
 /** A setting a step can't run without, left empty or unusable; {@code field} is the config key it is about. */
 export interface FieldIssue { field: string; message: string }
 
+/** A Script step saved before Functions existed holds its own script instead of naming a function. */
+export const isInlineScript = (config: Record<string, unknown>) => !text(config.functionId) && typeof config.script === 'string'
+
 /**
  * What a step's own settings are missing, field by field. These are the mandatory fields: the step
  * settings can't be saved until they are filled in. Connections are checked by {@link issues}.
@@ -476,10 +478,15 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
   }
   if (n.type === 'TRIGGER') contractIssues(n.config, 'inputs', name).forEach(([f, m]) => add(f, m))
   if (n.type === 'END') contractIssues(n.config, 'outputs', name).forEach(([f, m]) => add(f, m))
-  if (n.type === 'SCRIPT') {
-    if (!text(n.config.script)) add('script', `${name} needs a script.`)
-    contractIssues(n.config, 'inputs', name, true).forEach(([f, m]) => add(f, m))
-    contractIssues(n.config, 'outputs', name, false).forEach(([f, m]) => add(f, m))
+  if (n.type === 'SCRIPT' && !text(n.config.functionId)) {
+    if (isInlineScript(n.config)) {
+      // A step saved before Functions existed, with its own script.
+      if (!text(n.config.script)) add('script', `${name} needs a script.`)
+      contractIssues(n.config, 'inputs', name, true).forEach(([f, m]) => add(f, m))
+      contractIssues(n.config, 'outputs', name, false).forEach(([f, m]) => add(f, m))
+    } else {
+      add('functionId', `${name} needs a function to run.`)
+    }
   }
   if (n.type === 'SWITCH') {
     const cases = casesOf(n.config)

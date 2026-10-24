@@ -17,7 +17,8 @@ import java.util.stream.Collectors;
  *   <li>as a plain call, {@code upper(input.name)};</li>
  *   <li>with the namespace, {@code fmt:upper(input.name)}, as older workflows do.</li>
  * </ul>
- * The first two become the third; everything else (references, operators, literals, other JEXL)
+ * The first two become the third. A call to one of the person's own functions, {@code fn.total(lines)},
+ * becomes {@code fn:call('total', lines)} (see {@link FunctionCalls}). Everything else (references, operators, literals, other JEXL)
  * passes through untouched, so any expression that ran before runs the same way now.
  *
  * <p>This works on tokens rather than a full parse: a chained call's receiver is found by walking
@@ -44,6 +45,7 @@ public final class FormulaRewriter {
     if (formula == null || formula.indexOf('(') < 0) return formula;
     List<Token> tokens = tokenize(formula);
     if (tokens == null) return formula;
+    functionCalls(tokens);
     for (int i = 0; i < tokens.size(); i++) {
       Token t = tokens.get(i);
       if (t.kind != Kind.IDENT || !FUNCTIONS.contains(t.text)) continue;
@@ -77,6 +79,29 @@ public final class FormulaRewriter {
     StringBuilder out = new StringBuilder();
     for (Token t : tokens) out.append(t.text);
     return out.toString();
+  }
+
+  /** fn . name ( args  →  fn:call( 'name' , args — in place. */
+  private static void functionCalls(List<Token> tokens) {
+    for (int i = 0; i < tokens.size(); i++) {
+      Token t = tokens.get(i);
+      if (t.kind != Kind.IDENT || !t.text.equals("fn")) continue;
+      int before = prev(tokens, i);
+      if (before >= 0 && tokens.get(before).is(".")) continue;
+      if (before == i - 1 && before > 0 && tokens.get(before).is(":") && tokens.get(before - 1).kind == Kind.IDENT) continue;
+      int dot = next(tokens, i);
+      if (dot < 0 || !tokens.get(dot).is(".")) continue;
+      int name = next(tokens, dot);
+      if (name < 0 || tokens.get(name).kind != Kind.IDENT) continue;
+      int open = next(tokens, name);
+      if (open < 0 || !tokens.get(open).is("(")) continue;
+      boolean noArgs = next(tokens, open) >= 0 && tokens.get(next(tokens, open)).is(")");
+      List<Token> replacement = new ArrayList<>(List.of(new Token(Kind.IDENT, "fn"), new Token(Kind.PUNCT, ":"),
+          new Token(Kind.IDENT, "call"), new Token(Kind.PUNCT, "("), new Token(Kind.STRING, "'" + tokens.get(name).text + "'")));
+      if (!noArgs) replacement.add(new Token(Kind.PUNCT, ", "));
+      tokens.subList(i, open + 1).clear();
+      tokens.addAll(i, replacement);
+    }
   }
 
   /** Where the postfix chain that ends just before the dot at {@code dot} starts, or -1. */

@@ -1,0 +1,75 @@
+package com.jizza.platform.usecase.function;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workflow.FormulaPreview;
+import com.jizza.engine.api.workflow.functions.ScriptFunctionDraft;
+import com.jizza.engine.api.workflow.functions.ScriptFunctionDto;
+import com.jizza.engine.api.workflow.functions.ScriptFunctions;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+
+/**
+ * Functions, the separate module: a person keeps script functions with typed inputs and a return
+ * type, tests them, and runs them from workflows' Script steps or from each other.
+ *
+ * <p>What is decided here: a function is its owner's alone (another person's reads as missing),
+ * and what is worth auditing. What makes a valid function is checked where it is stored.
+ */
+@Service
+public class ScriptFunctionUseCase {
+
+  private final ScriptFunctions functions;
+  private final AuditLog audit;
+
+  public ScriptFunctionUseCase(ScriptFunctions functions, AuditLog audit) {
+    this.functions = functions;
+    this.audit = audit;
+  }
+
+  public List<ScriptFunctionDto> list(UUID userId) {
+    return functions.list(userId);
+  }
+
+  public ScriptFunctionDto get(UUID userId, UUID functionId) {
+    return owned(userId, functionId);
+  }
+
+  public ScriptFunctionDto create(UUID userId, ScriptFunctionDraft draft) {
+    ScriptFunctionDto created = functions.create(userId, draft);
+    audit.record(userId, ActorType.USER, null, "function.created", created.name(),
+        Json.obj().put("functionId", created.id().toString()));
+    return created;
+  }
+
+  public ScriptFunctionDto update(UUID userId, UUID functionId, ScriptFunctionDraft draft) {
+    ScriptFunctionDto before = owned(userId, functionId);
+    ScriptFunctionDto updated = functions.update(functionId, draft);
+    var detail = Json.obj().put("functionId", functionId.toString());
+    if (!before.name().equals(updated.name())) detail.put("renamedFrom", before.name());
+    audit.record(userId, ActorType.USER, null, "function.updated", updated.name(), detail);
+    return updated;
+  }
+
+  public void delete(UUID userId, UUID functionId) {
+    ScriptFunctionDto existing = owned(userId, functionId);
+    functions.delete(functionId);
+    audit.record(userId, ActorType.USER, null, "function.deleted", existing.name(),
+        Json.obj().put("functionId", functionId.toString()));
+  }
+
+  /** Runs what is in the editor, saved or not, with {@code args} by input name. */
+  public FormulaPreview.Result test(UUID userId, ScriptFunctionDraft draft, JsonNode args) {
+    return functions.test(userId, draft, args);
+  }
+
+  private ScriptFunctionDto owned(UUID userId, UUID functionId) {
+    ScriptFunctionDto f = functions.find(functionId).orElse(null);
+    if (f == null || !f.userId().equals(userId)) throw new NotFoundException("Function", functionId);
+    return f;
+  }
+}

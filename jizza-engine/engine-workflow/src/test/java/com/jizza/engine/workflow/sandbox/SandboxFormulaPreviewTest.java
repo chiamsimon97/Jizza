@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 class SandboxFormulaPreviewTest {
 
-  private final SandboxFormulaPreview preview = new SandboxFormulaPreview(new JexlSandbox());
+  private final SandboxFormulaPreview preview = new SandboxFormulaPreview(new JexlSandbox(), null);
   private final com.fasterxml.jackson.databind.JsonNode data =
       Json.read("{\"input\":{\"name\":\" asha \"},\"nodes\":{\"fetch\":{\"body\":{\"price\":1500}}},\"secret\":1}");
 
