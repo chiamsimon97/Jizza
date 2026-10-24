@@ -16,9 +16,12 @@ package com.jizza.engine.api.enums;
  *
  * <p>{@code MCP_TOOL} calls one tool of an MCP server added under Connectors, as
  * {@code CONNECTOR_TOOL} calls a service action, under the same guardrails.
+ *
+ * <p>{@code SCRIPT} runs a few lines of Jizza script on inputs mapped from earlier steps and gives
+ * its declared outputs to later steps, in the same sandbox as formulas.
  */
 public enum NodeType {
   TRIGGER, CONNECTOR_TOOL, AGENT_STEP, TRANSFORM, BRANCH, HUMAN_INTERVENTION, END,
   PARALLEL, JOIN, WAIT, SUB_WORKFLOW, FOR_EACH,
-  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY, MCP_TOOL
+  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY, MCP_TOOL, SCRIPT
 }

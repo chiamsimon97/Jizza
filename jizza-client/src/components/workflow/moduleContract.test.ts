@@ -37,4 +37,14 @@ describe('workflow modules', () => {
     expect(sources.find(s => s.id === 'start')?.fields).toContainEqual({ expr: 'input.email', label: 'email', type: 'text' })
     expect(sources.find(s => s.id === call)?.fields).toContainEqual({ expr: `nodes.${call}.doubled`, label: 'doubled', type: 'number' })
   })
+
+  it('gives a Script step\'s declared outputs, typed, to later steps; its outputs need no value but its inputs do', () => {
+    const { graph, id: script } = addAfter(emptyGraph(), 'start', null, 'SCRIPT')
+    const config = { inputs: [{ name: 'lines', type: 'list', value: '' }], script: "return {'total': 1};", outputs: [{ name: 'total', type: 'number' }] }
+    const withScript = updateNode(graph, script, { config })
+    expect(fieldIssues(withScript.nodes.find(n => n.id === script)!).map(f => f.field)).toEqual(['inputs.0.value'])
+    const next = addAfter(withScript, script, null, 'NOTIFY')
+    const sources = dataSourcesFor(next.graph, next.id)
+    expect(sources.find(s => s.id === script)?.fields).toContainEqual({ expr: `nodes.${script}.total`, label: 'total', type: 'number' })
+  })
 })

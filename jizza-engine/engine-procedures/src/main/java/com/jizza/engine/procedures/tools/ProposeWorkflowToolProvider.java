@@ -62,6 +62,11 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
         STORAGE {"action":"get|set|increment|append|delete","key":"...","valueExpr":"..."}
           keeps values between runs.
         TRANSFORM {"expression":"<expression>"}
+        SCRIPT {"inputs":[{"name":"lines","type":"list","value":"{{ nodes.fetch.body.lines }}"}],
+          "script":"var total = 0;\\nfor (var l : lines) { total = total + l.amount; }\\nreturn {'total': total};",
+          "outputs":[{"name":"total","type":"number"}]} for logic a formula can't hold: var, if/else,
+          for over a list (no while), return a map; it reads only its inputs, by name. Later steps
+          read nodes.<id>.<output name>.
       Flow:
         WAIT {"duration":"PT1H"} or {"until":"<ISO time>"}
         PARALLEL then JOIN to run paths at once,

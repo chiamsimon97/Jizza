@@ -1,5 +1,6 @@
 import type { ProcedureSummary } from '@/types'
 import { NODE_META, casesOf, fromGraph, type CanvasNode } from './canvasModel'
+import { fieldsOf } from './moduleContract'
 
 /** Where a procedure stands, in the words the Procedures page uses. */
 export type ProcedureState = 'review' | 'active' | 'off'
@@ -77,6 +78,7 @@ function detailOf(node: CanvasNode): string {
     case 'STORAGE': return [pick('action') || 'get', pick('key')].join(' ')
     case 'FOR_EACH': return pick('items')
     case 'TRANSFORM': return pick('expression')
+    case 'SCRIPT': return fieldsOf(c, 'outputs').map(f => f.name).filter(Boolean).join(', ')
     case 'SET_VARIABLE': {
       const vars = Array.isArray(c.variables) ? c.variables as Array<{ name?: string }> : []
       return vars.map(v => v.name).filter(Boolean).join(', ')

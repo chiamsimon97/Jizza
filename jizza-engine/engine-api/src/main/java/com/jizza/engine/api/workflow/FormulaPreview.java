@@ -17,6 +17,12 @@ public interface FormulaPreview {
   Result preview(String formula, boolean template, JsonNode data);
 
   /**
+   * Runs a Script step's settings ({@code inputs}, {@code script}, {@code outputs}) as the step
+   * would, with its inputs mapped from the sample run data.
+   */
+  Result previewScript(JsonNode step, JsonNode data);
+
+  /**
    * @param value what the formula gave, or null when it failed
    * @param type  text, number, boolean, list, map or empty
    * @param error why it failed, in words for the person writing it, or null

@@ -22,6 +22,30 @@ function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(
 }
 
 describe('CanvasInspector', () => {
+  it('sets up a Script step: a mapped input, a multi-line script and a declared output', () => {
+    const { graph, id } = addAfter(emptyGraph(), 'start', null, 'SCRIPT')
+    const { onSave } = open(graph, id)
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add an input' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name of script input 1' }), { target: { value: 'lines' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Type of script input 1' }), { target: { value: 'list' } })
+    type(screen.getByRole('textbox', { name: 'Value of script input 1' }), '{{ input.lines }}')
+    type(screen.getByRole('textbox', { name: 'Script' }), "var total = 0;\nfor (var line : lines) {\n  total = total + line;\n}\nreturn {'total': total};")
+    fireEvent.click(screen.getByRole('button', { name: 'Add an output' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name of script output 1' }), { target: { value: 'total' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Type of script output 1' }), { target: { value: 'number' } })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config).toEqual({
+      inputs: [{ name: 'lines', type: 'list', value: '{{ input.lines }}' }],
+      script: "var total = 0;\nfor (var line : lines) {\n  total = total + line;\n}\nreturn {'total': total};",
+      outputs: [{ name: 'total', type: 'number' }],
+    })
+  })
+
   it('maps a module\'s inputs one field each and waits for the required ones', () => {
     const module: WorkflowOption = {
       id: 'wf-double', name: 'Double it', status: 'APPROVED', graph: {

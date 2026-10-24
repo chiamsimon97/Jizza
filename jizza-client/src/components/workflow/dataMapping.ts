@@ -10,7 +10,7 @@
 import { NODE_META, upstreamOf, type CanvasGraph, type CanvasNode, type NodeType } from './canvasModel'
 import type { FormulaScope } from './formula/analyze'
 import type { ValueType } from './formula/functions'
-import { moduleInputs } from './moduleContract'
+import { fieldsOf, moduleInputs } from './moduleContract'
 
 export type MappingMode = 'template' | 'expression'
 
@@ -125,7 +125,9 @@ export function dataSourcesFor(graph: CanvasGraph, id: string, outputs?: Readonl
     }
     if (n.type === 'PARALLEL') continue
     // A step that calls something (an MCP tool) knows its fields from what that thing returns.
-    const extra = (declared?.(n) ?? []).map(d => (typeof d === 'string' ? { path: d } : d))
+    // A script gives the outputs it declares, typed.
+    const extra = [...(declared?.(n) ?? []), ...(n.type === 'SCRIPT' ? fieldsOf(n.config, 'outputs').filter(f => f.name).map(f => ({ path: f.name, type: f.type })) : [])]
+      .map(d => (typeof d === 'string' ? { path: d } : d))
     const declaredType = new Map(extra.filter(d => d.type).map(d => [d.path, d.type!]))
     const known = [...(STEP_OUTPUTS[n.type] ?? []), ...extra.map(d => d.path)]
     const seen = new Set(known)

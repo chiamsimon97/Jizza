@@ -2,12 +2,13 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import { createPortal } from 'react-dom'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
-  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
+  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Code2, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
   Server, ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
 import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
+import { fieldsOf } from './moduleContract'
 
 export type Exit = ExitKey
 /** How a step did in the run shown on the canvas. */
@@ -38,7 +39,7 @@ export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
   PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
   APPROVAL: ShieldCheck, HTTP_REQUEST: Webhook, FILTER: Filter, SWITCH: Signpost, SET_VARIABLE: Braces, STORAGE: Database, NOTIFY: Bell,
-  MCP_TOOL: Server,
+  MCP_TOOL: Server, SCRIPT: Code2,
 }
 
 const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
@@ -197,6 +198,10 @@ function describe(node: CanvasNode, agent?: AgentDto): string {
     case 'CONNECTOR_TOOL': return c.toolName ? String(c.toolName) : c.toolId ? 'Service action set' : 'Choose a service action'
     case 'MCP_TOOL': return c.tool ? `${c.serverName ? `${String(c.serverName)} · ` : ''}${String(c.toolLabel ?? c.tool)}` : c.serverId ? 'Choose a tool' : 'Choose an MCP server and tool'
     case 'TRANSFORM': return String(c.expression ?? 'Set an expression')
+    case 'SCRIPT': {
+      const outs = fieldsOf(c, 'outputs').map(f => f.name).filter(Boolean)
+      return !String(c.script ?? '').trim() ? 'Write a script' : outs.length ? `Gives ${outs.join(', ')}` : 'Runs a script'
+    }
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
     case 'PARALLEL': return 'Every connected path runs'
     case 'JOIN': return 'Waits for every path that leads here'

@@ -58,7 +58,20 @@ public class JexlSandbox {
   /** Formulas that may run at once; more are refused rather than queued behind a stuck one. */
   private static final int MAX_THREADS = 32;
 
+  /** The longest script a Script step may hold, in characters. */
+  public static final int MAX_SCRIPT_LENGTH = 20_000;
+
+  /** Loops that only end when their condition does; a script loops over lists with for. */
+  private static final java.util.regex.Pattern OPEN_LOOP =
+      java.util.regex.Pattern.compile("\\b(while|do)\\b");
+  private static final java.util.regex.Pattern STRING_LITERAL =
+      java.util.regex.Pattern.compile("'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\"");
+
+  private static final java.util.regex.Pattern COMMENT =
+      java.util.regex.Pattern.compile("//[^\\n]*|##[^\\n]*|/\\*[\\s\\S]*?\\*/");
+
   private final JexlEngine engine;
+  private final JexlEngine scriptEngine;
   private final ExecutorService executor = new ThreadPoolExecutor(0, MAX_THREADS, 60, TimeUnit.SECONDS,
       new SynchronousQueue<>(), runnable -> {
         Thread thread = new Thread(runnable, "jizza-transform");
@@ -80,7 +93,28 @@ public class JexlSandbox {
         .importPragma(false)
         .register(false);
 
-    this.engine = new JexlBuilder()
+    this.engine = builder(features).create();
+
+    // A Script step: the same language and functions, plus what a few lines of logic need: local
+    // variables (var), if/else, for over a list, and return. It still cannot write to the run's
+    // data, construct objects or define functions, and while/do loops are refused before it runs.
+    JexlFeatures scriptFeatures = new JexlFeatures()
+        .loops(true)
+        .newInstance(false)
+        .methodCall(true)
+        .sideEffect(true)             // local variables only
+        .sideEffectGlobal(false)
+        .lambda(false)
+        .annotation(false)
+        .pragma(false)
+        .namespacePragma(false)
+        .importPragma(false)
+        .register(false);
+    this.scriptEngine = builder(scriptFeatures).create();
+  }
+
+  private static JexlBuilder builder(JexlFeatures features) {
+    return new JexlBuilder()
         .features(features)
         // The fmt: functions are the one class added to what an expression may call.
         .permissions(JexlPermissions.RESTRICTED.compose("com.jizza.engine.workflow.sandbox.*"))
@@ -88,8 +122,32 @@ public class JexlSandbox {
         .strict(true)
         .silent(false)
         .safe(false)
-        .cancellable(true)            // the timeout's interrupt stops evaluation
-        .create();
+        .cancellable(true);           // the timeout's interrupt stops evaluation
+  }
+
+  /**
+   * Runs a Script step's script against {@code variables} (its inputs, by name) and returns what
+   * it gives: the value of its {@code return}, or of its last line.
+   *
+   * @throws SandboxViolationException on a syntax error, a blocked construct, or a timeout
+   */
+  public JsonNode runScript(String script, Map<String, Object> variables) {
+    if (script == null || script.isBlank()) throw new SandboxViolationException("The script is empty");
+    if (script.length() > MAX_SCRIPT_LENGTH) {
+      throw new SandboxViolationException("The script is longer than " + MAX_SCRIPT_LENGTH + " characters");
+    }
+    String code = COMMENT.matcher(STRING_LITERAL.matcher(script).replaceAll("''")).replaceAll(" ");
+    if (OPEN_LOOP.matcher(code).find()) {
+      throw new SandboxViolationException("Scripts loop over lists with for (var item : list); "
+          + "while and do loops are not allowed");
+    }
+    org.apache.commons.jexl3.JexlScript compiled;
+    try {
+      compiled = scriptEngine.createScript(FormulaRewriter.toJexl(script));
+    } catch (JexlException e) {
+      throw new SandboxViolationException("The script is not valid: " + rootMessage(e));
+    }
+    return run(context -> compiled.execute(context), variables, "script");
   }
 
   /**
@@ -111,13 +169,17 @@ public class JexlSandbox {
       throw new SandboxViolationException("The transform expression is not valid: "
           + rootMessage(e));
     }
+    return run(compiled::evaluate, variables, "transform");
+  }
 
+  private JsonNode run(java.util.function.Function<MapContext, Object> body, Map<String, Object> variables,
+                       String what) {
     MapContext context = new MapContext();
     if (variables != null) variables.forEach(context::set);
 
     Future<Object> future;
     try {
-      future = executor.submit(() -> compiled.evaluate(context));
+      future = executor.submit(() -> body.apply(context));
     } catch (RejectedExecutionException e) {
       throw new SandboxViolationException("Too many formulas are running at once; try again shortly");
     }
@@ -127,20 +189,20 @@ public class JexlSandbox {
     } catch (TimeoutException e) {
       future.cancel(true);
       throw new SandboxViolationException(
-          "The transform took longer than " + TIMEOUT_MILLIS + "ms and was stopped");
+          "The " + what + " took longer than " + TIMEOUT_MILLIS + "ms and was stopped");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new SandboxViolationException("The transform was interrupted");
+      throw new SandboxViolationException("The " + what + " was interrupted");
     } catch (java.util.concurrent.ExecutionException e) {
       Throwable cause = e.getCause();
       if (cause instanceof JexlException.Cancel) {
         throw new SandboxViolationException(
-            "The transform took longer than " + TIMEOUT_MILLIS + "ms and was stopped");
+            "The " + what + " took longer than " + TIMEOUT_MILLIS + "ms and was stopped");
       }
       if (cause instanceof JexlException jexl) {
-        throw new SandboxViolationException("The transform could not run: " + rootMessage(jexl));
+        throw new SandboxViolationException("The " + what + " could not run: " + rootMessage(jexl));
       }
-      throw new SandboxViolationException("The transform failed: "
+      throw new SandboxViolationException("The " + what + " failed: "
           + (cause == null ? e.getMessage() : cause.getMessage()));
     }
   }
