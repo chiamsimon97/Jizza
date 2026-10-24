@@ -1237,3 +1237,73 @@ export interface McpServerInput {
   oauthClientSecret?: string
   oauthScopes?: string
 }
+
+// ── Public organizations ─────────────────────────────────────────────────────
+
+/** Only APPROVED shows on Discover (and PENDING, while an edit to a listed profile is in review). */
+export type ListingStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED'
+export type ListingAction = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'UNLISTED' | 'SUSPENDED' | 'REINSTATED'
+export type JoinRequestStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED'
+
+export interface ListingProfile {
+  displayName: string
+  description: string
+  category: string
+  logoUrl: string | null
+  website: string | null
+}
+
+export interface ListingReview {
+  id: string
+  action: ListingAction
+  actorEmail: string | null
+  note: string | null
+  createdAt: string
+}
+
+/** An organization's listing, as its Owner, Admin or a Super Admin sees it. */
+export interface Listing {
+  workspaceId: string
+  workspaceName: string
+  status: ListingStatus
+  /** The profile being edited. */
+  draft: ListingProfile | null
+  /** The version on Discover, or null when it has none. */
+  approved: ListingProfile | null
+  visible: boolean
+  changesSinceApproval: boolean
+  submittedAt: string | null
+  listedAt: string | null
+  history: ListingReview[]
+  /** Owner's view only. */
+  submissionsLeftToday: number | null
+}
+
+export interface DirectoryEntry {
+  id: string
+  profile: ListingProfile
+  listedAt: string | null
+}
+
+export interface DirectoryPage {
+  items: DirectoryEntry[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface JoinRequest {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  email: string
+  message: string | null
+  status: JoinRequestStatus
+  createdAt: string
+  decidedAt: string | null
+}
+
+export interface DirectoryProfile extends DirectoryEntry {
+  member: boolean
+  pendingRequest: JoinRequest | null
+}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LogOut, Send, UserPlus, Users } from 'lucide-react'
 import { workspacesApi } from '@/api/workspaces'
+import { listingApi } from '@/api/listings'
 import { useAuthorization } from '@/auth/useAuthorization'
 import { usePermission } from '@/auth/usePermission'
 import { applySnapshot } from '@/auth/useSwitchAccount'
@@ -16,10 +17,11 @@ import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, fieldClass } from '@/components/ui/SlideOver'
-import type { Invitation, InvitationStatus, Member, WorkspaceRole } from '@/types'
+import type { Invitation, InvitationStatus, JoinRequest, Member, WorkspaceRole } from '@/types'
 
 const MEMBERS_KEY = ['workspace', 'members']
 const INVITATIONS_KEY = ['workspace', 'invitations']
+const JOIN_REQUESTS_KEY = ['organization', 'join-requests']
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
@@ -73,6 +75,9 @@ export function MembersPage() {
       <div className="grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-6">
         <MembersTable />
         <RequestsSection onSent={setNotice} />
+        <Can permission={PERMISSIONS.MEMBERS_INVITE}>
+          <JoinRequestsSection onAnswered={setNotice} />
+        </Can>
 
         {snapshot && !isOwner && (
           <Card padding="lg">
@@ -254,6 +259,53 @@ function RequestsSection({ onSent }: { onSent: (notice: string) => void }) {
       )}
       {revoke.error && <p className="mt-2 text-sm text-red-500">{errorText(revoke.error)}</p>}
       {resend.error && <p className="mt-2 text-sm text-red-500">{errorText(resend.error)}</p>}
+    </section>
+  )
+}
+
+/** People who found the organization on Discover and asked to join. Accepting adds them as Users. */
+function JoinRequestsSection({ onAnswered }: { onAnswered: (notice: string) => void }) {
+  const qc = useQueryClient()
+  const { data, isLoading, error } = useQuery({ queryKey: JOIN_REQUESTS_KEY, queryFn: listingApi.joinRequests })
+  const answered = (verb: string) => (r: JoinRequest) => {
+    qc.invalidateQueries({ queryKey: JOIN_REQUESTS_KEY })
+    qc.invalidateQueries({ queryKey: MEMBERS_KEY })
+    onAnswered(`${r.email} ${verb}.`)
+  }
+  const accept = useMutation({ mutationFn: listingApi.accept, onSuccess: answered('joined as a User') })
+  const decline = useMutation({ mutationFn: listingApi.decline, onSuccess: answered('was declined') })
+  const pending = (data ?? []).filter(r => r.status === 'PENDING')
+
+  return (
+    <section>
+      <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Join requests</h2>
+      <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">People who found the organization on Discover. Accepting adds them with the User role.</p>
+      {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
+      {error && <p className="text-sm text-red-500">{errorText(error)}</p>}
+      {data && pending.length === 0 && (
+        <p className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+          No one is waiting to join.
+        </p>
+      )}
+      {pending.length > 0 && (
+        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white dark:divide-gray-800 dark:border-gray-800 dark:bg-gray-950">
+          {pending.map(r => (
+            <li key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{r.email}</p>
+                {r.message && <p className="mt-0.5 whitespace-pre-line text-sm text-gray-600 dark:text-gray-300">{r.message}</p>}
+                <p className="text-xs text-gray-500 dark:text-gray-400">Asked {formatDate(r.createdAt)}</p>
+              </div>
+              <Button size="sm" loading={accept.isPending && accept.variables === r.id}
+                disabled={accept.isPending || decline.isPending} onClick={() => accept.mutate(r.id)}>Accept</Button>
+              <Button size="sm" variant="ghost" loading={decline.isPending && decline.variables === r.id}
+                disabled={accept.isPending || decline.isPending} onClick={() => decline.mutate(r.id)}>Decline</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {accept.error && <p className="mt-2 text-sm text-red-500">{errorText(accept.error)}</p>}
+      {decline.error && <p className="mt-2 text-sm text-red-500">{errorText(decline.error)}</p>}
     </section>
   )
 }
