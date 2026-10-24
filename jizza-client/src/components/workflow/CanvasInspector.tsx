@@ -10,7 +10,9 @@ import {
   type CanvasGraph, type CanvasNode, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
-import { dataSourcesFor } from './dataMapping'
+import { dataSourcesFor, type DeclaredField } from './dataMapping'
+import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type ModuleField } from './moduleContract'
+import type { ValueType } from './formula/functions'
 import { schemaFields } from '@/components/connectors/ResultView'
 import { MappedField, type MappingContext } from './MappedField'
 import { useAssistantStore } from '@/jizza/assistantStore'
@@ -21,8 +23,8 @@ import { canConfigureWithJizza, startersFor } from '@/jizza/commands'
 /** A service action the user can pick, with the service it belongs to. */
 export interface ToolOption { id: string; label: string }
 
-/** Another workflow a step can run. */
-export interface WorkflowOption { id: string; name: string; status: string }
+/** Another workflow a step can run; its graph says what inputs and outputs it declares. */
+export interface WorkflowOption { id: string; name: string; status: string; graph?: unknown }
 
 /** A field with a set width: fieldClass is full width, which would win over a w-* next to it. */
 const NARROW_FIELD = fieldClass.replace('w-full', '')
@@ -107,7 +109,10 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const note = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { if (focusNote) note.current?.focus() }, [focusNote])
 
-  const missing = fieldIssues(node)
+  const child = node.type === 'SUB_WORKFLOW' ? workflows?.find(w => w.id === node.config.workflowId) : undefined
+  // A module's required inputs that have no default must be mapped; the module is only known here.
+  const unmapped = moduleInputs(child?.graph).filter(f => f.required && f.default === undefined && !mappedInputs(node)[f.name]?.trim())
+  const missing = [...fieldIssues(node), ...unmapped.map(f => ({ field: `inputs.${f.name}`, message: `"${node.label}" needs a value for the input "${f.name}".` }))]
   const isMissing = (field: string) => missing.some(m => m.field === field || m.field.startsWith(`${field}.`))
   const issues = [...findIssues(graph).filter(i => i.nodeId === node.id).map(i => i.message), ...extraIssues]
   const setConfig = (patch: Record<string, unknown>, _key?: string) =>
@@ -115,7 +120,11 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
-  const mapping: MappingContext = useMemo(() => ({ graph: canvas, sources: dataSourcesFor(canvas, opened.id, outputs, n => mcpOutputFields(n, mcpServers)) }), [canvas, opened.id, outputs, mcpServers])
+  const mapping: MappingContext = useMemo(() => ({
+    graph: canvas,
+    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...moduleOutputFields(n, workflows)]),
+    sample: sampleOf(canvas, outputs),
+  }), [canvas, opened.id, outputs, mcpServers, workflows])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
@@ -300,12 +309,11 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
               Keep going when an item fails
             </label>
           </>}
-          {node.type === 'SUB_WORKFLOW' && (
-            <Labelled group label="Input (optional)" hint="A formula for the workflow's input, e.g. {'amount': followed by a total chip and }">
-              <MappedField aria-label="Input" mode="expression" context={mapping} mono value={str('inputExpr')} onChange={v => setConfig({ inputExpr: v || undefined })} />
-            </Labelled>
-          )}
+          {node.type === 'SUB_WORKFLOW' && <ModuleCallFields key={str('workflowId')} node={node} module={child} setConfig={setConfig} isMissing={isMissing} mapping={mapping} str={str} />}
         </>}
+
+        {node.type === 'TRIGGER' && <ContractFields kind="inputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'END' && <ContractFields kind="outputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} mapping={mapping} />}
 
@@ -738,6 +746,147 @@ function StorageFields({ node, setConfig, mapping }: { node: CanvasNode; setConf
   </>
 }
 
+
+/** What a module step maps into each of the module's inputs. */
+function mappedInputs(node: CanvasNode): Record<string, string> {
+  const raw = node.config.inputs
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, string> : {}
+}
+
+/** What a module step gives later steps: the outputs its module declares, with their types. */
+function moduleOutputFields(node: CanvasNode, workflows?: WorkflowOption[]): DeclaredField[] {
+  if (node.type !== 'SUB_WORKFLOW') return []
+  return moduleOutputs(workflows?.find(w => w.id === node.config.workflowId)?.graph).map(f => ({ path: f.name, type: f.type }))
+}
+
+/** The last run's data, for a formula's preview: the run's input and each step's result. */
+function sampleOf(graph: CanvasGraph, outputs: ReadonlyMap<string, unknown>): Record<string, unknown> | undefined {
+  if (!outputs.size) return undefined
+  const start = graph.nodes.find(n => n.type === 'TRIGGER')?.id
+  const nodes = Object.fromEntries([...outputs].filter(([id]) => id !== start))
+  return { input: start ? outputs.get(start) ?? {} : {}, nodes }
+}
+
+const TYPE_HINT: Partial<Record<ValueType, string>> = {
+  number: 'A number.', boolean: 'true or false.', date: 'A date, such as 2026-10-24.', list: 'A list.', map: 'A set of fields.',
+}
+
+/**
+ * A module step: one mapped field per input the module declares, and what later steps can read.
+ * A module that declares no inputs takes one formula for its whole input, as before.
+ */
+function ModuleCallFields({ node, module, setConfig, isMissing, mapping, str }: {
+  node: CanvasNode; module?: WorkflowOption; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext; str: (k: string) => string
+}) {
+  const inputs = moduleInputs(module?.graph)
+  const outputs = moduleOutputs(module?.graph)
+  const values = mappedInputs(node)
+  const set = (name: string, v: string) => {
+    const next = { ...values }
+    if (v) next[name] = v
+    else delete next[name]
+    setConfig({ inputs: Object.keys(next).length ? next : undefined })
+  }
+  if (!str('workflowId')) return null
+  if (module && !isModule(module.graph) && !str('inputExpr')) {
+    return <>
+      <p className="text-[11px] text-gray-500">"{module.name}" doesn't declare inputs or outputs. Add them on its Start and End steps to use it as a module.</p>
+      <Labelled group label="Input (optional)" hint="A formula for the workflow's whole input, e.g. {'amount': followed by a total chip and }">
+        <MappedField aria-label="Input" mode="expression" context={mapping} mono value={str('inputExpr')} onChange={v => setConfig({ inputExpr: v || undefined })} />
+      </Labelled>
+    </>
+  }
+  return <>
+    {inputs.length > 0 && (
+      <Section title="Inputs">
+        {inputs.map(f => (
+          <Labelled group key={f.name} label={f.name} required={f.required && f.default === undefined} missing={isMissing(`inputs.${f.name}`)}
+            hint={[f.description, TYPE_HINT[f.type], f.default !== undefined ? `Leave empty for ${JSON.stringify(f.default)}.` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
+            <MappedField aria-label={`Input ${f.name}`} mode="template" context={mapping} mono={f.type !== 'text'} invalid={isMissing(`inputs.${f.name}`)}
+              value={values[f.name] ?? ''} onChange={v => set(f.name, v)} />
+          </Labelled>
+        ))}
+        <p className="text-[11px] text-gray-400">A value that is just {'{{ … }}'} keeps its type. Text is read as the type the module asks for.</p>
+      </Section>
+    )}
+    {str('inputExpr') && (
+      <Labelled group label="Input formula (older setting)" hint="Used only when no inputs above are filled in.">
+        <MappedField aria-label="Input" mode="expression" context={mapping} mono value={str('inputExpr')} onChange={v => setConfig({ inputExpr: v || undefined })} />
+      </Labelled>
+    )}
+    {outputs.length > 0 && (
+      <Section title="Outputs">
+        <p className="text-[11px] text-gray-500">Later steps can map these from this step:</p>
+        <ul className="flex flex-wrap gap-1">
+          {outputs.map(f => (
+            <li key={f.name} title={f.description ?? `nodes.${node.id}.${f.name}`}
+              className="rounded-md bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+              {f.name}<span className="ml-1 text-[10px] text-indigo-400">{f.type}</span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    )}
+  </>
+}
+
+/**
+ * The inputs a workflow takes (on its Start step) or the outputs it gives (on an End step), which
+ * make it usable as a module in other workflows.
+ */
+function ContractFields({ kind, node, setConfig, isMissing, mapping }: {
+  kind: 'inputs' | 'outputs'; node: CanvasNode; setConfig: SetConfig; isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const rows = fieldsOf(node.config, kind)
+  const save = (next: ModuleField[], key: string) => setConfig({ [kind]: next.length ? next : undefined }, key)
+  const edit = (i: number, patch: Partial<ModuleField>) => save(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)), `${kind}:${i}`)
+  const inputs = kind === 'inputs'
+  return (
+    <Section title={inputs ? 'Inputs' : 'Outputs'}>
+      <p className="text-[11px] text-gray-500">{inputs
+        ? 'What this workflow needs when it runs. Steps read each one as input.<name>, and a workflow that uses this one as a module fills them in.'
+        : 'What this workflow gives back when another workflow uses it as a module. That step\'s later steps read each one as nodes.<step>.<name>.'}</p>
+      {rows.map((r, i) => (
+        <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+          <div className="flex items-center gap-1.5">
+            <input aria-label={`Name of ${inputs ? 'input' : 'output'} ${i + 1}`} placeholder="name"
+              className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs ${isMissing(`${kind}.${i}.name`) ? '!border-red-400' : ''}`}
+              value={r.name} onChange={e => edit(i, { name: e.target.value.replace(/\s+/g, '_') })} />
+            <select aria-label={`Type of ${inputs ? 'input' : 'output'} ${i + 1}`} className={`${NARROW_FIELD} w-32 shrink-0`} value={r.type}
+              onChange={e => edit(i, { type: e.target.value as ValueType })}>
+              {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <button type="button" onClick={() => save(rows.filter((_, j) => j !== i), `remove:${kind}`)} aria-label={`Remove ${inputs ? 'input' : 'output'} ${i + 1}`}
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+          {inputs ? <>
+            <input aria-label={`Description of input ${i + 1}`} placeholder="What it is (optional)" className={`${fieldClass} text-xs`}
+              value={r.description ?? ''} onChange={e => edit(i, { description: e.target.value || undefined })} />
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                <input type="checkbox" checked={r.required === true} onChange={e => edit(i, { required: e.target.checked || undefined })} />
+                Required
+              </label>
+              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                <span className="shrink-0">Default</span>
+                <input aria-label={`Default for input ${i + 1}`} placeholder="none" className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs`}
+                  value={r.default === undefined ? '' : typeof r.default === 'string' ? r.default : JSON.stringify(r.default)}
+                  onChange={e => edit(i, { default: e.target.value === '' ? undefined : e.target.value })} />
+              </label>
+            </div>
+          </> : (
+            <MappedField aria-label={`Value of output ${i + 1}`} placeholder="Map data from earlier steps" mode="template" context={mapping} mono
+              invalid={isMissing(`${kind}.${i}.value`)} value={r.value ?? ''} onChange={v => edit(i, { value: v })} />
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={() => save([...rows, { name: '', type: 'text', ...(inputs ? {} : { value: '' }) }], `add:${kind}`)}
+        className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300">
+        <Plus className="h-3.5 w-3.5" /> {inputs ? 'Add an input' : 'Add an output'}
+      </button>
+    </Section>
+  )
+}
 
 /** Edits a JSON value as text, keeping the text while it doesn't parse. */
 /**

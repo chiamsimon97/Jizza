@@ -17,6 +17,7 @@ public class WorkflowValidator {
 
   public void validate(WorkflowGraph graph) {
     graph.validate();
+    com.jizza.engine.api.workflow.graph.ModuleContract.validate(graph);
 
     for (WorkflowNode node : graph.nodes()) {
       switch (node.type()) {

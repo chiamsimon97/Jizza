@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -333,6 +334,68 @@ public final class Formatters {
     return all;
   }
 
+  /** The items whose {@code field} equals {@code value}, such as the line items whose status is paid. */
+  public static List<Object> where(Object items, Object field, Object value) {
+    List<Object> out = new ArrayList<>();
+    for (Object item : list(items)) {
+      if (item instanceof Map<?, ?> map && same(map.get(text(field)), value)) out.add(item);
+    }
+    return out;
+  }
+
+  /** The items in order of one field: numbers by value, anything else by its text. */
+  public static List<Object> sortBy(Object items, Object field) {
+    String key = text(field);
+    List<Object> all = new ArrayList<>(list(items));
+    all.sort((a, b) -> compare(a instanceof Map<?, ?> x ? x.get(key) : null, b instanceof Map<?, ?> y ? y.get(key) : null));
+    return all;
+  }
+
+  /** One field of every item added up, such as the total of every line item's amount. */
+  public static Double sumOf(Object items, Object field) {
+    return sum(pluck(items, field));
+  }
+
+  /** The items in groups by one field's value, as a map from each value to its items. */
+  public static Map<String, List<Object>> groupBy(Object items, Object field) {
+    Map<String, List<Object>> out = new LinkedHashMap<>();
+    for (Object item : list(items)) {
+      Object key = item instanceof Map<?, ?> map ? map.get(text(field)) : null;
+      out.computeIfAbsent(text(key), k -> new ArrayList<>()).add(item);
+    }
+    return out;
+  }
+
+  /** Only some keys of a map: a list of keys, or keys written with commas ('name, email'). */
+  public static Map<String, Object> pick(Object map, Object keys) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    if (!(map instanceof Map<?, ?> source)) return out;
+    List<Object> wanted = keys instanceof Collection<?> ? list(keys) : new ArrayList<>(split(keys, ","));
+    for (Object k : wanted) {
+      String key = text(k).strip();
+      if (source.containsKey(key)) out.put(key, source.get(key));
+    }
+    return out;
+  }
+
+  /** Two maps as one; where both have a key, the second one's value wins. */
+  public static Map<String, Object> merge(Object a, Object b) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    if (a instanceof Map<?, ?> x) x.forEach((k, v) -> out.put(text(k), v));
+    if (b instanceof Map<?, ?> y) y.forEach((k, v) -> out.put(text(k), v));
+    return out;
+  }
+
+  public static List<String> keys(Object map) {
+    if (!(map instanceof Map<?, ?> m)) return List.of();
+    return m.keySet().stream().map(Formatters::text).toList();
+  }
+
+  public static List<Object> values(Object map) {
+    if (!(map instanceof Map<?, ?> m)) return List.of();
+    return new ArrayList<>(m.values());
+  }
+
   public static boolean isNotEmpty(Object value) { return !isEmpty(value); }
 
   public static boolean isEmpty(Object value) {
@@ -343,6 +406,19 @@ public final class Formatters {
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────
+
+  /** Whether two values are the same, reading numbers by value so 2 and 2.0 match. */
+  private static boolean same(Object a, Object b) {
+    if (a instanceof Number x && b instanceof Number y) return x.doubleValue() == y.doubleValue();
+    if (a == null || b == null) return a == b;
+    return text(a).equals(text(b));
+  }
+
+  private static int compare(Object a, Object b) {
+    if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1; // missing values last
+    if (a instanceof Number x && b instanceof Number y) return Double.compare(x.doubleValue(), y.doubleValue());
+    return text(a).compareTo(text(b));
+  }
 
   private static String text(Object value) {
     if (value == null) return "";

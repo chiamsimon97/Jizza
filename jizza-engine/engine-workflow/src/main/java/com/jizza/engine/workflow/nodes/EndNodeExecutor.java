@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.error.SandboxViolationException;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workflow.graph.ModuleContract;
 import com.jizza.engine.workflow.engine.NodeExecutor;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
+import com.jizza.engine.workflow.sandbox.Templates;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component;
  * An explicit terminal node. A graph may also simply run out of outgoing edges.
  *
  * <p>Its output is what the run produced, which a workflow running this one as a step receives:
+ * the declared {@code outputs} when there are any (a module's results, each a mapped value), else
  * {@code outputExpr} when set, otherwise the result of the step that led here (or of each, by id,
  * when several paths end here together).
  */
@@ -32,6 +35,18 @@ public class EndNodeExecutor implements NodeExecutor {
   @Override
   public Outcome execute(Execution execution) {
     JsonNode config = execution.node().config();
+    List<ModuleContract.Field> outputs = ModuleContract.fields(config, "outputs");
+    if (!outputs.isEmpty()) {
+      ObjectNode result = Json.obj();
+      try {
+        for (ModuleContract.Field f : outputs) {
+          result.set(f.name(), Templates.renderValue(f.value(), sandbox, execution.context().variables()));
+        }
+      } catch (SandboxViolationException e) {
+        return Outcome.permanentFailure(e.getMessage());
+      }
+      return Outcome.completed(result);
+    }
     String expression = config == null ? null : config.path("outputExpr").asText(null);
     if (expression != null && !expression.isBlank()) {
       try {

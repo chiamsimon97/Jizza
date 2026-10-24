@@ -10,9 +10,13 @@ import { scopeFor, type DataSource, type MappingMode } from './dataMapping'
 import { formulaExtensions, problemsIn, refreshFormula, type Chip, type FormulaEnv } from './formula/editor'
 import type { Problem } from './formula/analyze'
 import { FORMULA_FUNCTIONS, signature, type FormulaFunction, type FunctionCategory } from './formula/functions'
+import { formulaApi, type FormulaPreview } from '@/api/formula'
 
-/** What every mapped field needs to show and insert chips. */
-export interface MappingContext { graph: CanvasGraph; sources: DataSource[] }
+/**
+ * What every mapped field needs to show and insert chips. {@code sample} is run data to preview a
+ * formula against ({ input, nodes }), from the workflow's last run; without it there is no preview.
+ */
+export interface MappingContext { graph: CanvasGraph; sources: DataSource[]; sample?: Record<string, unknown> }
 
 /** The field's frame; it is a wrapper, so it takes focus styles from the editor inside it. */
 const FRAME = fieldClass.replace(/\bfocus:/g, 'focus-within:')
@@ -134,6 +138,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
   // Nothing is called a problem right where the cursor is typing; it shows once the cursor moves on.
   const problems = useMemo(() => problemsIn(value, template, scope, caret)
     .filter(p => caret === undefined || p.to < caret - 1 || p.from > caret), [value, template, scope, caret])
+  const preview = useFormulaPreview(value, template, context.sample, caret !== undefined && !problems.some(p => p.severity === 'error'))
   const jumpTo = (from: number, to: number) => {
     const v = view.current
     if (!v) return
@@ -168,6 +173,7 @@ export function MappedField({ value, onChange, mode, context, multiline, rows = 
           onFunctions={() => setPicker(p => (p?.functions ? null : { functions: true }))}
           onClear={clear} onJump={jumpTo} />
       )}
+      {!disabled && preview && <PreviewLine preview={preview} />}
       {picker && !picker.functions && <DataPicker sources={context.sources} onPick={pick} onClose={() => setPicker(null)}
         title={picker.replace ? 'Point this chip at other data' : undefined} />}
       {picker?.functions && <FunctionPicker onPick={pickFunction} onClose={() => setPicker(null)} />}
@@ -215,7 +221,47 @@ function FormulaBar({ template, empty, problems, open, onData, onFunctions, onCl
   )
 }
 
-const CATEGORIES: FunctionCategory[] = ['Text', 'Number', 'Date', 'List', 'Check']
+/**
+ * What the field gives with the last run's data, worked out by the engine itself a moment after
+ * typing stops, while the field is in use and has no errors.
+ */
+function useFormulaPreview(value: string, template: boolean, sample: Record<string, unknown> | undefined, active: boolean): FormulaPreview | null {
+  const [result, setResult] = useState<FormulaPreview | null>(null)
+  const worth = active && !!sample && !!value.trim() && (!template || value.includes('{{'))
+  useEffect(() => {
+    if (!worth) { setResult(null); return }
+    let live = true
+    const t = setTimeout(() => {
+      formulaApi.preview(value, template, sample!)
+        .then(r => { if (live) setResult(r) })
+        .catch(() => { if (live) setResult(null) })
+    }, 400)
+    return () => { live = false; clearTimeout(t) }
+  }, [worth, value, template, sample])
+  return worth ? result : null
+}
+
+function shown(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '(empty)'
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length > 160 ? `${text.slice(0, 158)}…` : text
+}
+
+function PreviewLine({ preview }: { preview: FormulaPreview }) {
+  return (
+    <p className="mt-0.5 hidden min-w-0 items-baseline gap-1.5 text-[11px] group-focus-within/fx:flex" aria-live="polite">
+      <span className="shrink-0 text-gray-400">With the last run:</span>
+      {preview.error
+        ? <span className="truncate text-red-600 dark:text-red-400" title={preview.error}>{preview.error}</span>
+        : <>
+            <code className="min-w-0 truncate font-mono text-gray-700 dark:text-gray-200" title={shown(preview.value)}>{shown(preview.value)}</code>
+            {preview.type && preview.type !== 'empty' && <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-[10px] text-gray-500 dark:bg-gray-800">{preview.type}</span>}
+          </>}
+    </p>
+  )
+}
+
+const CATEGORIES: FunctionCategory[] = ['Text', 'Number', 'Date', 'List', 'Map', 'Check']
 
 /** Every function, by kind, with what it does; picking one puts it at the cursor. */
 function FunctionPicker({ onPick, onClose }: { onPick: (f: FormulaFunction) => void; onClose: () => void }) {

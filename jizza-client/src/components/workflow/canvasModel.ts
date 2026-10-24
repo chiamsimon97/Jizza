@@ -6,6 +6,8 @@
  * explicitly, including a branch's yes and no exits.
  */
 
+import { contractIssues } from './moduleContract'
+
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
   | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
   | 'APPROVAL' | 'HTTP_REQUEST' | 'FILTER' | 'SWITCH' | 'SET_VARIABLE' | 'STORAGE' | 'NOTIFY'
@@ -66,7 +68,7 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   PARALLEL: { label: 'Parallel', desc: 'Runs several paths at once.', tone: 'bg-teal-600 text-white' },
   JOIN: { label: 'Join', desc: 'Waits for every path, then carries on.', tone: 'bg-teal-700 text-white' },
   WAIT: { label: 'Wait', desc: 'Pauses for a while or until a time.', tone: 'bg-orange-500 text-white' },
-  SUB_WORKFLOW: { label: 'Run a workflow', desc: 'Runs another workflow as one step.', tone: 'bg-indigo-600 text-white' },
+  SUB_WORKFLOW: { label: 'Run a module', desc: 'Runs another workflow as one step: give it inputs, map its outputs.', tone: 'bg-indigo-600 text-white' },
   FOR_EACH: { label: 'For each', desc: 'Runs a workflow once per item in a list.', tone: 'bg-fuchsia-600 text-white' },
   APPROVAL: { label: 'Approval', desc: 'Waits for you to approve or reject.', tone: 'bg-amber-600 text-white' },
   HTTP_REQUEST: { label: 'Send webhook', desc: 'Calls any URL or API.', tone: 'bg-cyan-600 text-white' },
@@ -470,6 +472,8 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
     if (n.config.bodyType === 'expression' && !text(n.config.bodyExpr)) add('bodyExpr', `${name} needs an expression for the body.`)
     if (n.config.bodyType === 'raw' && !text(n.config.body)) add('body', `${name} needs a body to send.`)
   }
+  if (n.type === 'TRIGGER') contractIssues(n.config, 'inputs', name).forEach(([f, m]) => add(f, m))
+  if (n.type === 'END') contractIssues(n.config, 'outputs', name).forEach(([f, m]) => add(f, m))
   if (n.type === 'SWITCH') {
     const cases = casesOf(n.config)
     if (cases.length === 0) add('cases', `${name} needs at least one path.`)

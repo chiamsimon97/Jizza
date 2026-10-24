@@ -79,6 +79,7 @@ public class GuardrailConditions {
         .strict(true)
         .silent(false)
         .safe(false)
+        .cancellable(true) // the timeout's interrupt stops evaluation, as in the workflow sandbox
         .create();
   }
 

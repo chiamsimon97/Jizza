@@ -90,7 +90,9 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     entity.setDescription(dto.description());
     entity.setGraph(graph.toJson());
     entity.setGraphFingerprint(graph.fingerprint());
-    entity.setInputSchema(dto.inputSchema());
+    // The inputs a module declares on its start step are its input schema.
+    var declared = com.jizza.engine.api.workflow.graph.ModuleContract.inputSchema(graph);
+    entity.setInputSchema(declared != null ? declared : dto.inputSchema());
     entity.setTriggerConfig(dto.triggerConfig());
     workflows.save(entity);
     snapshot(entity);
