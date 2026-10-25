@@ -86,6 +86,7 @@ public class PublicListingUseCase {
   @Transactional
   public View submit(Access access) {
     Listing listing = organization(access);
+    PublicOrganizationInitializer.refuseIfPlatform(store, access.workspaceId());
     if (listing.draft() == null) {
       throw new ValidationException("Fill in the public profile before sending it for review");
     }

@@ -1,8 +1,11 @@
 package com.jizza.engine.security.workspace;
 
+import com.jizza.engine.api.enums.AccountSource;
 import com.jizza.engine.api.enums.JoinRequestStatus;
 import com.jizza.engine.api.enums.ListingAction;
 import com.jizza.engine.api.enums.ListingStatus;
+import com.jizza.engine.api.enums.WorkspaceRole;
+import com.jizza.engine.api.enums.WorkspaceType;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workspace.PublicListingStore;
 import java.sql.ResultSet;
@@ -181,12 +184,53 @@ public class JdbcPublicListingStore implements PublicListingStore {
     jdbc.update("update workspaces set platform_public = true where id = ?", workspaceId);
   }
 
+  // ── Account registry ──────────────────────────────────────────────────────
+
   @Override
   @Transactional
-  public int enrollEveryone(UUID workspaceId) {
-    return jdbc.update("insert into workspace_members (workspace_id, user_id, role) "
-        + "select ?, u.id, 'user' from users u on conflict (workspace_id, user_id) do nothing",
-        workspaceId);
+  public void registerAccount(UUID workspaceId, AccountSource source, UUID byUserId) {
+    jdbc.update("insert into platform_accounts (workspace_id, source, registered_by_user_id) "
+        + "select id, ?, ? from workspaces where id = ? and not platform_public "
+        + "on conflict (workspace_id) do nothing", lower(source), byUserId, workspaceId);
+  }
+
+  @Override
+  @Transactional
+  public int registerMissingAccounts() {
+    return jdbc.update("insert into platform_accounts (workspace_id, source, "
+        + "registered_by_user_id, registered_at) select id, 'existing', created_by_user_id, "
+        + "created_at from workspaces where not platform_public "
+        + "on conflict (workspace_id) do nothing");
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<RegisteredAccount> registeredAccounts(String query) {
+    StringBuilder sql = new StringBuilder("""
+        select w.id, w.name, w.type, w.created_by_user_id, u.email, a.source, a.registered_at,
+               pm.role as public_role
+          from platform_accounts a
+          join workspaces w on w.id = a.workspace_id
+          join users u on u.id = w.created_by_user_id
+          left join workspaces pw on pw.platform_public
+          left join workspace_members pm on pm.workspace_id = pw.id
+               and pm.user_id = w.created_by_user_id
+        """);
+    List<Object> args = new ArrayList<>();
+    if (query != null && !query.isBlank()) {
+      sql.append(" where (w.name ilike ? or u.email ilike ?)");
+      String like = "%" + query.trim() + "%";
+      args.add(like);
+      args.add(like);
+    }
+    sql.append(" order by a.registered_at desc, w.id");
+    return jdbc.query(sql.toString(), (rs, i) -> new RegisteredAccount(uuid(rs, "id"),
+        rs.getString("name"), WorkspaceType.valueOf(upper(rs.getString("type"))),
+        uuid(rs, "created_by_user_id"), rs.getString("email"),
+        AccountSource.valueOf(upper(rs.getString("source"))),
+        instant(rs, "registered_at"),
+        rs.getString("public_role") == null ? null
+            : WorkspaceRole.valueOf(upper(rs.getString("public_role")))), args.toArray());
   }
 
   // ── Join requests ─────────────────────────────────────────────────────────
@@ -260,5 +304,9 @@ public class JdbcPublicListingStore implements PublicListingStore {
 
   private static String lower(Enum<?> e) {
     return e.name().toLowerCase(Locale.ROOT);
+  }
+
+  private static String upper(String value) {
+    return value.toUpperCase(Locale.ROOT);
   }
 }

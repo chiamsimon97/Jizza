@@ -1,6 +1,7 @@
 package com.jizza.platform.usecase.workspace;
 
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.enums.AccountSource;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.PlatformRole;
 import com.jizza.engine.api.enums.WorkspaceRole;
@@ -14,7 +15,6 @@ import com.jizza.engine.api.workspace.Membership;
 import com.jizza.engine.api.workspace.PublicListingStore;
 import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.api.workspace.WorkspaceSummary;
-import com.jizza.platform.usecase.listing.PublicOrganizationInitializer;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -49,6 +49,7 @@ public class WorkspaceUseCase {
       throw new ValidationException("The organization name must be 2 to 100 characters");
     }
     var ws = directory.createOrganization(userId, trimmed);
+    listings.registerAccount(ws.id(), AccountSource.ORGANIZATION_CREATED, userId);
     audit.record(userId, ActorType.USER, userId, "workspace.created", trimmed,
         Json.obj().put("workspaceId", ws.id().toString()).put("type", WorkspaceType.ORGANIZATION.name()));
     return new WorkspaceSummary(ws.id(), ws.type(), ws.name(), WorkspaceRole.OWNER);
@@ -81,10 +82,6 @@ public class WorkspaceUseCase {
     if (m.role() == WorkspaceRole.OWNER) {
       throw new JizzaException(HttpStatus.CONFLICT, "owner-cannot-leave", "The owner can't leave",
           "The owner can't leave the organization.");
-    }
-    if (PublicOrganizationInitializer.isPlatform(listings, workspaceId)) {
-      throw new JizzaException(HttpStatus.CONFLICT, "platform-organization-no-leave",
-          "Everyone is a member", "Every account on Jizza belongs to the Public organization.");
     }
     directory.removeMember(m.id());
     UUID personal = directory.personalWorkspaceOf(userId);

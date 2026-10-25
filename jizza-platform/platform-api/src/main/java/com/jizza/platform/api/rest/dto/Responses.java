@@ -41,8 +41,18 @@ public final class Responses {
                        com.jizza.engine.api.enums.MembershipStatus status,
                        java.time.Instant joinedAt, boolean you) {}
 
-  /** Everyone's role in the platform's Public organization, for the Super Admin. */
-  public record PublicRoles(UUID workspaceId, String workspaceName, java.util.List<Member> members) {}
+  /** Every account registered in the platform's Public organization, for the Super Admin. */
+  public record AccountRegistry(UUID workspaceId, String workspaceName,
+                                java.util.List<RegisteredAccount> accounts) {}
+
+  /** {@code publicRole} is the owner's role in the Public organization; User unless promoted. */
+  public record RegisteredAccount(UUID workspaceId, String name,
+                                  com.jizza.engine.api.enums.WorkspaceType type, UUID ownerUserId,
+                                  String ownerEmail, com.jizza.engine.api.enums.AccountSource source,
+                                  java.time.Instant registeredAt,
+                                  com.jizza.engine.api.enums.WorkspaceRole publicRole) {}
+
+  public record PublicRole(UUID userId, com.jizza.engine.api.enums.WorkspaceRole role) {}
 
   /** A membership request as the organization sees it. */
   public record Invitation(UUID id, String email, com.jizza.engine.api.enums.WorkspaceRole role,
