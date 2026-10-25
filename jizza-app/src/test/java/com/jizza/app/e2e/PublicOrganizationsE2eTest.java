@@ -1,9 +1,14 @@
 package com.jizza.app.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.workspace.PublicListingStore;
+import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.security.mfa.TotpService;
+import com.jizza.platform.usecase.listing.PublicOrganizationInitializer;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +35,9 @@ class PublicOrganizationsE2eTest extends E2eSupport {
   @LocalServerPort private int port;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private TotpService totp;
+  @Autowired private PublicListingStore listings;
+  @Autowired private WorkspaceDirectory directory;
+  @Autowired private AuditLog audit;
 
   private ApiClient owner;
   private ApiClient developer;
@@ -318,5 +326,51 @@ class PublicOrganizationsE2eTest extends E2eSupport {
     }
     assertThat(discovered().path("member").asBoolean()).isFalse();
     assertThat(discovered().path("pendingRequest").isNull()).isTrue();
+  }
+
+  @Test
+  void startupCreatesTheListedPublicOrganizationOrRefusesToStart() {
+    jdbc.update("update workspaces set platform_public = false where platform_public");
+    try {
+      // Production with nobody registered under the Super Admin email: startup is refused.
+      assertThatThrownBy(() -> initializer("nobody-" + UUID.randomUUID() + "@jizza.local", false)
+          .ensure()).isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("Public organization is missing");
+      // Development starts without it.
+      initializer("", true).ensure();
+      assertThat(listings.platformOrganization()).isEmpty();
+
+      String publicName = "Jizza Public " + UUID.randomUUID().toString().substring(0, 8);
+      initializer(adminEmail, false, publicName).ensure();
+      UUID publicOrg = listings.platformOrganization().orElseThrow();
+      // Every later startup finds the same one.
+      initializer(adminEmail, false, publicName).ensure();
+      assertThat(jdbc.queryForObject("select count(*) from workspaces where platform_public",
+          Long.class)).isEqualTo(1L);
+
+      JsonNode context = admin.get("/api/me/context").json();
+      assertThat(context.path("publicWorkspaceIds").toString()).contains(publicOrg.toString());
+      assertThat(context.path("workspaces").toString()).contains(publicName);
+      assertThat(jdbc.queryForObject("select type from workspaces where id = ?", String.class,
+          publicOrg)).isEqualTo("organization");
+      assertThat(outsider.get("/api/directory?q=" + publicName.replace(" ", "%20")).json()
+          .path("items").toString()).contains(publicOrg.toString());
+
+      // It can't be taken off Discover.
+      assertThat(admin.post("/api/admin/listings/" + publicOrg + "/suspend",
+          Map.of("note", "no")).status()).isEqualTo(409);
+    } finally {
+      jdbc.update("update workspaces set platform_public = false where platform_public");
+    }
+  }
+
+  private PublicOrganizationInitializer initializer(String email, boolean development) {
+    return initializer(email, development, "Jizza Public");
+  }
+
+  private PublicOrganizationInitializer initializer(String email, boolean development,
+                                                    String orgName) {
+    return new PublicOrganizationInitializer(listings, directory, audit, email, orgName,
+        "Jizza's public organization.", development);
   }
 }

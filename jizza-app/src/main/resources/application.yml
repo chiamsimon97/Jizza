@@ -85,6 +85,11 @@ logging:
     name: ${JIZZA_LOG_FILE:./data/logs/jizza.log}
 
 jizza:
+  # Development setup. Off in production, where startup is refused without the Public organization.
+  development: ${JIZZA_DEVELOPMENT:false}
+  # Jizza's own Public organization, created at startup for the Super Admin and listed on Discover.
+  public-organization:
+    name: ${JIZZA_PUBLIC_ORG_NAME:Jizza Public}
   security:
     # Key resolution order: keystore, then key file, then (development only) an environment key.
     keystore-path: ${JIZZA_KEYSTORE_PATH:}
