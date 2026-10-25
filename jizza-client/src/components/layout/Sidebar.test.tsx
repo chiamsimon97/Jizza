@@ -45,7 +45,7 @@ describe('Sidebar', () => {
   it('shows the active account in the switcher', () => {
     renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />, makeSnapshot('ORGANIZATION', 'ADMIN'))
     expect(screen.getByRole('button', { name: 'Account: Acme' })).toBeInTheDocument()
-    expect(screen.getByText('Organization · Admin')).toBeInTheDocument()
+    expect(screen.getByText('Private organization · Admin')).toBeInTheDocument()
   })
 
   it('shows Discover in a Personal account', () => {
@@ -70,5 +70,19 @@ describe('Sidebar', () => {
     const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER', { platformRole: 'SUPER_ADMIN' }))
     expect(nav.getByText('Platform')).toBeInTheDocument()
     expect(nav.getByRole('link', { name: 'Listing reviews' })).toBeInTheDocument()
+  })
+
+  it('marks public organizations and the Super Admin in the account switcher', () => {
+    renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />,
+      makeSnapshot('ORGANIZATION', 'OWNER', { platformRole: 'SUPER_ADMIN', publicWorkspaceIds: ['ws-acme'] }))
+    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getByText('Public organization · Owner')).toBeInTheDocument()
+    expect(screen.getByText('Super Admin')).toBeInTheDocument()
+  })
+
+  it('calls an unlisted organization private', () => {
+    renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />, makeSnapshot('ORGANIZATION', 'ADMIN'))
+    expect(screen.getByText('Private organization · Admin')).toBeInTheDocument()
+    expect(screen.queryByText('Super Admin')).not.toBeInTheDocument()
   })
 })

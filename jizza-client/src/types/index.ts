@@ -1132,6 +1132,8 @@ export interface AuthorizationSnapshot {
   workspaces: WorkspaceSummary[]
   pendingInvitationCount: number
   permissionsVersion: string
+  /** Which of `workspaces` are listed publicly on Discover. */
+  publicWorkspaceIds?: string[]
 }
 
 export interface PermissionDefinition {

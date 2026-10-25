@@ -32,7 +32,7 @@ describe('Public listing page', () => {
     const submit = vi.spyOn(listingApi, 'submit').mockResolvedValue(listing({ draft: profile, status: 'PENDING' }))
     renderWithSnapshot(<PublicListingPage />, makeSnapshot('ORGANIZATION', 'OWNER'))
 
-    expect(await screen.findByText('Not listed')).toBeInTheDocument()
+    expect(await screen.findByText('Private')).toBeInTheDocument()
     expect(screen.getByText(/Nothing. The organization is not listed/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Description', { exact: false }), { target: { value: 'We build robots' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send for review' }))

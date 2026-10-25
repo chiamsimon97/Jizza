@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ClipboardCheck, PauseCircle, PlayCircle, X } from 'lucide-react'
+import { Check, ClipboardCheck, PauseCircle, PlayCircle, ShieldCheck, X } from 'lucide-react'
 import { listingReviewApi } from '@/api/listings'
 import { useAuthorization } from '@/auth/useAuthorization'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -11,11 +11,13 @@ import { Field, fieldClass } from '@/components/ui/SlideOver'
 import { ListingStatusBadge, ProfilePreview, ReviewHistory, errorText } from '@/components/listing/ListingParts'
 import type { Listing, ListingStatus } from '@/types'
 
-const TABS: { status: ListingStatus; label: string }[] = [
-  { status: 'PENDING', label: 'Pending' },
-  { status: 'APPROVED', label: 'Approved' },
-  { status: 'REJECTED', label: 'Rejected' },
-  { status: 'SUSPENDED', label: 'Suspended' },
+const TABS: { status: ListingStatus; label: string; empty: string }[] = [
+  { status: 'PENDING', label: 'Pending',
+    empty: 'No organization is waiting for review. A request appears here when an organization\'s Owner or Admin opens Public listing and clicks Send for review.' },
+  { status: 'APPROVED', label: 'Approved',
+    empty: 'No organization is public yet. Organizations you approve are listed here and on Discover.' },
+  { status: 'REJECTED', label: 'Rejected', empty: 'No requests have been rejected.' },
+  { status: 'SUSPENDED', label: 'Suspended', empty: 'No listings are suspended.' },
 ]
 
 /** The Super Admin's queue of public listing requests. */
@@ -38,6 +40,18 @@ export function ListingReviewsPage() {
       <PageHeader icon={ClipboardCheck} title="Listing reviews"
         description="Organizations asking to be listed on Discover. Nothing is listed until you approve it." />
 
+      <div className="mb-5 max-w-4xl rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-gray-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-gray-200">
+        <p className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-gray-100">
+          <ShieldCheck className="h-4 w-4 text-brand-600 dark:text-brand-400" />You're the Super Admin
+        </p>
+        <p className="mt-1">
+          This page covers every organization on Jizza, whichever account you're in. An organization is private
+          until its Owner or Admin sends its profile from <span className="font-medium">Public listing</span>.
+          Once you approve it, it becomes a <span className="font-medium">public organization</span>: it shows on
+          Discover with a Public badge, and anyone can ask to join.
+        </p>
+      </div>
+
       <div role="tablist" aria-label="Listing status" className="mb-4 flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800">
         {TABS.map(t => (
           <button key={t.status} role="tab" aria-selected={tab === t.status}
@@ -56,7 +70,7 @@ export function ListingReviewsPage() {
           {queue.error && <p className="text-sm text-red-500">{errorText(queue.error)}</p>}
           {queue.data && queue.data.length === 0 && (
             <p className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
-              Nothing here.
+              {TABS.find(t => t.status === tab)?.empty}
             </p>
           )}
           {queue.data && queue.data.length > 0 && (
