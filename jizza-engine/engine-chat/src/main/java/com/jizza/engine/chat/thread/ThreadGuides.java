@@ -89,6 +89,21 @@ public final class ThreadGuides {
    * What the agent answering in a thread is told before the conversation: where it is, what the
    * thread is for, its guide, and how to keep to the topic.
    */
+  /**
+   * What Jizza is told in a main chat the user turned threads on for: it coordinates, and work
+   * that belongs to a specialist goes to that specialist's thread rather than being relayed here.
+   */
+  public static final String MAIN_PREAMBLE = """
+      [Threads are on for this chat: the user wants each topic worked on in its own thread, led by
+      the specialist whose area it is, with you coordinating here.
+      - A message that belongs to one specialist's area goes to a thread, even a quick question:
+        to the open thread on that topic with continue_in_thread (follow-ups such as "have we done
+        anything about this?" go to the thread the earlier answer came from), otherwise to a new
+        one with start_thread. Do not answer it here through delegate_to_specialist.
+      - Answer here yourself only small talk, questions about the Jizza app, and requests that
+        span several specialists' areas.
+      - When you move a message, say in one sentence who took it to which thread.]""";
+
   public static String preamble(String title, String topic, String leadName, boolean jizzaLeads,
                                 boolean leadUnavailable, String guide) {
     StringBuilder sb = new StringBuilder();

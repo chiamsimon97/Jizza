@@ -15,14 +15,27 @@ vi.mock('@/api/conversations', () => ({
     downloadGuide: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
+    create: vi.fn(async () => ({ id: 'threaded-1', threadsEnabled: true })),
+    threads: vi.fn(),
+    allThreads: vi.fn(),
+  },
+}))
+
+vi.mock('@/api/chat', () => ({
+  chatApi: {
+    send: vi.fn(async (body: { conversationId?: string }) => ({ jobId: 'job-9', conversationId: body.conversationId ?? 'plain-1' })),
+    cancel: vi.fn(),
+    job: vi.fn(),
   },
 }))
 
 import { conversationsApi } from '@/api/conversations'
+import { chatApi } from '@/api/chat'
 import { useAssistantStore } from './assistantStore'
 import { Conversation } from './Conversation'
 import { ConversationRail } from './workspace/ConversationRail'
 import { ThreadGuidePanel } from './workspace/ThreadGuidePanel'
+import { ThreadsPanel } from './workspace/ThreadsPanel'
 
 function wrap(children: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -33,13 +46,57 @@ function wrap(children: ReactNode) {
 Element.prototype.scrollIntoView = vi.fn()
 
 afterEach(() => {
-  useAssistantStore.setState({ messages: [], jobs: {}, jobOrder: [], conversationId: undefined, activeJobId: undefined, thinking: false })
+  useAssistantStore.setState({ messages: [], jobs: {}, jobOrder: [], conversationId: undefined, activeJobId: undefined, thinking: false, threadsNext: false })
   vi.clearAllMocks()
 })
 
 const at = new Date().toISOString()
 
 describe('Threads', () => {
+  it('groups threads by stage, and resolves one', async () => {
+    const row = (id: string, title: string, stage: ConversationSummary['stage'], name: string): ConversationSummary => ({
+      id, title, stage, createdAt: at, lastMessageAt: at, pinned: false, archived: stage === 'resolved',
+      messageCount: 4, kind: 'thread', parentId: 'main-1', lead: { id: name, key: name.toLowerCase(), name },
+    })
+    vi.mocked(conversationsApi.threads).mockResolvedValue([
+      row('t1', 'Monthly investing plan', 'waiting', 'Kai'),
+      row('t2', 'Vitamin D follow-up', 'working', 'Vita'),
+      row('t3', 'Sleep routine', 'idle', 'Vita'),
+      row('t4', 'Dentist appointment', 'resolved', 'Vita'),
+    ])
+    vi.mocked(conversationsApi.update).mockResolvedValue(row('t3', 'Sleep routine', 'resolved', 'Vita'))
+    wrap(<ThreadsPanel mainId="main-1" />)
+
+    await screen.findByText('Monthly investing plan')
+    expect(within(screen.getByRole('region', { name: 'Waiting on you' })).getByText('Monthly investing plan')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Working' })).getByText('Vitamin D follow-up')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Resolved · 1/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Dentist appointment')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve Sleep routine' }))
+    await waitFor(() => expect(conversationsApi.update).toHaveBeenCalledWith('t3', { archived: true }))
+    fireEvent.click(screen.getByText('Monthly investing plan'))
+    expect(useAssistantStore.getState().conversationId).toBe('t1')
+  })
+
+
+  it('are off in a new chat, and on only when the user starts one with threads', async () => {
+    vi.mocked(conversationsApi.list).mockResolvedValue([])
+    wrap(<ConversationRail />)
+
+    await act(() => useAssistantStore.getState().send('Is my vitamin D low?'))
+    expect(conversationsApi.create).not.toHaveBeenCalled()
+    expect(vi.mocked(chatApi.send).mock.calls[0][0].conversationId).toBeUndefined()
+
+    useAssistantStore.setState({ thinking: false })
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation with threads' }))
+    expect(useAssistantStore.getState().threadsNext).toBe(true)
+    await act(() => useAssistantStore.getState().send('Help me plan investing 500 a month'))
+    expect(conversationsApi.create).toHaveBeenCalledWith({ threads: true })
+    expect(vi.mocked(chatApi.send).mock.calls[1][0].conversationId).toBe('threaded-1')
+    expect(useAssistantStore.getState().threadsNext).toBe(false)
+  })
+
   it('shows where Jizza handed a request and opens that thread', async () => {
     useAssistantStore.setState({
       conversationId: 'main-1',

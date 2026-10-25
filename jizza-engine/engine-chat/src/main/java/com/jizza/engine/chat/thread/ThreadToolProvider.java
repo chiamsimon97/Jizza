@@ -63,7 +63,9 @@ public class ThreadToolProvider implements ToolProvider {
       return List.of();
     }
     ChatScope.Scope scope = current.get();
-    return scope.thread() ? threadTools(scope) : mainTools(scope);
+    if (scope.thread()) return threadTools(scope);
+    // A plain chat: the user did not turn threads on for it.
+    return scope.threadsOn() ? mainTools(scope) : List.of();
   }
 
   @Override
@@ -102,18 +104,20 @@ public class ThreadToolProvider implements ToolProvider {
     tools.add(new ToolSpec(START, """
         Move a topic out of this main chat into a thread of its own, led by the specialist whose
         area it is, and hand them the user's message to answer there. You coordinate from the main
-        chat; the lead works with the user in the thread, and you co-own it.
+        chat; the lead works with the user in the thread, and you co-own it. The user turned
+        threads on for this chat, so this is how their requests get worked on.
 
-        Open a thread when the user starts on something that belongs to one specialist's area and
-        will take more than a quick answer: planning, tracking, a decision to work through, an
-        ongoing topic. For example investments, budgets or bills go to the finance lead; fitness,
-        sleep, symptoms or appointments go to the health lead; meetings, documents or deadlines go
-        to the work lead.
+        Open a thread whenever the user brings up something in one specialist's area that no open
+        thread covers, even a quick question. For example investments, budgets, bills or savings
+        go to the finance lead; health, blood tests, vitamins, fitness, sleep, symptoms or
+        appointments go to the health lead; meetings, documents or deadlines go to the work lead.
+        A new topic for a different specialist gets its own thread, even while another thread is
+        open.
 
-        Answer here instead, without a thread, when it is a quick question one specialist can
-        settle (use delegate_to_specialist), when it spans several areas, or when it is about the
-        Jizza app itself (pages, workflows, tasks, agents, settings). If an open thread already
-        covers the topic, use continue_in_thread instead of opening another.
+        Answer here instead, without a thread, only for small talk, questions about the Jizza app
+        itself (pages, workflows, tasks, agents, settings), or a request that spans several
+        specialists' areas. If an open thread already covers the topic, use continue_in_thread
+        instead of opening another.
 
         After calling it, tell the user in one sentence who took it to which thread. Do not answer
         the request yourself.
@@ -135,8 +139,9 @@ public class ThreadToolProvider implements ToolProvider {
           List.of("thread_id", "message"));
       tools.add(new ToolSpec(CONTINUE, """
           Hand the user's message to an open thread whose topic it belongs to, where its lead
-          answers it with everything the thread already knows. Prefer this to opening a new thread
-          on the same topic. After calling it, tell the user in one sentence where it went; do not
+          answers it with everything the thread already knows. Follow-ups to something a thread
+          handled (such as "what have we done about this?") go back to that thread. Prefer this to
+          opening a new thread on the same topic. After calling it, tell the user in one sentence where it went; do not
           answer it yourself.
 
           Open threads:""" + listed, continueSchema, false));

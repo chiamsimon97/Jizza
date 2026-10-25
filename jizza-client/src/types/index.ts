@@ -500,6 +500,9 @@ export interface ConversationDto {
 }
 
 /** A conversation as the conversation list shows it. */
+/** Where a conversation stands; threads are grouped by it. */
+export type ConversationStage = 'working' | 'waiting' | 'idle' | 'resolved'
+
 export interface ConversationSummary {
   id: string
   title?: string
@@ -516,6 +519,9 @@ export interface ConversationSummary {
   /** For a thread, the agent leading it. */
   lead?: AgentRef
   topic?: string
+  /** For a main chat: the user turned threads on, so Jizza moves topics into specialist threads. */
+  threadsEnabled?: boolean
+  stage?: ConversationStage
 }
 
 export interface MessageDto {

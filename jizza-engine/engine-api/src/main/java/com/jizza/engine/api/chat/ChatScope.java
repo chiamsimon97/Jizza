@@ -24,17 +24,22 @@ public final class ChatScope {
    * @param parentId         for a thread, the main chat it was opened from
    * @param title            for a thread, its title
    * @param topic            for a thread, what it is about
+   * @param threadsOn        for a main chat, whether the user turned threads on for it; a plain
+   *                         chat never opens one
    */
   public record Scope(UUID userId, UUID conversationId, boolean thread, UUID parentId,
-                      UUID responderAgentId, String title, String topic, List<UiAction> actions) {
+                      UUID responderAgentId, String title, String topic, boolean threadsOn,
+                      List<UiAction> actions) {
 
-    public static Scope main(UUID userId, UUID conversationId, UUID jizzaId) {
-      return new Scope(userId, conversationId, false, null, jizzaId, null, null, new ArrayList<>());
+    public static Scope main(UUID userId, UUID conversationId, UUID jizzaId, boolean threadsOn) {
+      return new Scope(userId, conversationId, false, null, jizzaId, null, null, threadsOn,
+          new ArrayList<>());
     }
 
     public static Scope thread(UUID userId, UUID conversationId, UUID parentId, UUID leadId,
                                String title, String topic) {
-      return new Scope(userId, conversationId, true, parentId, leadId, title, topic, new ArrayList<>());
+      return new Scope(userId, conversationId, true, parentId, leadId, title, topic, true,
+          new ArrayList<>());
     }
   }
 

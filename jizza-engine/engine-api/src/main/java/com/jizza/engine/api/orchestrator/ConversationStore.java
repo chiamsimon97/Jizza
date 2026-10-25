@@ -18,17 +18,24 @@ public interface ConversationStore {
 
   List<ConversationDto.MessageDto> messages(UUID userId, UUID conversationId);
 
-  ConversationSummaryDto create(UUID userId, String title);
+  /** {@code threads} turns threads on for the new chat. */
+  ConversationSummaryDto create(UUID userId, String title, boolean threads);
 
   /** One conversation's list row: its title, pin and counts. */
   ConversationSummaryDto summary(UUID userId, UUID conversationId);
 
-  /** Any argument left null is unchanged. A title set here is the user's and is never replaced automatically. */
+  /**
+   * Any argument left null is unchanged. A title set here is the user's and is never replaced
+   * automatically. {@code threads} applies to a main chat only; its existing threads stay either way.
+   */
   ConversationSummaryDto update(UUID userId, UUID conversationId, String title, Boolean pinned,
-                                Boolean archived);
+                                Boolean archived, Boolean threads);
 
   /** A main chat's threads, most recently active first, archived ones included. */
   List<ConversationSummaryDto> threads(UUID userId, UUID conversationId);
+
+  /** Every thread of the user's, in any chat, most recently active first, resolved ones included. */
+  List<ConversationSummaryDto> allThreads(UUID userId, int limit);
 
   /** A thread's learning file. */
   ThreadGuideDto guide(UUID userId, UUID threadId);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Split, Trash2 } from 'lucide-react'
 import { conversationsApi } from '@/api/conversations'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { ConversationSummary } from '@/types'
@@ -77,14 +77,27 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-col gap-2 p-3">
-        <button
-          type="button"
-          onClick={() => { newConversation(); onPicked?.() }}
-          className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-brand-700 dark:hover:text-brand-300"
-        >
-          <Plus className="h-4 w-4" />
-          New conversation
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => { newConversation(); onPicked?.() }}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-brand-700 dark:hover:text-brand-300"
+          >
+            <Plus className="h-4 w-4" />
+            New conversation
+          </button>
+          {!incognito && (
+            <button
+              type="button"
+              onClick={() => { newConversation(true); onPicked?.() }}
+              aria-label="New conversation with threads"
+              title="New conversation with threads: Jizza moves each topic into a thread led by its specialist"
+              className="flex shrink-0 items-center rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-gray-600 shadow-sm transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-brand-700 dark:hover:text-brand-300"
+            >
+              <Split className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         <label className="flex items-center gap-2 rounded-lg bg-gray-100 px-2.5 py-1.5 text-sm dark:bg-gray-900">
           <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
           <input

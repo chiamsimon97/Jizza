@@ -79,7 +79,11 @@ public class ThreadService {
     ConversationEntity c = conversations.findById(conversationId).orElse(null);
     if (c == null || !c.getUserId().equals(userId)) return null;
     UUID jizzaId = agents.findByUserIdAndIsOrchestratorTrue(userId).map(AgentEntity::getId).orElse(null);
-    if (!c.isThread()) return new Framing(ChatScope.Scope.main(userId, c.getId(), jizzaId), null, null);
+    if (!c.isThread()) {
+      boolean on = c.isThreadsEnabled() && props.getThreads().isEnabled();
+      return new Framing(ChatScope.Scope.main(userId, c.getId(), jizzaId, on), null,
+          on ? ThreadGuides.MAIN_PREAMBLE : null);
+    }
 
     AgentEntity owner = c.getOwnerAgentId() == null ? null
         : agents.findById(c.getOwnerAgentId()).orElse(null);

@@ -63,7 +63,7 @@ class ThreadToolProviderTest {
 
   @Test
   void inTheMainChatOnlyJizzaCanOpenAThread() {
-    ChatScope.Scope main = ChatScope.Scope.main(userId, mainId, jizzaId);
+    ChatScope.Scope main = ChatScope.Scope.main(userId, mainId, jizzaId, true);
 
     assertThat(ChatScope.run(main, () -> names(jizzaId))).containsExactly(ThreadToolProvider.START);
     // A specialist Jizza delegates to on the same thread is not the one talking to the user.
@@ -77,7 +77,7 @@ class ThreadToolProviderTest {
     ConversationEntity open = thread(kai.getId());
     when(threads.openThreads(eq(userId), anyInt())).thenReturn(List.of(open));
 
-    List<ToolSpec> tools = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId),
+    List<ToolSpec> tools = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true),
         () -> provider.toolsFor(jizzaId));
 
     assertThat(tools).extracting(ToolSpec::name)
@@ -86,17 +86,31 @@ class ThreadToolProviderTest {
   }
 
   @Test
+  void aChatWithoutThreadsOffersNone() {
+    assertThat(ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, false), () -> names(jizzaId)))
+        .isEmpty();
+  }
+
+  @Test
+  void aNewTopicForAnotherSpecialistGetsItsOwnThreadEvenAQuickOne() {
+    String description = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true),
+        () -> provider.toolsFor(jizzaId)).get(0).description();
+    assertThat(description).contains("even a quick question").contains("blood tests")
+        .doesNotContain("use delegate_to_specialist");
+  }
+
+  @Test
   void turnedOffThereAreNone() {
     props.getThreads().setEnabled(false);
 
-    assertThat(ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId), () -> names(jizzaId))).isEmpty();
+    assertThat(ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true), () -> names(jizzaId))).isEmpty();
   }
 
   @Test
   void startingAThreadOpensItHandsTheMessageOverAndShowsACard() {
     ConversationEntity created = thread(kai.getId());
     when(threads.open(eq(userId), eq(mainId), eq(kai), anyString(), anyString())).thenReturn(created);
-    ChatScope.Scope main = ChatScope.Scope.main(userId, mainId, jizzaId);
+    ChatScope.Scope main = ChatScope.Scope.main(userId, mainId, jizzaId, true);
 
     ToolResult result = ChatScope.run(main, () -> provider.invoke(jizzaId, new ToolCall(
         ThreadToolProvider.START, Json.obj().put("lead", "finance").put("title", "Index fund plan")
@@ -114,7 +128,7 @@ class ThreadToolProviderTest {
 
   @Test
   void anUnknownLeadIsRefusedWithoutOpeningAnything() {
-    ToolResult result = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId), () -> provider.invoke(jizzaId,
+    ToolResult result = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true), () -> provider.invoke(jizzaId,
         new ToolCall(ThreadToolProvider.START, Json.obj().put("lead", "astrology").put("title", "x")
             .put("topic", "x").put("message", "x"))));
 
