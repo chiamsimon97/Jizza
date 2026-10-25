@@ -7,6 +7,7 @@ import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Badge } from '@/components/ui/Badge'
 import { useAssistantStore, resumeConversation } from '@/jizza/assistantStore'
 import { ThreadGuidePanel } from '@/jizza/workspace/ThreadGuidePanel'
+import { ThreadsPanel } from '@/jizza/workspace/ThreadsPanel'
 import type { ConversationSummary } from '@/types'
 import { Conversation } from '@/jizza/Conversation'
 import { JizzaOrb } from '@/jizza/JizzaOrb'
@@ -24,11 +25,11 @@ import { WorkPanel } from '@/jizza/workspace/WorkPanel'
  */
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { conversationId, incognito, thinking, messages, voiceReplies, setVoiceReplies, setIncognito, openJob, conversationsVersion } =
+  const { conversationId, incognito, thinking, messages, voiceReplies, setVoiceReplies, setIncognito, openJob, conversationsVersion, threadsNext, setThreadsNext } =
     useAssistantStore()
   const [railOpen, setRailOpen] = useState(false)
   const [workOpen, setWorkOpen] = useState(false)
-  const [side, setSide] = useState<'guide' | 'work'>('guide')
+  const [side, setSide] = useState<Side | undefined>()
 
   const open = incognito ? undefined : conversationId
   const { data: summary } = useQuery({
@@ -49,12 +50,37 @@ export function ChatPage() {
     }
   }, [searchParams, setSearchParams, conversationId])
 
+  // Threads are opt-in per chat: before the first message the choice waits in the store, after
+  // it the chat itself remembers it.
+  const threadsOn = current ? !!current.threadsEnabled : !open && threadsNext
+  const [savingThreads, setSavingThreads] = useState(false)
+  const toggleThreads = async () => {
+    if (!current) { setThreadsNext(!threadsNext); return }
+    setSavingThreads(true)
+    try {
+      await conversationsApi.update(current.id, { threads: !current.threadsEnabled })
+      useAssistantStore.setState(s => ({ conversationsVersion: s.conversationsVersion + 1 }))
+    } finally {
+      setSavingThreads(false)
+    }
+  }
+
   const firstQuestion = messages.find(m => m.role === 'user')?.text
   const title = incognito ? 'Incognito' : current?.title ?? (firstQuestion ? firstQuestion.slice(0, 80) : 'New conversation')
   const leadName = thread?.lead?.name ?? 'Jizza'
-  const sidePanel = thread
-    ? <ThreadSide threadId={thread.id} side={side} setSide={setSide} />
-    : <WorkPanel />
+  // Beside a thread its guide comes first; beside a chat with threads on, its threads.
+  const tabs: [Side, string][] = thread
+    ? [['guide', 'Guide'], ['threads', 'Threads'], ['work', 'Activity & memory']]
+    : [['threads', 'Threads'], ['work', 'Activity & memory']]
+  const shown: Side = side && tabs.some(([id]) => id === side) ? side
+    : thread ? 'guide' : threadsOn ? 'threads' : 'work'
+  const sidePanel = (
+    <SideTabs tabs={tabs} side={shown} setSide={setSide}>
+      {shown === 'guide' && thread ? <ThreadGuidePanel threadId={thread.id} />
+        : shown === 'threads' ? <ThreadsPanel mainId={thread ? thread.parentId : current?.id} currentId={current?.id} />
+          : <WorkPanel />}
+    </SideTabs>
+  )
 
   return (
     <div className="relative flex h-full min-h-0">
@@ -80,7 +106,7 @@ export function ChatPage() {
             <p className="truncate text-xs text-gray-500 dark:text-gray-400">
               {thinking ? 'Working on it…' : thread
                 ? (thread.lead && thread.lead.key !== 'jizza' ? `Thread · ${leadName} leads, Jizza co-owns` : 'Thread · Jizza leads')
-                : 'Jizza'}
+                : threadsOn ? 'Jizza · threads on, topics go to their specialist' : 'Jizza'}
             </p>
           </div>
           {thread?.parentId && (
@@ -88,6 +114,25 @@ export function ChatPage() {
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
               <CornerUpLeft className="h-4 w-4" />
               <span className="hidden sm:inline">Main chat</span>
+            </button>
+          )}
+          {!thread && !incognito && (
+            <button
+              type="button"
+              onClick={() => { void toggleThreads() }}
+              disabled={savingThreads || (open !== undefined && !current)}
+              aria-pressed={threadsOn}
+              title={threadsOn
+                ? 'Threads on: Jizza moves each topic into a thread led by its specialist. Click to turn off.'
+                : 'Threads off: everything stays in this chat. Click to have Jizza move topics into specialist threads.'}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all active:scale-95 disabled:opacity-50 ${
+                threadsOn
+                  ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+              }`}
+            >
+              <Split className="h-4 w-4" />
+              <span className="hidden sm:inline">{threadsOn ? 'Threads on' : 'Threads'}</span>
             </button>
           )}
           {incognito && <Badge variant="warning"><EyeOff className="mr-1 inline h-3 w-3" />Incognito</Badge>}
@@ -128,7 +173,7 @@ export function ChatPage() {
         {sidePanel}
       </aside>
       {workOpen && (
-        <Drawer side="right" onClose={() => setWorkOpen(false)} label={thread ? 'Thread guide and activity' : 'Activity and memory'}>
+        <Drawer side="right" onClose={() => setWorkOpen(false)} label={thread ? 'Thread guide, threads and activity' : 'Threads, activity and memory'}>
           {sidePanel}
         </Drawer>
       )}
@@ -162,12 +207,14 @@ function ThreadStrip({ mainId }: { mainId: string }) {
   )
 }
 
-/** Beside a thread: its guide, or what was done for it. */
-function ThreadSide({ threadId, side, setSide }: { threadId: string; side: 'guide' | 'work'; setSide: (s: 'guide' | 'work') => void }) {
+type Side = 'guide' | 'threads' | 'work'
+
+/** The column beside the conversation: a thread's guide, every thread by stage, or what was done. */
+function SideTabs({ tabs, side, setSide, children }: { tabs: [Side, string][]; side: Side; setSide: (s: Side) => void; children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div role="tablist" aria-label="Beside this thread" className="flex shrink-0 gap-1 border-b border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/70">
-        {([['guide', 'Guide'], ['work', 'Activity & memory']] as const).map(([id, label]) => (
+      <div role="tablist" aria-label="Beside this conversation" className="flex shrink-0 gap-1 border-b border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/70">
+        {tabs.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={side === id} onClick={() => setSide(id)}
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${side === id
               ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
@@ -176,9 +223,7 @@ function ThreadSide({ threadId, side, setSide }: { threadId: string; side: 'guid
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1">
-        {side === 'guide' ? <ThreadGuidePanel threadId={threadId} /> : <WorkPanel />}
-      </div>
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
   )
 }

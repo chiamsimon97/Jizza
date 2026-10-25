@@ -71,6 +71,10 @@ public class ConversationEntity {
   /** {@code jizza} while Jizza keeps the guide, {@code user} once the user edited it. */
   private String guideSource;
 
+  /** For a main chat: the user turned threads on, so Jizza may move topics into threads. */
+  @Column(nullable = false)
+  private boolean threadsEnabled;
+
   public static final String KIND_MAIN = "main";
   public static final String KIND_THREAD = "thread";
 
@@ -96,6 +100,9 @@ public class ConversationEntity {
 
   public String getGuideSource() { return guideSource; }
   public void setGuideSource(String guideSource) { this.guideSource = guideSource; }
+
+  public boolean isThreadsEnabled() { return threadsEnabled; }
+  public void setThreadsEnabled(boolean threadsEnabled) { this.threadsEnabled = threadsEnabled; }
 
   public String getSummary() { return summary; }
   public void setSummary(String summary) { this.summary = summary; }

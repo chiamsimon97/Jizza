@@ -99,10 +99,18 @@ interface AssistantState {
   /** Plans the user approved, by plan id, with the workflow each was saved as. */
   savedPlans: Record<string, string>
 
+  /**
+   * Threads for the chat about to start: chosen before its first message, when there is no
+   * conversation yet to switch them on for.
+   */
+  threadsNext: boolean
+
   send: (text: string) => Promise<void>
   stop: () => Promise<void>
   applyEvent: (event: ChatSocketEvent) => void
-  newConversation: () => void
+  /** {@code threads} starts it with threads on; a plain chat otherwise. */
+  newConversation: (threads?: boolean) => void
+  setThreadsNext: (on: boolean) => void
   setIncognito: (on: boolean) => void
   setDockOpen: (open: boolean) => void
   setVoiceReplies: (on: boolean) => void
@@ -399,6 +407,7 @@ export const useAssistantStore = create<AssistantState>()(
         conversationsVersion: 0,
         plannerOpen: false,
         savedPlans: {},
+        threadsNext: false,
 
         send: async (raw) => {
           const text = raw.trim()
@@ -421,9 +430,15 @@ export const useAssistantStore = create<AssistantState>()(
           }
 
           set({ thinking: true })
-          const { incognito, conversationId } = get()
+          const { incognito, threadsNext } = get()
+          let { conversationId } = get()
           const clientMessageId = uuid()
           try {
+            // A chat with threads on exists before its first message, so that message can open one.
+            if (!incognito && !conversationId && threadsNext) {
+              conversationId = (await conversationsApi.create({ threads: true })).id
+              set({ conversationId, threadsNext: false })
+            }
             const ref = await chatApi.send({
               message: text, clientMessageId,
               screen: ctx.screen,
@@ -470,7 +485,8 @@ export const useAssistantStore = create<AssistantState>()(
 
         applyEvent: apply,
 
-        newConversation: () => set({ messages: [], conversationId: undefined, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {}, activeJobId: undefined, thinking: false }),
+        newConversation: (threads) => set({ messages: [], conversationId: undefined, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {}, activeJobId: undefined, thinking: false, threadsNext: threads === true }),
+        setThreadsNext: (on) => set({ threadsNext: on }),
         setIncognito: (on) => set({ incognito: on, messages: [], conversationId: undefined, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {} }),
         setDockOpen: (open) => set({ dockOpen: open }),
         setVoiceReplies: (on) => set({ voiceReplies: on }),
@@ -625,6 +641,6 @@ async function catchUpRunning(jobId: string) {
 
 /** Opens a conversation from the list. */
 export function resumeConversation(conversationId: string) {
-  useAssistantStore.setState({ conversationId, messages: [], incognito: false, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {}, activeJobId: undefined, thinking: false })
+  useAssistantStore.setState({ conversationId, messages: [], incognito: false, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {}, activeJobId: undefined, thinking: false, threadsNext: false })
   void loadHistory()
 }

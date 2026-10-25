@@ -44,7 +44,8 @@ public class ConversationController {
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   public ConversationSummaryDto create(@jakarta.validation.Valid @RequestBody(required = false) Requests.ConversationCreate body) {
-    return conversations.create(CurrentUser.userId(), body == null ? null : body.title());
+    return conversations.create(CurrentUser.userId(), body == null ? null : body.title(),
+        body != null && Boolean.TRUE.equals(body.threads()));
   }
 
   @GetMapping("/{id}")
@@ -54,7 +55,8 @@ public class ConversationController {
 
   @PatchMapping("/{id}")
   public ConversationSummaryDto update(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody Requests.ConversationPatch body) {
-    return conversations.update(CurrentUser.userId(), id, body.title(), body.pinned(), body.archived());
+    return conversations.update(CurrentUser.userId(), id, body.title(), body.pinned(), body.archived(),
+        body.threads());
   }
 
   @DeleteMapping("/{id}")
@@ -84,6 +86,12 @@ public class ConversationController {
   @GetMapping("/{id}/summary")
   public ConversationSummaryDto summary(@PathVariable UUID id) {
     return conversations.summary(CurrentUser.userId(), id);
+  }
+
+  /** Every thread, across all chats, with the stage each is at. */
+  @GetMapping("/threads")
+  public List<ConversationSummaryDto> allThreads(@RequestParam(defaultValue = "100") int limit) {
+    return conversations.allThreads(CurrentUser.userId(), limit);
   }
 
   /** A main chat's threads, most recently active first. */

@@ -72,9 +72,12 @@ public final class Requests {
   public record Turn(@NotBlank @Size(max = MAX_MESSAGE) String message, UUID conversationId,
                      UUID clientMessageId, @Size(max = 200) String screen, Boolean incognito, JsonNode context) {}
 
-  public record ConversationCreate(@Size(max = 200) String title) {}
+  /** {@code threads} starts the chat with threads on. */
+  public record ConversationCreate(@Size(max = 200) String title, Boolean threads) {}
 
-  public record ConversationPatch(@Size(max = 200) String title, Boolean pinned, Boolean archived) {}
+  /** {@code threads} turns threads on or off for a main chat. */
+  public record ConversationPatch(@Size(max = 200) String title, Boolean pinned, Boolean archived,
+                                  Boolean threads) {}
 
   /** A thread's learning file, edited by hand. */
   public record ThreadGuidePut(@NotNull @Size(max = 20_000) String markdown) {}

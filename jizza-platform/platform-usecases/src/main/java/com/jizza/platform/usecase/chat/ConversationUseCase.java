@@ -48,14 +48,14 @@ public class ConversationUseCase {
     return store.messages(userId, conversationId);
   }
 
-  public ConversationSummaryDto create(UUID userId, String title) {
-    return store.create(userId, checkedTitle(title));
+  public ConversationSummaryDto create(UUID userId, String title, boolean threads) {
+    return store.create(userId, checkedTitle(title), threads);
   }
 
   public ConversationSummaryDto update(UUID userId, UUID conversationId, String title, Boolean pinned,
-                                       Boolean archived) {
+                                       Boolean archived, Boolean threads) {
     if (title != null && title.isBlank()) throw new ValidationException("A conversation needs a title");
-    return store.update(userId, conversationId, checkedTitle(title), pinned, archived);
+    return store.update(userId, conversationId, checkedTitle(title), pinned, archived, threads);
   }
 
   /** A conversation to keep outside Jizza: Markdown to read, or JSON with every message's details. */
@@ -113,6 +113,10 @@ public class ConversationUseCase {
 
   public ConversationSummaryDto summary(UUID userId, UUID conversationId) {
     return store.summary(userId, conversationId);
+  }
+
+  public List<ConversationSummaryDto> allThreads(UUID userId, int limit) {
+    return store.allThreads(userId, Math.max(1, Math.min(limit, 200)));
   }
 
   public List<ConversationSummaryDto> threads(UUID userId, UUID conversationId) {

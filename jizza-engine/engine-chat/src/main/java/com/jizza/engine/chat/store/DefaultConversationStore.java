@@ -35,15 +35,23 @@ class DefaultConversationStore implements ConversationStore {
    */
   private static final String ROW = """
       select c.id, c.title, c.created_at, c.last_message_at, c.pinned, c.archived_at,
-             c.message_count, c.kind, c.parent_id, c.topic,
+             c.message_count, c.kind, c.parent_id, c.topic, c.threads_enabled,
              coalesce(o.id, j.id) as lead_id, coalesce(o.key, j.key) as lead_key,
-             coalesce(o.name, j.name) as lead_name, last.content as preview
+             coalesce(o.name, j.name) as lead_name, last.content as preview,
+             case
+               when c.archived_at is not null then 'resolved'
+               when exists (select 1 from jobs b where b.conversation_id = c.id and b.status = 'running')
+                 then 'working'
+               when exists (select 1 from jobs b where b.conversation_id = c.id and b.status = 'awaiting_user')
+                 or (last.role = 'assistant' and rtrim(last.content) like '%?') then 'waiting'
+               else 'idle'
+             end as stage
       from conversations c
       left join agents o on o.id = c.owner_agent_id
       left join agents j on c.kind = 'thread' and c.owner_agent_id is null
                         and j.user_id = c.user_id and j.is_orchestrator
       left join lateral (
-        select m.content from messages m
+        select m.content, m.role from messages m
         where m.conversation_id = c.id and m.role <> 'event' and m.content <> ''
         order by m.created_at desc limit 1) last on true
       """;
@@ -115,6 +123,14 @@ class DefaultConversationStore implements ConversationStore {
 
   @Override
   @Transactional(readOnly = true)
+  public List<ConversationSummaryDto> allThreads(UUID userId, int limit) {
+    return jdbc.query(ROW + " where c.user_id = ? and c.kind = 'thread'"
+            + " order by coalesce(c.last_message_at, c.created_at) desc limit ?",
+        (rs, i) -> summary(rs), userId, limit);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public ThreadGuideDto guide(UUID userId, UUID threadId) {
     return guideOf(thread(userId, threadId));
   }
@@ -150,14 +166,16 @@ class DefaultConversationStore implements ConversationStore {
   @Override
   @Transactional(readOnly = true)
   public ConversationSummaryDto summary(UUID userId, UUID conversationId) {
-    return summary(owned(userId, conversationId), null);
+    owned(userId, conversationId);
+    return jdbc.query(ROW + " where c.id = ?", (rs, i) -> summary(rs), conversationId).get(0);
   }
 
   @Override
   @Transactional
-  public ConversationSummaryDto create(UUID userId, String title) {
+  public ConversationSummaryDto create(UUID userId, String title, boolean threads) {
     ConversationEntity entity = new ConversationEntity();
     entity.setUserId(userId);
+    entity.setThreadsEnabled(threads);
     if (title != null && !title.isBlank()) {
       entity.setTitle(title.trim());
       entity.setTitleSource("user");
@@ -168,8 +186,9 @@ class DefaultConversationStore implements ConversationStore {
   @Override
   @Transactional
   public ConversationSummaryDto update(UUID userId, UUID conversationId, String title,
-                                       Boolean pinned, Boolean archived) {
+                                       Boolean pinned, Boolean archived, Boolean threads) {
     ConversationEntity entity = owned(userId, conversationId);
+    if (threads != null && !entity.isThread()) entity.setThreadsEnabled(threads);
     if (title != null && !title.isBlank()) {
       entity.setTitle(title.trim());
       entity.setTitleSource("user");
@@ -225,13 +244,14 @@ class DefaultConversationStore implements ConversationStore {
         rs.getObject("parent_id", UUID.class),
         leadId == null ? null
             : new ConversationSummaryDto.AgentRef(leadId, rs.getString("lead_key"), rs.getString("lead_name")),
-        rs.getString("topic"));
+        rs.getString("topic"), rs.getBoolean("threads_enabled"), rs.getString("stage"));
   }
 
   private ConversationSummaryDto summary(ConversationEntity c, String preview) {
     return new ConversationSummaryDto(c.getId(), c.getTitle(), preview, c.getCreatedAt(),
         c.getLastMessageAt(), c.isPinned(), c.getArchivedAt() != null, c.getMessageCount(),
-        c.getKind(), c.getParentId(), leadOf(c), c.getTopic());
+        c.getKind(), c.getParentId(), leadOf(c), c.getTopic(), c.isThreadsEnabled(),
+        c.getArchivedAt() != null ? ConversationSummaryDto.RESOLVED : ConversationSummaryDto.IDLE);
   }
 
   private static String preview(String content) {

@@ -46,6 +46,14 @@ class ThreadsE2eTest extends E2eSupport {
     api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
   }
 
+  /** A new main chat with threads turned on, the way the app starts one. */
+  private String threadedChat() {
+    var created = api.post("/api/conversations", Map.of("threads", true));
+    assertThat(created.ok()).as(created.body()).isTrue();
+    assertThat(created.json().path("threadsEnabled").asBoolean()).isTrue();
+    return created.json().path("id").asText();
+  }
+
   private static LlmResponse call(String tool, com.fasterxml.jackson.databind.node.ObjectNode args) {
     return new LlmResponse("", List.of(new ToolCall("call-" + tool, tool, args)), "tool_use", 10, 5, "m");
   }
@@ -65,7 +73,7 @@ class ThreadsE2eTest extends E2eSupport {
         call("note_in_thread_guide", Json.obj().put("section", "What we know").put("note", "Wants to invest 500 a month")),
         LlmResponse.text("Happy to help. What is the money for, and when will you need it?"));
 
-    var reply = api.post("/api/chat", Map.of("message", ask));
+    var reply = api.post("/api/chat", Map.of("message", ask, "conversationId", threadedChat()));
     assertThat(reply.ok()).as(reply.body()).isTrue();
     UUID mainId = UUID.fromString(reply.json().path("conversationId").asText());
     assertThat(reply.json().path("actions").toString()).contains("thread_opened").contains("Kai");
@@ -83,6 +91,12 @@ class ThreadsE2eTest extends E2eSupport {
     JsonNode answer = last(messages, "assistant");
     assertThat(answer.path("content").asText()).contains("What is the money for");
     assertThat(answer.path("metadata").path("lead").path("name").asText()).isEqualTo("Kai");
+    // Kai asked the user something, so the thread is waiting on them.
+    JsonNode all = api.get("/api/conversations/threads").json();
+    assertThat(all).hasSize(1);
+    assertThat(all.get(0).path("stage").asText()).isEqualTo("waiting");
+    assertThat(api.get("/api/conversations/" + threadId + "/summary").json().path("stage").asText())
+        .isEqualTo("waiting");
     assertThat(toolsOfferedTo("Kai")).contains("hand_back_to_jizza", "note_in_thread_guide")
         .doesNotContain("start_thread");
     assertThat(model.everythingTheModelSaw()).contains("<thread_guide>\n# Monthly index fund plan");
@@ -127,10 +141,12 @@ class ThreadsE2eTest extends E2eSupport {
         LlmResponse.text("Vita says about 8,000 a day."));
     model.scriptFor("Vita", LlmResponse.text("About 8,000 a day."));
 
-    var reply = api.post("/api/chat", Map.of("message", "How many steps a day is healthy?"));
+    var reply = api.post("/api/chat", Map.of("message", "How many steps a day is healthy?",
+        "conversationId", threadedChat()));
 
     assertThat(reply.ok()).as(reply.body()).isTrue();
     assertThat(toolsOfferedTo("Jizza")).contains("start_thread");
+    assertThat(model.everythingTheModelSaw()).contains("Threads are on for this chat");
     assertThat(toolsOfferedTo("Vita")).doesNotContain("start_thread", "hand_back_to_jizza");
   }
 
@@ -140,7 +156,7 @@ class ThreadsE2eTest extends E2eSupport {
     model.scriptFor("Jizza", startThread("health", "Sleep routine", "A better sleep routine", ask),
         LlmResponse.text("Vita has this."));
     model.scriptFor("Vita", LlmResponse.text("What time do you go to bed now?"));
-    var reply = api.post("/api/chat", Map.of("message", ask));
+    var reply = api.post("/api/chat", Map.of("message", ask, "conversationId", threadedChat()));
     UUID mainId = UUID.fromString(reply.json().path("conversationId").asText());
     String threadId = api.get("/api/conversations/" + mainId + "/threads").json().get(0).path("id").asText();
 
@@ -150,8 +166,34 @@ class ThreadsE2eTest extends E2eSupport {
     assertThat(api.get("/api/conversations/" + threadId + "/guide").json().path("markdown").asText())
         .contains("Bed by 11");
     assertThat(api.get("/api/conversations/" + mainId + "/guide").status()).isEqualTo(404);
+
+    // Resolving a thread archives it; it stays listed, as resolved.
+    awaitReply(threadId, 1);
+    assertThat(api.patch("/api/conversations/" + threadId, Map.of("archived", true)).ok()).isTrue();
+    assertThat(api.get("/api/conversations/" + mainId + "/threads").json().get(0).path("stage").asText())
+        .isEqualTo("resolved");
     assertThat(api.get("/api/conversations/" + threadId + "/summary").json().path("parentId").asText())
         .isEqualTo(mainId.toString());
+  }
+
+  @Test
+  void aPlainChatHasNoThreadsUntilTheUserTurnsThemOn() {
+    model.scriptFor("Jizza", LlmResponse.text("Vitamin D at 19.8 is low."));
+    var reply = api.post("/api/chat", Map.of("message", "Is my vitamin D low?"));
+    assertThat(reply.ok()).as(reply.body()).isTrue();
+    String mainId = reply.json().path("conversationId").asText();
+    assertThat(toolsOfferedTo("Jizza")).doesNotContain("start_thread", "continue_in_thread");
+    assertThat(model.everythingTheModelSaw()).doesNotContain("Threads are on for this chat");
+    assertThat(api.get("/api/conversations/" + mainId + "/summary").json().path("threadsEnabled").asBoolean())
+        .isFalse();
+
+    var turnedOn = api.patch("/api/conversations/" + mainId, Map.of("threads", true));
+    assertThat(turnedOn.ok()).as(turnedOn.body()).isTrue();
+    assertThat(turnedOn.json().path("threadsEnabled").asBoolean()).isTrue();
+    model.reset();
+    model.scriptFor("Jizza", LlmResponse.text("Noted."));
+    api.post("/api/chat", Map.of("message", "Thanks", "conversationId", mainId));
+    assertThat(toolsOfferedTo("Jizza")).contains("start_thread");
   }
 
   private List<String> toolsOfferedTo(String agentName) {

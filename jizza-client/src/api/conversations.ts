@@ -24,7 +24,10 @@ export const conversationsApi = {
     return api.get<ConversationSummary[]>(`/api/conversations?${params}`)
   },
 
-  update: (id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) =>
+  create: (body: { title?: string; threads?: boolean } = {}) =>
+    api.post<ConversationSummary>('/api/conversations', body),
+
+  update: (id: string, patch: { title?: string; pinned?: boolean; archived?: boolean; threads?: boolean }) =>
     api.patch<ConversationSummary>(`/api/conversations/${id}`, patch),
 
   remove: (id: string) => api.delete<void>(`/api/conversations/${id}`),
@@ -40,6 +43,9 @@ export const conversationsApi = {
   summary: (id: string) => api.get<ConversationSummary>(`/api/conversations/${id}/summary`),
 
   /** A main chat's threads, most recently active first. */
+  /** Every thread, in any chat, with its stage. */
+  allThreads: () => api.get<ConversationSummary[]>('/api/conversations/threads'),
+
   threads: (id: string) => api.get<ConversationSummary[]>(`/api/conversations/${id}/threads`),
 
   guide: (id: string) => api.get<ThreadGuide>(`/api/conversations/${id}/guide`),
