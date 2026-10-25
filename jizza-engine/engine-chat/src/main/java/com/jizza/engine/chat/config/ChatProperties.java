@@ -23,12 +23,15 @@ public class ChatProperties {
     private boolean enabled = true;
     /** Keeping each thread's guide up to date after a turn. */
     private final Upkeep guides = new Upkeep();
+    /** Jizza deciding, before each message is answered, which thread it belongs to. */
+    private final Upkeep router = new Upkeep();
     /** The longest a guide may grow; Jizza condenses it to stay under this. */
     private int maxGuideChars = 6_000;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public Upkeep getGuides() { return guides; }
+    public Upkeep getRouter() { return router; }
     public int getMaxGuideChars() { return maxGuideChars; }
     public void setMaxGuideChars(int maxGuideChars) { this.maxGuideChars = maxGuideChars; }
   }

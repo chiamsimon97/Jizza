@@ -133,6 +133,57 @@ public class ThreadService {
         .toList();
   }
 
+  /** A message moved into a thread: which, who leads it, and whether it already existed. */
+  public record Moved(ConversationEntity thread, AgentEntity lead, boolean resumed) {
+    public String leadName() { return lead == null ? "Jizza" : lead.getName(); }
+  }
+
+  /** Opens a thread for the user's message and hands the message to its lead there. */
+  public Moved startThread(UUID userId, UUID fromConversationId, AgentEntity lead, String title,
+                           String topic, String message) {
+    ConversationEntity thread = open(userId, fromConversationId, lead, title, topic);
+    deliver(userId, thread.getId(), message, ThreadToolProvider.handoffInput(message, thread.getTopic()),
+        "handoff");
+    return new Moved(thread, lead, false);
+  }
+
+  /** Hands the user's message to one of the chat's threads; a resolved one is reopened for it. */
+  public Moved continueThread(UUID userId, ConversationEntity thread, String message) {
+    reopen(userId, thread.getId());
+    AgentEntity lead = agent(thread.getOwnerAgentId()).orElse(null);
+    deliver(userId, thread.getId(), message, ThreadToolProvider.handoffInput(message, thread.getTopic()),
+        "handoff");
+    return new Moved(thread, lead, true);
+  }
+
+  /** Passes the user's message from a thread back to its main chat, where Jizza answers it. */
+  public void handBack(ChatScope.Scope scope, String leadName, String message, String reason) {
+    noteIn(scope.parentId(), leadName + " passed this back from the thread \"" + scope.title() + "\".",
+        Json.obj().put("kind", "thread_handback").put("threadId", scope.conversationId().toString()));
+    String input = """
+        [This message comes from the thread "%s" (led by %s, about: %s), where it was off topic. \
+        %s said: %s. Answer it here in the main chat.]
+
+        %s""".formatted(scope.title(), leadName, scope.topic() == null ? scope.title() : scope.topic(),
+        leadName, reason == null || reason.isEmpty() ? "it is about something else" : reason, message);
+    deliver(scope.userId(), scope.parentId(), message, input, "handback");
+  }
+
+  /** What a reply's card shows about a thread and opens. */
+  public static com.fasterxml.jackson.databind.node.ObjectNode card(Moved moved) {
+    ConversationEntity thread = moved.thread();
+    AgentEntity lead = moved.lead();
+    var card = Json.obj()
+        .put("conversationId", thread.getId().toString())
+        .put("title", thread.getTitle())
+        .put("topic", thread.getTopic())
+        .put("leadKey", lead == null ? "jizza" : lead.getKey())
+        .put("leadName", moved.leadName())
+        .put("resumed", moved.resumed());
+    if (lead != null) card.put("leadId", lead.getId().toString());
+    return card;
+  }
+
   /** A resolved thread the user's message carries on: open again, and say so in it. */
   @Transactional
   public void reopen(UUID userId, UUID threadId) {

@@ -176,6 +176,40 @@ class ThreadsE2eTest extends E2eSupport {
   }
 
   @Test
+  void jizzaRoutesEachPurposeToItsOwnThreadAndFollowUpsBackToIt() {
+    String mainId = threadedChat();
+    model.scriptFor("Jizza Router", LlmResponse.text("""
+        {"route":"new","lead":"finance","title":"My investing plan","topic":"The user's own plan to invest 500 a month"}"""));
+    model.scriptFor("Kai", LlmResponse.text("What is your timeline?"));
+    var first = api.post("/api/chat", Map.of("message", "Help me invest 500 a month", "conversationId", mainId));
+    assertThat(first.ok()).as(first.body()).isTrue();
+    assertThat(first.json().path("text").asText()).contains("opened a thread with Kai");
+    assertThat(toolsOfferedTo("Jizza")).isEmpty();
+
+    // The same specialist, another person: a thread of its own.
+    model.scriptFor("Jizza Router", LlmResponse.text("""
+        {"route":"new","lead":"finance","title":"Investing plan for Dad","topic":"An investment plan for the user's father"}"""));
+    model.scriptFor("Kai", LlmResponse.text("How much does your dad want to invest?"));
+    api.post("/api/chat", Map.of("message", "Also plan investing for my dad", "conversationId", mainId));
+    JsonNode two = await(() -> api.get("/api/conversations/" + mainId + "/threads").json(), t -> t.size() == 2);
+    String mine = null;
+    for (JsonNode t : two) {
+      assertThat(t.path("lead").path("name").asText()).isEqualTo("Kai");
+      if ("My investing plan".equals(t.path("title").asText())) mine = t.path("id").asText();
+    }
+    assertThat(mine).isNotNull();
+    awaitReply(mine, 1);
+
+    // A follow-up goes back to the thread it belongs to; no third thread.
+    model.scriptFor("Jizza Router", LlmResponse.text("{\"route\":\"thread\",\"thread_id\":\"" + mine + "\"}"));
+    model.scriptFor("Kai", LlmResponse.text("We settled on an index fund."));
+    var followUp = api.post("/api/chat", Map.of("message", "What did we decide for me?", "conversationId", mainId));
+    assertThat(followUp.json().path("text").asText()).contains("Kai is picking this up");
+    assertThat(awaitReply(mine, 2).toString()).contains("What did we decide for me?");
+    assertThat(api.get("/api/conversations/" + mainId + "/threads").json()).hasSize(2);
+  }
+
+  @Test
   void anEditedMessageReplacesItAndEverythingAfter() {
     model.scriptFor("Jizza", LlmResponse.text("Paris is lovely in spring."), LlmResponse.text("Rome is lovely in spring."));
     var first = api.post("/api/chat", Map.of("message", "Plan a trip to Paris"));
