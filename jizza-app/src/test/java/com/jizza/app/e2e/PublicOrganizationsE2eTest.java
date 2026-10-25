@@ -1,9 +1,14 @@
 package com.jizza.app.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.workspace.PublicListingStore;
+import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.security.mfa.TotpService;
+import com.jizza.platform.usecase.listing.PublicOrganizationInitializer;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +35,9 @@ class PublicOrganizationsE2eTest extends E2eSupport {
   @LocalServerPort private int port;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private TotpService totp;
+  @Autowired private PublicListingStore listings;
+  @Autowired private WorkspaceDirectory directory;
+  @Autowired private AuditLog audit;
 
   private ApiClient owner;
   private ApiClient developer;
@@ -318,5 +326,90 @@ class PublicOrganizationsE2eTest extends E2eSupport {
     }
     assertThat(discovered().path("member").asBoolean()).isFalse();
     assertThat(discovered().path("pendingRequest").isNull()).isTrue();
+  }
+
+  @Test
+  void startupCreatesTheListedPublicOrganizationOrRefusesToStart() {
+    jdbc.update("delete from workspaces where platform_public");
+    try {
+      // Production with nobody registered under the Super Admin email: startup is refused.
+      assertThatThrownBy(() -> initializer("nobody-" + UUID.randomUUID() + "@jizza.local", false)
+          .ensure()).isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("Public organization is missing");
+      // Development starts without it.
+      initializer("", true).ensure();
+      assertThat(listings.platformOrganization()).isEmpty();
+
+      String publicName = "Jizza Public " + UUID.randomUUID().toString().substring(0, 8);
+      initializer(adminEmail, false, publicName).ensure();
+      UUID publicOrg = listings.platformOrganization().orElseThrow();
+      // Every later startup finds the same one.
+      initializer(adminEmail, false, publicName).ensure();
+      assertThat(jdbc.queryForObject("select count(*) from workspaces where platform_public",
+          Long.class)).isEqualTo(1L);
+
+      JsonNode context = admin.get("/api/me/context").json();
+      assertThat(context.path("publicWorkspaceIds").toString()).contains(publicOrg.toString());
+      assertThat(context.path("workspaces").toString()).contains(publicName);
+      assertThat(jdbc.queryForObject("select type from workspaces where id = ?", String.class,
+          publicOrg)).isEqualTo("organization");
+      assertThat(outsider.get("/api/directory?q=" + publicName.replace(" ", "%20")).json()
+          .path("items").toString()).contains(publicOrg.toString());
+
+      // It can't be taken off Discover.
+      assertThat(admin.post("/api/admin/listings/" + publicOrg + "/suspend",
+          Map.of("note", "no")).status()).isEqualTo(409);
+
+      // Existing accounts joined at startup, and new ones join on sign-up, all as User.
+      assertThat(roleIn(publicOrg, outsiderEmail)).isEqualTo("user");
+      String newcomerEmail = "public-newcomer-" + UUID.randomUUID() + "@jizza.local";
+      ApiClient newcomer = signUp(newcomerEmail, Map.of());
+      assertThat(roleIn(publicOrg, newcomerEmail)).isEqualTo("user");
+      assertThat(roleIn(publicOrg, adminEmail)).isEqualTo("owner");
+
+      // A User sees only themselves on Members, and can't leave.
+      assertThat(newcomer.post("/api/me/active-workspace",
+          Map.of("workspaceId", publicOrg.toString())).ok()).isTrue();
+      JsonNode seen = newcomer.get("/api/workspaces/current/members").json();
+      assertThat(seen.size()).isEqualTo(1);
+      assertThat(seen.get(0).path("email").asText()).isEqualTo(newcomerEmail);
+      assertThat(newcomer.delete("/api/workspaces/current/membership").status()).isEqualTo(409);
+
+      // Only the Super Admin changes Public roles, and never the Owner's.
+      assertThat(outsider.get("/api/admin/public-roles").status()).isEqualTo(403);
+      JsonNode roles = admin.get("/api/admin/public-roles?q=public-newcomer").json();
+      assertThat(roles.path("workspaceId").asText()).isEqualTo(publicOrg.toString());
+      assertThat(roles.path("members").size()).isEqualTo(1);
+      String memberId = roles.path("members").get(0).path("id").asText();
+      var promoted = admin.put("/api/admin/public-roles/" + memberId, Map.of("role", "DEVELOPER"));
+      assertThat(promoted.ok()).as(promoted.body()).isTrue();
+      assertThat(roleIn(publicOrg, newcomerEmail)).isEqualTo("developer");
+      assertThat(outsider.put("/api/admin/public-roles/" + memberId, Map.of("role", "ADMIN"))
+          .status()).isEqualTo(403);
+      assertThat(admin.put("/api/admin/public-roles/" + memberId, Map.of("role", "OWNER"))
+          .status()).isEqualTo(400);
+      String ownerMember = jdbc.queryForObject("select m.id::text from workspace_members m "
+          + "where m.workspace_id = ? and m.role = 'owner'", String.class, publicOrg);
+      assertThat(admin.put("/api/admin/public-roles/" + ownerMember, Map.of("role", "USER"))
+          .status()).isEqualTo(409);
+    } finally {
+      jdbc.update("delete from workspaces where platform_public");
+    }
+  }
+
+  private String roleIn(UUID workspaceId, String email) {
+    return jdbc.queryForObject("select m.role from workspace_members m join users u "
+        + "on u.id = m.user_id where m.workspace_id = ? and u.email = ?", String.class,
+        workspaceId, email);
+  }
+
+  private PublicOrganizationInitializer initializer(String email, boolean development) {
+    return initializer(email, development, "Jizza Public");
+  }
+
+  private PublicOrganizationInitializer initializer(String email, boolean development,
+                                                    String orgName) {
+    return new PublicOrganizationInitializer(listings, directory, audit, email, orgName,
+        "Jizza's public organization.", development);
   }
 }

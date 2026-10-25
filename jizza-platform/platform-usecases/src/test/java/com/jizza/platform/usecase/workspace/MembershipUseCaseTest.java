@@ -54,7 +54,8 @@ class MembershipUseCaseTest {
     mail = mock(MailSender.class);
     ObjectProvider<MailSender> mailProvider = mock(ObjectProvider.class);
     when(mailProvider.getIfAvailable()).thenReturn(mail);
-    useCase = new MembershipUseCase(directory, mock(AuditLog.class),
+    useCase = new MembershipUseCase(directory,
+        mock(com.jizza.engine.api.workspace.PublicListingStore.class), mock(AuditLog.class),
         mock(ApplicationEventPublisher.class), mock(ObjectProvider.class), mailProvider,
         Duration.ofDays(7), 2, "https://jizza.test/");
     workspace(WorkspaceType.ORGANIZATION);

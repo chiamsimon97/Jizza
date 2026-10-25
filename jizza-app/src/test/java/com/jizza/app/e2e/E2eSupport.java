@@ -75,6 +75,8 @@ public abstract class E2eSupport {
     registry.add("jizza.connectors.egress.allow-plain-http", () -> "true");
     registry.add("jizza.connectors.callback-base-url", () -> "http://localhost:8080");
 
+    // A fresh database has no Super Admin account to own the Public organization.
+    registry.add("jizza.development", () -> "true");
     registry.add("jizza.security.session.cookie-secure", () -> "false");
     // Every suite registers its own throwaway users and signs in with a password alone. The auth
     // suite switches two-step enforcement on where that is what it is testing.
