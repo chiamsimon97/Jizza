@@ -11,8 +11,10 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.event.MembershipChanged;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workspace.Membership;
+import com.jizza.engine.api.workspace.PublicListingStore;
 import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.api.workspace.WorkspaceSummary;
+import com.jizza.platform.usecase.listing.PublicOrganizationInitializer;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -28,12 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkspaceUseCase {
 
   private final WorkspaceDirectory directory;
+  private final PublicListingStore listings;
   private final AuditLog audit;
   private final ApplicationEventPublisher events;
 
-  public WorkspaceUseCase(WorkspaceDirectory directory, AuditLog audit,
+  public WorkspaceUseCase(WorkspaceDirectory directory, PublicListingStore listings, AuditLog audit,
                           ApplicationEventPublisher events) {
     this.directory = directory;
+    this.listings = listings;
     this.audit = audit;
     this.events = events;
   }
@@ -77,6 +81,10 @@ public class WorkspaceUseCase {
     if (m.role() == WorkspaceRole.OWNER) {
       throw new JizzaException(HttpStatus.CONFLICT, "owner-cannot-leave", "The owner can't leave",
           "The owner can't leave the organization.");
+    }
+    if (PublicOrganizationInitializer.isPlatform(listings, workspaceId)) {
+      throw new JizzaException(HttpStatus.CONFLICT, "platform-organization-no-leave",
+          "Everyone is a member", "Every account on Jizza belongs to the Public organization.");
     }
     directory.removeMember(m.id());
     UUID personal = directory.personalWorkspaceOf(userId);
