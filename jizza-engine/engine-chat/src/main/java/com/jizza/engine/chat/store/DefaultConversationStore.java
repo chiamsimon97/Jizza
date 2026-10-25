@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
+import com.jizza.engine.api.dto.LearnedFactDto;
 import com.jizza.engine.api.dto.ThreadGuideDto;
 import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.enums.MessageRole;
+import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.orchestrator.ConversationStore;
 import com.jizza.engine.api.util.Json;
@@ -83,8 +86,8 @@ class DefaultConversationStore implements ConversationStore {
   /**
    * One query for the whole list: the latest message of each conversation is its preview. Search
    * matches the title or any message, by words ({@code simple} full-text, so names and amounts
-   * match as typed) or by substring. Threads are listed too; the client nests them under their
-   * main chat.
+   * match as typed) or by substring. Threads are reached from the chat they were opened in, so
+   * the list shows them only in search results.
    */
   @Override
   @Transactional(readOnly = true)
@@ -93,7 +96,9 @@ class DefaultConversationStore implements ConversationStore {
         .append(" where c.user_id = ? and c.message_count > 0 and c.archived_at is");
     sql.append(archived ? " not null" : " null");
     List<Object> args = new ArrayList<>(List.of(userId));
-    if (query != null && !query.isBlank()) {
+    boolean searching = query != null && !query.isBlank();
+    if (!searching) sql.append(" and c.kind = 'main'");
+    if (searching) {
       String q = query.trim();
       sql.append("""
            and (c.title ilike ? or c.topic ilike ? or exists (
@@ -123,10 +128,44 @@ class DefaultConversationStore implements ConversationStore {
 
   @Override
   @Transactional(readOnly = true)
-  public List<ConversationSummaryDto> allThreads(UUID userId, int limit) {
-    return jdbc.query(ROW + " where c.user_id = ? and c.kind = 'thread'"
-            + " order by coalesce(c.last_message_at, c.created_at) desc limit ?",
-        (rs, i) -> summary(rs), userId, limit);
+  public List<LearnedFactDto> learned(UUID userId, UUID conversationId) {
+    owned(userId, conversationId);
+    // Restricted facts are shown only after a fresh step-up, on the Memory page.
+    return jdbc.query("""
+            select mem.id, mem.content, mem.category, mem.confirmed, mem.created_at
+            from memories mem
+            join messages m on mem.source_ref = 'message:' || cast(m.id as varchar)
+            where m.conversation_id = ? and mem.user_id = ? and mem.status = 'active'
+              and not mem.restricted
+            order by mem.created_at desc limit 100
+            """,
+        (rs, i) -> new LearnedFactDto(rs.getObject("id", UUID.class), rs.getString("content"),
+            rs.getString("category"), rs.getBoolean("confirmed"), instant(rs.getTimestamp("created_at"))),
+        conversationId, userId);
+  }
+
+  @Override
+  @Transactional
+  public void rewind(UUID userId, UUID conversationId, UUID messageId) {
+    ConversationEntity entity = owned(userId, conversationId);
+    MessageEntity from = messages.findById(messageId)
+        .filter(m -> m.getConversationId().equals(conversationId) && m.getRole() == MessageRole.USER)
+        .orElseThrow(() -> new NotFoundException("Message", messageId));
+    Boolean busy = jdbc.queryForObject("select exists (select 1 from jobs where conversation_id = ?"
+        + " and status = 'running')", Boolean.class, conversationId);
+    if (Boolean.TRUE.equals(busy)) {
+      throw new ConflictException("Wait for the reply in progress to finish, or stop it, before editing.");
+    }
+    int removed = jdbc.update("delete from messages where conversation_id = ? and created_at >= ?",
+        conversationId, Timestamp.from(from.getCreatedAt()));
+    entity.setMessageCount(Math.max(0, entity.getMessageCount() - removed));
+    // A summary written over what was removed would bring it back into the model's view.
+    if (entity.getSummaryThrough() != null && !entity.getSummaryThrough().isBefore(from.getCreatedAt())) {
+      entity.setSummary(null);
+      entity.setSummaryThrough(null);
+    }
+    audit.record(userId, ActorType.USER, userId, "chat.message.edit", conversationId.toString(),
+        Json.obj().put("removed", removed));
   }
 
   @Override

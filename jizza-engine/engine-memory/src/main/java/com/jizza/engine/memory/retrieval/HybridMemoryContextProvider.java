@@ -2,6 +2,7 @@ package com.jizza.engine.memory.retrieval;
 
 import com.jizza.engine.api.memory.MemoryContextProvider;
 import com.jizza.engine.api.memory.MemoryContextProvider.Item;
+import com.jizza.engine.api.chat.ChatScope;
 import com.jizza.engine.api.memory.MemoryScope;
 import com.jizza.engine.memory.config.MemoryProperties;
 import com.jizza.engine.memory.config.MemoryScopes;
@@ -10,6 +11,7 @@ import com.jizza.engine.persistence.entity.ConnectionEntity;
 import com.jizza.engine.persistence.entity.MemorySubjectEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import com.jizza.engine.persistence.repository.ConnectionRepository;
+import com.jizza.engine.persistence.repository.MessageRepository;
 import com.jizza.engine.api.cosmos.MemoryAccessRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,15 +45,18 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
   private final MemoryAccessRecorder recorder;
   private final MemoryScopes scopes;
   private final MemoryProperties props;
+  private final MessageRepository messages;
 
   public HybridMemoryContextProvider(HybridSearch search, AgentRepository agents,
                                      ConnectionRepository connections, MemoryAccessRecorder recorder,
-                                     MemoryScopes scopes, MemoryProperties props) {
+                                     MemoryScopes scopes, MemoryProperties props,
+                                     MessageRepository messages) {
     this.search = search;
     this.agents = agents;
     this.connections = connections;
     this.recorder = recorder;
     this.scopes = scopes;
+    this.messages = messages;
     this.props = props;
   }
 
@@ -83,7 +88,9 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
 
   MemoryContext contextFor(UUID userId, MemoryScope scope, String request) {
     MemoryProperties.Retrieval cfg = props.getRetrieval();
-    HybridSearch.Result result = search.rank(userId, request, scope, cfg.getMaxItems(), true);
+    HybridSearch.Result ranked = search.rank(userId, request, scope, cfg.getMaxItems(), true);
+    HybridSearch.Result result = new HybridSearch.Result(ownThreadOnly(ranked.ranked()),
+        ranked.resolution(), ranked.subjects(), ranked.relations());
     if (result.ranked().isEmpty() && result.resolution().direct().isEmpty()) return MemoryContext.EMPTY;
 
     Set<UUID> primary = new LinkedHashSet<>(result.resolution().direct());
@@ -105,6 +112,39 @@ public class HybridMemoryContextProvider implements MemoryContextProvider {
         .toList();
     return new MemoryContext(rendered.text(), rendered.memoryIds(), List.copyOf(subjectIds), items);
   }
+
+  /**
+   * In a thread, each thread keeps its own memory: a fact learned from what was said in another
+   * thread is left out, so a plan for the user's mother never leaks into the user's own plan.
+   * Facts from the main chat, other chats and the Memory page are everyone's. Outside a thread
+   * (Jizza coordinating in the main chat included) nothing is left out.
+   */
+  List<HybridSearch.Ranked> ownThreadOnly(List<HybridSearch.Ranked> ranked) {
+    ChatScope.Scope here = ChatScope.current().filter(ChatScope.Scope::thread).orElse(null);
+    if (here == null || ranked.isEmpty()) return ranked;
+    Map<UUID, UUID> fromMessage = new HashMap<>();
+    for (HybridSearch.Ranked r : ranked) {
+      String ref = r.memory().getSourceRef();
+      if (ref == null || !ref.startsWith(MESSAGE_REF)) continue;
+      try {
+        fromMessage.put(r.memory().getId(), UUID.fromString(ref.substring(MESSAGE_REF.length())));
+      } catch (IllegalArgumentException ignored) {
+        // Not a message id: not from a conversation.
+      }
+    }
+    if (fromMessage.isEmpty()) return ranked;
+    Set<String> elsewhere = new java.util.HashSet<>(
+        messages.inOtherThreads(new LinkedHashSet<>(fromMessage.values()), here.conversationId()));
+    if (elsewhere.isEmpty()) return ranked;
+    return ranked.stream()
+        .filter(r -> {
+          UUID message = fromMessage.get(r.memory().getId());
+          return message == null || !elsewhere.contains(message.toString());
+        })
+        .toList();
+  }
+
+  private static final String MESSAGE_REF = "message:";
 
   /** Which signal put a fact in front of the agent, in the user's terms. */
   static String reason(HybridSearch.Ranked r) {

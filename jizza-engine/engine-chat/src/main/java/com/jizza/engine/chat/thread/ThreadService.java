@@ -6,6 +6,7 @@ import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.orchestrator.ConversationStore;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.chat.config.ChatProperties;
 import com.jizza.engine.chat.turn.TurnRunner;
@@ -28,10 +29,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Threads: the main chat is where Jizza coordinates, and a topic that belongs to one specialist
- * moves into a thread of its own. The specialist leads the thread and Jizza co-owns it; a message
- * in a thread that is about something else goes back to the main chat, where Jizza opens the right
- * thread for it. Each thread keeps a guide (see {@link ThreadGuides}).
+ * Threads: the main chat is where Jizza coordinates, and each purpose (one goal, for one person)
+ * moves into a thread of its own, led by the specialist whose area it is. Jizza co-owns every
+ * thread; a message in a thread that is about something else goes back to the main chat, where
+ * Jizza opens the right thread for it. A thread belongs to the chat it was opened from and is never
+ * reached from another. Each thread keeps a guide (see {@link ThreadGuides}) and its own memory.
  */
 @Service
 public class ThreadService {
@@ -44,23 +46,29 @@ public class ThreadService {
   static final int MAX_TITLE = 80;
   static final int MAX_TOPIC = 400;
 
+  /** Threads named to Jizza in a main chat's preamble, at most. */
+  static final int MAX_ROSTER = 20;
+
   private final ConversationRepository conversations;
   private final AgentRepository agents;
   private final TurnStore store;
   private final ObjectProvider<TurnRunner> turns;
   private final AuditLog audit;
   private final ChatProperties props;
+  private final ConversationStore summaries;
   private final ExecutorService delivery =
       Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("jizza-thread-", 0).factory());
 
   public ThreadService(ConversationRepository conversations, AgentRepository agents, TurnStore store,
-                       ObjectProvider<TurnRunner> turns, AuditLog audit, ChatProperties props) {
+                       ObjectProvider<TurnRunner> turns, AuditLog audit, ChatProperties props,
+                       ConversationStore summaries) {
     this.conversations = conversations;
     this.agents = agents;
     this.store = store;
     this.turns = turns;
     this.audit = audit;
     this.props = props;
+    this.summaries = summaries;
   }
 
   /**
@@ -82,7 +90,7 @@ public class ThreadService {
     if (!c.isThread()) {
       boolean on = c.isThreadsEnabled() && props.getThreads().isEnabled();
       return new Framing(ChatScope.Scope.main(userId, c.getId(), jizzaId, on), null,
-          on ? ThreadGuides.MAIN_PREAMBLE : null);
+          on ? ThreadGuides.mainPreamble(roster(userId, c.getId())) : null);
     }
 
     AgentEntity owner = c.getOwnerAgentId() == null ? null
@@ -105,10 +113,34 @@ public class ThreadService {
         .toList();
   }
 
-  /** The user's open threads, most recently active first. */
+  /** A main chat's threads, resolved ones included, most recently active first. */
   @Transactional(readOnly = true)
-  public List<ConversationEntity> openThreads(UUID userId, int limit) {
-    return conversations.findOpenThreads(userId, org.springframework.data.domain.PageRequest.of(0, limit));
+  public List<ConversationEntity> threadsOf(UUID userId, UUID mainId) {
+    return conversations.findByParentIdOrderByLastMessageAtDesc(mainId).stream()
+        .filter(t -> t.getUserId().equals(userId) && t.isThread())
+        .toList();
+  }
+
+  /** Where each of a main chat's threads stands, as Jizza is told it when coordinating there. */
+  List<ThreadGuides.Line> roster(UUID userId, UUID mainId) {
+    java.util.Map<UUID, String> guides = new java.util.HashMap<>();
+    threadsOf(userId, mainId).forEach(t -> guides.put(t.getId(), t.getGuide()));
+    return summaries.threads(userId, mainId).stream()
+        .limit(MAX_ROSTER)
+        .map(t -> new ThreadGuides.Line(t.id().toString(), t.title(),
+            t.lead() == null ? "Jizza" : t.lead().name(), t.stage(), t.topic(),
+            ThreadGuides.digest(guides.get(t.id()), 240)))
+        .toList();
+  }
+
+  /** A resolved thread the user's message carries on: open again, and say so in it. */
+  @Transactional
+  public void reopen(UUID userId, UUID threadId) {
+    ConversationEntity thread = owned(userId, threadId);
+    if (thread.getArchivedAt() == null) return;
+    thread.setArchivedAt(null);
+    store.note(threadId, "Jizza reopened this thread for a follow-up.",
+        Json.obj().put("kind", "thread_reopened"));
   }
 
   @Transactional(readOnly = true)

@@ -29,8 +29,9 @@ import org.springframework.stereotype.Component;
  * agent answering the user in this turn (see {@link ChatScope}):
  *
  * <ul>
- *   <li>In the main chat, Jizza gets {@code start_thread} and, when there are open threads,
- *       {@code continue_in_thread}.
+ *   <li>In the main chat, Jizza gets {@code start_thread} and, when the chat has threads,
+ *       {@code continue_in_thread} for one of them. Only this chat's threads: a thread opened in
+ *       one chat is never continued from another.
  *   <li>In a thread, its lead gets {@code hand_back_to_jizza} for a message off the thread's topic
  *       and {@code note_in_thread_guide} to keep what it learned.
  * </ul>
@@ -43,7 +44,7 @@ public class ThreadToolProvider implements ToolProvider {
   public static final String HAND_BACK = "hand_back_to_jizza";
   public static final String NOTE = "note_in_thread_guide";
 
-  /** Open threads named in continue_in_thread's description, at most. */
+  /** Threads named in continue_in_thread's description, at most. */
   static final int MAX_LISTED_THREADS = 12;
 
   private final ThreadService threads;
@@ -94,57 +95,71 @@ public class ThreadToolProvider implements ToolProvider {
 
     ObjectNode startSchema = JsonSchemas.object(new LinkedHashMap<>(Map.of(
             "lead", JsonSchemas.string("Who leads the thread: one of the keys listed in the description"),
-            "title", JsonSchemas.string("Two to six words naming the topic, in the user's terms"),
-            "topic", JsonSchemas.string("One or two sentences on what the thread is about and what the "
-                + "user wants from it. This decides which later messages belong in it."),
-            "message", JsonSchemas.string("The user's message to hand over, as they wrote it"))),
+            "title", JsonSchemas.string("Two to six words naming the purpose, in the user's terms; "
+                + "name the person when it is not the user (\"Mum's retirement savings\")"),
+            "for_whom", JsonSchemas.string("Who the purpose is for: \"me\" for the user, otherwise "
+                + "the person's name and how they relate to the user (\"Priya, my sister\")"),
+            "topic", JsonSchemas.string("One or two sentences on the one goal this thread serves and "
+                + "what the user wants from it. This decides which later messages belong in it."),
+            "message", JsonSchemas.string("The user's message (or the part of it about this "
+                + "purpose) to hand over, as they wrote it"))),
+        // Who it is for stays optional, so a call without it still opens the thread.
         List.of("lead", "title", "topic", "message"));
 
     List<ToolSpec> tools = new ArrayList<>();
     tools.add(new ToolSpec(START, """
-        Move a topic out of this main chat into a thread of its own, led by the specialist whose
-        area it is, and hand them the user's message to answer there. You coordinate from the main
+        Open a thread for one purpose -- one goal, for one person -- led by the specialist whose
+        area it is, and hand them the user's message to answer there. You coordinate from this
         chat; the lead works with the user in the thread, and you co-own it. The user turned
         threads on for this chat, so this is how their requests get worked on.
 
-        Open a thread whenever the user brings up something in one specialist's area that no open
-        thread covers, even a quick question. For example investments, budgets, bills or savings
-        go to the finance lead; health, blood tests, vitamins, fitness, sleep, symptoms or
-        appointments go to the health lead; meetings, documents or deadlines go to the work lead.
-        A new topic for a different specialist gets its own thread, even while another thread is
-        open.
+        Open one whenever the user brings up a purpose none of this chat's threads serves,
+        even a quick question. For example investments, budgets, bills or savings go to the finance lead;
+        health, blood tests, vitamins, fitness, sleep, symptoms or appointments go to the health
+        lead; meetings, documents or deadlines go to the work lead; anything no specialist covers
+        goes to a thread you lead (key "jizza").
 
-        Answer here instead, without a thread, only for small talk, questions about the Jizza app
-        itself (pages, workflows, tasks, agents, settings), or a request that spans several
-        specialists' areas. If an open thread already covers the topic, use continue_in_thread
-        instead of opening another.
+        One thread per purpose: the same kind of request for someone else (an investment plan for
+        the user's mother when their own plan has a thread) or for a different goal (filing taxes
+        when the thread is about monthly investing) gets a new thread, even with the same lead.
+        A message about several purposes: call this (or continue_in_thread) once per purpose, each
+        with only its part.
+
+        Answer here instead only small talk, questions about the Jizza app itself, and questions
+        about how this chat's threads stand. If one of this chat's threads already serves the
+        purpose, use continue_in_thread instead.
 
         After calling it, tell the user in one sentence who took it to which thread. Do not answer
         the request yourself.
 
         Leads:""" + roster, startSchema, false));
 
-    List<ConversationEntity> open = threads.openThreads(scope.userId(), MAX_LISTED_THREADS);
-    if (!open.isEmpty()) {
+    List<ConversationEntity> ours = threads.threadsOf(scope.userId(), scope.conversationId()).stream()
+        .limit(MAX_LISTED_THREADS).toList();
+    if (!ours.isEmpty()) {
       StringBuilder listed = new StringBuilder();
-      for (ConversationEntity t : open) {
+      for (ConversationEntity t : ours) {
         String lead = t.getOwnerAgentId() == null ? "Jizza"
             : threads.agent(t.getOwnerAgentId()).map(AgentEntity::getName).orElse("Jizza");
         listed.append("\n- ").append(t.getId()).append(": \"").append(t.getTitle()).append("\", led by ")
-            .append(lead).append(". ").append(t.getTopic() == null ? "" : t.getTopic());
+            .append(lead).append(t.getArchivedAt() != null ? ", resolved" : "").append(". ")
+            .append(t.getTopic() == null ? "" : t.getTopic());
       }
       ObjectNode continueSchema = JsonSchemas.object(new LinkedHashMap<>(Map.of(
-              "thread_id", JsonSchemas.string("The id of one of the open threads listed in the description"),
-              "message", JsonSchemas.string("The user's message to hand over, as they wrote it"))),
+              "thread_id", JsonSchemas.string("The id of one of this chat's threads listed in the description"),
+              "message", JsonSchemas.string("The user's message (or the part of it for this "
+                  + "thread) to hand over, as they wrote it"))),
           List.of("thread_id", "message"));
       tools.add(new ToolSpec(CONTINUE, """
-          Hand the user's message to an open thread whose topic it belongs to, where its lead
-          answers it with everything the thread already knows. Follow-ups to something a thread
-          handled (such as "what have we done about this?") go back to that thread. Prefer this to
-          opening a new thread on the same topic. After calling it, tell the user in one sentence where it went; do not
+          Hand the user's message to the thread of this chat whose purpose it carries on -- same
+          goal, same person -- where its lead answers it with everything the thread already knows
+          and remembers. Idle and resolved threads count: a follow-up to something a thread handled
+          (such as "what have we done about this?") goes back to it, and a resolved one reopens.
+          A similar request for someone else or for a different goal is not a follow-up: open a
+          new thread for it. After calling it, tell the user in one sentence where it went; do not
           answer it yourself.
 
-          Open threads:""" + listed, continueSchema, false));
+          This chat's threads:""" + listed, continueSchema, false));
     }
     return tools;
   }
@@ -165,10 +180,11 @@ public class ThreadToolProvider implements ToolProvider {
         List.of("section", "note"));
     return List.of(
         new ToolSpec(HAND_BACK, """
-            Pass the user's message back to Jizza in the main chat because it is not about this
-            thread's topic ("%s"). Jizza answers it there or opens the right thread for it. Use it
-            only for a message clearly about something else, never for follow-ups, related
-            questions or small talk. After calling it, say in one sentence that Jizza will pick it
+            Pass the user's message back to Jizza in the main chat because it does not serve this
+            thread's purpose ("%s"): it is about something else, or about the same kind of thing
+            for another person or a different goal. Jizza answers it there or opens the right
+            thread for it, so this thread stays about one thing. Never use it for follow-ups,
+            related questions or small talk. After calling it, say in one sentence that Jizza will pick it
             up in the main chat, and do not answer it.""".formatted(scope.title()),
             backSchema, false),
         new ToolSpec(NOTE, """
@@ -210,7 +226,7 @@ public class ThreadToolProvider implements ToolProvider {
       if (lead == null) return ToolResult.error("No specialist '" + key + "' can lead a thread");
     }
     ConversationEntity thread = threads.open(scope.userId(), scope.conversationId(), lead,
-        args.path("title").asText(""), args.path("topic").asText(""));
+        args.path("title").asText(""), forWhom(args.path("topic").asText(""), args.path("for_whom").asText("")));
     String leadName = lead == null ? "Jizza" : lead.getName();
     threads.deliver(scope.userId(), thread.getId(), message, handoffInput(message, thread.getTopic()),
         "handoff");
@@ -230,9 +246,11 @@ public class ThreadToolProvider implements ToolProvider {
     } catch (IllegalArgumentException e) {
       return ToolResult.error("Use the id of one of the open threads");
     }
-    ConversationEntity thread = threads.openThreads(scope.userId(), 200).stream()
+    // Only this chat's own threads: one opened in another chat is out of reach.
+    ConversationEntity thread = threads.threadsOf(scope.userId(), scope.conversationId()).stream()
         .filter(t -> t.getId().equals(id)).findFirst().orElse(null);
-    if (thread == null) return ToolResult.error("That thread is not open");
+    if (thread == null) return ToolResult.error("That is not one of this chat's threads");
+    threads.reopen(scope.userId(), thread.getId());
     AgentEntity lead = threads.agent(thread.getOwnerAgentId()).orElse(null);
     threads.deliver(scope.userId(), thread.getId(), message, handoffInput(message, thread.getTopic()),
         "handoff");
@@ -276,6 +294,17 @@ public class ThreadToolProvider implements ToolProvider {
         .findFirst().orElse(ThreadGuides.KNOWN);
     threads.note(scope.userId(), scope.conversationId(), chosen, args.path("note").asText(""));
     return ToolResult.ok("Kept in the thread's guide under \"" + chosen + "\".");
+  }
+
+  /** A thread's topic, saying who it is for when that is not the user themselves. */
+  static String forWhom(String topic, String whom) {
+    String who = whom == null ? "" : whom.strip();
+    String what = topic == null ? "" : topic.strip();
+    if (who.isEmpty() || who.equalsIgnoreCase("me") || who.equalsIgnoreCase("myself")
+        || who.equalsIgnoreCase("the user") || who.equalsIgnoreCase("user")) {
+      return what;
+    }
+    return "For " + who + ": " + what;
   }
 
   /** What the lead is told with a message Jizza handed over from the main chat. */

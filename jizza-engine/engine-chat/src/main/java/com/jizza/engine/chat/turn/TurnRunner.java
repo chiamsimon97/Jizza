@@ -288,8 +288,14 @@ public class TurnRunner implements ChatService {
         // thread unless configured otherwise). Bound to the job so what is saved shows under it.
         // Incognito turns never reach here: they read memory but never write it.
         Activity.run(recorder, () -> {
-          // A continuation's input is a system event, not the user's words: nothing to learn there.
-          if (continuation == null) {
+          // A continuation's input is a system event, not the user's words: nothing to learn there,
+          // except a message moved here, which is. A message moved out of this chat is learned
+          // where it went, so a fact belongs to the thread that worked on it.
+          boolean moved = continuation != null
+              && ("handoff".equals(continuation.origin()) || "handback".equals(continuation.origin()));
+          boolean movedAway = answer.actions() != null && answer.actions().stream()
+              .anyMatch(a -> UiAction.THREAD_OPENED.equals(a.type()));
+          if ((continuation == null || moved) && !movedAway) {
             learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
                 ref.userMessageId(), s.text(), done.text())));
           }

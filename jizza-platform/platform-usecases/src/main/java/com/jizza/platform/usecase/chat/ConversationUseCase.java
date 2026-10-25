@@ -115,8 +115,12 @@ public class ConversationUseCase {
     return store.summary(userId, conversationId);
   }
 
-  public List<ConversationSummaryDto> allThreads(UUID userId, int limit) {
-    return store.allThreads(userId, Math.max(1, Math.min(limit, 200)));
+  public List<com.jizza.engine.api.dto.LearnedFactDto> learned(UUID userId, UUID conversationId) {
+    return store.learned(userId, conversationId);
+  }
+
+  public void rewind(UUID userId, UUID conversationId, UUID messageId) {
+    store.rewind(userId, conversationId, messageId);
   }
 
   public List<ConversationSummaryDto> threads(UUID userId, UUID conversationId) {

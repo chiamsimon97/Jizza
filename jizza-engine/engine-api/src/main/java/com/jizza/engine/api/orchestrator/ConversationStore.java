@@ -2,6 +2,7 @@ package com.jizza.engine.api.orchestrator;
 
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
+import com.jizza.engine.api.dto.LearnedFactDto;
 import com.jizza.engine.api.dto.ThreadGuideDto;
 import java.util.List;
 import java.util.UUID;
@@ -34,8 +35,17 @@ public interface ConversationStore {
   /** A main chat's threads, most recently active first, archived ones included. */
   List<ConversationSummaryDto> threads(UUID userId, UUID conversationId);
 
-  /** Every thread of the user's, in any chat, most recently active first, resolved ones included. */
-  List<ConversationSummaryDto> allThreads(UUID userId, int limit);
+  /**
+   * The long-term memories learned from what the user said in this conversation, newest first. For
+   * a thread, its own memory: facts learned in one thread are not recalled in another.
+   */
+  List<LearnedFactDto> learned(UUID userId, UUID conversationId);
+
+  /**
+   * Takes the conversation back to just before the user's message {@code messageId}: it and
+   * everything after it are removed, so the edited message can be sent in its place.
+   */
+  void rewind(UUID userId, UUID conversationId, UUID messageId);
 
   /** A thread's learning file. */
   ThreadGuideDto guide(UUID userId, UUID threadId);

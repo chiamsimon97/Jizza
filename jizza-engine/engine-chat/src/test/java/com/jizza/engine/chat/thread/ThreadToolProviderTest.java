@@ -2,7 +2,6 @@ package com.jizza.engine.chat.thread;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,7 +47,7 @@ class ThreadToolProviderTest {
     kai.setEnabled(true);
     kai.setStatus("active");
     when(threads.leads(userId)).thenReturn(List.of(kai));
-    when(threads.openThreads(eq(userId), anyInt())).thenReturn(List.of());
+    when(threads.threadsOf(userId, mainId)).thenReturn(List.of());
     when(threads.agent(kai.getId())).thenReturn(Optional.of(kai));
   }
 
@@ -73,9 +72,9 @@ class ThreadToolProviderTest {
   }
 
   @Test
-  void openThreadsCanBeContinued() {
+  void thisChatsThreadsCanBeContinued() {
     ConversationEntity open = thread(kai.getId());
-    when(threads.openThreads(eq(userId), anyInt())).thenReturn(List.of(open));
+    when(threads.threadsOf(userId, mainId)).thenReturn(List.of(open));
 
     List<ToolSpec> tools = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true),
         () -> provider.toolsFor(jizzaId));
@@ -83,6 +82,57 @@ class ThreadToolProviderTest {
     assertThat(tools).extracting(ToolSpec::name)
         .containsExactly(ThreadToolProvider.START, ThreadToolProvider.CONTINUE);
     assertThat(tools.get(1).description()).contains(open.getId().toString()).contains("led by Kai");
+  }
+
+  @Test
+  void aThreadOfAnotherChatIsOutOfReach() {
+    ConversationEntity elsewhere = thread(kai.getId());
+    elsewhere.setParentId(UUID.randomUUID());
+    // Only this chat's threads are listed, so the other chat's thread is not among them.
+    ToolResult result = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true), () -> provider.invoke(jizzaId,
+        new ToolCall(ThreadToolProvider.CONTINUE, Json.obj().put("thread_id", elsewhere.getId().toString())
+            .put("message", "How is my plan doing?"))));
+
+    assertThat(result.ok()).isFalse();
+    verify(threads, never()).deliver(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void continuingAResolvedThreadReopensIt() {
+    ConversationEntity resolved = thread(kai.getId());
+    resolved.setArchivedAt(java.time.Instant.now());
+    when(threads.threadsOf(userId, mainId)).thenReturn(List.of(resolved));
+
+    ToolResult result = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true), () -> provider.invoke(jizzaId,
+        new ToolCall(ThreadToolProvider.CONTINUE, Json.obj().put("thread_id", resolved.getId().toString())
+            .put("message", "Have we done anything about this?"))));
+
+    assertThat(result.ok()).isTrue();
+    verify(threads).reopen(userId, resolved.getId());
+    verify(threads).deliver(eq(userId), eq(resolved.getId()), eq("Have we done anything about this?"),
+        anyString(), eq("handoff"));
+  }
+
+  @Test
+  void aThreadIsForOnePurposeForOnePerson() {
+    String description = ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true),
+        () -> provider.toolsFor(jizzaId)).get(0).description();
+    assertThat(description).contains("One thread per purpose").contains("mother");
+  }
+
+  @Test
+  void aThreadForSomeoneElseSaysWhoItIsFor() {
+    ConversationEntity created = thread(kai.getId());
+    when(threads.open(eq(userId), eq(mainId), eq(kai), anyString(), anyString())).thenReturn(created);
+
+    ChatScope.run(ChatScope.Scope.main(userId, mainId, jizzaId, true), () -> provider.invoke(jizzaId,
+        new ToolCall(ThreadToolProvider.START, Json.obj().put("lead", "finance").put("title", "Mum's savings plan")
+            .put("for_whom", "Asha, my mother").put("topic", "A monthly savings plan for her retirement")
+            .put("message", "Plan investments for my mum"))));
+
+    verify(threads).open(userId, mainId, kai, "Mum's savings plan",
+        "For Asha, my mother: A monthly savings plan for her retirement");
+    assertThat(ThreadToolProvider.forWhom("My own plan", "me")).isEqualTo("My own plan");
   }
 
   @Test

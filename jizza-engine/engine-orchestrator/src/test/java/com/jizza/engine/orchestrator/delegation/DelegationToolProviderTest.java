@@ -83,6 +83,19 @@ class DelegationToolProviderTest {
   }
 
   @Test
+  void inAChatWithThreadsOnJizzaReachesSpecialistsOnlyThroughThreads() {
+    var withThreads = com.jizza.engine.api.chat.ChatScope.Scope.main(jizza.getUserId(), java.util.UUID.randomUUID(),
+        jizza.getId(), true);
+    var plain = com.jizza.engine.api.chat.ChatScope.Scope.main(jizza.getUserId(), java.util.UUID.randomUUID(),
+        jizza.getId(), false);
+
+    assertThat(com.jizza.engine.api.chat.ChatScope.run(withThreads, () -> provider.toolsFor(jizza.getId()))).isEmpty();
+    assertThat(com.jizza.engine.api.chat.ChatScope.run(withThreads,
+        () -> provider.supports(jizza.getId(), "delegate_to_specialist"))).isFalse();
+    assertThat(com.jizza.engine.api.chat.ChatScope.run(plain, () -> provider.toolsFor(jizza.getId()))).hasSize(2);
+  }
+
+  @Test
   void theToolDescriptionListsTheAvailableSpecialistsByKeyAndName() {
     String description = provider.toolsFor(jizza.getId()).get(0).inputSchema()
         .path("properties").path("agent_key").path("description").asText();
