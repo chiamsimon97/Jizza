@@ -35,6 +35,17 @@ public final class AgentPrompts {
       """;
 
   /**
+   * A specialist leading a thread talks to the user itself. Jizza handed the topic over and
+   * co-owns the thread, so the single voice is still kept per conversation: here it is the lead's.
+   */
+  public static final String THREAD_LEAD_ADDENDUM = """
+
+      Jizza, the user's assistant, has handed you a thread of its own: in this conversation you
+      talk to the user directly, as yourself, and Jizza co-owns the thread. Answer the user in the
+      second person, warmly and to the point, and keep to the thread's topic.
+      """;
+
+  /**
    * Jizza lives inside the app the user is looking at and can drive it. This is what makes it act
    * like an assistant at the controls rather than a chatbot that explains where to click.
    */
@@ -72,11 +83,18 @@ public final class AgentPrompts {
       """;
 
   public static String systemPrompt(String agentPrompt, String agentName, boolean orchestrator) {
+    return systemPrompt(agentPrompt, agentName, orchestrator, false);
+  }
+
+  /** {@code leadsThread}: a specialist answering the user in a thread it leads. */
+  public static String systemPrompt(String agentPrompt, String agentName, boolean orchestrator,
+                                    boolean leadsThread) {
     StringBuilder sb = new StringBuilder();
     sb.append("Your name is ").append(agentName).append(".\n\n");
     sb.append(agentPrompt == null ? "" : agentPrompt).append("\n\n");
     sb.append(UNTRUSTED_CONTENT_GUARDRAIL);
-    sb.append(orchestrator ? ORCHESTRATOR_ADDENDUM : SPECIALIST_ADDENDUM);
+    sb.append(orchestrator ? ORCHESTRATOR_ADDENDUM
+        : leadsThread ? THREAD_LEAD_ADDENDUM : SPECIALIST_ADDENDUM);
     return sb.toString();
   }
 }

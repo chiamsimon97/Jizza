@@ -10,10 +10,28 @@ public class ChatProperties {
   private final Context context = new Context();
   private final Upkeep summaries = new Upkeep();
   private final Upkeep titles = new Upkeep();
+  private final Threads threads = new Threads();
 
   public Context getContext() { return context; }
   public Upkeep getSummaries() { return summaries; }
   public Upkeep getTitles() { return titles; }
+  public Threads getThreads() { return threads; }
+
+  /** Threads: topics Jizza moves out of the main chat to a specialist, each with a guide. */
+  public static class Threads {
+    /** Off: Jizza answers everything in the main chat, as before threads existed. */
+    private boolean enabled = true;
+    /** Keeping each thread's guide up to date after a turn. */
+    private final Upkeep guides = new Upkeep();
+    /** The longest a guide may grow; Jizza condenses it to stay under this. */
+    private int maxGuideChars = 6_000;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public Upkeep getGuides() { return guides; }
+    public int getMaxGuideChars() { return maxGuideChars; }
+    public void setMaxGuideChars(int maxGuideChars) { this.maxGuideChars = maxGuideChars; }
+  }
 
   public static class Context {
     /** Estimated tokens of prior messages replayed to the model each turn. */

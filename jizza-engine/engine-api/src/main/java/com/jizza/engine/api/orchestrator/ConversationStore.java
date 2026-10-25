@@ -2,6 +2,7 @@ package com.jizza.engine.api.orchestrator;
 
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
+import com.jizza.engine.api.dto.ThreadGuideDto;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,6 +27,15 @@ public interface ConversationStore {
   ConversationSummaryDto update(UUID userId, UUID conversationId, String title, Boolean pinned,
                                 Boolean archived);
 
-  /** Deletes the conversation, its messages and its jobs for good. */
+  /** A main chat's threads, most recently active first, archived ones included. */
+  List<ConversationSummaryDto> threads(UUID userId, UUID conversationId);
+
+  /** A thread's learning file. */
+  ThreadGuideDto guide(UUID userId, UUID threadId);
+
+  /** The user's own edit of a thread's learning file; Jizza adds to it from then on, never rewrites it. */
+  ThreadGuideDto updateGuide(UUID userId, UUID threadId, String markdown);
+
+  /** Deletes the conversation, its messages and its jobs for good. A main chat takes its threads with it. */
   void delete(UUID userId, UUID conversationId);
 }

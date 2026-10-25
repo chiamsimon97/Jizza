@@ -1,12 +1,13 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Copy, Mic, MicOff, RotateCcw, Send, ShieldQuestion, Square, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, Mic, MicOff, RotateCcw, Send, ShieldQuestion, Split, Square, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
 import { queryClient } from '@/lib/queryClient'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
-import { loadJob, useAssistantStore, type AssistantMessage, type Question } from './assistantStore'
+import { loadJob, resumeConversation, useAssistantStore, type AssistantMessage, type Question } from './assistantStore'
+import type { ThreadCard as ThreadCardData } from '@/types'
 import { JizzaOrb } from './JizzaOrb'
 import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { AgentProposalCard } from './AgentProposalCard'
@@ -275,8 +276,11 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
   }
   return (
     <div className="flex items-start gap-2.5 animate-fade-in-up">
-      <JizzaOrb size={28} className="mt-0.5" tracking={false} />
+      {msg.lead
+        ? <span className="mt-0.5 shrink-0" title={msg.lead.name}><AgentLogo agentKey={msg.lead.key} size={28} /></span>
+        : <JizzaOrb size={28} className="mt-0.5" tracking={false} />}
       <div className={`flex min-w-0 flex-col gap-2 ${compact ? 'max-w-[88%]' : 'max-w-[85%] sm:max-w-[75%]'}`}>
+        {msg.lead && <span className="-mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">{msg.lead.name}</span>}
         {msg.helpers && msg.helpers.length > 0 && <Helpers helpers={msg.helpers} />}
         {msg.steps && msg.steps.length > 0 && (
           <ul className="flex flex-wrap gap-1.5">
@@ -307,6 +311,8 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
         )}
         {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
         {msg.proposal && <AgentProposalCard proposal={msg.proposal} />}
+        {msg.thread && <ThreadHandoffCard thread={msg.thread} />}
+        {msg.handback && <HandbackCard conversationId={msg.handback.conversationId} />}
         {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
         {msg.jobId && inlineDiscussion && !msg.streaming && <Discussion jobId={msg.jobId} />}
         {msg.jobId && onOpenJob && !inlineDiscussion && !msg.streaming && (
@@ -432,6 +438,44 @@ function TypingDots() {
         <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 dark:bg-gray-500" style={{ animationDelay: `${i * 150}ms` }} />
       ))}
     </span>
+  )
+}
+
+/**
+ * Jizza moved the request out of the main chat: the thread, who leads it and what it is for. The
+ * lead is already answering there; opening it shows their reply.
+ */
+function ThreadHandoffCard({ thread }: { thread: ThreadCardData }) {
+  const current = useAssistantStore(s => s.conversationId)
+  const here = current === thread.conversationId
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 animate-fade-in-up dark:border-brand-800 dark:bg-brand-500/10">
+      <span className="shrink-0"><AgentLogo agentKey={thread.leadKey} size={36} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-brand-700 dark:text-brand-300">
+          <Split className="h-3 w-3" />
+          {thread.resumed ? `Sent to ${thread.leadName}'s thread` : `New thread with ${thread.leadName}`}
+        </p>
+        <p className="mt-0.5 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{thread.title}</p>
+        {thread.topic && <p className="mt-0.5 line-clamp-2 text-xs text-gray-600 dark:text-gray-400">{thread.topic}</p>}
+      </div>
+      {!here && (
+        <Button type="button" size="sm" onClick={() => resumeConversation(thread.conversationId)} className="shrink-0">
+          Open thread
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** The lead passed the message back: Jizza picks it up in the main chat. */
+function HandbackCard({ conversationId }: { conversationId: string }) {
+  return (
+    <button type="button" onClick={() => resumeConversation(conversationId)}
+      className="inline-flex w-fit items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-brand-300">
+      <CornerUpLeft className="h-3.5 w-3.5" />
+      Follow it in the main chat
+    </button>
   )
 }
 

@@ -80,6 +80,41 @@ public class ConversationController {
         .body(file.body());
   }
 
+  /** One conversation's list row: for a thread, its lead, topic and main chat. */
+  @GetMapping("/{id}/summary")
+  public ConversationSummaryDto summary(@PathVariable UUID id) {
+    return conversations.summary(CurrentUser.userId(), id);
+  }
+
+  /** A main chat's threads, most recently active first. */
+  @GetMapping("/{id}/threads")
+  public List<ConversationSummaryDto> threads(@PathVariable UUID id) {
+    return conversations.threads(CurrentUser.userId(), id);
+  }
+
+  /** A thread's learning file. */
+  @GetMapping("/{id}/guide")
+  public com.jizza.engine.api.dto.ThreadGuideDto guide(@PathVariable UUID id) {
+    return conversations.guide(CurrentUser.userId(), id);
+  }
+
+  @org.springframework.web.bind.annotation.PutMapping("/{id}/guide")
+  public com.jizza.engine.api.dto.ThreadGuideDto updateGuide(@PathVariable UUID id,
+      @jakarta.validation.Valid @RequestBody Requests.ThreadGuidePut body) {
+    return conversations.updateGuide(CurrentUser.userId(), id, body.markdown());
+  }
+
+  /** A thread's learning file as a .md file. */
+  @GetMapping("/{id}/guide/download")
+  public org.springframework.http.ResponseEntity<String> downloadGuide(@PathVariable UUID id) {
+    ConversationUseCase.Export file = conversations.guideFile(CurrentUser.userId(), id);
+    return org.springframework.http.ResponseEntity.ok()
+        .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+            org.springframework.http.ContentDisposition.attachment().filename(file.fileName()).build().toString())
+        .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+        .body(file.body());
+  }
+
   /** The conversation's jobs, oldest first, without their events. */
   @GetMapping("/{id}/jobs")
   public List<JobDto> jobs(@PathVariable UUID id) {

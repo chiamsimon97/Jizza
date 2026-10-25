@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
 import { conversationsApi } from '@/api/conversations'
+import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { ConversationSummary } from '@/types'
 import { resumeConversation, useAssistantStore } from '../assistantStore'
 
@@ -55,9 +56,20 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
     },
   })
 
-  const pinned = (data ?? []).filter(c => c.pinned)
+  // Threads sit under the main chat they came from when it is listed too; otherwise on their own.
+  const all = data ?? []
+  const listed = new Set(all.map(c => c.id))
+  const threadsOf = new Map<string, ConversationSummary[]>()
+  for (const c of all) {
+    if (c.kind === 'thread' && c.parentId && listed.has(c.parentId)) {
+      threadsOf.set(c.parentId, [...(threadsOf.get(c.parentId) ?? []), c])
+    }
+  }
+  const nested = new Set([...threadsOf.values()].flat().map(c => c.id))
+  const top = all.filter(c => !nested.has(c.id))
+  const pinned = top.filter(c => c.pinned)
   const groups = new Map<string, ConversationSummary[]>()
-  for (const c of (data ?? []).filter(c => !c.pinned)) {
+  for (const c of top.filter(c => !c.pinned)) {
     const key = bucket(c.lastMessageAt ?? c.createdAt)
     groups.set(key, [...(groups.get(key) ?? []), c])
   }
@@ -93,12 +105,18 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
         )}
         {pinned.length > 0 && (
           <Group label="Pinned">
-            {pinned.map(c => <Row key={c.id} c={c} active={!incognito && c.id === conversationId} onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />)}
+            {pinned.map(c => (
+              <RowWithThreads key={c.id} c={c} threads={threadsOf.get(c.id)} current={incognito ? undefined : conversationId}
+                onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />
+            ))}
           </Group>
         )}
         {[...groups.entries()].map(([label, rows]) => (
           <Group key={label} label={label}>
-            {rows.map(c => <Row key={c.id} c={c} active={!incognito && c.id === conversationId} onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />)}
+            {rows.map(c => (
+              <RowWithThreads key={c.id} c={c} threads={threadsOf.get(c.id)} current={incognito ? undefined : conversationId}
+                onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />
+            ))}
           </Group>
         ))}
       </div>
@@ -125,6 +143,24 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 }
 
 type Patch = (v: { id: string; title?: string; pinned?: boolean; archived?: boolean }) => void
+
+/** A main chat, then the threads Jizza opened from it, indented under a guide line. */
+function RowWithThreads({ c, threads, current, onPicked, patch, remove }: {
+  c: ConversationSummary; threads?: ConversationSummary[]; current?: string; onPicked?: () => void; patch: Patch; remove: (id: string) => void
+}) {
+  return (
+    <>
+      <Row c={c} active={c.id === current} onPicked={onPicked} patch={patch} remove={remove} />
+      {threads && threads.length > 0 && (
+        <li>
+          <ul aria-label={`Threads from ${c.title || 'this conversation'}`} className="ml-3 flex flex-col gap-0.5 border-l border-gray-200 pl-1.5 dark:border-gray-800">
+            {threads.map(t => <Row key={t.id} c={t} active={t.id === current} onPicked={onPicked} patch={patch} remove={remove} />)}
+          </ul>
+        </li>
+      )}
+    </>
+  )
+}
 
 function Row({ c, active, onPicked, patch, remove }: {
   c: ConversationSummary; active: boolean; onPicked?: () => void; patch: Patch; remove: (id: string) => void
@@ -176,6 +212,11 @@ function Row({ c, active, onPicked, patch, remove }: {
         }`}
       >
         {c.pinned && <Pin className="h-3 w-3 shrink-0 text-gray-400" />}
+        {c.kind === 'thread' && (
+          <span className="shrink-0" title={c.lead ? `Led by ${c.lead.name}` : 'Thread'}>
+            <AgentLogo agentKey={c.lead?.key ?? 'jizza'} size={16} />
+          </span>
+        )}
         <span className="truncate">{label}</span>
       </button>
       <button

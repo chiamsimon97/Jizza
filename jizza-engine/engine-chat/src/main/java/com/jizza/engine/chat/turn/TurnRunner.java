@@ -28,6 +28,9 @@ import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.chat.activity.JobRecorder;
 import com.jizza.engine.chat.activity.JobSummaries;
+import com.jizza.engine.chat.thread.ThreadGuideKeeper;
+import com.jizza.engine.chat.thread.ThreadService;
+import com.jizza.engine.api.chat.ChatScope;
 import com.jizza.engine.persistence.entity.ChatJobEntity;
 import com.jizza.engine.persistence.repository.JobEventRepository;
 import java.time.Duration;
@@ -81,12 +84,17 @@ public class TurnRunner implements ChatService {
                         boolean incognito, String title, Instant startedAt) {}
 
   private final ObjectProvider<ConversationUpkeep> upkeep;
+  private final ObjectProvider<ThreadService> threads;
+  private final ObjectProvider<ThreadGuideKeeper> guides;
 
   public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
                     AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
                     ObjectProvider<MemoryLearner> learner, ObjectProvider<OutputLearner> outputLearner,
-                    PlatformTransactionManager transactions, ObjectProvider<ConversationUpkeep> upkeep) {
+                    PlatformTransactionManager transactions, ObjectProvider<ConversationUpkeep> upkeep,
+                    ObjectProvider<ThreadService> threads, ObjectProvider<ThreadGuideKeeper> guides) {
     this.upkeep = upkeep;
+    this.threads = threads;
+    this.guides = guides;
     this.store = store;
     this.orchestrator = orchestrator;
     this.events = events;
@@ -180,6 +188,25 @@ public class TurnRunner implements ChatService {
     return ref;
   }
 
+  /**
+   * A message the user wrote somewhere else, moved here and answered: {@code handoff} from the
+   * main chat into a thread, {@code handback} from a thread to the main chat. The conversation
+   * keeps {@code text} as the user's message; the agent answering is told {@code input}, which
+   * says where it came from. Nothing is learned from it again: it was learned where it was typed.
+   *
+   * @throws com.jizza.engine.api.error.ConflictException while a reply is running there
+   */
+  public TurnRef handOff(UUID userId, UUID conversationId, String text, String input, String origin) {
+    TurnRef ref = store.begin(userId, conversationId, UUID.randomUUID(), text, origin);
+    audit.record(userId, ActorType.AGENT, null, "chat.message", ref.conversationId().toString(),
+        Json.obj().put("messageId", ref.userMessageId().toString()).put("jobId", ref.jobId().toString())
+            .put("origin", origin));
+    List<Msg> history = store.history(ref.conversationId(), ref.userMessageId());
+    TurnSubmission s = new TurnSubmission(ref.conversationId(), null, text, "chat", false);
+    launch(userId, ref, s, history, true, new Continuation(origin, () -> input, null));
+    return ref;
+  }
+
   /** How long a continuation waits for a reply already running in its conversation. */
   private static final Duration CONTINUATION_WAIT = Duration.ofMinutes(5);
 
@@ -215,11 +242,25 @@ public class TurnRunner implements ChatService {
     Orchestrator.Turn turn = null;
     try {
       String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
-      turn = Activity.run(recorder, () -> orchestrator.respond(userId,
-          new Orchestrator.TurnInput(input, s.screen(), history, ref.userMessageId(), s.context())));
+      // Where this turn is: the main chat, where Jizza coordinates, or a thread and its lead.
+      ThreadService.Framing framing = ref.conversationId() == null ? null
+          : threads.getObject().frame(userId, ref.conversationId());
+      List<Msg> told = framing == null || framing.preamble() == null ? history
+          : prepend(Msg.system(framing.preamble()), history);
+      Orchestrator.TurnInput turnInput =
+          new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), s.context());
+      Supplier<Orchestrator.Turn> respond = () -> framing != null && framing.lead() != null
+          ? orchestrator.respondAs(userId, framing.lead().getId(), turnInput)
+          : orchestrator.respond(userId, turnInput);
+      turn = Activity.run(recorder, () -> framing == null ? respond.get()
+          : ChatScope.run(framing.scope(), () -> withThreadActions(respond.get(), framing.scope())));
       Orchestrator.Turn done = turn;
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());
+      ObjectNode lead = framing == null || framing.lead() == null ? null : Json.obj()
+          .put("agentId", framing.lead().getId().toString())
+          .put("key", framing.lead().getKey())
+          .put("name", framing.lead().getName());
       String summary = JobSummaries.summarize(recorder.all());
       // A reply that left a call waiting for the user's approval is done talking, not done working.
       String status = recorder.all().stream()
@@ -235,9 +276,12 @@ public class TurnRunner implements ChatService {
         p.set("actions", Json.toNode(answer.actions()));
         p.put("inputTokens", done.inputTokens()).put("outputTokens", done.outputTokens());
         p.put("status", status);
+        if (lead != null) p.set("lead", lead);
       }));
       if (persist) {
-        store.finish(ref.jobId(), status, done.text(), metadata(ref, answer), summary, done);
+        ObjectNode meta = metadata(ref, answer);
+        if (lead != null) meta.set("lead", lead);
+        store.finish(ref.jobId(), status, done.text(), meta, summary, done);
       }
       if (persist) {
         // Durable facts in what the user said, and in what the job fetched, are kept (off this
@@ -256,6 +300,10 @@ public class TurnRunner implements ChatService {
           }
           // A title after the first exchange, and a summary once the chat outgrows the window.
           upkeep.ifAvailable(u -> u.afterTurn(userId, ref.conversationId()));
+          // A thread's guide learns from each exchange in it.
+          if (framing != null && framing.thread()) {
+            guides.ifAvailable(g -> g.afterTurn(userId, ref.conversationId(), s.text(), done.text()));
+          }
           return null;
         });
       }
@@ -360,6 +408,23 @@ public class TurnRunner implements ChatService {
     return turn.delegations().stream()
         .map(d -> new AssistantReply.Contribution(d.agentId(), d.agentName(), d.task()))
         .toList();
+  }
+
+  private static List<Msg> prepend(Msg first, List<Msg> rest) {
+    List<Msg> all = new java.util.ArrayList<>(rest.size() + 1);
+    all.add(first);
+    all.addAll(rest);
+    return all;
+  }
+
+  /** The reply with what the thread tools asked the screen to show (a new thread, a hand-back). */
+  private static Orchestrator.Turn withThreadActions(Orchestrator.Turn turn, ChatScope.Scope scope) {
+    List<UiAction> recorded = ChatScope.actions(scope);
+    if (recorded.isEmpty()) return turn;
+    List<UiAction> all = new java.util.ArrayList<>(turn.actions());
+    all.addAll(recorded);
+    return new Orchestrator.Turn(turn.text(), turn.delegations(), all, turn.inputTokens(),
+        turn.outputTokens());
   }
 
   /** What the client needs to redraw this reply exactly as it looked live. */

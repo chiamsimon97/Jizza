@@ -98,6 +98,10 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("find_saved_workflows", ActionType.READ),
       // Reading back which service calls this conversation made, to save them as steps.
       Map.entry("recent_service_calls", ActionType.READ),
+      // Moving the conversation between the main chat and its threads only reaches the user.
+      Map.entry("start_thread", ActionType.READ),
+      Map.entry("continue_in_thread", ActionType.READ),
+      Map.entry("hand_back_to_jizza", ActionType.READ),
       // These change only Jizza's own records.
       Map.entry("knowledge_upsert", ActionType.DRAFT),
       Map.entry("memory_remember", ActionType.DRAFT),
@@ -105,6 +109,7 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("memory_retire", ActionType.DRAFT),
       Map.entry("create_plan", ActionType.DRAFT),
       Map.entry("save_instruction", ActionType.DRAFT),
+      Map.entry("note_in_thread_guide", ActionType.DRAFT),
       // Starting work that may do anything: a whole workflow, or a job for later.
       Map.entry("schedule_task", ActionType.CREATE),
       // A saved workflow the user agreed to reuse. The tool itself will not start one the user's

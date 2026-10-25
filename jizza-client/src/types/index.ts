@@ -377,6 +377,41 @@ export type UiAction =
   | { type: 'configure_step'; payload: { stepId: string; label?: string; config: Record<string, unknown>; summary?: string } }
   /** Jizza ran one of the user's saved workflows instead of building a new one. */
   | { type: 'reused_workflow'; payload: { workflowId: string; name: string; runId: string; status: string } }
+  /** Jizza moved a topic into a thread led by a specialist, or passed a message to an open one. */
+  | { type: 'thread_opened'; payload: ThreadCard }
+  /** A thread's lead passed a message that does not belong there back to the main chat. */
+  | { type: 'thread_handback'; payload: { conversationId: string; threadId: string; reason?: string } }
+
+/** A thread as the card on Jizza's reply shows it. */
+export interface ThreadCard {
+  conversationId: string
+  title: string
+  topic?: string
+  leadKey: string
+  leadName: string
+  leadId?: string
+  /** An open thread took the message, rather than a new one. */
+  resumed?: boolean
+}
+
+/** The agent leading a thread: who answers there. */
+export interface AgentRef {
+  id: string
+  key: string
+  name: string
+}
+
+/** A thread's learning file: what it is for and what it has learned, as Markdown. */
+export interface ThreadGuide {
+  conversationId: string
+  title?: string
+  topic?: string
+  lead?: AgentRef
+  markdown?: string
+  updatedAt?: string
+  /** 'user' once the user edited it by hand. */
+  source?: 'jizza' | 'user'
+}
 
 /** A new agent, or a team, Jizza drafted; it exists only once the user creates it. */
 export interface AgentProposal {
@@ -474,6 +509,13 @@ export interface ConversationSummary {
   pinned: boolean
   archived: boolean
   messageCount: number
+  /** 'thread' for a topic Jizza handed to a lead; 'main' for a chat with Jizza. */
+  kind?: 'main' | 'thread'
+  /** For a thread, the main chat it was opened from. */
+  parentId?: string
+  /** For a thread, the agent leading it. */
+  lead?: AgentRef
+  topic?: string
 }
 
 export interface MessageDto {
@@ -484,7 +526,11 @@ export interface MessageDto {
   status?: 'streaming' | 'complete' | 'failed' | 'cancelled'
   jobId?: string
   /** What the reply looked like live: who helped and what it did on screen. */
-  metadata?: { contributors?: Contribution[]; actions?: UiAction[]; jobId?: string; notificationId?: string; parentJobId?: string; approved?: boolean }
+  metadata?: {
+    contributors?: Contribution[]; actions?: UiAction[]; jobId?: string; notificationId?: string; parentJobId?: string; approved?: boolean
+    /** A reply in a thread, written by its lead. */
+    lead?: { agentId: string; key: string; name: string }
+  }
 }
 
 // ── Jobs (the Activity panel) ─────────────────────────────────────────────────

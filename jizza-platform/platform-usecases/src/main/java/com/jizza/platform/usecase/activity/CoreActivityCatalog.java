@@ -59,7 +59,8 @@ public class CoreActivityCatalog implements ActivityLogCatalog {
             group("knowledge", "Knowledge"),
             group("isolation", "Isolation")),
         category("chat", "Conversations", "MessageSquare", 80, List.of("chat."),
-            group("messages", "Messages")),
+            group("messages", "Messages"),
+            group("threads", "Threads")),
         category("notifications", "Notifications", "Bell", 90, List.of("notification."),
             group("raised", "Raised"),
             group("answers", "Answers"),
@@ -186,6 +187,9 @@ public class CoreActivityCatalog implements ActivityLogCatalog {
         ActivityLogType.of("chat.turn.cancel", "chat", "messages", "Reply stopped"),
         ActivityLogType.of("chat.conversation.delete", "chat", "messages",
             "Conversation deleted", NOTICE),
+        ActivityLogType.of("chat.thread.open", "chat", "threads", "Thread opened"),
+        ActivityLogType.of("chat.thread.handback", "chat", "threads", "Message passed back to Jizza"),
+        ActivityLogType.of("chat.thread.guide.edit", "chat", "threads", "Thread guide edited"),
 
         // ── notifications
         ActivityLogType.of("notification.*", "notifications", "answers", null),
