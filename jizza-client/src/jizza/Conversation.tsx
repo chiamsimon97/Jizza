@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, Mic, MicOff, RotateCcw, Send, ShieldQuestion, Split, Square, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, Mic, MicOff, Pencil, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
+import { conversationsApi } from '@/api/conversations'
 import { queryClient } from '@/lib/queryClient'
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi } from '@/api/agents'
@@ -43,8 +44,10 @@ interface ConversationProps {
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
-  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation } = useAssistantStore()
+  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit } = useAssistantStore()
   const [input, setInput] = useState('')
+  // The message being replied to: quoted above what the user writes.
+  const [replyTo, setReplyTo] = useState<{ who: string; text: string } | null>(null)
   const { ctx, token } = useCurrentContext()
   // The slash menu: open while the message is "/" and a command name, with one highlighted.
   const slash = /^\/(\S*)$/.exec(input)
@@ -79,7 +82,13 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     const command = typed && commandsFor(ctx).find(c => c.name === typed[1].toLowerCase())
     if (command) return runCommand(command)
     setInput('')
-    void send(text)
+    setReplyTo(null)
+    void send(replyTo ? `${quote(replyTo.text)}\n\n${text}` : text)
+  }
+
+  const reply = (msg: AssistantMessage) => {
+    setReplyTo({ who: msg.role === 'user' ? 'yourself' : msg.lead?.name ?? 'Jizza', text: splitQuote(msg.text).body })
+    inputRef.current?.focus()
   }
 
   function runCommand(command: SlashCommand) {
@@ -155,10 +164,12 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </div>
           )}
 
-          {messages.map(msg => (
+          {messages.map((msg, i) => (
             <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={option => choose(msg.question!, option)} onOpenJob={onOpenJob}
               inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
-              onSendMany={text => void send(text)} onRetry={msg.error && !thinking ? () => retry(msg.id) : undefined} />
+              onSendMany={text => void send(text)} onRetry={msg.error && !thinking ? () => retry(msg.id) : undefined}
+              onReply={() => reply(msg)} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
+              sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
           ))}
 
           {/* Between sending and the job starting there is no reply bubble yet to show progress in. */}
@@ -190,6 +201,19 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </ul>
           )}
           <ContextChip className="mb-1.5 px-1" />
+          {replyTo && (
+            <div className="mb-1.5 flex items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-gray-800 dark:bg-gray-900/60">
+              <Reply className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-500" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-gray-700 dark:text-gray-200">Replying to {replyTo.who}</p>
+                <p className="truncate text-gray-500 dark:text-gray-400">{replyTo.text}</p>
+              </div>
+              <button type="button" aria-label="Cancel reply" onClick={() => setReplyTo(null)}
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
         <div className={`${width} flex items-end gap-2 rounded-2xl border border-gray-300 bg-white p-2 shadow-sm transition-all focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900`}>
           {dictation.supported && (
@@ -248,14 +272,21 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry, onReply, onEdit, sentToThread }: {
   msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
   /** Sends several ticked answers together. */
   onSendMany: (text: string) => void
   /** Asks again after a reply that failed. */
   onRetry?: () => void
+  /** Quotes this message in the next one. */
+  onReply: () => void
+  /** The user's own message: replaces it, and everything after it, with the edited text. */
+  onEdit?: (text: string) => Promise<void>
+  /** Jizza moved this message of the user's into a thread. */
+  sentToThread?: boolean
 }) {
+  const [editing, setEditing] = useState(false)
   if (msg.role === 'event') {
     return (
       <div className="flex items-center gap-2 py-1 animate-fade-in" role="note">
@@ -266,16 +297,31 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
     )
   }
   if (msg.role === 'user') {
+    const { quote: quoted, body } = splitQuote(msg.text)
+    const width = compact ? 'max-w-[85%]' : 'max-w-[85%] sm:max-w-[75%]'
+    if (editing && onEdit) {
+      return (
+        <EditBox initial={body} className={width} onCancel={() => setEditing(false)}
+          onSave={async text => { await onEdit(quoted ? `${quote(quoted)}\n\n${text}` : text); setEditing(false) }} />
+      )
+    }
     return (
-      <div className="flex justify-end animate-fade-in-up">
-        <div className={`${compact ? 'max-w-[85%]' : 'max-w-[85%] sm:max-w-[75%]'} rounded-2xl rounded-br-md bg-brand-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm whitespace-pre-wrap`}>
-          {msg.text}
+      <div className="group/msg flex flex-col items-end gap-1 animate-fade-in-up">
+        <div className={`${width} rounded-2xl rounded-br-md bg-brand-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm whitespace-pre-wrap`}>
+          {quoted && <span className="mb-1.5 block border-l-2 border-white/60 pl-2 text-xs text-white/80 line-clamp-3">{quoted}</span>}
+          {body}
         </div>
+        {sentToThread && (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+            <Split className="h-3 w-3" /> Sent to a thread
+          </span>
+        )}
+        <MessageActions text={msg.text} onReply={onReply} onEdit={onEdit ? () => setEditing(true) : undefined} />
       </div>
     )
   }
   return (
-    <div className="flex items-start gap-2.5 animate-fade-in-up">
+    <div className="group/msg flex items-start gap-2.5 animate-fade-in-up">
       {msg.lead
         ? <span className="mt-0.5 shrink-0" title={msg.lead.name}><AgentLogo agentKey={msg.lead.key} size={28} /></span>
         : <JizzaOrb size={28} className="mt-0.5" tracking={false} />}
@@ -301,8 +347,8 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
           {msg.streaming && !msg.text && <TypingDots />}
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
-          {!msg.streaming && msg.text && !msg.error && <CopyButton text={msg.text} />}
         </div>
+        {!msg.streaming && msg.text && !msg.error && <MessageActions text={msg.text} onReply={onReply} align="start" />}
         {onRetry && (
           <button type="button" onClick={onRetry}
             className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
@@ -442,29 +488,39 @@ function TypingDots() {
 }
 
 /**
- * Jizza moved the request out of the main chat: the thread, who leads it and what it is for. The
- * lead is already answering there; opening it shows their reply.
+ * Where Jizza moved the request: the thread, who leads it and how far it has got, one tap from
+ * opening it. Like a thread under a message, it stays with the chat it came from.
  */
 function ThreadHandoffCard({ thread }: { thread: ThreadCardData }) {
   const current = useAssistantStore(s => s.conversationId)
+  const version = useAssistantStore(s => s.conversationsVersion)
   const here = current === thread.conversationId
+  const { data } = useQuery({
+    queryKey: ['conversation-threads', current, version],
+    queryFn: () => conversationsApi.threads(current!),
+    enabled: !!current && !here,
+    retry: false,
+    staleTime: 5_000,
+    // A lead still answering moves the thread on by itself: look again until it settles.
+    refetchInterval: q => ((q.state.data as { id: string; stage?: string }[] | undefined)
+      ?.some(t => t.id === thread.conversationId && t.stage === 'working') ? 3_000 : false),
+  })
+  const row = data?.find(t => t.id === thread.conversationId)
+  const replies = row ? Math.floor(row.messageCount / 2) : 0
+  const status = row?.stage === 'working' ? 'Working…' : row?.stage === 'waiting' ? 'Waiting on you'
+    : row?.stage === 'resolved' ? 'Resolved' : replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Thread'
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 animate-fade-in-up dark:border-brand-800 dark:bg-brand-500/10">
-      <span className="shrink-0"><AgentLogo agentKey={thread.leadKey} size={36} /></span>
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-brand-700 dark:text-brand-300">
-          <Split className="h-3 w-3" />
-          {thread.resumed ? `Sent to ${thread.leadName}'s thread` : `New thread with ${thread.leadName}`}
-        </p>
-        <p className="mt-0.5 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{thread.title}</p>
-        {thread.topic && <p className="mt-0.5 line-clamp-2 text-xs text-gray-600 dark:text-gray-400">{thread.topic}</p>}
-      </div>
-      {!here && (
-        <Button type="button" size="sm" onClick={() => resumeConversation(thread.conversationId)} className="shrink-0">
-          Open thread
-        </Button>
-      )}
-    </div>
+    <button type="button" disabled={here} onClick={() => resumeConversation(thread.conversationId)}
+      aria-label={`Open thread ${thread.title}`} title={thread.topic ?? thread.title}
+      className="group/thread flex w-fit max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white py-1.5 pl-1.5 pr-2.5 text-left text-xs shadow-sm transition-colors animate-fade-in-up hover:border-brand-300 disabled:cursor-default dark:border-gray-800 dark:bg-gray-900 dark:hover:border-brand-700">
+      <AgentLogo agentKey={thread.leadKey} size={22} />
+      <span className="shrink-0 font-semibold text-brand-700 dark:text-brand-300">
+        {thread.resumed ? `Continued in ${thread.leadName}'s thread` : `New thread with ${thread.leadName}`}
+      </span>
+      <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">{thread.title}</span>
+      <span className="shrink-0 text-gray-500 dark:text-gray-400">· {status}</span>
+      {!here && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-hover/thread:translate-x-0.5" />}
+    </button>
   )
 }
 
@@ -546,13 +602,73 @@ function QuestionCard({ question, onChoose, onSendMany }: { question: Question; 
   )
 }
 
-function CopyButton({ text }: { text: string }) {
+/** Reply, Edit (the user's own messages) and Copy, under a message; shown on hover, always on touch. */
+function MessageActions({ text, onReply, onEdit, align = 'end' }: { text: string; onReply: () => void; onEdit?: () => void; align?: 'start' | 'end' }) {
   const [copied, setCopied] = useState(false)
+  const copy = () => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }
   return (
-    <button type="button" aria-label="Copy reply" title={copied ? 'Copied' : 'Copy reply'}
-      onClick={() => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
-      className="absolute -bottom-2.5 right-2 grid h-6 w-6 place-items-center rounded-md border border-gray-200 bg-white text-gray-400 opacity-0 shadow-sm transition-opacity hover:text-gray-700 focus:opacity-100 group-hover/reply:opacity-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:text-gray-200">
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+    <div className={`flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/msg:opacity-100 [@media(hover:none)]:opacity-100 ${align === 'start' ? 'self-start' : 'self-end'}`}>
+      <ActionButton label="Reply" onClick={onReply}><Reply className="h-3.5 w-3.5" /></ActionButton>
+      {onEdit && <ActionButton label="Edit" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /></ActionButton>}
+      <ActionButton label={copied ? 'Copied' : 'Copy'} onClick={copy}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</ActionButton>
+    </div>
+  )
+}
+
+function ActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      className="grid h-7 w-7 place-items-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+      {children}
     </button>
   )
+}
+
+/** Editing the user's message in place: saving sends it again and drops what came after it. */
+function EditBox({ initial, className, onSave, onCancel }: { initial: string; className: string; onSave: (text: string) => Promise<void>; onCancel: () => void }) {
+  const [text, setText] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    if (!text.trim() || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSave(text.trim())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not go through.')
+      setSaving(false)
+    }
+  }
+  return (
+    <div className={`ml-auto flex w-full flex-col gap-2 rounded-2xl border border-brand-300 bg-white p-2 shadow-sm animate-fade-in dark:border-brand-700 dark:bg-gray-900 ${className}`}>
+      <textarea autoFocus value={text} onChange={e => setText(e.target.value)} aria-label="Edit your message" rows={3}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void save() }
+          if (e.key === 'Escape') onCancel()
+        }}
+        className="max-h-60 w-full resize-y bg-transparent px-2 py-1 text-sm text-gray-900 focus:outline-none dark:text-gray-100" />
+      {error && <p className="px-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto px-2 text-[11px] text-gray-400">Replies after this message are replaced.</span>
+        <Button type="button" size="sm" variant="secondary" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button type="button" size="sm" loading={saving} disabled={!text.trim()} onClick={() => void save()}>Save and send</Button>
+      </div>
+    </div>
+  )
+}
+
+/** A reply's quote: the quoted message as Markdown block-quote lines, trimmed to a few lines. */
+function quote(text: string): string {
+  const short = text.length > 400 ? `${text.slice(0, 399).trimEnd()}…` : text
+  return short.split('\n').map(l => `> ${l}`).join('\n')
+}
+
+/** A message that opens with a quote ("> …" lines): the quoted part and what was written. */
+export function splitQuote(text: string): { quote?: string; body: string } {
+  const lines = text.split('\n')
+  let i = 0
+  while (i < lines.length && lines[i].startsWith('>')) i++
+  if (i === 0) return { body: text }
+  return { quote: lines.slice(0, i).map(l => l.replace(/^>\s?/, '')).join('\n'), body: lines.slice(i).join('\n').trim() }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookOpen, Download, Pencil } from 'lucide-react'
+import { BookOpen, Brain, Download, Pencil } from 'lucide-react'
 import { conversationsApi } from '@/api/conversations'
 import { Button } from '@/components/ui/Button'
 import { relativeTime } from '@/lib/timeRange'
@@ -8,9 +8,10 @@ import { Markdown } from '../Markdown'
 import { useAssistantStore } from '../assistantStore'
 
 /**
- * A thread's guide: the learning file its lead and Jizza keep for it. It is read at the start of
- * every reply in the thread and updated after each one. The user can read it, edit it by hand and
- * save it as a .md file.
+ * A thread's own memory: its guide, the learning file its lead and Jizza keep for it (read at the
+ * start of every reply in the thread and updated after each one; the user can read it, edit it by
+ * hand and save it as a .md file), and the facts learned from what was said in it. Another
+ * thread never recalls them.
  */
 export function ThreadGuidePanel({ threadId }: { threadId: string }) {
   const version = useAssistantStore(s => s.conversationsVersion)
@@ -22,13 +23,18 @@ export function ThreadGuidePanel({ threadId }: { threadId: string }) {
     queryKey: ['thread-guide', threadId],
     queryFn: () => conversationsApi.guide(threadId),
   })
+  const { data: learned, refetch: refetchLearned } = useQuery({
+    queryKey: ['thread-learned', threadId],
+    queryFn: () => conversationsApi.learned(threadId),
+  })
   // The guide is updated a moment after each reply; look again when one finishes.
   useEffect(() => {
     if (editing) return
     void refetch()
-    const t = setTimeout(() => void refetch(), 8_000)
+    void refetchLearned()
+    const t = setTimeout(() => { void refetch(); void refetchLearned() }, 8_000)
     return () => clearTimeout(t)
-  }, [version, editing, refetch])
+  }, [version, editing, refetch, refetchLearned])
 
   const save = useMutation({
     mutationFn: (markdown: string) => conversationsApi.updateGuide(threadId, markdown),
@@ -45,9 +51,9 @@ export function ThreadGuidePanel({ threadId }: { threadId: string }) {
       <div className="flex items-start gap-2 px-4 pb-2 pt-4">
         <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
         <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Thread guide</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Thread memory</h3>
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            What {lead} and Jizza keep for this thread. It is read before every reply here.
+            What {lead} and Jizza keep for this thread. It is read before every reply here, and only here.
           </p>
         </div>
         {!editing && guide && (
@@ -81,6 +87,27 @@ export function ThreadGuidePanel({ threadId }: { threadId: string }) {
           </div>
         ) : !isLoading && (
           <p className="py-2 text-xs text-gray-500 dark:text-gray-400">Nothing kept yet. It fills in as you talk here.</p>
+        )}
+        {!editing && (
+          <section aria-label="Learned in this thread" className="mt-4">
+            <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              <Brain className="h-3.5 w-3.5 text-brand-500" /> Learned in this thread
+            </h4>
+            {learned && learned.length > 0 ? (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {learned.map(f => (
+                  <li key={f.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">
+                    {f.content}
+                    <span className="mt-1 flex gap-1.5 text-[11px] text-gray-400">
+                      <span>{f.category}</span>·<span>{f.confirmed ? 'confirmed' : 'not confirmed'}</span>·<span>{relativeTime(f.createdAt)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">No facts yet. What you tell {lead} here is remembered for this thread.</p>
+            )}
+          </section>
         )}
       </div>
 

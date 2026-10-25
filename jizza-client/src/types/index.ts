@@ -401,6 +401,16 @@ export interface AgentRef {
   name: string
 }
 
+/** A fact Jizza learned from what was said in one conversation; in a thread, part of its own memory. */
+export interface LearnedFact {
+  id: string
+  content: string
+  category: string
+  /** The user confirmed it, rather than Jizza inferring it. */
+  confirmed: boolean
+  createdAt: string
+}
+
 /** A thread's learning file: what it is for and what it has learned, as Markdown. */
 export interface ThreadGuide {
   conversationId: string
