@@ -30,7 +30,7 @@ import { MembersPage } from '@/pages/MembersPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { PublicListingPage } from '@/pages/PublicListingPage'
 import { ListingReviewsPage } from '@/pages/ListingReviewsPage'
-import { PublicRolesPage } from '@/pages/PublicRolesPage'
+import { RegisteredAccountsPage } from '@/pages/RegisteredAccountsPage'
 import { DiscoverPage, DiscoverProfilePage } from '@/pages/DiscoverPage'
 import { RequirePermission } from '@/auth/RequirePermission'
 import { PersonalOnly } from '@/auth/PersonalOnly'
@@ -78,7 +78,7 @@ export default function App() {
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/discover/:orgId" element={<DiscoverProfilePage />} />
           <Route path="/admin/listings" element={<ListingReviewsPage />} />
-          <Route path="/admin/public-roles" element={<PublicRolesPage />} />
+          <Route path="/admin/accounts" element={<RegisteredAccountsPage />} />
           <Route element={<RequirePermission permission={PERMISSIONS.LISTING_MANAGE} />}>
             <Route path="/organization/listing" element={<PublicListingPage />} />
           </Route>

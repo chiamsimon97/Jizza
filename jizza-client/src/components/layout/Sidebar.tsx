@@ -85,7 +85,7 @@ const platformSection: NavSection = {
   title: 'Platform',
   items: [
     { to: '/admin/listings', icon: ClipboardCheck, label: 'Listing reviews', superAdmin: true },
-    { to: '/admin/public-roles', icon: UserCog, label: 'Public roles', superAdmin: true },
+    { to: '/admin/accounts', icon: UserCog, label: 'Registered accounts', superAdmin: true },
   ],
 }
 

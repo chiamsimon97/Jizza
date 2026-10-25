@@ -1201,11 +1201,25 @@ export interface Member {
   you: boolean
 }
 
-/** Everyone's role in the platform's Public organization, for the Super Admin. */
-export interface PublicRoles {
+export type AccountSource = 'INDIVIDUAL_SIGNUP' | 'ORGANIZATION_SIGNUP' | 'ORGANIZATION_CREATED' | 'EXISTING'
+
+/** An Individual or Team account registered in Jizza Public. publicRole is its owner's role there. */
+export interface RegisteredAccount {
+  workspaceId: string
+  name: string
+  type: WorkspaceType
+  ownerUserId: string
+  ownerEmail: string
+  source: AccountSource
+  registeredAt: string
+  publicRole: WorkspaceRole
+}
+
+/** Every account registered in the platform's Public organization, for the Super Admin. */
+export interface AccountRegistry {
   workspaceId: string
   workspaceName: string
-  members: Member[]
+  accounts: RegisteredAccount[]
 }
 
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED' | 'EXPIRED'

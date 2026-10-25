@@ -1,19 +1,18 @@
 package com.jizza.platform.usecase.listing;
 
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.enums.AccountSource;
 import com.jizza.engine.api.enums.ActorType;
-import com.jizza.engine.api.enums.ListingAction;
 import com.jizza.engine.api.enums.ListingStatus;
 import com.jizza.engine.api.enums.WorkspaceRole;
 import com.jizza.engine.api.enums.WorkspaceType;
 import com.jizza.engine.api.event.UserRegistered;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.workspace.Membership;
 import com.jizza.engine.api.workspace.PublicListingStore;
 import com.jizza.engine.api.workspace.PublicListingStore.Listing;
-import com.jizza.engine.api.workspace.PublicListingStore.Profile;
 import com.jizza.engine.api.workspace.WorkspaceDirectory;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -28,9 +27,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Makes sure the platform's own Public organization exists on every startup: an organization (never
- * a personal account) owned by the Super Admin and listed on Discover. Every account is a member,
- * as a User unless the Super Admin gave it another role on the Public roles page.
+ * Makes sure the platform's own Public organization exists on every startup. It is Jizza's back
+ * office, not an organization people join: every Individual and Team account is registered in it
+ * (with where it came from) for the Super Admin's analytics and approvals, and people are members
+ * only when the Super Admin made them an Admin or Developer. It is never listed on Discover.
  *
  * <p>When it is missing, it is created for the Super Admin's account. If that is not possible
  * either, because no Super Admin email is set or nobody has registered with it, startup is
@@ -46,22 +46,18 @@ public class PublicOrganizationInitializer {
   private final AuditLog audit;
   private final String superAdminEmail;
   private final String name;
-  private final String description;
   private final boolean development;
 
   public PublicOrganizationInitializer(PublicListingStore store, WorkspaceDirectory directory,
       AuditLog audit,
       @Value("${jizza.security.super-admin.email:}") String superAdminEmail,
       @Value("${jizza.public-organization.name:Jizza Public}") String name,
-      @Value("${jizza.public-organization.description:Jizza's public organization. Everyone on "
-          + "Jizza can find it and ask to join.}") String description,
       @Value("${jizza.development:false}") boolean development) {
     this.store = store;
     this.directory = directory;
     this.audit = audit;
     this.superAdminEmail = superAdminEmail == null ? "" : superAdminEmail.trim();
     this.name = name.trim();
-    this.description = description.trim();
     this.development = development;
   }
 
@@ -81,20 +77,20 @@ public class PublicOrganizationInitializer {
       log.warn("Starting without the Public organization because {} (development mode)", why);
       return;
     }
-    keepListed(existing.get());
-    int added = store.enrollEveryone(existing.get());
-    if (added > 0) log.info("Added {} account(s) to the Public organization as User", added);
+    keepOffDiscover(existing.get());
+    int added = store.registerMissingAccounts();
+    if (added > 0) log.info("Registered {} account(s) in the Public organization", added);
   }
 
-  /** Every new account joins the Public organization as a User. */
+  /** Registers the accounts a sign-up created: the person's own, and a Team account if any. */
   @EventListener
   @Transactional
   public void onRegistered(UserRegistered event) {
-    store.platformOrganization().ifPresent(org -> {
-      if (directory.membership(org, event.userId()).isEmpty()) {
-        directory.addMember(org, event.userId(), WorkspaceRole.USER);
-      }
-    });
+    for (Membership m : directory.membershipsOf(event.userId())) {
+      if (m.role() != WorkspaceRole.OWNER) continue;
+      store.registerAccount(m.workspaceId(), m.workspaceType() == WorkspaceType.PERSONAL
+          ? AccountSource.INDIVIDUAL_SIGNUP : AccountSource.ORGANIZATION_SIGNUP, event.userId());
+    }
   }
 
   /** Whether {@code workspaceId} is the platform's Public organization. */
@@ -102,12 +98,12 @@ public class PublicOrganizationInitializer {
     return store.platformOrganization().filter(workspaceId::equals).isPresent();
   }
 
-  /** Refuses to hide the platform's Public organization from Discover. */
+  /** Refuses listing changes for the Public organization, which is never on Discover. */
   static void refuseIfPlatform(PublicListingStore store, UUID workspaceId) {
     if (isPlatform(store, workspaceId)) {
       throw new JizzaException(HttpStatus.CONFLICT, "platform-organization",
           "Public organization",
-          "This is Jizza's Public organization, so it always stays listed on Discover.");
+          "Jizza Public is the platform's account registry, so it isn't listed on Discover.");
     }
   }
 
@@ -125,21 +121,12 @@ public class PublicOrganizationInitializer {
     return Optional.of(ws.id());
   }
 
-  /** Publishes it on Discover if it is not listed, as the startup approval. */
-  private void keepListed(UUID workspaceId) {
+  /** Takes it off Discover if it was ever listed. */
+  private void keepOffDiscover(UUID workspaceId) {
     Listing listing = store.listing(workspaceId).orElseThrow();
-    boolean listed = listing.approved() != null
-        && (listing.status() == ListingStatus.APPROVED || listing.status() == ListingStatus.PENDING);
-    if (listed) return;
-    Profile profile = listing.draft() != null
-        ? listing.draft()
-        : new Profile(listing.workspaceName(), description, "other", null, null);
-    if (listing.draft() == null) store.saveDraft(workspaceId, profile);
-    store.publish(workspaceId, profile,
-        listing.listedAt() == null ? Instant.now() : listing.listedAt());
-    store.setStatus(workspaceId, ListingStatus.APPROVED);
-    store.recordReview(workspaceId, ListingAction.APPROVED, null,
-        "Listed at startup as Jizza's Public organization");
-    log.info("Listed the Public organization \"{}\" on Discover", listing.workspaceName());
+    if (listing.approved() == null && listing.status() == ListingStatus.NONE) return;
+    store.publish(workspaceId, null, null);
+    store.setStatus(workspaceId, ListingStatus.NONE);
+    log.info("Took the Public organization \"{}\" off Discover", listing.workspaceName());
   }
 }

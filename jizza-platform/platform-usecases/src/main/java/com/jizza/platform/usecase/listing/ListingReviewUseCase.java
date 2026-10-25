@@ -58,6 +58,7 @@ public class ListingReviewUseCase {
   @Transactional
   public Item approve(UUID userId, UUID workspaceId, String note) {
     requireSuperAdmin(userId);
+    PublicOrganizationInitializer.refuseIfPlatform(store, workspaceId);
     Listing listing = listing(workspaceId);
     ListingStatus next = ListingTransitions.next(listing.status(), listing.approved() != null,
         ListingAction.APPROVED);
