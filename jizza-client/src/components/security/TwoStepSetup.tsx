@@ -9,7 +9,8 @@ import type { MfaSetup } from '@/types'
 /**
  * Enrols an authenticator app: scan the QR code, prove a code from it, then save recovery codes.
  * The QR code is drawn in the browser, so the secret is never sent to any other service.
- * Starting setup asks the user to confirm their password first (the step-up dialog).
+ * Setting up the first authenticator needs nothing more than being signed in; replacing one asks
+ * the user to confirm their password first (the step-up dialog).
  */
 export function TwoStepSetup({ onFinished, onCancel }: { onFinished: () => void; onCancel?: () => void }) {
   const [setup, setSetup] = useState<MfaSetup | null>(null)

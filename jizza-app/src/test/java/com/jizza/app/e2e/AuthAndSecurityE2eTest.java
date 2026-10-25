@@ -220,6 +220,25 @@ class AuthAndSecurityE2eTest extends E2eSupport {
   }
 
   @Test
+  void theFirstAuthenticatorNeedsNoStepUpButReplacingOneDoes() {
+    register();
+    login();
+
+    var first = api.post("/api/auth/mfa/setup", null);
+    assertThat(first.ok()).as("signing in was enough: %s", first.body()).isTrue();
+    String secret = first.json().path("secret").asText();
+    assertThat(api.post("/api/auth/mfa/confirm", Map.of("code", freshCode(secret))).ok()).isTrue();
+
+    var replace = api.post("/api/auth/mfa/setup", null);
+    assertThat(replace.status()).isEqualTo(403);
+    assertThat(replace.problemType()).endsWith("step-up-required");
+
+    var stepUp = api.post("/api/auth/step-up", Map.of("password", PASSWORD, "code", freshCode(secret)));
+    assertThat(stepUp.ok()).as("step-up: %s", stepUp.body()).isTrue();
+    assertThat(api.post("/api/auth/mfa/setup", null).ok()).isTrue();
+  }
+
+  @Test
   void anAuthenticatorCodeCannotBeReplayed() {
     register();
     login();

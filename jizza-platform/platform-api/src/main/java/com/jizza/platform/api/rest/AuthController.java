@@ -5,12 +5,14 @@ import com.jizza.engine.api.dto.SecurityStatus;
 import com.jizza.engine.api.dto.SessionDto;
 import com.jizza.engine.api.enums.WorkspaceType;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.error.StepUpRequiredException;
 import com.jizza.engine.api.security.AuthService;
 import com.jizza.engine.api.security.RegistrationRequest;
 import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.engine.security.session.SessionCookies;
+import com.jizza.engine.security.session.SessionService;
 import com.jizza.platform.api.rest.dto.Requests;
 import com.jizza.platform.api.rest.dto.Responses;
 import com.jizza.platform.usecase.workspace.MembershipUseCase;
@@ -50,14 +52,16 @@ public class AuthController {
   private final SessionCookies cookies;
   private final ObjectProvider<com.jizza.engine.api.mail.MailSender> mail;
   private final MembershipUseCase memberships;
+  private final SessionService sessions;
 
   public AuthController(AuthService auth, SessionCookies cookies,
                         ObjectProvider<com.jizza.engine.api.mail.MailSender> mail,
-                        MembershipUseCase memberships) {
+                        MembershipUseCase memberships, SessionService sessions) {
     this.auth = auth;
     this.cookies = cookies;
     this.mail = mail;
     this.memberships = memberships;
+    this.sessions = sessions;
   }
 
   /**
@@ -128,11 +132,19 @@ public class AuthController {
     return auth.status(principal.userId(), principal.sessionId());
   }
 
-  /** Enrolment is a security change, so it needs a fresh re-authentication first. */
+  /**
+   * Starts enrolling an authenticator. The first one needs no re-authentication: the user has just
+   * signed in with their password, and until it is set up the password is the only factor anyway.
+   * Replacing one that already protects the account needs a fresh step-up first.
+   */
   @AuthenticatedOnly
   @PostMapping("/mfa/setup")
-  @com.jizza.engine.api.util.StepUpRequired
   public Responses.MfaSetup setupMfa() {
+    var principal = CurrentUser.require();
+    if (auth.status(principal.userId(), principal.sessionId()).mfaEnabled()
+        && !sessions.stepUpFresh(principal.sessionId())) {
+      throw new StepUpRequiredException();
+    }
     var setup = auth.setupMfa(CurrentUser.userId());
     return new Responses.MfaSetup(setup.secret(), setup.provisioningUri());
   }
