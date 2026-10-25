@@ -106,6 +106,39 @@ public class JizzaOrchestrator implements Orchestrator {
         actions, result.inputTokens(), result.outputTokens());
   }
 
+  /**
+   * A thread led by a specialist: the lead answers the user itself, with its own memory and tools,
+   * and the thread's guide in its history. Jizza co-owns the thread but does not relay this reply.
+   */
+  @Override
+  public Turn respondAs(UUID userId, UUID agentId, TurnInput input) {
+    AgentEntity jizza = agents.findByUserIdAndIsOrchestratorTrue(userId)
+        .orElseThrow(() -> new NotFoundException("Orchestrator agent for user", userId));
+    if (agentId == null || agentId.equals(jizza.getId())) return respond(userId, input);
+    AgentEntity lead = agents.findById(agentId)
+        .filter(a -> a.getUserId().equals(userId))
+        .orElseThrow(() -> new NotFoundException("Agent", agentId));
+
+    String trace = input.userMessageId() == null ? null
+        : AccessContext.chatTurn(input.userMessageId()).toTrace();
+    String message = Redaction.scrub(input.message());
+    recorder.beginTurn();
+    AgentResult result;
+    List<DelegationRecorder.Contribution> contributions;
+    try {
+      result = baseAgent.run(new AgentRequest(userId, lead.getId(), message, null,
+          scrubbed(input.history()), ModelTier.STANDARD, false, trace));
+    } finally {
+      contributions = recorder.endTurn();
+    }
+    String text = result.text() == null || result.text().isBlank() ? NO_ANSWER : result.text();
+    return new Turn(text,
+        contributions.stream()
+            .map(c -> new Delegation(lead.getId(), c.agentId(), c.agentName(), c.task(), c.result()))
+            .toList(),
+        List.of(), result.inputTokens(), result.outputTokens());
+  }
+
   /** The screen the Workflows page's "Plan with Jizza" panel sends from. */
   static final String WORKFLOW_PLANNER = "workflow_planner";
 

@@ -76,6 +76,9 @@ public final class Requests {
 
   public record ConversationPatch(@Size(max = 200) String title, Boolean pinned, Boolean archived) {}
 
+  /** A thread's learning file, edited by hand. */
+  public record ThreadGuidePut(@NotNull @Size(max = 20_000) String markdown) {}
+
   public record AgentPatch(@Size(max = 80) String name, Boolean enabled) {}
 
   public record Connection(@NotBlank @Size(max = 200) String serviceName, @NotNull AuthScheme authScheme,

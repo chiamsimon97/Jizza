@@ -17,6 +17,14 @@ public interface Orchestrator {
   Turn respond(UUID userId, TurnInput input);
 
   /**
+   * A turn in a thread led by {@code agentId}: that agent answers the user directly, with its own
+   * knowledge and tools. Jizza's own id, or null, is the same as {@link #respond}.
+   */
+  default Turn respondAs(UUID userId, UUID agentId, TurnInput input) {
+    return respond(userId, input);
+  }
+
+  /**
    * @param screen        the page the user is on when the message comes from inside the app; it is
    *                      context for this turn only and is never stored
    * @param userMessageId the stored message this turn answers, null for an incognito turn; memory

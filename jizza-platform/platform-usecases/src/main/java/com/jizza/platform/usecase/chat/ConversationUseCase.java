@@ -4,6 +4,7 @@ import com.jizza.engine.api.chat.ChatService;
 import com.jizza.engine.api.chat.JobDto;
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
+import com.jizza.engine.api.dto.ThreadGuideDto;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.orchestrator.ConversationStore;
 import java.util.List;
@@ -19,6 +20,7 @@ public class ConversationUseCase {
 
   private static final int DEFAULT_LIMIT = 50;
   static final int MAX_TITLE = 120;
+  static final int MAX_GUIDE = 20_000;
 
   private final ConversationStore store;
   private final ChatService chat;
@@ -80,7 +82,7 @@ public class ConversationUseCase {
     for (ConversationDto.MessageDto m : all) {
       switch (m.role()) {
         case "user" -> md.append("**You** · ");
-        case "assistant" -> md.append("**Jizza** · ");
+        case "assistant" -> md.append("**").append(speaker(m)).append("** · ");
         default -> md.append("_");
       }
       md.append(m.createdAt() == null ? "" : when.format(m.createdAt()));
@@ -95,11 +97,42 @@ public class ConversationUseCase {
 
   public record Export(String fileName, String contentType, String body) {}
 
+  /** Who wrote a reply: a thread's lead, or Jizza. */
+  static String speaker(ConversationDto.MessageDto m) {
+    if (m.metadata() == null) return "Jizza";
+    String name = m.metadata().path("lead").path("name").asText("");
+    return name.isBlank() ? "Jizza" : name;
+  }
+
   static String fileName(String title) {
     String slug = title.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
         .replaceAll("(^-+|-+$)", "");
     if (slug.length() > 60) slug = slug.substring(0, 60).replaceAll("-+$", "");
     return slug.isEmpty() ? "conversation" : slug;
+  }
+
+  public List<ConversationSummaryDto> threads(UUID userId, UUID conversationId) {
+    return store.threads(userId, conversationId);
+  }
+
+  public ThreadGuideDto guide(UUID userId, UUID threadId) {
+    return store.guide(userId, threadId);
+  }
+
+  public ThreadGuideDto updateGuide(UUID userId, UUID threadId, String markdown) {
+    if (markdown == null) throw new ValidationException("The guide is missing");
+    if (markdown.length() > MAX_GUIDE) {
+      throw new ValidationException("Keep the guide under " + MAX_GUIDE + " characters");
+    }
+    return store.updateGuide(userId, threadId, markdown);
+  }
+
+  /** The thread's learning file, to keep or share outside Jizza. */
+  public Export guideFile(UUID userId, UUID threadId) {
+    ThreadGuideDto guide = store.guide(userId, threadId);
+    String title = guide.title() == null || guide.title().isBlank() ? "thread" : guide.title();
+    String body = guide.markdown() == null ? "# " + title + "\n" : guide.markdown();
+    return new Export(fileName(title) + "-guide.md", "text/markdown; charset=utf-8", body);
   }
 
   public void delete(UUID userId, UUID conversationId) {

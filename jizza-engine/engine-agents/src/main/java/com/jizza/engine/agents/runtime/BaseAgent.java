@@ -152,8 +152,11 @@ public class BaseAgent implements Agent {
 
   private AgentResult loop(AgentRequest req, AgentEntity agent, Observation run) {
     MemoryContextProvider.MemoryContext remembered = recall(req);
+    // A specialist leading the thread this turn is in talks to the user itself.
+    boolean leadsThread = !agent.isOrchestrator()
+        && com.jizza.engine.api.chat.ChatScope.leadsThread(agent.getId());
     String systemPrompt = AgentPrompts.systemPrompt(agent.getSystemPrompt(), agent.getName(),
-        agent.isOrchestrator());
+        agent.isOrchestrator(), leadsThread);
 
     List<Msg> messages = new ArrayList<>();
     messages.add(Msg.system(systemPrompt));
@@ -187,8 +190,9 @@ public class BaseAgent implements Agent {
         }
       });
     }
-    // Only Jizza's own words stream to the user; a specialist's answer goes back to Jizza (R20).
-    boolean streams = agent.isOrchestrator() && Activity.active();
+    // Only the words of whoever is talking to the user stream: Jizza's, or a thread lead's. A
+    // specialist's answer to a delegated task goes back to the agent that asked (R20).
+    boolean streams = (agent.isOrchestrator() || leadsThread) && Activity.active();
 
     audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.start", agent.getKey(),
         Json.obj().put("autonomous", req.autonomous()).put("tier", tier.name())

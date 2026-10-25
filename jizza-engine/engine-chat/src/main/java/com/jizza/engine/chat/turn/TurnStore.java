@@ -62,12 +62,22 @@ public class TurnStore {
    */
   @Transactional
   public TurnRef begin(UUID userId, UUID conversationId, UUID clientMessageId, String text) {
+    return begin(userId, conversationId, clientMessageId, text, "chat");
+  }
+
+  /**
+   * As above, for a message the user wrote somewhere else and Jizza moved here: {@code handoff}
+   * from the main chat into a thread, {@code handback} from a thread to the main chat.
+   */
+  @Transactional
+  public TurnRef begin(UUID userId, UUID conversationId, UUID clientMessageId, String text,
+                       String origin) {
     ConversationEntity conversation = conversationId == null ? create(userId) : owned(userId, conversationId);
 
     ChatJobEntity job = new ChatJobEntity();
     job.setUserId(userId);
     job.setConversationId(conversation.getId());
-    job.setOrigin("chat");
+    job.setOrigin(origin);
     job.setStatus(ChatJobEntity.RUNNING);
     job.setTitle(JobSummaries.title(text));
     try {
@@ -127,6 +137,18 @@ public class TurnStore {
     conversation.setLastMessageAt(Instant.now());
     conversation.setMessageCount(conversation.getMessageCount() + 2);
     return new TurnRef(job.getId(), conversation.getId(), event.getId(), reply.getId(), false);
+  }
+
+  /** A line in the conversation that records something that happened, outside any job. */
+  @Transactional
+  public void note(UUID conversationId, String text, JsonNode metadata) {
+    conversations.findById(conversationId).ifPresent(conversation -> {
+      MessageEntity event = message(conversationId, MessageRole.EVENT, text, MessageEntity.COMPLETE, null);
+      event.setMetadata(metadata);
+      messages.save(event);
+      conversation.setMessageCount(conversation.getMessageCount() + 1);
+      conversation.setLastMessageAt(Instant.now());
+    });
   }
 
   /** A job that was waiting on the user, now that they answered. */

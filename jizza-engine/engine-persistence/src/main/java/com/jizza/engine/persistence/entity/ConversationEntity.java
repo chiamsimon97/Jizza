@@ -12,6 +12,9 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "conversations")
+// Only changed columns are written, so the title, summary and thread guide, each kept up to date
+// on its own after a turn, never overwrite one another.
+@org.hibernate.annotations.DynamicUpdate
 public class ConversationEntity {
 
   @Id
@@ -46,6 +49,53 @@ public class ConversationEntity {
   private String summary;
 
   private Instant summaryThrough;
+
+  /** {@code main} for a chat with Jizza, {@code thread} for a topic handed to a specialist. */
+  @Column(nullable = false)
+  private String kind = KIND_MAIN;
+
+  /** The main chat a thread was opened from; null for a main chat. */
+  private UUID parentId;
+
+  /** The specialist that leads a thread; null when Jizza leads it. */
+  private UUID ownerAgentId;
+
+  /** What a thread is about: what decides whether a message belongs in it. */
+  private String topic;
+
+  /** A thread's learning file, as Markdown. */
+  private String guide;
+
+  private Instant guideUpdatedAt;
+
+  /** {@code jizza} while Jizza keeps the guide, {@code user} once the user edited it. */
+  private String guideSource;
+
+  public static final String KIND_MAIN = "main";
+  public static final String KIND_THREAD = "thread";
+
+  public boolean isThread() { return KIND_THREAD.equals(kind); }
+
+  public String getKind() { return kind; }
+  public void setKind(String kind) { this.kind = kind; }
+
+  public UUID getParentId() { return parentId; }
+  public void setParentId(UUID parentId) { this.parentId = parentId; }
+
+  public UUID getOwnerAgentId() { return ownerAgentId; }
+  public void setOwnerAgentId(UUID ownerAgentId) { this.ownerAgentId = ownerAgentId; }
+
+  public String getTopic() { return topic; }
+  public void setTopic(String topic) { this.topic = topic; }
+
+  public String getGuide() { return guide; }
+  public void setGuide(String guide) { this.guide = guide; }
+
+  public Instant getGuideUpdatedAt() { return guideUpdatedAt; }
+  public void setGuideUpdatedAt(Instant guideUpdatedAt) { this.guideUpdatedAt = guideUpdatedAt; }
+
+  public String getGuideSource() { return guideSource; }
+  public void setGuideSource(String guideSource) { this.guideSource = guideSource; }
 
   public String getSummary() { return summary; }
   public void setSummary(String summary) { this.summary = summary; }
