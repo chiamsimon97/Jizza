@@ -100,6 +100,7 @@ classes (session handling, config) — this is enforced by a Maven build rule, n
 |---|---|
 | Auth & Security | Register, login, TOTP MFA setup/verify/confirm, step-up re-auth, logout / logout-everywhere, session listing/revocation, password reset (email-based), password change, lockout after repeated failures |
 | Agents & Orchestration | Chat with the primary agent, agent listing, rename/enable-disable an agent, delegation to specialists |
+| Chat threads | Jizza coordinates in the main chat and moves a topic that belongs to one specialist into a thread that specialist leads (Jizza co-owns it); off-topic messages in a thread go back to the main chat for Jizza to route again; each thread keeps a Markdown guide (its learning file) that is read before every reply, noted into by the lead, updated after each exchange, and can be edited or downloaded |
 | Connectors | Create/list connections, OAuth authorize/callback, test connection, revoke connection |
 | Tools | Attach an API doc to a connection to auto-generate tools, list a connection's tools, enable/disable a generated tool |
 | Workflows | Create/save a workflow, list workflows and versions, run a workflow, resume/cancel a run, save a workflow as a reusable "skill" |

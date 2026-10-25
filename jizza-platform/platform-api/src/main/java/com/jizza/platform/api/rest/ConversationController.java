@@ -80,6 +80,12 @@ public class ConversationController {
         .body(file.body());
   }
 
+  /** One conversation's list row: for a thread, its lead, topic and main chat. */
+  @GetMapping("/{id}/summary")
+  public ConversationSummaryDto summary(@PathVariable UUID id) {
+    return conversations.summary(CurrentUser.userId(), id);
+  }
+
   /** A main chat's threads, most recently active first. */
   @GetMapping("/{id}/threads")
   public List<ConversationSummaryDto> threads(@PathVariable UUID id) {

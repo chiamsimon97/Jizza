@@ -111,6 +111,10 @@ public class ConversationUseCase {
     return slug.isEmpty() ? "conversation" : slug;
   }
 
+  public ConversationSummaryDto summary(UUID userId, UUID conversationId) {
+    return store.summary(userId, conversationId);
+  }
+
   public List<ConversationSummaryDto> threads(UUID userId, UUID conversationId) {
     return store.threads(userId, conversationId);
   }
