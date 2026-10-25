@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Building2, Check, ChevronsUpDown, Inbox, Plus, User } from 'lucide-react'
+import { Building2, Check, ChevronsUpDown, Globe, Inbox, Plus, ShieldCheck, User } from 'lucide-react'
 import { workspacesApi } from '@/api/workspaces'
 import { CONTEXT_KEY, useAuthorization } from '@/auth/useAuthorization'
 import { useSwitchAccount } from '@/auth/useSwitchAccount'
@@ -18,6 +18,16 @@ function errorText(err: unknown) {
 
 function accountLabel(w: WorkspaceSummary) {
   return w.type === 'PERSONAL' ? 'Personal' : w.name
+}
+
+/** Marks an organization listed on Discover. Private accounts carry no badge. */
+export function PublicBadge() {
+  return (
+    <span title="Listed publicly on Discover"
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 ring-1 ring-inset ring-green-500/20 dark:bg-green-900/30 dark:text-green-400">
+      <Globe className="h-3 w-3" />Public
+    </span>
+  )
 }
 
 /** The current account, and a menu to switch to another one or create an organization (flow D). */
@@ -45,6 +55,9 @@ export function AccountSwitcher({ collapsed, onNavigate }: { collapsed: boolean;
   const isOrg = active.type === 'ORGANIZATION'
   const Icon = isOrg ? Building2 : User
   const pending = snapshot.pendingInvitationCount
+  const publicIds = new Set(snapshot.publicWorkspaceIds ?? [])
+  const activePublic = publicIds.has(active.id)
+  const superAdmin = snapshot.platformRole === 'SUPER_ADMIN'
 
   function choose(w: WorkspaceSummary) {
     setOpen(false)
@@ -71,10 +84,20 @@ export function AccountSwitcher({ collapsed, onNavigate }: { collapsed: boolean;
         {!collapsed && (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{accountLabel(active)}</span>
-              <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-                {isOrg ? `Organization${snapshot.role ? ` · ${ROLE_LABELS[snapshot.role]}` : ''}` : 'Individual account'}
+              <span className="flex items-center gap-1.5">
+                <span className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{accountLabel(active)}</span>
+                {activePublic && <PublicBadge />}
               </span>
+              <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+                {isOrg
+                  ? `${activePublic ? 'Public organization' : 'Private organization'}${snapshot.role ? ` · ${ROLE_LABELS[snapshot.role]}` : ''}`
+                  : 'Individual account'}
+              </span>
+              {superAdmin && (
+                <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-brand-600 dark:text-brand-400">
+                  <ShieldCheck className="h-3 w-3" />Super Admin
+                </span>
+              )}
             </span>
             <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
           </>
@@ -99,6 +122,7 @@ export function AccountSwitcher({ collapsed, onNavigate }: { collapsed: boolean;
                 className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800">
                 <WIcon className="h-4 w-4 shrink-0 text-gray-400" />
                 <span className="min-w-0 flex-1 truncate">{accountLabel(w)}</span>
+                {publicIds.has(w.id) && <PublicBadge />}
                 {w.type === 'ORGANIZATION' && <Badge>{ROLE_LABELS[w.role]}</Badge>}
                 {w.id === active.id && <Check className="h-4 w-4 shrink-0 text-brand-500" />}
               </button>

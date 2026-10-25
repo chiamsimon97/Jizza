@@ -200,6 +200,8 @@ class PublicOrganizationsE2eTest extends E2eSupport {
     assertThat(approved.ok()).as(approved.body()).isTrue();
     assertThat(approved.json().path("status").asText()).isEqualTo("APPROVED");
     assertThat(onDiscover()).isTrue();
+    assertThat(owner.get("/api/me/context").json().path("publicWorkspaceIds").toString())
+        .as("the account switcher marks it public").contains(org.toString());
     JsonNode seen = discovered();
     assertThat(seen.path("profile").path("description").asText()).isEqualTo("We build robots");
     assertThat(seen.path("member").asBoolean()).isFalse();
@@ -240,6 +242,8 @@ class PublicOrganizationsE2eTest extends E2eSupport {
     // Unlisting takes effect at once.
     assertThat(owner.post("/api/organization/listing/unlist", null).json().path("status").asText())
         .isEqualTo("NONE");
+    assertThat(owner.get("/api/me/context").json().path("publicWorkspaceIds").toString())
+        .doesNotContain(org.toString());
     assertThat(onDiscover()).isFalse();
     assertThat(outsider.get("/api/directory/" + org).status()).isEqualTo(404);
   }

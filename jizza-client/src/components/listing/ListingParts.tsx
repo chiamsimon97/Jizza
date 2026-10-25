@@ -6,9 +6,9 @@ import type { ListingAction, ListingProfile, ListingReview, ListingStatus } from
 type Variant = 'default' | 'success' | 'warning' | 'danger' | 'info'
 
 export const LISTING_STATUS: Record<ListingStatus, { label: string; variant: Variant }> = {
-  NONE:      { label: 'Not listed', variant: 'default' },
+  NONE:      { label: 'Private', variant: 'default' },
   PENDING:   { label: 'In review',  variant: 'info' },
-  APPROVED:  { label: 'Listed',     variant: 'success' },
+  APPROVED:  { label: 'Public',     variant: 'success' },
   REJECTED:  { label: 'Not approved', variant: 'danger' },
   SUSPENDED: { label: 'Suspended',  variant: 'warning' },
 }

@@ -43,7 +43,8 @@ class DefaultPermissionEvaluatorTest {
     when(directory.platformRoleOf(any())).thenReturn(PlatformRole.NONE);
     when(directory.workspace(org)).thenReturn(Optional.of(
         new WorkspaceDirectory.Workspace(org, WorkspaceType.ORGANIZATION, "Acme", UUID.randomUUID())));
-    evaluator = new DefaultPermissionEvaluator(new JsonPermissionCatalog(), directory, audit);
+    evaluator = new DefaultPermissionEvaluator(new JsonPermissionCatalog(), directory, audit,
+        mock(com.jizza.engine.api.workspace.PublicListingStore.class));
   }
 
   @AfterEach

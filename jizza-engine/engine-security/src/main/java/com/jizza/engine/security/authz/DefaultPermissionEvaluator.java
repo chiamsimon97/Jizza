@@ -6,12 +6,14 @@ import com.jizza.engine.api.authz.PermissionDefinition;
 import com.jizza.engine.api.authz.PermissionEvaluator;
 import com.jizza.engine.api.authz.RoleAssignmentPolicy;
 import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.enums.ListingStatus;
 import com.jizza.engine.api.enums.PlatformRole;
 import com.jizza.engine.api.enums.WorkspaceRole;
 import com.jizza.engine.api.enums.WorkspaceType;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workspace.AuthorizationSnapshot;
 import com.jizza.engine.api.workspace.Membership;
+import com.jizza.engine.api.workspace.PublicListingStore;
 import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.api.workspace.WorkspaceSummary;
 import com.jizza.engine.security.session.CurrentUser;
@@ -38,12 +40,14 @@ public class DefaultPermissionEvaluator implements PermissionEvaluator {
   private final PermissionCatalog catalog;
   private final WorkspaceDirectory directory;
   private final AuditLog audit;
+  private final PublicListingStore listings;
 
   public DefaultPermissionEvaluator(PermissionCatalog catalog, WorkspaceDirectory directory,
-                                    AuditLog audit) {
+                                    AuditLog audit, PublicListingStore listings) {
     this.catalog = catalog;
     this.directory = directory;
     this.audit = audit;
+    this.listings = listings;
   }
 
   @Override
@@ -99,12 +103,24 @@ public class DefaultPermissionEvaluator implements PermissionEvaluator {
         .filter(i -> !i.expired(now)).count();
     return new AuthorizationSnapshot(userId, email, platformRole, activeSummary, role, permissions,
         assignable, memberships.stream().map(Membership::summary).collect(Collectors.toList()),
-        pending, catalog.version());
+        pending, catalog.version(), publicOnes(memberships));
   }
 
   @Override
   public boolean isSuperAdmin(UUID userId) {
     return userId != null && superAdminInSession(userId);
+  }
+
+  /** The person's organizations that show on Discover, for the account switcher's Public badge. */
+  private List<UUID> publicOnes(List<Membership> memberships) {
+    return memberships.stream()
+        .filter(m -> m.workspaceType() == WorkspaceType.ORGANIZATION)
+        .map(Membership::workspaceId)
+        .filter(id -> listings.listing(id)
+            .filter(l -> l.approved() != null && (l.status() == ListingStatus.APPROVED
+                || l.status() == ListingStatus.PENDING))
+            .isPresent())
+        .toList();
   }
 
   /** The super admin's override only counts inside a request whose session passed two-step. */
