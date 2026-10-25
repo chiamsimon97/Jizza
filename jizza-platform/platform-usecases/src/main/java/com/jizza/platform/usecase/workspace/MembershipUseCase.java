@@ -21,8 +21,10 @@ import com.jizza.engine.api.util.Hashing;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workspace.Invitation;
 import com.jizza.engine.api.workspace.Membership;
+import com.jizza.engine.api.workspace.PublicListingStore;
 import com.jizza.engine.api.workspace.WorkspaceDirectory;
 import com.jizza.engine.api.workspace.WorkspaceSummary;
+import com.jizza.platform.usecase.listing.PublicOrganizationInitializer;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,6 +63,7 @@ public class MembershipUseCase {
   private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
   private final WorkspaceDirectory directory;
+  private final PublicListingStore listings;
   private final AuditLog audit;
   private final ApplicationEventPublisher events;
   private final ObjectProvider<NotificationBus> notifications;
@@ -71,7 +74,7 @@ public class MembershipUseCase {
   private final SecureRandom random = new SecureRandom();
   private final Map<UUID, Deque<Instant>> recentInvites = new ConcurrentHashMap<>();
 
-  public MembershipUseCase(WorkspaceDirectory directory, AuditLog audit,
+  public MembershipUseCase(WorkspaceDirectory directory, PublicListingStore listings, AuditLog audit,
                            ApplicationEventPublisher events,
                            ObjectProvider<NotificationBus> notifications,
                            ObjectProvider<MailSender> mail,
@@ -81,6 +84,7 @@ public class MembershipUseCase {
                            @Value("${jizza.security.invitations.client-base-url:http://localhost:5173}")
                            String clientBaseUrl) {
     this.directory = directory;
+    this.listings = listings;
     this.audit = audit;
     this.events = events;
     this.notifications = notifications;
@@ -94,7 +98,14 @@ public class MembershipUseCase {
 
   @Transactional(readOnly = true)
   public List<Membership> members(Access access) {
-    return directory.members(access.workspaceId());
+    List<Membership> all = directory.members(access.workspaceId());
+    // Everyone on Jizza is in the Public organization, so only its Owner and Admins see the list.
+    WorkspaceRole role = roleOf(access);
+    if (role != WorkspaceRole.OWNER && role != WorkspaceRole.ADMIN
+        && PublicOrganizationInitializer.isPlatform(listings, access.workspaceId())) {
+      return all.stream().filter(m -> m.userId().equals(access.userId())).toList();
+    }
+    return all;
   }
 
   @Transactional(readOnly = true)

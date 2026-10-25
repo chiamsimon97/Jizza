@@ -4,7 +4,7 @@ import { notificationsApi } from '@/api/notifications'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
-  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck,
+  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, UserCog,
   type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -85,6 +85,7 @@ const platformSection: NavSection = {
   title: 'Platform',
   items: [
     { to: '/admin/listings', icon: ClipboardCheck, label: 'Listing reviews', superAdmin: true },
+    { to: '/admin/public-roles', icon: UserCog, label: 'Public roles', superAdmin: true },
   ],
 }
 

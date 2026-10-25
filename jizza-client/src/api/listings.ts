@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { DirectoryPage, DirectoryProfile, JoinRequest, Listing, ListingProfile, ListingStatus } from '@/types'
+import type { DirectoryPage, DirectoryProfile, JoinRequest, Listing, ListingProfile, ListingStatus, Member, PublicRoles, WorkspaceRole } from '@/types'
 
 const seg = encodeURIComponent
 
@@ -24,6 +24,13 @@ export const listingReviewApi = {
   reject: (id: string, note: string) => api.post<Listing>(`/api/admin/listings/${seg(id)}/reject`, { note }),
   suspend: (id: string, note: string) => api.post<Listing>(`/api/admin/listings/${seg(id)}/suspend`, { note }),
   reinstate: (id: string, note?: string) => api.post<Listing>(`/api/admin/listings/${seg(id)}/reinstate`, { note }),
+}
+
+/** The Super Admin's Public roles: everyone's role in the platform's Public organization. */
+export const publicRolesApi = {
+  list: (q = '') => api.get<PublicRoles>(`/api/admin/public-roles?q=${seg(q)}`),
+  setRole: (memberId: string, role: WorkspaceRole) =>
+    api.put<Member>(`/api/admin/public-roles/${seg(memberId)}`, { role }),
 }
 
 /** Discover: organizations a Super Admin approved, for everyone signed in. */
