@@ -75,6 +75,9 @@ public interface PublicListingStore {
   /** Makes the organization the platform's Public organization. There is only ever one. */
   void markPlatformOrganization(UUID workspaceId);
 
+  /** Adds every account that is not yet a member as a User. Returns how many were added. */
+  int enrollEveryone(UUID workspaceId);
+
   // ── Join requests ─────────────────────────────────────────────────────────
 
   JoinRequest createJoinRequest(UUID workspaceId, UUID userId, String message);

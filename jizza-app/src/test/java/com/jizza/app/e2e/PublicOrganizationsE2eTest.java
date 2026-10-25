@@ -330,7 +330,7 @@ class PublicOrganizationsE2eTest extends E2eSupport {
 
   @Test
   void startupCreatesTheListedPublicOrganizationOrRefusesToStart() {
-    jdbc.update("update workspaces set platform_public = false where platform_public");
+    jdbc.update("delete from workspaces where platform_public");
     try {
       // Production with nobody registered under the Super Admin email: startup is refused.
       assertThatThrownBy(() -> initializer("nobody-" + UUID.randomUUID() + "@jizza.local", false)
@@ -359,9 +359,48 @@ class PublicOrganizationsE2eTest extends E2eSupport {
       // It can't be taken off Discover.
       assertThat(admin.post("/api/admin/listings/" + publicOrg + "/suspend",
           Map.of("note", "no")).status()).isEqualTo(409);
+
+      // Existing accounts joined at startup, and new ones join on sign-up, all as User.
+      assertThat(roleIn(publicOrg, outsiderEmail)).isEqualTo("user");
+      String newcomerEmail = "public-newcomer-" + UUID.randomUUID() + "@jizza.local";
+      ApiClient newcomer = signUp(newcomerEmail, Map.of());
+      assertThat(roleIn(publicOrg, newcomerEmail)).isEqualTo("user");
+      assertThat(roleIn(publicOrg, adminEmail)).isEqualTo("owner");
+
+      // A User sees only themselves on Members, and can't leave.
+      assertThat(newcomer.post("/api/me/active-workspace",
+          Map.of("workspaceId", publicOrg.toString())).ok()).isTrue();
+      JsonNode seen = newcomer.get("/api/workspaces/current/members").json();
+      assertThat(seen.size()).isEqualTo(1);
+      assertThat(seen.get(0).path("email").asText()).isEqualTo(newcomerEmail);
+      assertThat(newcomer.delete("/api/workspaces/current/membership").status()).isEqualTo(409);
+
+      // Only the Super Admin changes Public roles, and never the Owner's.
+      assertThat(outsider.get("/api/admin/public-roles").status()).isEqualTo(403);
+      JsonNode roles = admin.get("/api/admin/public-roles?q=public-newcomer").json();
+      assertThat(roles.path("workspaceId").asText()).isEqualTo(publicOrg.toString());
+      assertThat(roles.path("members").size()).isEqualTo(1);
+      String memberId = roles.path("members").get(0).path("id").asText();
+      var promoted = admin.put("/api/admin/public-roles/" + memberId, Map.of("role", "DEVELOPER"));
+      assertThat(promoted.ok()).as(promoted.body()).isTrue();
+      assertThat(roleIn(publicOrg, newcomerEmail)).isEqualTo("developer");
+      assertThat(outsider.put("/api/admin/public-roles/" + memberId, Map.of("role", "ADMIN"))
+          .status()).isEqualTo(403);
+      assertThat(admin.put("/api/admin/public-roles/" + memberId, Map.of("role", "OWNER"))
+          .status()).isEqualTo(400);
+      String ownerMember = jdbc.queryForObject("select m.id::text from workspace_members m "
+          + "where m.workspace_id = ? and m.role = 'owner'", String.class, publicOrg);
+      assertThat(admin.put("/api/admin/public-roles/" + ownerMember, Map.of("role", "USER"))
+          .status()).isEqualTo(409);
     } finally {
-      jdbc.update("update workspaces set platform_public = false where platform_public");
+      jdbc.update("delete from workspaces where platform_public");
     }
+  }
+
+  private String roleIn(UUID workspaceId, String email) {
+    return jdbc.queryForObject("select m.role from workspace_members m join users u "
+        + "on u.id = m.user_id where m.workspace_id = ? and u.email = ?", String.class,
+        workspaceId, email);
   }
 
   private PublicOrganizationInitializer initializer(String email, boolean development) {

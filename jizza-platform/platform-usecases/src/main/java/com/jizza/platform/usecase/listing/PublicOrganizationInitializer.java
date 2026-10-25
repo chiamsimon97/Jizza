@@ -4,7 +4,9 @@ import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.ListingAction;
 import com.jizza.engine.api.enums.ListingStatus;
+import com.jizza.engine.api.enums.WorkspaceRole;
 import com.jizza.engine.api.enums.WorkspaceType;
+import com.jizza.engine.api.event.UserRegistered;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workspace.PublicListingStore;
@@ -27,7 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Makes sure the platform's own Public organization exists on every startup: an organization (never
- * a personal account) owned by the Super Admin and listed on Discover.
+ * a personal account) owned by the Super Admin and listed on Discover. Every account is a member,
+ * as a User unless the Super Admin gave it another role on the Public roles page.
  *
  * <p>When it is missing, it is created for the Super Admin's account. If that is not possible
  * either, because no Super Admin email is set or nobody has registered with it, startup is
@@ -79,11 +82,29 @@ public class PublicOrganizationInitializer {
       return;
     }
     keepListed(existing.get());
+    int added = store.enrollEveryone(existing.get());
+    if (added > 0) log.info("Added {} account(s) to the Public organization as User", added);
+  }
+
+  /** Every new account joins the Public organization as a User. */
+  @EventListener
+  @Transactional
+  public void onRegistered(UserRegistered event) {
+    store.platformOrganization().ifPresent(org -> {
+      if (directory.membership(org, event.userId()).isEmpty()) {
+        directory.addMember(org, event.userId(), WorkspaceRole.USER);
+      }
+    });
+  }
+
+  /** Whether {@code workspaceId} is the platform's Public organization. */
+  public static boolean isPlatform(PublicListingStore store, UUID workspaceId) {
+    return store.platformOrganization().filter(workspaceId::equals).isPresent();
   }
 
   /** Refuses to hide the platform's Public organization from Discover. */
   static void refuseIfPlatform(PublicListingStore store, UUID workspaceId) {
-    if (store.platformOrganization().filter(workspaceId::equals).isPresent()) {
+    if (isPlatform(store, workspaceId)) {
       throw new JizzaException(HttpStatus.CONFLICT, "platform-organization",
           "Public organization",
           "This is Jizza's Public organization, so it always stays listed on Discover.");
