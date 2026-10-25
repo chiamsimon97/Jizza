@@ -128,6 +128,7 @@ public class PublicListingUseCase {
   @Transactional
   public View unlist(Access access) {
     Listing listing = organization(access);
+    PublicOrganizationInitializer.refuseIfPlatform(store, access.workspaceId());
     ListingStatus next = ListingTransitions.next(listing.status(), listing.approved() != null,
         ListingAction.UNLISTED);
     store.setStatus(access.workspaceId(), next);

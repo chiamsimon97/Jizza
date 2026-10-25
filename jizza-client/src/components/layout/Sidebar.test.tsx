@@ -70,6 +70,7 @@ describe('Sidebar', () => {
     const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER', { platformRole: 'SUPER_ADMIN' }))
     expect(nav.getByText('Platform')).toBeInTheDocument()
     expect(nav.getByRole('link', { name: 'Listing reviews' })).toBeInTheDocument()
+    expect(nav.getByRole('link', { name: 'Public roles' })).toBeInTheDocument()
   })
 
   it('marks public organizations and the Super Admin in the account switcher', () => {

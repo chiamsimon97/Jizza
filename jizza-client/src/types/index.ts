@@ -1201,6 +1201,13 @@ export interface Member {
   you: boolean
 }
 
+/** Everyone's role in the platform's Public organization, for the Super Admin. */
+export interface PublicRoles {
+  workspaceId: string
+  workspaceName: string
+  members: Member[]
+}
+
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED' | 'EXPIRED'
 
 /** A membership request as the organization sees it. */

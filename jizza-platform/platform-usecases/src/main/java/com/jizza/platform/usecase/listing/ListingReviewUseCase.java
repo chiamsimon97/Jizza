@@ -95,6 +95,7 @@ public class ListingReviewUseCase {
   public Item suspend(UUID userId, UUID workspaceId, String reason) {
     requireSuperAdmin(userId);
     Listing listing = listing(workspaceId);
+    PublicOrganizationInitializer.refuseIfPlatform(store, workspaceId);
     String why = required(reason);
     ListingStatus next = ListingTransitions.next(listing.status(), listing.approved() != null,
         ListingAction.SUSPENDED);

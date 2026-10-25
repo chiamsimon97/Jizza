@@ -168,6 +168,27 @@ public class JdbcPublicListingStore implements PublicListingStore {
         (rs, i) -> uuid(rs, "id"));
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<UUID> platformOrganization() {
+    return jdbc.query("select id from workspaces where platform_public", (rs, i) -> uuid(rs, "id"))
+        .stream().findFirst();
+  }
+
+  @Override
+  @Transactional
+  public void markPlatformOrganization(UUID workspaceId) {
+    jdbc.update("update workspaces set platform_public = true where id = ?", workspaceId);
+  }
+
+  @Override
+  @Transactional
+  public int enrollEveryone(UUID workspaceId) {
+    return jdbc.update("insert into workspace_members (workspace_id, user_id, role) "
+        + "select ?, u.id, 'user' from users u on conflict (workspace_id, user_id) do nothing",
+        workspaceId);
+  }
+
   // ── Join requests ─────────────────────────────────────────────────────────
 
   @Override
