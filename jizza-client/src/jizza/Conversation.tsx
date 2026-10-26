@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, Mic, MicOff, Pencil, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, SquareSlash, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
 import { queryClient } from '@/lib/queryClient'
@@ -17,6 +17,7 @@ import { ContextChip, useCurrentContext } from './ContextChip'
 import { commandsFor, helpText, matchCommands, type SlashCommand } from './commands'
 import { useContextStore } from './contextStore'
 import { Markdown } from './Markdown'
+import { fileAttachment, folderFromFiles, pickLinkedFolder, splitAttachments, withAttachments, type Attachment, type AttachmentKind } from './attachments'
 
 const SUGGESTIONS = [
   'Create a workflow that summarises my week every Friday',
@@ -57,6 +58,15 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   useEffect(() => { setMenuIndex(0) }, [slash?.[1]])
   useEffect(() => { if (!slash) setMenuClosed(false) }, [!!slash]) // eslint-disable-line react-hooks/exhaustive-deps
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // Files and folders from the "+" menu, tagged above the message box until sent (a linked folder stays).
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const linkFolderNext = useRef(false)
+  const attach = (added: (Attachment | null)[]) =>
+    setAttachments(list => [...list, ...added.filter((a): a is Attachment => a !== null)])
+  const detach = (id: string) => setAttachments(list => list.filter(a => a.id !== id))
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const onDictated = useCallback((text: string) => { void send(text) }, [send])
@@ -73,17 +83,48 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     el.style.height = `${el.scrollHeight}px`
   }, [input, dictation.interim])
 
-  function submit(e?: FormEvent) {
+  async function submit(e?: FormEvent) {
     e?.preventDefault()
     const text = input.trim()
-    if (!text || thinking) return
+    if ((!text && attachments.length === 0) || thinking || attaching) return
     // A command typed out in full runs as if picked from the menu.
     const typed = /^\/(\S+)$/.exec(text)
     const command = typed && commandsFor(ctx).find(c => c.name === typed[1].toLowerCase())
     if (command) return runCommand(command)
+    const written = text || 'Please take a look at what I attached.'
+    let message = replyTo ? `${quote(replyTo.text)}\n\n${written}` : written
+    if (attachments.length > 0) {
+      setAttaching(true)
+      try {
+        message = await withAttachments(message, attachments)
+      } catch {
+        // A file that can no longer be read (moved, or permission withdrawn) goes by name only.
+        message = `${message}\n\n${attachments.map(a => `<attachment kind="${a.kind}" name="${a.name.replace(/"/g, "'")}">\n(could not be read)\n</attachment>`).join('\n\n')}`
+      } finally {
+        setAttaching(false)
+      }
+    }
     setInput('')
     setReplyTo(null)
-    void send(replyTo ? `${quote(replyTo.text)}\n\n${text}` : text)
+    setAttachments(list => list.filter(a => a.linked))
+    void send(message)
+  }
+
+  function openSlashMenu() {
+    setInput('/')
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); el.setSelectionRange(1, 1) }
+    })
+  }
+
+  async function linkFolder() {
+    const picked = await pickLinkedFolder()
+    if (picked === 'unsupported') {
+      // Without the File System Access API (Safari, Firefox) the folder input takes a snapshot instead.
+      linkFolderNext.current = true
+      folderInputRef.current?.click()
+    } else attach([picked])
   }
 
   const reply = (msg: AssistantMessage) => {
@@ -201,6 +242,22 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </ul>
           )}
           <ContextChip className="mb-1.5 px-1" />
+          {attachments.length > 0 && (
+            <ul aria-label="Attached" className="mb-1.5 flex flex-wrap gap-1.5 px-1">
+              {attachments.map(a => (
+                <li key={a.id} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200"
+                  title={a.linked ? `${a.name} (linked: read again with every message)` : a.name}>
+                  <AttachmentIcon kind={a.kind} linked={a.linked} className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                  <span className="truncate">{a.name}</span>
+                  {a.linked && <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-400">linked</span>}
+                  <button type="button" aria-label={`Remove ${a.name}`} onClick={() => detach(a.id)}
+                    className="grid h-4 w-4 shrink-0 place-items-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {replyTo && (
             <div className="mb-1.5 flex items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-gray-800 dark:bg-gray-900/60">
               <Reply className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-500" />
@@ -216,6 +273,16 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
           )}
         </div>
         <div className={`${width} flex items-end gap-2 rounded-2xl border border-gray-300 bg-white p-2 shadow-sm transition-all focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900`}>
+          <AttachMenu
+            onFiles={() => fileInputRef.current?.click()}
+            onSlash={openSlashMenu}
+            onAnyFolder={() => { linkFolderNext.current = false; folderInputRef.current?.click() }}
+            onLinkFolder={() => void linkFolder()}
+          />
+          <input ref={fileInputRef} type="file" multiple hidden data-testid="attach-files"
+            onChange={e => { attach(Array.from(e.target.files ?? []).map(fileAttachment)); e.target.value = '' }} />
+          <input ref={folderInputRef} type="file" hidden data-testid="attach-folder" {...{ webkitdirectory: '', directory: '' }}
+            onChange={e => { attach([folderFromFiles(Array.from(e.target.files ?? []), linkFolderNext.current)]); e.target.value = '' }} />
           {dictation.supported && (
             <button
               type="button"
@@ -249,7 +316,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
                 if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); runCommand(commands[menuIndex] ?? commands[0]); return }
                 if (e.key === 'Escape') { e.preventDefault(); setMenuClosed(true); return }
               }
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submit() }
             }}
           />
           {thinking ? (
@@ -257,14 +324,14 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
           ) : (
-            <Button type="submit" disabled={!input.trim()} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Send">
+            <Button type="submit" disabled={(!input.trim() && attachments.length === 0) || attaching} className="h-9 w-9 shrink-0 rounded-xl !p-0" aria-label="Send">
               <Send className="h-4 w-4" />
             </Button>
           )}
         </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
-            Enter to send · Shift+Enter for a new line · / for shortcuts · Ctrl+K opens Jizza anywhere
+            Enter to send · Shift+Enter for a new line · / for shortcuts · + to add files or a folder · Ctrl+K opens Jizza anywhere
           </p>
         )}
       </form>
@@ -297,18 +364,33 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
     )
   }
   if (msg.role === 'user') {
-    const { quote: quoted, body } = splitQuote(msg.text)
+    const { quote: quoted, body: written } = splitQuote(msg.text)
+    const { text: body, attachments: attached, blocks } = splitAttachments(written)
     const width = compact ? 'max-w-[85%]' : 'max-w-[85%] sm:max-w-[75%]'
     if (editing && onEdit) {
       return (
         <EditBox initial={body} className={width} onCancel={() => setEditing(false)}
-          onSave={async text => { await onEdit(quoted ? `${quote(quoted)}\n\n${text}` : text); setEditing(false) }} />
+          onSave={async text => {
+            const edited = blocks ? `${text}\n\n${blocks}` : text
+            await onEdit(quoted ? `${quote(quoted)}\n\n${edited}` : edited)
+            setEditing(false)
+          }} />
       )
     }
     return (
       <div className="group/msg flex flex-col items-end gap-1 animate-fade-in-up">
         <div className={`${width} rounded-2xl rounded-br-md bg-brand-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm whitespace-pre-wrap`}>
           {quoted && <span className="mb-1.5 block border-l-2 border-white/60 pl-2 text-xs text-white/80 line-clamp-3">{quoted}</span>}
+          {attached.length > 0 && (
+            <span className="mb-1.5 flex flex-wrap gap-1" aria-label="Attached">
+              {attached.map((a, i) => (
+                <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-md bg-white/20 px-1.5 py-0.5 text-xs">
+                  <AttachmentIcon kind={a.kind} className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{a.name}</span>
+                </span>
+              ))}
+            </span>
+          )}
           {body}
         </div>
         {sentToThread && (
@@ -671,4 +753,67 @@ export function splitQuote(text: string): { quote?: string; body: string } {
   while (i < lines.length && lines[i].startsWith('>')) i++
   if (i === 0) return { body: text }
   return { quote: lines.slice(0, i).map(l => l.replace(/^>\s?/, '')).join('\n'), body: lines.slice(i).join('\n').trim() }
+}
+
+function AttachmentIcon({ kind, linked, className }: { kind: AttachmentKind; linked?: boolean; className?: string }) {
+  const Icon = kind === 'folder' ? (linked ? FolderSymlink : Folder) : kind === 'image' ? Image : FileText
+  return <Icon className={className} aria-hidden />
+}
+
+/** The "+" beside the message box: add files, open the shortcuts, or work with a folder on this computer. */
+function AttachMenu({ onFiles, onSlash, onAnyFolder, onLinkFolder }: {
+  onFiles: () => void; onSlash: () => void; onAnyFolder: () => void; onLinkFolder: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [local, setLocal] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) { setLocal(false); return }
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [open])
+  const pick = (action: () => void) => () => { setOpen(false); action() }
+  const item = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button type="button" aria-label="Add files and more" title="Add files and more" aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className={`grid h-9 w-9 place-items-center rounded-xl transition-all active:scale-90 ${open
+          ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300'
+          : 'text-gray-500 hover:bg-gray-100 hover:text-brand-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-brand-300'}`}>
+        <Plus className="h-4 w-4" />
+      </button>
+      {open && (
+        <div role="menu" aria-label="Add to message"
+          className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+          <button type="button" role="menuitem" className={item} onClick={pick(onFiles)} onMouseEnter={() => setLocal(false)}>
+            <Paperclip className="h-4 w-4 text-gray-500" /> Add files or photos
+          </button>
+          <button type="button" role="menuitem" className={item} onClick={pick(onSlash)} onMouseEnter={() => setLocal(false)}>
+            <SquareSlash className="h-4 w-4 text-gray-500" /> Slash commands
+          </button>
+          <div className="relative" onMouseEnter={() => setLocal(true)}>
+            <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={local} onClick={() => setLocal(l => !l)}
+              className={`${item} ${local ? 'bg-gray-100 dark:bg-gray-800' : ''}`}>
+              <Laptop className="h-4 w-4 text-gray-500" /> <span className="flex-1">Work locally</span> <ChevronRight className="h-4 w-4 text-gray-400" />
+            </button>
+            {local && (
+              <div role="menu" aria-label="Work locally"
+                className="absolute bottom-0 left-full z-20 ml-1.5 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+                <button type="button" role="menuitem" className={item} onClick={pick(onAnyFolder)} title="Attach a folder's files to your next message">
+                  <Laptop className="h-4 w-4 text-gray-500" /> Any folder
+                </button>
+                <button type="button" role="menuitem" className={item} onClick={pick(onLinkFolder)} title="Keep a folder linked: Jizza reads it again with every message">
+                  <FolderPlus className="h-4 w-4 text-gray-500" /> Link folder…
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

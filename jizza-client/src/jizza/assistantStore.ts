@@ -11,6 +11,7 @@ import { useFormStore } from './formStore'
 import { matchLocalIntent } from './localIntents'
 import { applyStepConfig, currentContext, useContextStore } from './contextStore'
 import type { Starter } from './commands'
+import { splitAttachments } from './attachments'
 
 export interface Step {
   label: string
@@ -462,7 +463,7 @@ export const useAssistantStore = create<AssistantState>()(
               conversationId: incognito ? undefined : ref.conversationId,
               activeJobId: ref.jobId,
               selectedJobId: ref.jobId,
-              jobs: { ...s.jobs, [ref.jobId]: s.jobs[ref.jobId] ?? { id: ref.jobId, title: text, status: 'running', startedAt: new Date().toISOString(), events: [], loaded: true } },
+              jobs: { ...s.jobs, [ref.jobId]: s.jobs[ref.jobId] ?? { id: ref.jobId, title: splitAttachments(text).text || text, status: 'running', startedAt: new Date().toISOString(), events: [], loaded: true } },
               jobOrder: s.jobOrder.includes(ref.jobId) ? s.jobOrder : [...s.jobOrder, ref.jobId],
               expanded: { ...s.expanded, [ref.jobId]: true },
               messages: [

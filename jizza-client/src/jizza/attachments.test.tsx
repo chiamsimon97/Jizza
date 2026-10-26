@@ -1,0 +1,106 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import type { ReactNode } from 'react'
+
+vi.mock('@/api/chat', () => ({
+  chatApi: {
+    send: vi.fn(async (body: { conversationId?: string }) => ({ jobId: 'job-1', conversationId: body.conversationId ?? 'plain-1' })),
+    cancel: vi.fn(),
+    job: vi.fn(),
+  },
+}))
+
+import { chatApi } from '@/api/chat'
+import { useAssistantStore } from './assistantStore'
+import { Conversation } from './Conversation'
+import { fileAttachment, folderFromFiles, splitAttachments, withAttachments } from './attachments'
+
+function wrap(children: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}><MemoryRouter>{children}</MemoryRouter></QueryClientProvider>)
+}
+
+Element.prototype.scrollIntoView = vi.fn()
+
+afterEach(() => {
+  useAssistantStore.setState({ messages: [], jobs: {}, jobOrder: [], conversationId: undefined, activeJobId: undefined, thinking: false })
+  vi.clearAllMocks()
+})
+
+const inFolder = (path: string, text: string) => {
+  const file = new File([text], path.split('/').pop()!, { type: 'text/plain' })
+  Object.defineProperty(file, 'webkitRelativePath', { value: path })
+  return file
+}
+
+describe('Attachments', () => {
+  it('put text files in the message and leave photos by name', async () => {
+    const message = await withAttachments('Summarise these', [
+      fileAttachment(new File(['# Plan\nShip on Friday'], 'plan.md', { type: 'text/markdown' })),
+      fileAttachment(new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })),
+    ])
+    expect(message).toContain('<attachment kind="file" name="plan.md">\n# Plan\nShip on Friday\n</attachment>')
+    expect(message).toContain('<attachment kind="image" name="photo.png">')
+    expect(message).toContain("can't open this kind of file yet")
+    expect(splitAttachments(message)).toMatchObject({
+      text: 'Summarise these',
+      attachments: [{ kind: 'file', name: 'plan.md' }, { kind: 'image', name: 'photo.png' }],
+    })
+  })
+
+  it('list a folder, skip node_modules, and stay within the message limit', async () => {
+    const big = 'x'.repeat(40_000)
+    const folder = folderFromFiles([
+      inFolder('site/src/app.ts', 'export const app = 1'),
+      inFolder('site/node_modules/lib/index.js', 'ignored'),
+      inFolder('site/README.md', big),
+    ])!
+    expect(folder.name).toBe('site')
+    const message = await withAttachments('Review this', [folder])
+    expect(message).toContain('Files (2):\nsite/README.md\nsite/src/app.ts')
+    expect(message).not.toContain('node_modules')
+    expect(message.length).toBeLessThan(16_000)
+  })
+
+  it('are tagged above the chat bar, removable, and sent with the message', async () => {
+    wrap(<Conversation />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add files and more' }))
+    expect(screen.getByRole('menuitem', { name: /Add files or photos/ })).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: /Work locally/ }).parentElement!)
+    expect(screen.getByRole('menuitem', { name: /Any folder/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Link folder/ })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('attach-files'), { target: { files: [
+      new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+      new File(['bye'], 'old.txt', { type: 'text/plain' }),
+    ] } })
+    fireEvent.change(screen.getByTestId('attach-folder'), { target: { files: [inFolder('reports/q3.csv', 'a,b')] } })
+    const tags = screen.getByRole('list', { name: 'Attached' })
+    expect(within(tags).getByText('notes.txt')).toBeInTheDocument()
+    expect(within(tags).getByText('reports')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove old.txt' }))
+    expect(within(tags).queryByText('old.txt')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText(/Ask Jizza/), { target: { value: 'What is in here?' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })) })
+
+    await waitFor(() => expect(chatApi.send).toHaveBeenCalled())
+    const sent = vi.mocked(chatApi.send).mock.calls[0][0].message
+    expect(sent).toMatch(/^What is in here\?\n\n<attachment kind="file" name="notes.txt">\nhello\n<\/attachment>/)
+    expect(sent).toContain('<attachment kind="folder" name="reports">')
+    expect(sent).not.toContain('old.txt')
+    expect(screen.queryByRole('list', { name: 'Attached' })).not.toBeInTheDocument()
+    // The sent bubble shows the tags, not the file contents.
+    expect(screen.getByText('notes.txt')).toBeInTheDocument()
+    expect(screen.queryByText(/hello/)).not.toBeInTheDocument()
+  })
+
+  it('open the slash commands from the menu', () => {
+    wrap(<Conversation />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add files and more' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Slash commands/ }))
+    expect(screen.getByRole('listbox', { name: 'Shortcuts' })).toBeInTheDocument()
+  })
+})
