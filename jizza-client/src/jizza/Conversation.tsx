@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, SquareSlash, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, SquareSlash, X } from 'lucide-react'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
 import { queryClient } from '@/lib/queryClient'
@@ -64,8 +64,20 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const linkFolderNext = useRef(false)
-  const attach = (added: (Attachment | null)[]) =>
-    setAttachments(list => [...list, ...added.filter((a): a is Attachment => a !== null)])
+  // PDFs and photos upload as soon as they are picked: their tag shows a spinner, or that it failed.
+  const [uploads, setUploads] = useState<Record<string, 'uploading' | 'failed'>>({})
+  const attach = (added: (Attachment | null)[]) => {
+    const real = added.filter((a): a is Attachment => a !== null)
+    setAttachments(list => [...list, ...real])
+    for (const a of real) {
+      if (!a.uploaded) continue
+      setUploads(u => ({ ...u, [a.id]: 'uploading' }))
+      void a.uploaded.then(done => setUploads(u => {
+        const { [a.id]: _, ...rest } = u // eslint-disable-line @typescript-eslint/no-unused-vars
+        return done ? rest : { ...rest, [a.id]: 'failed' }
+      }))
+    }
+  }
   const detach = (id: string) => setAttachments(list => list.filter(a => a.id !== id))
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -246,8 +258,11 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             <ul aria-label="Attached" className="mb-1.5 flex flex-wrap gap-1.5 px-1">
               {attachments.map(a => (
                 <li key={a.id} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200"
-                  title={a.linked ? `${a.name} (linked: read again with every message)` : a.name}>
-                  <AttachmentIcon kind={a.kind} linked={a.linked} className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                  title={uploads[a.id] === 'failed' ? `${a.name} could not be uploaded; Jizza will only see its name`
+                    : a.linked ? `${a.name} (linked: read again with every message)` : a.name}>
+                  {uploads[a.id] === 'uploading'
+                    ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-gray-400" aria-label="Uploading" />
+                    : <AttachmentIcon kind={a.kind} linked={a.linked} className={`h-3.5 w-3.5 shrink-0 ${uploads[a.id] === 'failed' ? 'text-red-500' : 'text-brand-500'}`} />}
                   <span className="truncate">{a.name}</span>
                   {a.linked && <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-400">linked</span>}
                   <button type="button" aria-label={`Remove ${a.name}`} onClick={() => detach(a.id)}

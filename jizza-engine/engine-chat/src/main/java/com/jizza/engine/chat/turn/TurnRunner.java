@@ -6,6 +6,7 @@ import com.jizza.engine.api.activity.Activity;
 import com.jizza.engine.api.activity.ActivityTypes;
 import com.jizza.engine.api.activity.JobCancelledException;
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.chat.ChatFileAccess;
 import com.jizza.engine.api.chat.ChatService;
 import com.jizza.engine.api.chat.JobDto;
 import com.jizza.engine.api.chat.JobEventDto;
@@ -253,9 +254,11 @@ public class TurnRunner implements ChatService {
           : prepend(Msg.system(framing.preamble()), history);
       Orchestrator.TurnInput turnInput =
           new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), s.context());
-      Supplier<Orchestrator.Turn> respond = () -> framing != null && framing.lead() != null
-          ? orchestrator.respondAs(userId, framing.lead().getId(), turnInput)
-          : orchestrator.respond(userId, turnInput);
+      // The reply may read the PDFs and photos the user attached; routing it does not.
+      Supplier<Orchestrator.Turn> respond = () -> ChatFileAccess.run(userId, () ->
+          framing != null && framing.lead() != null
+              ? orchestrator.respondAs(userId, framing.lead().getId(), turnInput)
+              : orchestrator.respond(userId, turnInput));
       // Jizza coordinates the conversation's threads: a message the user typed goes first to
       // where it belongs, and is answered there instead of here.
       Optional<Orchestrator.Turn> routed = continuation == null && framing != null

@@ -1,7 +1,11 @@
+import { chatApi, type ChatFileUpload } from '@/api/chat'
+
 /**
- * Files and folders added to a chat message with the "+" menu. Jizza reads text, so text files go
- * into the message itself, each in an <attachment> block that the chat shows as a tag rather than
- * as text. Photos and other binary files go in by name only, until Jizza can look at them.
+ * Files and folders added to a chat message with the "+" menu. Each goes into the message in an
+ * <attachment> block that the chat shows as a tag rather than as text. Text files go in as text.
+ * PDFs and photos are uploaded when picked and the block refers to them (ref="<id>"), so the model
+ * reads the file itself; the block also carries a PDF's text, for later turns and other readers.
+ * Other binary files go in by name only.
  */
 
 export type AttachmentKind = 'file' | 'image' | 'folder'
@@ -15,6 +19,17 @@ export interface Attachment {
   linked?: boolean
   /** The attachment's text for the message, in at most {@code budget} characters. */
   read: (budget: number) => Promise<string>
+  /** A PDF or photo's upload, started when it was picked; null when it failed. */
+  uploaded?: Promise<ChatFileUpload | null>
+}
+
+/** What the model can read itself (AnthropicLlmClient): PDFs, and photos up to 5 MB. */
+const MODEL_READS = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+export function modelReads(file: { name: string; type: string; size: number }) {
+  const type = file.type || (extension(file.name) === 'pdf' ? 'application/pdf' : '')
+  return MODEL_READS.has(type) && (type === 'application/pdf' || file.size <= MAX_PHOTO_BYTES)
 }
 
 /** What the server takes in one message (ChatUseCase.MAX_MESSAGE_CHARS), less a margin. */
@@ -67,11 +82,17 @@ function size(bytes: number) {
 
 /** A file picked with "Add files or photos". */
 export function fileAttachment(file: File): Attachment {
+  const kind = file.type.startsWith('image/') ? 'image' : 'file'
+  if (!modelReads(file)) return { id: nextId(), kind, name: file.name, read: budget => contentOf(file, budget) }
+  const uploaded = chatApi.uploadFile(file).catch(() => null)
   return {
-    id: nextId(),
-    kind: file.type.startsWith('image/') ? 'image' : 'file',
-    name: file.name,
-    read: budget => contentOf(file, budget),
+    id: nextId(), kind, name: file.name, uploaded,
+    read: async budget => {
+      const upload = await uploaded
+      if (!upload) return `(${size(file.size)}; the upload failed, so Jizza can't open it)`
+      if (upload.text.trim()) return cut(upload.text.trim(), budget)
+      return kind === 'image' ? '(photo; Jizza sees it)' : '(PDF with no text layer; Jizza reads its pages)'
+    },
   }
 }
 
@@ -154,7 +175,9 @@ export async function withAttachments(text: string, attachments: Attachment[]): 
   let out = text
   for (let i = 0; i < attachments.length; i++) {
     const a = attachments[i]
-    const head = `<attachment kind="${a.kind}" name="${escapeName(a.name)}">\n`
+    const upload = a.uploaded ? await a.uploaded : null
+    const ref = upload ? ` ref="${upload.id}"` : ''
+    const head = `<attachment kind="${a.kind}" name="${escapeName(a.name)}"${ref}>\n`
     const tail = '\n</attachment>'
     // Split what is left evenly between this attachment and the ones after it.
     const share = Math.floor((MESSAGE_BUDGET - out.length) / (attachments.length - i)) - head.length - tail.length - 2
@@ -166,7 +189,7 @@ export async function withAttachments(text: string, attachments: Attachment[]): 
 
 export interface SentAttachment { kind: AttachmentKind; name: string }
 
-const BLOCK = /<attachment kind="(file|image|folder)" name="([^"]*)">\n[\s\S]*?\n<\/attachment>/g
+const BLOCK = /<attachment kind="(file|image|folder)" name="([^"]*)"(?: ref="[^"]*")?>\n[\s\S]*?\n<\/attachment>/g
 
 /** A sent message: what the user wrote, the attachments' tags, and the blocks as sent (kept on edit). */
 export function splitAttachments(text: string): { text: string; attachments: SentAttachment[]; blocks: string } {
