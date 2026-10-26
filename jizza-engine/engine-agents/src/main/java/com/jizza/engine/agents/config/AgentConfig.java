@@ -1,8 +1,10 @@
 package com.jizza.engine.agents.config;
 
+import com.jizza.engine.api.chat.ChatFiles;
 import com.jizza.engine.api.llm.LlmClient;
 import com.jizza.engine.agents.llm.AnthropicLlmClient;
 import com.jizza.engine.agents.llm.UnconfiguredLlmClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,10 +18,10 @@ public class AgentConfig {
    * deliberately supported so the scheduler, connectors and workflow engine stay testable.
    */
   @Bean
-  public LlmClient llmClient(AgentProperties props) {
+  public LlmClient llmClient(AgentProperties props, ObjectProvider<ChatFiles> chatFiles) {
     String apiKey = props.getAnthropic().getApiKey();
     return apiKey == null || apiKey.isBlank()
         ? new UnconfiguredLlmClient()
-        : new AnthropicLlmClient(props);
+        : new AnthropicLlmClient(props, chatFiles::getIfAvailable);
   }
 }

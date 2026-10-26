@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.jizza.engine.agents.config.AgentProperties;
+import com.jizza.engine.api.chat.ChatFileAccess;
+import com.jizza.engine.api.chat.ChatFiles;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.llm.Msg;
@@ -14,6 +16,8 @@ import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -167,5 +171,41 @@ class AnthropicLlmClientTest {
           assertThat(e.type).isEqualTo("overloaded_error");
           assertThat(e.failure).isInstanceOf(JizzaException.class);
         });
+  }
+
+  @Test
+  void sendsAttachedPdfsAndPhotosOnlyInTheirOwnersChatTurn() {
+    UUID owner = UUID.randomUUID();
+    UUID pdfId = UUID.randomUUID();
+    UUID photoId = UUID.randomUUID();
+    ChatFiles files = new ChatFiles() {
+      @Override public Upload add(UUID u, String n, String t, byte[] b) { throw new UnsupportedOperationException(); }
+      @Override public Optional<Content> content(UUID userId, UUID fileId) {
+        if (!userId.equals(owner)) return Optional.empty();
+        if (fileId.equals(pdfId)) return Optional.of(new Content("report.pdf", "application/pdf", new byte[] {1, 2, 3}));
+        if (fileId.equals(photoId)) return Optional.of(new Content("eye.png", "image/png", new byte[] {4, 5}));
+        return Optional.empty();
+      }
+    };
+    var withFiles = new AnthropicLlmClient(props, () -> files);
+    String text = "Look at this\n\n<attachment kind=\"file\" name=\"report.pdf\" ref=\"" + pdfId + "\">\nRight eye 6/9\n</attachment>"
+        + "\n\n<attachment kind=\"image\" name=\"eye.png\" ref=\"" + photoId + "\">\n(photo)\n</attachment>";
+    List<Msg> messages = List.of(Msg.user(text));
+
+    var body = ChatFileAccess.run(owner, () -> withFiles.buildRequest("m", messages, List.of()));
+    var content = body.path("messages").get(0).path("content");
+    assertThat(content).hasSize(3);
+    assertThat(content.get(0).path("type").asText()).isEqualTo("document");
+    assertThat(content.get(0).path("source").path("media_type").asText()).isEqualTo("application/pdf");
+    assertThat(content.get(0).path("source").path("data").asText()).isEqualTo("AQID");
+    assertThat(content.get(0).path("title").asText()).isEqualTo("report.pdf");
+    assertThat(content.get(1).path("type").asText()).isEqualTo("image");
+    assertThat(content.get(2).path("text").asText()).isEqualTo(text);
+    withFiles.assertNoSecrets(body);
+
+    // Outside a chat turn, or in someone else's, the message goes as text only.
+    assertThat(withFiles.buildRequest("m", messages, List.of()).path("messages").get(0).path("content")).hasSize(1);
+    var stranger = ChatFileAccess.run(UUID.randomUUID(), () -> withFiles.buildRequest("m", messages, List.of()));
+    assertThat(stranger.path("messages").get(0).path("content")).hasSize(1);
   }
 }

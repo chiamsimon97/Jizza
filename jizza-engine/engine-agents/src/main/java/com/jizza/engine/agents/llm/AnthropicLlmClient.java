@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.agents.config.AgentProperties;
 import com.jizza.engine.api.activity.Activity;
 import com.jizza.engine.api.activity.JobCancelledException;
+import com.jizza.engine.api.chat.ChatFiles;
+import com.jizza.engine.api.chat.ChatFileAccess;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.llm.LlmClient;
@@ -17,8 +19,14 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.util.Redaction;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.ThreadLocalRandom;
@@ -47,6 +55,11 @@ import org.springframework.web.client.RestClient;
  * <p>The tool definitions and the first system block are marked for the provider's prompt cache,
  * and inside a tool loop the conversation so far is cached as well. The model's own content blocks,
  * thinking included, are kept and sent back unchanged, so the history only ever grows at the end.
+ *
+ * <p>A PDF or photo the user attached to a chat message ({@code <attachment ... ref="<id>">}) goes
+ * to the model as a document or image block beside that message's text, so the model reads it
+ * itself, scanned pages included. Only in the chat turn of the user who owns the file, and only the
+ * newest few files, so a long conversation does not resend every file it ever had.
  */
 public class AnthropicLlmClient implements LlmClient {
 
@@ -57,6 +70,15 @@ public class AnthropicLlmClient implements LlmClient {
   /** Error types a stream can report mid-way that are worth another attempt. */
   private static final Set<String> RETRYABLE_STREAM_ERRORS =
       Set.of("overloaded_error", "api_error", "rate_limit_error");
+  /** A message's reference to a chat file (see the client's attachments.ts). */
+  static final Pattern FILE_REF = Pattern.compile(
+      "<attachment kind=\"(?:file|image)\" name=\"[^\"]*\" ref=\"([0-9a-fA-F-]{36})\">");
+  /** The newest files a request carries; older ones are left to the text read from them. */
+  static final int MAX_FILES = 4;
+  static final long MAX_FILE_BYTES = 20L * 1024 * 1024;
+  private static final Set<String> IMAGE_TYPES =
+      Set.of("image/jpeg", "image/png", "image/gif", "image/webp");
+  private static final long MAX_IMAGE_BYTES = 5L * 1024 * 1024;
   /** Content blocks whose signature or payload is opaque provider output, not anything we wrote. */
   private static final Set<String> REASONING_BLOCKS = Set.of("thinking", "redacted_thinking");
 
@@ -68,14 +90,25 @@ public class AnthropicLlmClient implements LlmClient {
   private final AgentProperties props;
   private final RestClient http;
   private final Pause pause;
+  /** Where attached chat files come from; absent where nothing stores them. */
+  private final Supplier<ChatFiles> chatFiles;
 
   public AnthropicLlmClient(AgentProperties props) {
-    this(props, AnthropicLlmClient::sleepWatchingForStop);
+    this(props, () -> null);
+  }
+
+  public AnthropicLlmClient(AgentProperties props, Supplier<ChatFiles> chatFiles) {
+    this(props, AnthropicLlmClient::sleepWatchingForStop, chatFiles);
   }
 
   AnthropicLlmClient(AgentProperties props, Pause pause) {
+    this(props, pause, () -> null);
+  }
+
+  AnthropicLlmClient(AgentProperties props, Pause pause, Supplier<ChatFiles> chatFiles) {
     this.props = props;
     this.pause = pause;
+    this.chatFiles = chatFiles;
     this.http = RestClient.builder()
         .baseUrl(props.getAnthropic().getBaseUrl())
         .requestFactory(requestFactory(props.getAnthropic().getTimeout()))
@@ -409,11 +442,12 @@ public class AnthropicLlmClient implements LlmClient {
     List<String> system = new ArrayList<>();
     ArrayNode apiMessages = body.putArray("messages");
     boolean inToolLoop = false;
+    Map<Msg, List<ChatFiles.Content>> attached = attachedFiles(messages);
 
     for (Msg msg : messages) {
       switch (msg.role()) {
         case SYSTEM -> system.add(msg.text());
-        case USER -> apiMessages.add(textMessage("user", msg.text()));
+        case USER -> apiMessages.add(userMessage(msg.text(), attached.getOrDefault(msg, List.of())));
         case ASSISTANT -> apiMessages.add(assistantMessage(msg));
         case TOOL -> {
           apiMessages.add(toolResultMessage(msg));
@@ -465,6 +499,72 @@ public class AnthropicLlmClient implements LlmClient {
 
   private static ObjectNode ephemeral() {
     return Json.obj().put("type", "ephemeral");
+  }
+
+  /**
+   * The files to send with each user message: the newest {@link #MAX_FILES} referenced, within
+   * {@link #MAX_FILE_BYTES}, that belong to the user whose chat turn this is and that the model can
+   * read (PDFs and photos). Outside a chat turn there is no user to check, so none.
+   */
+  private Map<Msg, List<ChatFiles.Content>> attachedFiles(List<Msg> messages) {
+    var reader = ChatFileAccess.reader();
+    ChatFiles store = chatFiles.get();
+    if (reader.isEmpty() || store == null) return Map.of();
+    UUID userId = reader.get();
+    Map<Msg, List<ChatFiles.Content>> out = new java.util.IdentityHashMap<>();
+    Map<UUID, Boolean> seen = new LinkedHashMap<>();
+    long total = 0;
+    for (int i = messages.size() - 1; i >= 0 && seen.size() < MAX_FILES; i--) {
+      Msg msg = messages.get(i);
+      if (msg.role() != Msg.Role.USER || msg.text() == null) continue;
+      List<ChatFiles.Content> files = new ArrayList<>();
+      Matcher m = FILE_REF.matcher(msg.text());
+      while (m.find() && seen.size() < MAX_FILES) {
+        UUID id;
+        try {
+          id = UUID.fromString(m.group(1));
+        } catch (IllegalArgumentException e) {
+          continue;
+        }
+        if (seen.putIfAbsent(id, true) != null) continue;
+        ChatFiles.Content file;
+        try {
+          file = store.content(userId, id).orElse(null);
+        } catch (RuntimeException e) {
+          log.warn("Could not read chat file {}", id, e);
+          file = null;
+        }
+        if (file == null || !readable(file) || total + file.bytes().length > MAX_FILE_BYTES) continue;
+        total += file.bytes().length;
+        files.add(file);
+      }
+      if (!files.isEmpty()) out.put(msg, files);
+    }
+    return out;
+  }
+
+  private static boolean readable(ChatFiles.Content file) {
+    String type = file.contentType() == null ? "" : file.contentType().toLowerCase(java.util.Locale.ROOT);
+    return type.equals("application/pdf")
+        || (IMAGE_TYPES.contains(type) && file.bytes().length <= MAX_IMAGE_BYTES);
+  }
+
+  /** The user's text, with any attached PDFs and photos before it as the provider recommends. */
+  private ObjectNode userMessage(String text, List<ChatFiles.Content> files) {
+    if (files.isEmpty()) return textMessage("user", text);
+    ObjectNode message = Json.obj();
+    message.put("role", "user");
+    ArrayNode content = message.putArray("content");
+    for (ChatFiles.Content file : files) {
+      boolean pdf = file.contentType().equalsIgnoreCase("application/pdf");
+      ObjectNode block = content.addObject().put("type", pdf ? "document" : "image");
+      block.putObject("source").put("type", "base64")
+          .put("media_type", file.contentType().toLowerCase(java.util.Locale.ROOT))
+          .put("data", Base64.getEncoder().encodeToString(file.bytes()));
+      if (pdf) block.put("title", file.name());
+    }
+    content.addObject().put("type", "text").put("text", text == null ? "" : text);
+    return message;
   }
 
   private ObjectNode textMessage(String role, String text) {
@@ -544,6 +644,8 @@ public class AnthropicLlmClient implements LlmClient {
    * Defence in depth for the "secrets never enter LLM context" invariant. If this ever trips it is
    * a bug in a caller, so the request is refused rather than sent.
    *
+   * <p>The bytes of an attached PDF or photo are left out too, for the same reason.
+   *
    * <p>The signatures on the model's own thinking blocks are opaque provider output, not anything
    * the platform placed in the prompt, so they are left out of the check rather than risk a random
    * run of characters looking like a key.
@@ -567,6 +669,8 @@ public class AnthropicLlmClient implements LlmClient {
           o.remove("signature");
           o.remove("data");
         }
+        // An attached file's bytes are the user's own document, not text the platform wrote.
+        if (block.path("source") instanceof ObjectNode source) source.remove("data");
       }
     }
     return copy;

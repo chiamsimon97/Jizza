@@ -9,6 +9,10 @@ vi.mock('@/api/chat', () => ({
     send: vi.fn(async (body: { conversationId?: string }) => ({ jobId: 'job-1', conversationId: body.conversationId ?? 'plain-1' })),
     cancel: vi.fn(),
     job: vi.fn(),
+    uploadFile: vi.fn(async (file: File) => ({
+      id: '11111111-2222-3333-4444-555555555555', name: file.name, contentType: file.type, sizeBytes: file.size,
+      text: file.type === 'application/pdf' ? 'Right eye 6/9, left eye 6/12' : '',
+    })),
   },
 }))
 
@@ -36,18 +40,29 @@ const inFolder = (path: string, text: string) => {
 }
 
 describe('Attachments', () => {
-  it('put text files in the message and leave photos by name', async () => {
+  it('put text files in the message, upload PDFs and photos, and leave other files by name', async () => {
     const message = await withAttachments('Summarise these', [
       fileAttachment(new File(['# Plan\nShip on Friday'], 'plan.md', { type: 'text/markdown' })),
+      fileAttachment(new File([new Uint8Array([1, 2, 3])], 'eye test.pdf', { type: 'application/pdf' })),
       fileAttachment(new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })),
+      fileAttachment(new File([new Uint8Array([1, 2, 3])], 'deck.pptx', { type: 'application/vnd.ms-powerpoint' })),
     ])
+    expect(chatApi.uploadFile).toHaveBeenCalledTimes(2)
     expect(message).toContain('<attachment kind="file" name="plan.md">\n# Plan\nShip on Friday\n</attachment>')
-    expect(message).toContain('<attachment kind="image" name="photo.png">')
+    expect(message).toContain('<attachment kind="file" name="eye test.pdf" ref="11111111-2222-3333-4444-555555555555">\nRight eye 6/9, left eye 6/12\n</attachment>')
+    expect(message).toContain('<attachment kind="image" name="photo.png" ref="11111111-2222-3333-4444-555555555555">\n(photo; Jizza sees it)')
     expect(message).toContain("can't open this kind of file yet")
     expect(splitAttachments(message)).toMatchObject({
       text: 'Summarise these',
-      attachments: [{ kind: 'file', name: 'plan.md' }, { kind: 'image', name: 'photo.png' }],
+      attachments: [{ kind: 'file', name: 'plan.md' }, { kind: 'file', name: 'eye test.pdf' }, { kind: 'image', name: 'photo.png' }, { kind: 'file', name: 'deck.pptx' }],
     })
+  })
+
+  it('send a PDF by name when its upload fails', async () => {
+    vi.mocked(chatApi.uploadFile).mockRejectedValueOnce(new Error('offline'))
+    const message = await withAttachments('Read this', [fileAttachment(new File([new Uint8Array([1])], 'scan.pdf', { type: 'application/pdf' }))])
+    expect(message).toContain('<attachment kind="file" name="scan.pdf">\n')
+    expect(message).toContain('the upload failed')
   })
 
   it('list a folder, skip node_modules, and stay within the message limit', async () => {

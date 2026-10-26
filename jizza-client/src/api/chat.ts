@@ -15,4 +15,13 @@ export const chatApi = {
     api.get<JobDto>(`/api/chat/jobs/${jobId}?afterSeq=${afterSeq}`),
 
   cancel: (jobId: string) => api.post<void>(`/api/chat/jobs/${jobId}/cancel`),
+
+  /** Stores a PDF or photo for a message to refer to; {@code text} is what could be read from it. */
+  uploadFile: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.upload<ChatFileUpload>('/api/chat/files', form)
+  },
 }
+
+export interface ChatFileUpload { id: string; name: string; contentType: string; sizeBytes: number; text: string }
