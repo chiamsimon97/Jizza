@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, Copy, Globe, Plus, Search } from 'lucide-react'
+import { Braces, Compass, Copy, Globe, Plus, Search, Trash2 } from 'lucide-react'
 import { functionsApi, type ScriptFunction, type ScriptFunctionDraft } from '@/api/functions'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -10,14 +10,16 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Spinner } from '@/components/ui/Spinner'
 import { fieldClass } from '@/components/ui/SlideOver'
+import { ExplorePublicFunctions } from '@/components/functions/ExplorePublicFunctions'
 import { FunctionEditor, TestPanel } from '@/components/functions/FunctionEditor'
 import { cleanDraft, copyOf, draftOf, emptyDraft } from '@/components/functions/functionModel'
 
 /**
  * Functions: a few lines of Jizza script kept on their own, with typed inputs and a return type.
  * Workflows run one from a Script step and map its inputs; functions call each other as fn.<name>(…).
- * /functions/new makes one; /functions/<id> edits it. Jizza's public functions are listed after the
- * person's own: anyone can read, test and call them, and copy one to change it.
+ * /functions/new makes one; /functions/<id> edits it. /functions/explore lists Jizza's public
+ * functions to install; installed ones are listed after the person's own, to read, test, call, copy
+ * or uninstall.
  */
 export function FunctionsPage() {
   const { functionId } = useParams()
@@ -27,6 +29,7 @@ export function FunctionsPage() {
   const { data, isLoading, error } = useQuery({ queryKey: ['functions'], queryFn: () => functionsApi.list() })
   const [query, setQuery] = useState('')
   const creating = functionId === 'new'
+  const exploring = functionId === 'explore'
   const current = data?.find(f => f.id === functionId)
 
   const shown = useMemo(() => {
@@ -35,25 +38,30 @@ export function FunctionsPage() {
   }, [data, query])
   const groups = [
     { label: 'Your functions', items: shown.filter(f => f.scope !== 'public') },
-    { label: 'Public functions', items: shown.filter(f => f.scope === 'public') },
+    { label: 'Installed', items: shown.filter(f => f.scope === 'public') },
   ]
 
   return (
     <div className="page">
       <PageHeader icon={Braces} title="Functions"
         description="Reusable bits of logic with inputs and a return value. Run them from a workflow's Script step, or call one from another."
-        actions={<Button size="sm" onClick={() => navigate('/functions/new')}><Plus className="h-4 w-4" />New function</Button>} />
+        actions={<div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => navigate('/functions/explore')}><Compass className="h-4 w-4" />Explore public functions</Button>
+          <Button size="sm" onClick={() => navigate('/functions/new')}><Plus className="h-4 w-4" />New function</Button>
+        </div>} />
 
-      {isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
+      {exploring && <ExplorePublicFunctions />}
+
+      {!exploring && isLoading && <div className="flex justify-center py-16"><Spinner /></div>}
       {error && <p className="text-sm text-red-600">Could not load functions: {(error as Error).message}</p>}
 
-      {data && data.length === 0 && !creating && (
+      {!exploring && data && data.length === 0 && !creating && (
         <EmptyState icon={Braces} title="No functions yet"
-          description="Write a function once, such as an order total with tax, and use it in any workflow or from other functions."
-          action={{ label: 'New function', onClick: () => navigate('/functions/new') }} />
+          description="Write a function once, such as an order total with tax, or install a ready-made one from Explore public functions, and use it in any workflow or from other functions."
+          action={{ label: 'Explore public functions', onClick: () => navigate('/functions/explore') }} />
       )}
 
-      {data && (data.length > 0 || creating) && (
+      {!exploring && data && (data.length > 0 || creating) && (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
           <Card padding="sm" className="flex h-fit min-w-0 flex-col gap-2">
             <label className="relative">
@@ -86,7 +94,8 @@ export function FunctionsPage() {
           <div className="min-w-0">
             {creating && <Editing key={copied ? `copy-${copied.name}` : 'new'} all={data} initial={copied} onSaved={f => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate(`/functions/${f.id}`, { replace: true }) }} />}
             {current && current.scope === 'public' && <PublicFunction key={current.id} fn={current}
-              onCopy={() => navigate('/functions/new', { state: { draft: copyOf(current, data.map(f => f.name)) } })} />}
+              onCopy={() => navigate('/functions/new', { state: { draft: copyOf(current, data.map(f => f.name)) } })}
+              onUninstalled={() => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate('/functions', { replace: true }) }} />}
             {current && current.scope !== 'public' && <Editing key={current.id} all={data} saved={current}
               onSaved={() => qc.invalidateQueries({ queryKey: ['functions'] })}
               onDeleted={() => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate('/functions', { replace: true }) }} />}
@@ -103,8 +112,10 @@ export function FunctionsPage() {
   )
 }
 
-/** One of Jizza's public functions: what it takes, its script and what it returns, to read and test. */
-function PublicFunction({ fn, onCopy }: { fn: ScriptFunction; onCopy: () => void }) {
+/** An installed public function: what it takes, its script and what it returns, to read, test, copy or uninstall. */
+function PublicFunction({ fn, onCopy, onUninstalled }: { fn: ScriptFunction; onCopy: () => void; onUninstalled: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const uninstall = useMutation({ mutationFn: () => functionsApi.uninstall(fn.id), onSuccess: onUninstalled })
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Card className="flex flex-col gap-2">
@@ -115,11 +126,15 @@ function PublicFunction({ fn, onCopy }: { fn: ScriptFunction; onCopy: () => void
             </h2>
             {fn.description && <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{fn.description}</p>}
           </div>
-          <Button size="sm" variant="secondary" onClick={onCopy}><Copy className="h-3.5 w-3.5" />Make a copy</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={onCopy}><Copy className="h-3.5 w-3.5" />Make a copy</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}><Trash2 className="h-3.5 w-3.5" />Uninstall</Button>
+          </div>
         </div>
         <p className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-          <Globe className="h-3 w-3" />A public function from Jizza. Call it from any function or Script step; copy it to change it.
+          <Globe className="h-3 w-3" />A public function from Jizza, installed for you. Call it from any function or Script step; copy it to change it.
         </p>
+        {uninstall.error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{(uninstall.error as Error).message}</p>}
         {fn.usedBy.length > 0 && (
           <p className="text-[11px] text-gray-500">Used by {fn.usedBy.length === 1 ? 'the workflow' : 'the workflows'} {fn.usedBy.map(n => `"${n}"`).join(', ')}.</p>
         )}
@@ -144,6 +159,15 @@ function PublicFunction({ fn, onCopy }: { fn: ScriptFunction; onCopy: () => void
         )}
       </Card>
       <TestPanel draft={draftOf(fn)} />
+      <Dialog open={confirming} title={`Uninstall fn.${fn.name}?`} onClose={() => setConfirming(false)}
+        description={fn.usedBy.length > 0
+          ? `The workflows ${fn.usedBy.map(n => `"${n}"`).join(', ')} run it, and their Script steps will fail until you install it again.`
+          : 'Functions that call it will fail until you install it again from Explore public functions.'}>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirming(false)}>Cancel</Button>
+          <Button variant="danger" loading={uninstall.isPending} onClick={() => { setConfirming(false); uninstall.mutate() }}>Uninstall</Button>
+        </div>
+      </Dialog>
     </div>
   )
 }

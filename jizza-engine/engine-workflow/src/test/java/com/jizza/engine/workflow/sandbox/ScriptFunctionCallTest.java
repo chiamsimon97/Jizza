@@ -132,5 +132,9 @@ class ScriptFunctionCallTest {
     public ScriptFunctionDto update(UUID id, ScriptFunctionDraft draft) { throw new UnsupportedOperationException(); }
     public void delete(UUID id) { throw new UnsupportedOperationException(); }
     public FormulaPreview.Result test(UUID userId, ScriptFunctionDraft draft, JsonNode args) { throw new UnsupportedOperationException(); }
+    public List<ScriptFunctionDto> publicFunctions() { return List.of(); }
+    public java.util.Set<UUID> installed(UUID userId) { return java.util.Set.of(); }
+    public boolean install(UUID userId, UUID id) { throw new UnsupportedOperationException(); }
+    public boolean uninstall(UUID userId, UUID id) { throw new UnsupportedOperationException(); }
   }
 }

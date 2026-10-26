@@ -51,6 +51,10 @@ public final class ScriptStep {
     if (f == null || (userId != null && !f.isPublic() && !userId.equals(f.userId()))) {
       throw new SandboxViolationException("The function this step runs was deleted");
     }
+    if (userId != null && f.isPublic() && !functions.installed(userId).contains(f.id())) {
+      throw new SandboxViolationException("fn." + f.name() + " is a public function that isn't installed; "
+          + "install it from Explore public functions under Functions");
+    }
     Map<String, JsonNode> args = new LinkedHashMap<>();
     JsonNode mapped = config.path("inputs");
     for (String name : ScriptFunctionRunner.inputNames(f)) {
