@@ -28,7 +28,7 @@ class ScriptFunctionCallTest {
 
   private ScriptFunctionDto save(String name, String inputs, String script, String returnType) {
     ScriptFunctionDto f = new ScriptFunctionDto(UUID.randomUUID(), OWNER, name, null, Json.read(inputs), script,
-        returnType, Json.read("[]"), List.of(), null, null);
+        returnType, Json.read("[]"), List.of(), null, null, ScriptFunctionDto.OWN);
     saved.put(name, f);
     return f;
   }

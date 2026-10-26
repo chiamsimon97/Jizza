@@ -119,6 +119,43 @@ class ScriptFunctionsE2eTest extends E2eSupport {
     assertThat(api.get("/api/functions/" + id).status()).isEqualTo(404);
   }
 
+  @Test
+  void everyoneCallsThePublicFunctionsButNobodyChangesThem() {
+    JsonNode all = api.get("/api/functions").json();
+    JsonNode slugify = null;
+    int shared = 0;
+    for (JsonNode f : all) {
+      if (!f.path("scope").asText().equals("public")) continue;
+      shared++;
+      if (f.path("name").asText().equals("slugify")) slugify = f;
+    }
+    assertThat(shared).as(all.toString()).isGreaterThanOrEqualTo(10);
+    assertThat(slugify).isNotNull();
+    String id = slugify.path("id").asText();
+
+    // Readable, runnable from a Script step and from the person's own functions, never changed.
+    assertThat(api.get("/api/functions/" + id).ok()).isTrue();
+    assertThat(api.put("/api/functions/" + id, function("slugify",
+        List.of(Map.of("name", "text", "type", "text")), "return text;", "text")).status()).isEqualTo(400);
+    assertThat(api.delete("/api/functions/" + id).status()).isEqualTo(400);
+    assertThat(api.post("/api/functions", function("slugify",
+        List.of(Map.of("name", "text", "type", "text")), "return text;", "text")).status()).isEqualTo(409);
+
+    var own = api.post("/api/functions", function("pageUrl",
+        List.of(Map.of("name", "title", "type", "text")), "return '/blog/' + fn.slugify(title);", "text"));
+    assertThat(own.ok()).as(own.body()).isTrue();
+
+    UUID workflowId = approvedWorkflow(Json.obj().put("functionId", own.json().path("id").asText())
+        .set("inputs", Json.obj().put("title", "{{ input.title }}")));
+    var run = api.post("/api/workflows/" + workflowId + "/run",
+        Map.of("version", 1, "input", Map.of("title", "Hello, World!")));
+    assertThat(run.json().path("status").asText()).as(run.body()).isEqualTo("DONE");
+    JsonNode output = null;
+    for (JsonNode step : run.json().path("steps")) if (step.path("nodeId").asText().equals("calc")) output = step.path("output");
+    assertThat(output).as(run.body()).isNotNull();
+    assertThat(output.path("result").asText()).isEqualTo("/blog/hello-world");
+  }
+
   private UUID approvedWorkflow(JsonNode config) {
     WorkflowGraph graph = new WorkflowGraph(
         List.of(new WorkflowNode("start", NodeType.TRIGGER, "start", null, null),

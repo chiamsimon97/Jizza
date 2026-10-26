@@ -14,7 +14,10 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** A function the user keeps under Functions; see {@code V22__script_functions.sql}. */
+/**
+ * A function the user keeps under Functions; see {@code V22__script_functions.sql}. Jizza's public
+ * functions, which everyone can call, have no user ({@code V28__public_functions.sql}).
+ */
 @Entity
 @Table(name = "script_functions")
 public class ScriptFunctionEntity {
@@ -23,7 +26,6 @@ public class ScriptFunctionEntity {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @Column(nullable = false)
   private UUID userId;
 
   @Column(nullable = false)

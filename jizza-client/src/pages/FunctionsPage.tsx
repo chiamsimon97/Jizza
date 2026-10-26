@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, Plus, Search } from 'lucide-react'
+import { Braces, Copy, Globe, Plus, Search } from 'lucide-react'
 import { functionsApi, type ScriptFunction, type ScriptFunctionDraft } from '@/api/functions'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -10,17 +10,19 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Spinner } from '@/components/ui/Spinner'
 import { fieldClass } from '@/components/ui/SlideOver'
-import { FunctionEditor } from '@/components/functions/FunctionEditor'
-import { cleanDraft, draftOf, emptyDraft } from '@/components/functions/functionModel'
+import { FunctionEditor, TestPanel } from '@/components/functions/FunctionEditor'
+import { cleanDraft, copyOf, draftOf, emptyDraft } from '@/components/functions/functionModel'
 
 /**
  * Functions: a few lines of Jizza script kept on their own, with typed inputs and a return type.
  * Workflows run one from a Script step and map its inputs; functions call each other as fn.<name>(…).
- * /functions/new makes one; /functions/<id> edits it.
+ * /functions/new makes one; /functions/<id> edits it. Jizza's public functions are listed after the
+ * person's own: anyone can read, test and call them, and copy one to change it.
  */
 export function FunctionsPage() {
   const { functionId } = useParams()
   const navigate = useNavigate()
+  const copied = (useLocation().state as { draft?: ScriptFunctionDraft } | null)?.draft
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({ queryKey: ['functions'], queryFn: () => functionsApi.list() })
   const [query, setQuery] = useState('')
@@ -31,6 +33,10 @@ export function FunctionsPage() {
     const q = query.trim().toLowerCase()
     return (data ?? []).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? '').toLowerCase().includes(q))
   }, [data, query])
+  const groups = [
+    { label: 'Your functions', items: shown.filter(f => f.scope !== 'public') },
+    { label: 'Public functions', items: shown.filter(f => f.scope === 'public') },
+  ]
 
   return (
     <div className="page">
@@ -55,8 +61,11 @@ export function FunctionsPage() {
               <input aria-label="Search functions" placeholder="Search" className={`${fieldClass} !pl-8 text-sm`}
                 value={query} onChange={e => setQuery(e.target.value)} />
             </label>
-            <ul className="flex flex-col gap-0.5" aria-label="Your functions">
-              {shown.map(f => (
+            {groups.map(g => g.items.length > 0 && (
+            <div key={g.label} className="flex flex-col gap-0.5">
+            <h3 className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{g.label}</h3>
+            <ul className="flex flex-col gap-0.5" aria-label={g.label}>
+              {g.items.map(f => (
                 <li key={f.id}>
                   <Link to={`/functions/${f.id}`} aria-current={f.id === functionId ? 'page' : undefined}
                     className={`block rounded-lg px-2 py-1.5 text-sm ${f.id === functionId ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
@@ -68,13 +77,17 @@ export function FunctionsPage() {
                   </Link>
                 </li>
               ))}
-              {shown.length === 0 && <li className="px-2 py-1.5 text-xs text-gray-500">No function matches.</li>}
             </ul>
+            </div>
+            ))}
+            {shown.length === 0 && <p className="px-2 py-1.5 text-xs text-gray-500">No function matches.</p>}
           </Card>
 
           <div className="min-w-0">
-            {creating && <Editing key="new" all={data} onSaved={f => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate(`/functions/${f.id}`, { replace: true }) }} />}
-            {current && <Editing key={current.id} all={data} saved={current}
+            {creating && <Editing key={copied ? `copy-${copied.name}` : 'new'} all={data} initial={copied} onSaved={f => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate(`/functions/${f.id}`, { replace: true }) }} />}
+            {current && current.scope === 'public' && <PublicFunction key={current.id} fn={current}
+              onCopy={() => navigate('/functions/new', { state: { draft: copyOf(current, data.map(f => f.name)) } })} />}
+            {current && current.scope !== 'public' && <Editing key={current.id} all={data} saved={current}
               onSaved={() => qc.invalidateQueries({ queryKey: ['functions'] })}
               onDeleted={() => { qc.invalidateQueries({ queryKey: ['functions'] }); navigate('/functions', { replace: true }) }} />}
             {!creating && !current && functionId && <p className="text-sm text-gray-500">That function no longer exists.</p>}
@@ -90,10 +103,55 @@ export function FunctionsPage() {
   )
 }
 
-function Editing({ all, saved, onSaved, onDeleted }: {
-  all: ScriptFunction[]; saved?: ScriptFunction; onSaved: (f: ScriptFunction) => void; onDeleted?: () => void
+/** One of Jizza's public functions: what it takes, its script and what it returns, to read and test. */
+function PublicFunction({ fn, onCopy }: { fn: ScriptFunction; onCopy: () => void }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <Card className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100">
+              fn.{fn.name}({fn.inputs.map(i => i.name).join(', ')}) → {fn.returnType}
+            </h2>
+            {fn.description && <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{fn.description}</p>}
+          </div>
+          <Button size="sm" variant="secondary" onClick={onCopy}><Copy className="h-3.5 w-3.5" />Make a copy</Button>
+        </div>
+        <p className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+          <Globe className="h-3 w-3" />A public function from Jizza. Call it from any function or Script step; copy it to change it.
+        </p>
+        {fn.usedBy.length > 0 && (
+          <p className="text-[11px] text-gray-500">Used by {fn.usedBy.length === 1 ? 'the workflow' : 'the workflows'} {fn.usedBy.map(n => `"${n}"`).join(', ')}.</p>
+        )}
+      </Card>
+      {fn.inputs.length > 0 && (
+        <Card className="flex flex-col gap-1.5">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Inputs</h3>
+          {fn.inputs.map(i => (
+            <p key={i.name} className="text-xs text-gray-700 dark:text-gray-300">
+              <span className="font-mono">{i.name}</span>
+              <span className="text-gray-500"> · {i.type}{i.required ? ' · required' : ''}{i.default !== undefined ? ` · default ${JSON.stringify(i.default)}` : ''}</span>
+              {i.description && <span className="text-gray-500"> · {i.description}</span>}
+            </p>
+          ))}
+        </Card>
+      )}
+      <Card className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Script</h3>
+        <pre className="max-h-96 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-800 dark:bg-gray-800/50 dark:text-gray-200">{fn.script}</pre>
+        {fn.returnType === 'map' && fn.returnFields.length > 0 && (
+          <p className="text-[11px] text-gray-500">Returns the keys {fn.returnFields.map(f => f.path).join(', ')}.</p>
+        )}
+      </Card>
+      <TestPanel draft={draftOf(fn)} />
+    </div>
+  )
+}
+
+function Editing({ all, saved, initial, onSaved, onDeleted }: {
+  all: ScriptFunction[]; saved?: ScriptFunction; initial?: ScriptFunctionDraft; onSaved: (f: ScriptFunction) => void; onDeleted?: () => void
 }) {
-  const [draft, setDraft] = useState<ScriptFunctionDraft>(() => (saved ? draftOf(saved) : emptyDraft()))
+  const [draft, setDraft] = useState<ScriptFunctionDraft>(() => (saved ? draftOf(saved) : initial ?? emptyDraft()))
   const [confirming, setConfirming] = useState(false)
   // A save (or a rename elsewhere) brings the stored version in; a refetch of the same version keeps unsaved edits.
   // eslint-disable-next-line react-hooks/exhaustive-deps

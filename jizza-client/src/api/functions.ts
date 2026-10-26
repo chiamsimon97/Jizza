@@ -21,6 +21,8 @@ export interface ScriptFunction {
   usedBy: string[]
   createdAt: string
   updatedAt: string
+  /** own: the person's. public: one of Jizza's ready-made functions, which everyone calls and nobody changes. */
+  scope: 'own' | 'public'
 }
 
 export type ScriptFunctionDraft = Pick<ScriptFunction, 'name' | 'inputs' | 'script' | 'returnType' | 'returnFields'> & { description?: string | null }

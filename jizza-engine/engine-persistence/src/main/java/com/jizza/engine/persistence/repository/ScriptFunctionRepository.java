@@ -11,4 +11,9 @@ public interface ScriptFunctionRepository extends JpaRepository<ScriptFunctionEn
   Optional<ScriptFunctionEntity> findByUserIdAndName(UUID userId, String name);
   boolean existsByUserIdAndName(UUID userId, String name);
   long countByUserId(UUID userId);
+
+  /** Jizza's public functions, which have no user. */
+  List<ScriptFunctionEntity> findByUserIdIsNullOrderByNameAsc();
+  Optional<ScriptFunctionEntity> findByUserIdIsNullAndName(String name);
+  boolean existsByUserIdIsNullAndName(String name);
 }

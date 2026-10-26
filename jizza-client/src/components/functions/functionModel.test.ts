@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { argOf, cleanDraft, draftIssues, emptyDraft, keysOf, mergeKeys, resultFields } from './functionModel'
+import { argOf, cleanDraft, copyOf, draftIssues, emptyDraft, keysOf, mergeKeys, resultFields } from './functionModel'
 import { scriptProblems } from '@/components/workflow/formula/script'
 
 describe('functions', () => {
@@ -9,6 +9,14 @@ describe('functions', () => {
     expect(Object.keys(draftIssues(d))).toEqual(['name', 'inputs.0.name', 'inputs.2.name', 'script', 'returnFields.0.path'])
     expect(draftIssues({ ...emptyDraft(), name: 'orderTotal', script: 'return 1;' }, ['orderTotal']).name).toMatch(/already have/)
     expect(draftIssues({ ...emptyDraft(), name: 'orderTotal', script: 'return 1;' })).toEqual({})
+    expect(draftIssues({ ...emptyDraft(), name: 'slugify', script: 'return 1;' }, [], ['slugify']).name).toMatch(/public function/)
+  })
+
+  it('copies a public function under a name of its own', () => {
+    const slugify = { id: 'p1', name: 'slugify', description: 'Slugs', inputs: [{ name: 'text', type: 'text' as const }], script: 'return text;',
+      returnType: 'text' as const, returnFields: [], usedBy: [], createdAt: '', updatedAt: '', scope: 'public' as const }
+    expect(copyOf(slugify, ['slugify']).name).toBe('mySlugify')
+    expect(copyOf(slugify, ['slugify', 'mySlugify'])).toMatchObject({ name: 'mySlugify2', script: 'return text;', description: 'Slugs' })
   })
 
   it('reads test values by type and keeps map keys only for a map', () => {

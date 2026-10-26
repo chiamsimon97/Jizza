@@ -11,7 +11,7 @@ const page = (route: string) => renderWithSnapshot(
 
 const saved: ScriptFunction = {
   id: 'fn-1', name: 'withTax', description: null, inputs: [{ name: 'amount', type: 'number' }], script: 'amount * 1.1',
-  returnType: 'number', returnFields: [], usedBy: ['Invoices'], createdAt: '', updatedAt: '1',
+  returnType: 'number', returnFields: [], usedBy: ['Invoices'], createdAt: '', updatedAt: '1', scope: 'own',
 }
 
 describe('Functions page', () => {
@@ -53,5 +53,27 @@ describe('Functions page', () => {
     expect(screen.getByText(/"Invoices" run it/)).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
     await waitFor(() => expect(remove).toHaveBeenCalledWith('fn-1'))
+  })
+
+  it('shows a public function to read and test, and copies it to change it', async () => {
+    const slugify: ScriptFunction = {
+      id: 'pub-1', name: 'slugify', description: 'Turns a title into a slug.', inputs: [{ name: 'text', type: 'text', required: true }],
+      script: "return text.lower();", returnType: 'text', returnFields: [], usedBy: [], createdAt: '', updatedAt: '1', scope: 'public',
+    }
+    vi.spyOn(functionsApi, 'list').mockResolvedValue([saved, slugify])
+    const create = vi.spyOn(functionsApi, 'create').mockResolvedValue({ ...slugify, id: 'fn-3', name: 'mySlugify', scope: 'own' })
+    page('/functions/pub-1')
+
+    expect(await screen.findByRole('list', { name: 'Public functions' })).toHaveTextContent('fn.slugify')
+    expect(screen.getByRole('list', { name: 'Your functions' })).toHaveTextContent('fn.withTax')
+    expect(screen.getByText('Turns a title into a slug.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run test' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }))
+    expect(await screen.findByRole('textbox', { name: 'Link name' })).toHaveValue('mySlugify')
+    fireEvent.click(screen.getByRole('button', { name: 'Create function' }))
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(create.mock.calls[0][0]).toMatchObject({ name: 'mySlugify', script: 'return text.lower();' })
   })
 })

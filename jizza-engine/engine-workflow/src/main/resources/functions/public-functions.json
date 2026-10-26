@@ -1,0 +1,575 @@
+[
+  {
+    "name": "isValidEmail",
+    "description": "True when the text is a well-formed email address, such as ana@example.com.",
+    "inputs": [
+      {
+        "name": "email",
+        "type": "text",
+        "required": true,
+        "description": "The address to check"
+      }
+    ],
+    "script": "// One @, something before and after it, and a domain ending of two letters or more.\nvar e = email.trim();\nreturn e =~ '^[^ @]+@[^ @]+[.][A-Za-z]{2,}$';\n",
+    "returnType": "boolean",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "email": " ana@example.com "
+        },
+        "returns": true
+      },
+      {
+        "args": {
+          "email": "ana@example"
+        },
+        "returns": false
+      },
+      {
+        "args": {
+          "email": "not an email"
+        },
+        "returns": false
+      }
+    ]
+  },
+  {
+    "name": "isValidPhone",
+    "description": "True when the text looks like a phone number: digits with an optional +, spaces, dashes or brackets, 8 to 15 digits in all.",
+    "inputs": [
+      {
+        "name": "phone",
+        "type": "text",
+        "required": true,
+        "description": "The number to check"
+      }
+    ],
+    "script": "var p = phone.trim();\nif (!(p =~ '^[+]?[0-9 ()-]+$')) {\n  return false;\n}\nvar digits = p.replaceAll('[^0-9]', '');\nreturn digits.length() >= 8 && digits.length() <= 15;\n",
+    "returnType": "boolean",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "phone": "+91 98765-43210"
+        },
+        "returns": true
+      },
+      {
+        "args": {
+          "phone": "(022) 2345 6789"
+        },
+        "returns": true
+      },
+      {
+        "args": {
+          "phone": "12345"
+        },
+        "returns": false
+      },
+      {
+        "args": {
+          "phone": "call me"
+        },
+        "returns": false
+      }
+    ]
+  },
+  {
+    "name": "slugify",
+    "description": "Turns a title into a URL-friendly slug: lower case, words joined by dashes.",
+    "inputs": [
+      {
+        "name": "text",
+        "type": "text",
+        "required": true,
+        "description": "A title or name"
+      }
+    ],
+    "script": "var slug = text.lower().trim().replaceAll('[^a-z0-9]+', '-');\nreturn slug.replaceAll('^-+|-+$', '');\n",
+    "returnType": "text",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "text": "  Hello World: Q3 Report! "
+        },
+        "returns": "hello-world-q3-report"
+      }
+    ]
+  },
+  {
+    "name": "fullName",
+    "description": "Joins a first and last name in title case, leaving out whichever is empty.",
+    "inputs": [
+      {
+        "name": "firstName",
+        "type": "text",
+        "description": "Given name"
+      },
+      {
+        "name": "lastName",
+        "type": "text",
+        "description": "Family name"
+      }
+    ],
+    "script": "var first = firstName.trim().titleCase();\nvar last = lastName.trim().titleCase();\nif (first == '') {\n  return last;\n}\nif (last == '') {\n  return first;\n}\nreturn first + ' ' + last;\n",
+    "returnType": "text",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "firstName": "ana",
+          "lastName": "DE SOUZA"
+        },
+        "returns": "Ana De Souza"
+      },
+      {
+        "args": {
+          "firstName": "priya"
+        },
+        "returns": "Priya"
+      }
+    ]
+  },
+  {
+    "name": "initials",
+    "description": "The first letters of a name's words in capitals, such as AS for Ana Souza.",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "text",
+        "required": true,
+        "description": "A person's or company's name"
+      },
+      {
+        "name": "letters",
+        "type": "number",
+        "description": "The most letters to give",
+        "default": 2
+      }
+    ],
+    "script": "var out = '';\nfor (var word : name.trim().split(' ')) {\n  if (word != '' && out.length() < letters) {\n    out = out + word.substring(0, 1).upper();\n  }\n}\nreturn out;\n",
+    "returnType": "text",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "name": "ana maria souza"
+        },
+        "returns": "AM"
+      },
+      {
+        "args": {
+          "name": "ana maria souza",
+          "letters": 3
+        },
+        "returns": "AMS"
+      }
+    ]
+  },
+  {
+    "name": "maskEmail",
+    "description": "Hides most of an email address for messages and logs, such as a***@example.com.",
+    "inputs": [
+      {
+        "name": "email",
+        "type": "text",
+        "required": true,
+        "description": "The address to mask"
+      }
+    ],
+    "script": "var e = email.trim();\nvar at = e.indexOf('@');\nif (at < 1) {\n  return e;\n}\nreturn e.substring(0, 1) + '***' + e.substring(at);\n",
+    "returnType": "text",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "email": "ana.souza@example.com"
+        },
+        "returns": "a***@example.com"
+      }
+    ]
+  },
+  {
+    "name": "wordCount",
+    "description": "How many words a text has.",
+    "inputs": [
+      {
+        "name": "text",
+        "type": "text",
+        "description": "Any text"
+      }
+    ],
+    "script": "var words = text.trim().replaceAll('[^A-Za-z0-9]+', ' ').trim();\nif (words == '') {\n  return 0;\n}\nreturn words.split(' ').count();\n",
+    "returnType": "number",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "text": "Hello there,  how are\nyou?"
+        },
+        "returns": 5
+      },
+      {
+        "args": {
+          "text": ""
+        },
+        "returns": 0
+      }
+    ]
+  },
+  {
+    "name": "percentChange",
+    "description": "The change from one number to another as a percentage, such as 25 for 80 to 100. Empty when the first number is 0.",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "number",
+        "required": true,
+        "description": "The earlier value"
+      },
+      {
+        "name": "to",
+        "type": "number",
+        "required": true,
+        "description": "The later value"
+      },
+      {
+        "name": "places",
+        "type": "number",
+        "description": "Decimal places",
+        "default": 1
+      }
+    ],
+    "script": "if (from == 0) {\n  return null;\n}\nreturn ((to - from) / from.abs() * 100).round(places);\n",
+    "returnType": "number",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "from": 80,
+          "to": 100
+        },
+        "returns": 25
+      },
+      {
+        "args": {
+          "from": 120,
+          "to": 90
+        },
+        "returns": -25
+      },
+      {
+        "args": {
+          "from": 3,
+          "to": 4,
+          "places": 2
+        },
+        "returns": 33.33
+      }
+    ]
+  },
+  {
+    "name": "taxBreakdown",
+    "description": "Splits an amount into net, tax and gross. The rate defaults to 18% GST; set inclusive when the amount already has tax in it.",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "number",
+        "required": true,
+        "description": "The amount"
+      },
+      {
+        "name": "rate",
+        "type": "number",
+        "description": "Tax rate, 0.18 for 18%",
+        "default": 0.18
+      },
+      {
+        "name": "inclusive",
+        "type": "boolean",
+        "description": "True when the amount already includes the tax",
+        "default": false
+      }
+    ],
+    "script": "var net = inclusive ? amount / (1 + rate) : amount;\nvar tax = net * rate;\nreturn {'net': net.round(2), 'tax': tax.round(2), 'gross': (net + tax).round(2)};\n",
+    "returnType": "map",
+    "returnFields": [
+      {
+        "path": "net",
+        "type": "number"
+      },
+      {
+        "path": "tax",
+        "type": "number"
+      },
+      {
+        "path": "gross",
+        "type": "number"
+      }
+    ],
+    "examples": [
+      {
+        "args": {
+          "amount": 1000
+        },
+        "returns": {
+          "net": 1000,
+          "tax": 180,
+          "gross": 1180
+        }
+      },
+      {
+        "args": {
+          "amount": 1180,
+          "inclusive": true
+        },
+        "returns": {
+          "net": 1000,
+          "tax": 180,
+          "gross": 1180
+        }
+      }
+    ]
+  },
+  {
+    "name": "orderTotals",
+    "description": "Adds up order lines ({qty, price}) with an optional discount and tax: item count, subtotal, discount, tax and total.",
+    "inputs": [
+      {
+        "name": "lines",
+        "type": "list",
+        "required": true,
+        "description": "Order lines, each with qty (default 1) and price"
+      },
+      {
+        "name": "discountPercent",
+        "type": "number",
+        "description": "Percent off the subtotal",
+        "default": 0
+      },
+      {
+        "name": "taxRate",
+        "type": "number",
+        "description": "Tax rate on the discounted amount, 0.18 for 18%",
+        "default": 0
+      }
+    ],
+    "script": "var subtotal = 0;\nvar items = 0;\nfor (var line : lines) {\n  var qty = (line.qty ?? 1).toNumber();\n  subtotal = subtotal + qty * line.price.toNumber();\n  items = items + qty;\n}\nvar discount = subtotal * discountPercent / 100;\nvar tax = (subtotal - discount) * taxRate;\nreturn {\n  'items': items,\n  'subtotal': subtotal.round(2),\n  'discount': discount.round(2),\n  'tax': tax.round(2),\n  'total': (subtotal - discount + tax).round(2)\n};\n",
+    "returnType": "map",
+    "returnFields": [
+      {
+        "path": "items",
+        "type": "number"
+      },
+      {
+        "path": "subtotal",
+        "type": "number"
+      },
+      {
+        "path": "discount",
+        "type": "number"
+      },
+      {
+        "path": "tax",
+        "type": "number"
+      },
+      {
+        "path": "total",
+        "type": "number"
+      }
+    ],
+    "examples": [
+      {
+        "args": {
+          "lines": [
+            {
+              "qty": 2,
+              "price": 250
+            },
+            {
+              "price": "100"
+            }
+          ],
+          "discountPercent": 10,
+          "taxRate": 0.18
+        },
+        "returns": {
+          "items": 3,
+          "subtotal": 600,
+          "discount": 60,
+          "tax": 97.2,
+          "total": 637.2
+        }
+      }
+    ]
+  },
+  {
+    "name": "ageOn",
+    "description": "A person's age in whole years from their birthday, today or on the date given.",
+    "inputs": [
+      {
+        "name": "birthday",
+        "type": "date",
+        "required": true,
+        "description": "Date of birth"
+      },
+      {
+        "name": "onDate",
+        "type": "date",
+        "description": "The day to work it out for; today when empty"
+      }
+    ],
+    "script": "var on = onDate == null ? today() : onDate;\nvar years = on.formatDate('yyyy').toNumber() - birthday.formatDate('yyyy').toNumber();\nif (on.formatDate('MMdd').toNumber() < birthday.formatDate('MMdd').toNumber()) {\n  years = years - 1;\n}\nreturn years;\n",
+    "returnType": "number",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "birthday": "1990-06-15",
+          "onDate": "2026-06-14"
+        },
+        "returns": 35
+      },
+      {
+        "args": {
+          "birthday": "1990-06-15",
+          "onDate": "2026-06-15"
+        },
+        "returns": 36
+      }
+    ]
+  },
+  {
+    "name": "businessDaysBetween",
+    "description": "Working days (Monday to Friday) from one date to another, counting both. Negative when the end is before the start.",
+    "inputs": [
+      {
+        "name": "start",
+        "type": "date",
+        "required": true,
+        "description": "First day"
+      },
+      {
+        "name": "end",
+        "type": "date",
+        "required": true,
+        "description": "Last day"
+      }
+    ],
+    "script": "var from = start;\nvar to = end;\nvar sign = 1;\nif (daysBetween(start, end) < 0) {\n  from = end;\n  to = start;\n  sign = -1;\n}\nvar total = daysBetween(from, to) + 1;\nvar dow = lookup({'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7}, from.formatDate('EEE'), 1);\nvar count = (total / 7).floor() * 5;\nvar rest = total % 7;\nif (rest > 0) {\n  for (var i : 0 .. (rest - 1)) {\n    if ((dow - 1 + i) % 7 < 5) {\n      count = count + 1;\n    }\n  }\n}\nreturn count * sign;\n",
+    "returnType": "number",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "start": "2026-10-26",
+          "end": "2026-11-06"
+        },
+        "returns": 10
+      },
+      {
+        "args": {
+          "start": "2026-10-31",
+          "end": "2026-11-01"
+        },
+        "returns": 0
+      },
+      {
+        "args": {
+          "start": "2026-10-30",
+          "end": "2026-10-26"
+        },
+        "returns": -5
+      }
+    ]
+  },
+  {
+    "name": "addBusinessDays",
+    "description": "The date a number of working days (Monday to Friday) after a date, such as a due date 5 working days out.",
+    "inputs": [
+      {
+        "name": "date",
+        "type": "date",
+        "required": true,
+        "description": "The day to count from"
+      },
+      {
+        "name": "days",
+        "type": "number",
+        "required": true,
+        "description": "Working days to add, 0 or more"
+      }
+    ],
+    "script": "var dow = lookup({'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7}, date.formatDate('EEE'), 1);\nvar d = date;\nif (days > 0 && dow > 5) {\n  // From a weekend, count from the Friday before it.\n  d = d.subtractDays(dow - 5);\n  dow = 5;\n}\nvar weeks = (days / 5).floor();\nvar rest = days - weeks * 5;\nd = d.addDays(weeks * 7);\nif (rest > 0) {\n  for (var i : 1 .. rest) {\n    d = d.addDays(1);\n    dow = dow + 1;\n    if (dow == 6) {\n      d = d.addDays(2);\n      dow = 1;\n    }\n  }\n}\nreturn d.formatDate('yyyy-MM-dd');\n",
+    "returnType": "date",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "date": "2026-10-29",
+          "days": 3
+        },
+        "returns": "2026-11-03"
+      },
+      {
+        "args": {
+          "date": "2026-10-26",
+          "days": 10
+        },
+        "returns": "2026-11-09"
+      },
+      {
+        "args": {
+          "date": "2026-10-31",
+          "days": 1
+        },
+        "returns": "2026-11-02"
+      }
+    ]
+  },
+  {
+    "name": "relativeDay",
+    "description": "Says how far a date is from today, or from the date given: today, yesterday, tomorrow, 3 days ago or in 5 days.",
+    "inputs": [
+      {
+        "name": "date",
+        "type": "date",
+        "required": true,
+        "description": "The date to describe"
+      },
+      {
+        "name": "onDate",
+        "type": "date",
+        "description": "The day to count from; today when empty"
+      }
+    ],
+    "script": "var on = onDate == null ? today() : onDate;\nvar days = daysBetween(on, date);\nif (days == 0) {\n  return 'today';\n}\nif (days == 1) {\n  return 'tomorrow';\n}\nif (days == -1) {\n  return 'yesterday';\n}\nreturn days > 0 ? 'in ' + days + ' days' : (0 - days) + ' days ago';\n",
+    "returnType": "text",
+    "returnFields": [],
+    "examples": [
+      {
+        "args": {
+          "date": "2026-10-23",
+          "onDate": "2026-10-26"
+        },
+        "returns": "3 days ago"
+      },
+      {
+        "args": {
+          "date": "2026-10-31",
+          "onDate": "2026-10-26"
+        },
+        "returns": "in 5 days"
+      },
+      {
+        "args": {
+          "date": "2026-10-27",
+          "onDate": "2026-10-26"
+        },
+        "returns": "tomorrow"
+      }
+    ]
+  }
+]
