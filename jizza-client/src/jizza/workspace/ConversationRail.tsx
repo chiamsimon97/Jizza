@@ -22,9 +22,13 @@ function bucket(iso?: string): string {
 /**
  * The left column of the chat workspace: every conversation, searchable, with pin, rename,
  * archive and delete. Pinned conversations stay on top; the rest are grouped by when they last moved.
+ *
+ * Threads are not listed: like replies in a thread, they are reached from the chat they were
+ * opened in. A search finds them too. While a thread is open its chat stays highlighted.
  */
-export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
+export function ConversationRail({ onPicked, highlight }: { onPicked?: () => void; highlight?: string }) {
   const { conversationId, conversationsVersion, newConversation, incognito } = useAssistantStore()
+  const current = incognito ? undefined : highlight ?? conversationId
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -56,17 +60,7 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
     },
   })
 
-  // Threads sit under the main chat they came from when it is listed too; otherwise on their own.
-  const all = data ?? []
-  const listed = new Set(all.map(c => c.id))
-  const threadsOf = new Map<string, ConversationSummary[]>()
-  for (const c of all) {
-    if (c.kind === 'thread' && c.parentId && listed.has(c.parentId)) {
-      threadsOf.set(c.parentId, [...(threadsOf.get(c.parentId) ?? []), c])
-    }
-  }
-  const nested = new Set([...threadsOf.values()].flat().map(c => c.id))
-  const top = all.filter(c => !nested.has(c.id))
+  const top = data ?? []
   const pinned = top.filter(c => c.pinned)
   const groups = new Map<string, ConversationSummary[]>()
   for (const c of top.filter(c => !c.pinned)) {
@@ -119,7 +113,7 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
         {pinned.length > 0 && (
           <Group label="Pinned">
             {pinned.map(c => (
-              <RowWithThreads key={c.id} c={c} threads={threadsOf.get(c.id)} current={incognito ? undefined : conversationId}
+              <Row key={c.id} c={c} active={c.id === current}
                 onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />
             ))}
           </Group>
@@ -127,7 +121,7 @@ export function ConversationRail({ onPicked }: { onPicked?: () => void }) {
         {[...groups.entries()].map(([label, rows]) => (
           <Group key={label} label={label}>
             {rows.map(c => (
-              <RowWithThreads key={c.id} c={c} threads={threadsOf.get(c.id)} current={incognito ? undefined : conversationId}
+              <Row key={c.id} c={c} active={c.id === current}
                 onPicked={onPicked} patch={patch.mutate} remove={remove.mutate} />
             ))}
           </Group>
@@ -156,24 +150,6 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 }
 
 type Patch = (v: { id: string; title?: string; pinned?: boolean; archived?: boolean }) => void
-
-/** A main chat, then the threads Jizza opened from it, indented under a guide line. */
-function RowWithThreads({ c, threads, current, onPicked, patch, remove }: {
-  c: ConversationSummary; threads?: ConversationSummary[]; current?: string; onPicked?: () => void; patch: Patch; remove: (id: string) => void
-}) {
-  return (
-    <>
-      <Row c={c} active={c.id === current} onPicked={onPicked} patch={patch} remove={remove} />
-      {threads && threads.length > 0 && (
-        <li>
-          <ul aria-label={`Threads from ${c.title || 'this conversation'}`} className="ml-3 flex flex-col gap-0.5 border-l border-gray-200 pl-1.5 dark:border-gray-800">
-            {threads.map(t => <Row key={t.id} c={t} active={t.id === current} onPicked={onPicked} patch={patch} remove={remove} />)}
-          </ul>
-        </li>
-      )}
-    </>
-  )
-}
 
 function Row({ c, active, onPicked, patch, remove }: {
   c: ConversationSummary; active: boolean; onPicked?: () => void; patch: Patch; remove: (id: string) => void
@@ -216,7 +192,7 @@ function Row({ c, active, onPicked, patch, remove }: {
     <li ref={ref} className="group relative">
       <button
         type="button"
-        onClick={() => { if (!active) resumeConversation(c.id); onPicked?.() }}
+        onClick={() => { if (useAssistantStore.getState().conversationId !== c.id) resumeConversation(c.id); onPicked?.() }}
         title={label}
         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left text-sm transition-colors ${
           active

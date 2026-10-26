@@ -88,16 +88,27 @@ public class ConversationController {
     return conversations.summary(CurrentUser.userId(), id);
   }
 
-  /** Every thread, across all chats, with the stage each is at. */
-  @GetMapping("/threads")
-  public List<ConversationSummaryDto> allThreads(@RequestParam(defaultValue = "100") int limit) {
-    return conversations.allThreads(CurrentUser.userId(), limit);
-  }
-
-  /** A main chat's threads, most recently active first. */
+  /** A main chat's threads, most recently active first. A thread is reached from its own chat only. */
   @GetMapping("/{id}/threads")
   public List<ConversationSummaryDto> threads(@PathVariable UUID id) {
     return conversations.threads(CurrentUser.userId(), id);
+  }
+
+  /** The long-term memories learned from what was said here: a thread's own memory. */
+  @GetMapping("/{id}/learned")
+  public List<com.jizza.engine.api.dto.LearnedFactDto> learned(@PathVariable UUID id) {
+    return conversations.learned(CurrentUser.userId(), id);
+  }
+
+  /**
+   * Edits the user's message {@code messageId}: removes it and everything after it, so the client
+   * sends the edited text in its place.
+   */
+  @org.springframework.web.bind.annotation.PostMapping("/{id}/messages/{messageId}/rewind")
+  public org.springframework.http.ResponseEntity<Void> rewind(@PathVariable UUID id,
+                                                              @PathVariable UUID messageId) {
+    conversations.rewind(CurrentUser.userId(), id, messageId);
+    return org.springframework.http.ResponseEntity.noContent().build();
   }
 
   /** A thread's learning file. */

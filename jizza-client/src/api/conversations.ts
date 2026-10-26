@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { ConversationSummary, JobDto, MessageDto, ThreadGuide } from '@/types'
+import type { ConversationSummary, JobDto, LearnedFact, MessageDto, ThreadGuide } from '@/types'
 
 /** A file name made of a title, the way the server names its exports. */
 function slug(title: string | undefined, fallback: string) {
@@ -42,11 +42,15 @@ export const conversationsApi = {
   /** One conversation's row: for a thread, its lead, topic and main chat. */
   summary: (id: string) => api.get<ConversationSummary>(`/api/conversations/${id}/summary`),
 
-  /** A main chat's threads, most recently active first. */
-  /** Every thread, in any chat, with its stage. */
-  allThreads: () => api.get<ConversationSummary[]>('/api/conversations/threads'),
-
+  /** A main chat's threads with their stage, most recently active first. Only that chat's. */
   threads: (id: string) => api.get<ConversationSummary[]>(`/api/conversations/${id}/threads`),
+
+  /** What Jizza learned from what was said here: for a thread, its own memory. */
+  learned: (id: string) => api.get<LearnedFact[]>(`/api/conversations/${id}/learned`),
+
+  /** Removes the user's message and everything after it, so its edit can be sent in its place. */
+  rewind: (id: string, messageId: string) =>
+    api.post<void>(`/api/conversations/${id}/messages/${messageId}/rewind`, {}),
 
   guide: (id: string) => api.get<ThreadGuide>(`/api/conversations/${id}/guide`),
 

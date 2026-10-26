@@ -16,8 +16,9 @@ vi.mock('@/api/conversations', () => ({
     update: vi.fn(),
     remove: vi.fn(),
     create: vi.fn(async () => ({ id: 'threaded-1', threadsEnabled: true })),
-    threads: vi.fn(),
-    allThreads: vi.fn(),
+    threads: vi.fn(async () => []),
+    learned: vi.fn(async () => []),
+    rewind: vi.fn(async () => undefined),
   },
 }))
 
@@ -123,7 +124,9 @@ describe('Threads', () => {
 
     expect(screen.getByText('New thread with Kai')).toBeInTheDocument()
     expect(screen.getByText('Monthly index fund plan')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Open thread' }))
+    // The user's message says where it went, as in a thread under a message.
+    expect(screen.getByText('Sent to a thread')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open thread Monthly index fund plan' }))
     expect(useAssistantStore.getState().conversationId).toBe('thread-1')
     await waitFor(() => expect(conversationsApi.messages).toHaveBeenCalledWith('thread-1'))
   })
@@ -148,18 +151,27 @@ describe('Threads', () => {
     expect(screen.getByText('Kai')).toBeInTheDocument()
   })
 
-  it('lists threads under the main chat they came from', async () => {
-    const rows: ConversationSummary[] = [
+  it('lists chats, not threads, and keeps an open thread\'s chat highlighted', async () => {
+    vi.mocked(conversationsApi.list).mockResolvedValue([
       { id: 'main-1', title: 'Saturday plans', createdAt: at, lastMessageAt: at, pinned: false, archived: false, messageCount: 4, kind: 'main' },
-      { id: 'thread-1', title: 'Monthly index fund plan', createdAt: at, lastMessageAt: at, pinned: false, archived: false, messageCount: 3,
-        kind: 'thread', parentId: 'main-1', lead: { id: 'kai', key: 'finance', name: 'Kai' } },
-    ]
-    vi.mocked(conversationsApi.list).mockResolvedValue(rows)
-    wrap(<ConversationRail />)
+    ])
+    useAssistantStore.setState({ conversationId: 'thread-1' })
+    wrap(<ConversationRail highlight="main-1" />)
 
-    const nested = await screen.findByRole('list', { name: 'Threads from Saturday plans' })
-    expect(within(nested).getByText('Monthly index fund plan')).toBeInTheDocument()
-    expect(within(nested).getByTitle('Led by Kai')).toBeInTheDocument()
+    const row = await screen.findByRole('button', { name: 'Saturday plans' })
+    expect(row.className).toContain('bg-brand-50')
+    expect(screen.queryByRole('list', { name: /Threads from/ })).not.toBeInTheDocument()
+    // Back to the chat the thread came from.
+    fireEvent.click(row)
+    expect(useAssistantStore.getState().conversationId).toBe('main-1')
+  })
+
+  it('shows only this chat\'s threads', async () => {
+    wrap(<ThreadsPanel mainId="main-1" />)
+
+    expect(await screen.findByText(/No threads in this chat yet/)).toBeInTheDocument()
+    expect(conversationsApi.threads).toHaveBeenCalledWith('main-1')
+    expect(screen.queryByRole('radio', { name: 'All chats' })).not.toBeInTheDocument()
   })
 
   it('shows a thread\'s guide and saves the user\'s edit', async () => {
@@ -170,9 +182,16 @@ describe('Threads', () => {
     const edited: ThreadGuide = { ...guide, markdown: '# Edited\n', source: 'user' }
     vi.mocked(conversationsApi.guide).mockResolvedValueOnce(guide).mockResolvedValue(edited)
     vi.mocked(conversationsApi.updateGuide).mockResolvedValue(edited)
+    vi.mocked(conversationsApi.learned).mockResolvedValue([
+      { id: 'f1', content: 'Wants a Nifty 50 index fund', category: 'preference', confirmed: false, createdAt: at },
+    ])
     wrap(<ThreadGuidePanel threadId="thread-1" />)
 
     expect(await screen.findByText('Invests 500 a month')).toBeInTheDocument()
+    // The facts learned in this thread are its own memory, shown with its guide.
+    const learned = await screen.findByRole('region', { name: 'Learned in this thread' })
+    expect(await within(learned).findByText('Wants a Nifty 50 index fund')).toBeInTheDocument()
+    expect(conversationsApi.learned).toHaveBeenCalledWith('thread-1')
     expect(screen.getByText(/What Kai and Jizza keep for this thread/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Edit the guide' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Thread guide' }), { target: { value: '# Edited' } })
@@ -180,5 +199,51 @@ describe('Threads', () => {
 
     await waitFor(() => expect(conversationsApi.updateGuide).toHaveBeenCalledWith('thread-1', '# Edited'))
     expect(await screen.findByText(/you edited it/)).toBeInTheDocument()
+  })
+
+  it('edits the user\'s message: what followed is replaced and the edit is sent', async () => {
+    useAssistantStore.setState({
+      conversationId: 'chat-1',
+      messages: [
+        { id: 1, role: 'user', text: 'Plan a trip to Paris', jobId: 'job-1', serverId: 'm-1' },
+        { id: 2, role: 'assistant', text: 'Paris is lovely in spring.', jobId: 'job-1' },
+      ],
+    })
+    wrap(<Conversation />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
+    fireEvent.change(screen.getByRole('textbox', { name: 'Edit your message' }), { target: { value: 'Plan a trip to Rome' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save and send' }))
+
+    await waitFor(() => expect(conversationsApi.rewind).toHaveBeenCalledWith('chat-1', 'm-1'))
+    await waitFor(() => expect(chatApi.send).toHaveBeenCalled())
+    expect(vi.mocked(chatApi.send).mock.calls[0][0]).toMatchObject({ message: 'Plan a trip to Rome', conversationId: 'chat-1' })
+    expect(useAssistantStore.getState().messages.map(m => m.text)).not.toContain('Paris is lovely in spring.')
+  })
+
+  it('replies to a message by quoting it, and copies one', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    useAssistantStore.setState({
+      conversationId: 'chat-1',
+      messages: [
+        { id: 1, role: 'user', text: 'Is my vitamin D low?', jobId: 'job-1', serverId: 'm-1' },
+        { id: 2, role: 'assistant', text: 'Yes, 19.8 ng/mL is low.', jobId: 'job-1' },
+      ],
+    })
+    wrap(<Conversation />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[1])
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Yes, 19.8 ng/mL is low.'))
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reply' })[1])
+    expect(screen.getByText('Replying to Jizza')).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/Ask Jizza/), { target: { value: 'What dose should I take?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatApi.send).toHaveBeenCalled())
+    expect(vi.mocked(chatApi.send).mock.calls[0][0].message).toBe('> Yes, 19.8 ng/mL is low.\n\nWhat dose should I take?')
+    // The quote shows above the reply in the user's bubble.
+    expect(await screen.findByText('Yes, 19.8 ng/mL is low.', { selector: 'span' })).toBeInTheDocument()
   })
 })

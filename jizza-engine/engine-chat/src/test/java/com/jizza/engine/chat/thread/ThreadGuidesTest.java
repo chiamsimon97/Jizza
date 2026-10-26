@@ -53,6 +53,20 @@ class ThreadGuidesTest {
   }
 
   @Test
+  void jizzaCoordinatesKnowingWhereEachOfThisChatsThreadsStands() {
+    String guide = ThreadGuides.append(ThreadGuides.append(GUIDE, ThreadGuides.DECISIONS, "Nifty 50 index fund"),
+        ThreadGuides.OPEN, "Lump sum or monthly?");
+    String preamble = ThreadGuides.mainPreamble(java.util.List.of(new ThreadGuides.Line("t-1",
+        "Index fund plan", "Kai", "idle", "Monthly investing", ThreadGuides.digest(guide, 240))));
+
+    assertThat(preamble).contains("One thread per purpose")
+        .contains("\"Index fund plan\" (t-1), led by Kai, idle. For: Monthly investing")
+        .contains("Latest: Nifty 50 index fund; open: Lump sum or monthly?")
+        .contains("never answer a specialist's topic");
+    assertThat(ThreadGuides.mainPreamble(java.util.List.of())).contains("no threads yet");
+  }
+
+  @Test
   void aStandInSaysWhoItIsStandingInFor() {
     assertThat(ThreadGuides.preamble("Sleep", "Sleep better", "Vita", true, true, null))
         .contains("Its usual lead, Vita, is paused or archived")

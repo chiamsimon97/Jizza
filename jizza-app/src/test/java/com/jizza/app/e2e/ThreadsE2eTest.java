@@ -92,9 +92,11 @@ class ThreadsE2eTest extends E2eSupport {
     assertThat(answer.path("content").asText()).contains("What is the money for");
     assertThat(answer.path("metadata").path("lead").path("name").asText()).isEqualTo("Kai");
     // Kai asked the user something, so the thread is waiting on them.
-    JsonNode all = api.get("/api/conversations/threads").json();
-    assertThat(all).hasSize(1);
-    assertThat(all.get(0).path("stage").asText()).isEqualTo("waiting");
+    JsonNode ours = api.get("/api/conversations/" + mainId + "/threads").json();
+    assertThat(ours).hasSize(1);
+    assertThat(ours.get(0).path("stage").asText()).isEqualTo("waiting");
+    // A thread is reached from its own chat: the conversation list shows main chats only.
+    assertThat(api.get("/api/conversations").json().toString()).doesNotContain(threadId);
     assertThat(api.get("/api/conversations/" + threadId + "/summary").json().path("stage").asText())
         .isEqualTo("waiting");
     assertThat(toolsOfferedTo("Kai")).contains("hand_back_to_jizza", "note_in_thread_guide")
@@ -135,19 +137,95 @@ class ThreadsE2eTest extends E2eSupport {
   }
 
   @Test
-  void aSpecialistJizzaDelegatesToGetsNoThreadTools() {
-    model.scriptFor("Jizza",
-        call("delegate_to_specialist", Json.obj().put("agent_key", "health").put("task", "How many steps is healthy?")),
-        LlmResponse.text("Vita says about 8,000 a day."));
-    model.scriptFor("Vita", LlmResponse.text("About 8,000 a day."));
+  void withThreadsOnJizzaReachesSpecialistsOnlyThroughThreads() {
+    model.scriptFor("Jizza", LlmResponse.text("Hello! What shall we work on?"));
 
-    var reply = api.post("/api/chat", Map.of("message", "How many steps a day is healthy?",
-        "conversationId", threadedChat()));
+    var reply = api.post("/api/chat", Map.of("message", "Hi", "conversationId", threadedChat()));
 
     assertThat(reply.ok()).as(reply.body()).isTrue();
-    assertThat(toolsOfferedTo("Jizza")).contains("start_thread");
-    assertThat(model.everythingTheModelSaw()).contains("Threads are on for this chat");
-    assertThat(toolsOfferedTo("Vita")).doesNotContain("start_thread", "hand_back_to_jizza");
+    assertThat(toolsOfferedTo("Jizza")).contains("start_thread")
+        .doesNotContain("delegate_to_specialist", "delegate_to_specialists");
+    assertThat(model.everythingTheModelSaw()).contains("Threads are on for this chat")
+        .contains("One thread per purpose");
+  }
+
+  @Test
+  void aThreadOfOneChatCannotBeContinuedFromAnother() {
+    String ask = "Plan my monthly investing";
+    model.scriptFor("Jizza", startThread("finance", "Monthly investing", "Monthly investing plan", ask),
+        LlmResponse.text("Kai has this."));
+    model.scriptFor("Kai", LlmResponse.text("How much a month?"));
+    UUID firstMain = UUID.fromString(api.post("/api/chat", Map.of("message", ask, "conversationId", threadedChat()))
+        .json().path("conversationId").asText());
+    String threadId = api.get("/api/conversations/" + firstMain + "/threads").json().get(0).path("id").asText();
+    awaitReply(threadId, 1);
+
+    model.reset();
+    model.scriptFor("Jizza",
+        call("continue_in_thread", Json.obj().put("thread_id", threadId).put("message", "500 a month")),
+        LlmResponse.text("Let me start a thread for that here instead."));
+    var other = api.post("/api/chat", Map.of("message", "500 a month", "conversationId", threadedChat()));
+
+    assertThat(other.ok()).as(other.body()).isTrue();
+    // The other chat's thread is not offered, and handing a message to it is refused.
+    assertThat(model.everythingTheModelSaw()).doesNotContain(threadId + ": \"Monthly investing\"");
+    // This chat has no threads of its own, so there is nothing to continue: the call is refused.
+    assertThat(toolsOfferedTo("Jizza")).doesNotContain("continue_in_thread");
+    assertThat(model.everythingTheModelSaw()).contains("Tool 'continue_in_thread' is not assigned");
+    assertThat(awaitReply(threadId, 1).toString()).doesNotContain("500 a month");
+  }
+
+  @Test
+  void jizzaRoutesEachPurposeToItsOwnThreadAndFollowUpsBackToIt() {
+    String mainId = threadedChat();
+    model.scriptFor("Jizza Router", LlmResponse.text("""
+        {"route":"new","lead":"finance","title":"My investing plan","topic":"The user's own plan to invest 500 a month"}"""));
+    model.scriptFor("Kai", LlmResponse.text("What is your timeline?"));
+    var first = api.post("/api/chat", Map.of("message", "Help me invest 500 a month", "conversationId", mainId));
+    assertThat(first.ok()).as(first.body()).isTrue();
+    assertThat(first.json().path("text").asText()).contains("opened a thread with Kai");
+    assertThat(toolsOfferedTo("Jizza")).isEmpty();
+
+    // The same specialist, another person: a thread of its own.
+    model.scriptFor("Jizza Router", LlmResponse.text("""
+        {"route":"new","lead":"finance","title":"Investing plan for Dad","topic":"An investment plan for the user's father"}"""));
+    model.scriptFor("Kai", LlmResponse.text("How much does your dad want to invest?"));
+    api.post("/api/chat", Map.of("message", "Also plan investing for my dad", "conversationId", mainId));
+    JsonNode two = await(() -> api.get("/api/conversations/" + mainId + "/threads").json(), t -> t.size() == 2);
+    String mine = null;
+    for (JsonNode t : two) {
+      assertThat(t.path("lead").path("name").asText()).isEqualTo("Kai");
+      if ("My investing plan".equals(t.path("title").asText())) mine = t.path("id").asText();
+    }
+    assertThat(mine).isNotNull();
+    awaitReply(mine, 1);
+
+    // A follow-up goes back to the thread it belongs to; no third thread.
+    model.scriptFor("Jizza Router", LlmResponse.text("{\"route\":\"thread\",\"thread_id\":\"" + mine + "\"}"));
+    model.scriptFor("Kai", LlmResponse.text("We settled on an index fund."));
+    var followUp = api.post("/api/chat", Map.of("message", "What did we decide for me?", "conversationId", mainId));
+    assertThat(followUp.json().path("text").asText()).contains("Kai is picking this up");
+    assertThat(awaitReply(mine, 2).toString()).contains("What did we decide for me?");
+    assertThat(api.get("/api/conversations/" + mainId + "/threads").json()).hasSize(2);
+  }
+
+  @Test
+  void anEditedMessageReplacesItAndEverythingAfter() {
+    model.scriptFor("Jizza", LlmResponse.text("Paris is lovely in spring."), LlmResponse.text("Rome is lovely in spring."));
+    var first = api.post("/api/chat", Map.of("message", "Plan a trip to Paris"));
+    String chat = first.json().path("conversationId").asText();
+    JsonNode before = awaitReply(chat, 1);
+    String userMessageId = null;
+    for (JsonNode m : before) if ("user".equals(m.path("role").asText())) userMessageId = m.path("id").asText();
+
+    var rewound = api.post("/api/conversations/" + chat + "/messages/" + userMessageId + "/rewind", Map.of());
+    assertThat(rewound.status()).as(rewound.body()).isEqualTo(204);
+    assertThat(api.get("/api/conversations/" + chat + "/messages").json()).isEmpty();
+
+    api.post("/api/chat", Map.of("message", "Plan a trip to Rome", "conversationId", chat));
+    JsonNode after = awaitReply(chat, 1);
+    assertThat(after.toString()).contains("Plan a trip to Rome").doesNotContain("Paris");
+    assertThat(api.get("/api/conversations/" + chat + "/learned").ok()).isTrue();
   }
 
   @Test

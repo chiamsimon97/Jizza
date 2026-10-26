@@ -12,6 +12,7 @@ import com.jizza.engine.api.agent.Agent;
 import com.jizza.engine.api.agent.AgentRequest;
 import com.jizza.engine.api.agent.AgentResult;
 import com.jizza.engine.api.agent.TeamTrail;
+import com.jizza.engine.api.chat.ChatScope;
 import com.jizza.engine.api.cosmos.AccessContext;
 import com.jizza.engine.api.enums.ModelTier;
 import com.jizza.engine.api.tool.JsonSchemas;
@@ -101,6 +102,7 @@ public class DelegationToolProvider implements ToolProvider {
 
   @Override
   public List<ToolSpec> toolsFor(UUID agentId) {
+    if (coordinatingThreads(agentId)) return List.of();
     AgentEntity manager = agents.findById(agentId).orElse(null);
     if (manager == null || !delegates(manager)) return List.of();
 
@@ -141,7 +143,19 @@ public class DelegationToolProvider implements ToolProvider {
   @Override
   public boolean supports(UUID agentId, String toolName) {
     if (!DELEGATE.equals(toolName) && !DELEGATE_MANY.equals(toolName)) return false;
+    if (coordinatingThreads(agentId)) return false;
     return agents.findById(agentId).map(this::delegates).orElse(false);
+  }
+
+  /**
+   * Jizza answering in a main chat the user turned threads on for: there every specialist's topic
+   * is worked on in that specialist's thread, so Jizza coordinates through threads and does not
+   * relay a specialist in the chat itself.
+   */
+  static boolean coordinatingThreads(UUID agentId) {
+    return ChatScope.current()
+        .filter(s -> !s.thread() && s.threadsOn() && agentId != null && agentId.equals(s.responderAgentId()))
+        .isPresent();
   }
 
   @Override

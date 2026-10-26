@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge'
 import { useAssistantStore, resumeConversation } from '@/jizza/assistantStore'
 import { ThreadGuidePanel } from '@/jizza/workspace/ThreadGuidePanel'
 import { ThreadsPanel } from '@/jizza/workspace/ThreadsPanel'
-import type { ConversationSummary } from '@/types'
 import { Conversation } from '@/jizza/Conversation'
 import { JizzaOrb } from '@/jizza/JizzaOrb'
 import { canSpeak } from '@/jizza/useSpeech'
@@ -19,9 +18,9 @@ import { WorkPanel } from '@/jizza/workspace/WorkPanel'
  * The chat workspace: conversations on the left, the conversation in the middle, and on the right
  * what Jizza did for it (Activity) over what it remembered and kept (Memory).
  *
- * The main chat is where Jizza coordinates. A topic that belongs to one specialist moves into a
- * thread led by that specialist: a thread shows its lead in the header, a way back to the main
- * chat, and its guide beside the conversation.
+ * The main chat is where Jizza coordinates. With threads on, each purpose moves into a thread
+ * led by its specialist, shown under the message it came from. A thread belongs to its chat: it
+ * shows its lead in the header, a way back to that chat, and its own memory beside it.
  */
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -68,16 +67,16 @@ export function ChatPage() {
   const firstQuestion = messages.find(m => m.role === 'user')?.text
   const title = incognito ? 'Incognito' : current?.title ?? (firstQuestion ? firstQuestion.slice(0, 80) : 'New conversation')
   const leadName = thread?.lead?.name ?? 'Jizza'
-  // Beside a thread its guide comes first; beside a chat with threads on, its threads.
+  // Beside a thread its own memory comes first; beside a chat with threads on, its threads.
   const tabs: [Side, string][] = thread
-    ? [['guide', 'Guide'], ['threads', 'Threads'], ['work', 'Activity & memory']]
-    : [['threads', 'Threads'], ['work', 'Activity & memory']]
+    ? [['guide', 'Thread memory'], ['work', 'Activity']]
+    : threadsOn ? [['threads', 'Threads'], ['work', 'Activity & memory']] : [['work', 'Activity & memory']]
   const shown: Side = side && tabs.some(([id]) => id === side) ? side
     : thread ? 'guide' : threadsOn ? 'threads' : 'work'
   const sidePanel = (
     <SideTabs tabs={tabs} side={shown} setSide={setSide}>
       {shown === 'guide' && thread ? <ThreadGuidePanel threadId={thread.id} />
-        : shown === 'threads' ? <ThreadsPanel mainId={thread ? thread.parentId : current?.id} currentId={current?.id} />
+        : shown === 'threads' ? <ThreadsPanel mainId={current?.id} currentId={current?.id} />
           : <WorkPanel />}
     </SideTabs>
   )
@@ -86,11 +85,11 @@ export function ChatPage() {
     <div className="relative flex h-full min-h-0">
       {/* Conversations */}
       <aside className="hidden w-64 shrink-0 border-r border-gray-200 bg-gray-50/60 dark:border-gray-800 dark:bg-gray-950 lg:block">
-        <ConversationRail />
+        <ConversationRail highlight={thread?.parentId} />
       </aside>
       {railOpen && (
         <Drawer side="left" onClose={() => setRailOpen(false)} label="Conversations">
-          <ConversationRail onPicked={() => setRailOpen(false)} />
+          <ConversationRail highlight={thread?.parentId} onPicked={() => setRailOpen(false)} />
         </Drawer>
       )}
 
@@ -161,7 +160,6 @@ export function ChatPage() {
             </span>
           </IconButton>
         </div>
-        {current && !thread && <ThreadStrip mainId={current.id} />}
         <div className="min-h-0 flex-1">
           <Conversation autoFocus onOpenJob={jobId => { openJob(jobId); setSide('work'); setWorkOpen(true) }}
             placeholder={thread ? `Message ${leadName} about ${thread.title ?? 'this thread'}…` : undefined} />
@@ -173,36 +171,10 @@ export function ChatPage() {
         {sidePanel}
       </aside>
       {workOpen && (
-        <Drawer side="right" onClose={() => setWorkOpen(false)} label={thread ? 'Thread guide, threads and activity' : 'Threads, activity and memory'}>
+        <Drawer side="right" onClose={() => setWorkOpen(false)} label={thread ? 'Thread memory and activity' : 'Threads, activity and memory'}>
           {sidePanel}
         </Drawer>
       )}
-    </div>
-  )
-}
-
-/** In the main chat, the threads Jizza opened from it, one tap away. */
-function ThreadStrip({ mainId }: { mainId: string }) {
-  const version = useAssistantStore(s => s.conversationsVersion)
-  const { data } = useQuery({
-    queryKey: ['conversation-threads', mainId, version],
-    queryFn: () => conversationsApi.threads(mainId),
-    retry: false,
-  })
-  const threads = (data ?? []).filter((t: ConversationSummary) => !t.archived)
-  if (threads.length === 0) return null
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-800 dark:bg-gray-950/60 sm:px-4">
-      <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-        <Split className="h-3 w-3" /> Threads
-      </span>
-      {threads.map(t => (
-        <button key={t.id} type="button" onClick={() => resumeConversation(t.id)} title={t.topic ?? t.title}
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white py-0.5 pl-1 pr-2.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-brand-300">
-          <AgentLogo agentKey={t.lead?.key ?? 'jizza'} size={18} />
-          <span className="max-w-[12rem] truncate">{t.title ?? 'Thread'}</span>
-        </button>
-      ))}
     </div>
   )
 }
@@ -213,7 +185,7 @@ type Side = 'guide' | 'threads' | 'work'
 function SideTabs({ tabs, side, setSide, children }: { tabs: [Side, string][]; side: Side; setSide: (s: Side) => void; children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div role="tablist" aria-label="Beside this conversation" className="flex shrink-0 gap-1 border-b border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/70">
+      <div role="tablist" aria-label="Beside this conversation" className={`${tabs.length < 2 ? 'hidden' : 'flex'} shrink-0 gap-1 border-b border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/70`}>
         {tabs.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={side === id} onClick={() => setSide(id)}
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${side === id

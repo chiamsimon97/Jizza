@@ -28,6 +28,16 @@ public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
   java.util.Optional<MessageEntity> findByConversationIdAndClientMessageId(UUID conversationId,
                                                                            UUID clientMessageId);
 
+  /**
+   * Of these messages, the ones written in a thread other than {@code current}: a fact learned
+   * from one of them belongs to that thread's memory.
+   */
+  @Query(value = "select cast(m.id as varchar) from messages m"
+      + " join conversations c on c.id = m.conversation_id"
+      + " where m.id in (:ids) and c.kind = 'thread' and c.id <> :current", nativeQuery = true)
+  List<String> inOtherThreads(@Param("ids") java.util.Collection<UUID> ids,
+                              @Param("current") UUID current);
+
   /** Replies left mid-stream by a process that stopped. */
   @Modifying
   @Query("update MessageEntity m set m.status = 'failed' where m.status = 'streaming'")

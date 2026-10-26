@@ -21,6 +21,8 @@ export interface AssistantMessage {
   /** 'event' is something that happened rather than something said: "You approved Kai's request". */
   role: 'user' | 'assistant' | 'event'
   text: string
+  /** The message's id on the server, once known: what an edit of the user's message rewinds to. */
+  serverId?: string
   /** On an event line: the approval it records, so its card in the reply above shows as answered. */
   notificationId?: string
   /** The job that answered (or is answering) this message; opens it in the Activity panel. */
@@ -106,6 +108,11 @@ interface AssistantState {
   threadsNext: boolean
 
   send: (text: string) => Promise<void>
+  /**
+   * Replaces the user's message {@code id} with {@code text}: it and everything after it are
+   * removed (on the server too), then the new text is sent in its place.
+   */
+  edit: (id: number, text: string) => Promise<void>
   stop: () => Promise<void>
   applyEvent: (event: ChatSocketEvent) => void
   /** {@code threads} starts it with threads on; a plain chat otherwise. */
@@ -327,7 +334,7 @@ export const useAssistantStore = create<AssistantState>()(
                 messages: [...s.messages,
                   // A message moved here from the main chat or a thread is the user's own words.
                   moved
-                    ? { id: nextId++, role: 'user' as const, text: e.payload.note ?? '', jobId: e.jobId }
+                    ? { id: nextId++, role: 'user' as const, text: e.payload.note ?? '', jobId: e.jobId, serverId: e.payload.userMessageId }
                     : { id: nextId++, role: 'event' as const, text: e.payload.note ?? '', jobId: e.jobId, notificationId: e.payload.noteData?.notificationId },
                   { id: nextId++, role: 'assistant' as const, text: '', streaming: true, jobId: e.jobId }],
                 activeJobId: e.jobId, thinking: true, selectedJobId: e.jobId,
@@ -347,6 +354,12 @@ export const useAssistantStore = create<AssistantState>()(
         if (e.jobId === state.activeJobId) arm(e.jobId)
 
         switch (e.type) {
+          case 'job.started':
+            // The user's message as the server stored it, so it can be edited.
+            if (e.payload.userMessageId) {
+              set(s => ({ messages: s.messages.map(m => (m.role === 'user' && m.jobId === e.jobId && !m.serverId ? { ...m, serverId: e.payload.userMessageId } : m)) }))
+            }
+            break
           case 'delta':
             updateMessage(e.jobId, m => ({ ...m, text: m.streaming ? m.text + (e.payload.text ?? '') : m.text }))
             return
@@ -477,6 +490,27 @@ export const useAssistantStore = create<AssistantState>()(
           }
         },
 
+        edit: async (id, raw) => {
+          const text = raw.trim()
+          const { messages, conversationId, incognito, thinking } = get()
+          if (!text || thinking) return
+          const i = messages.findIndex(m => m.id === id && m.role === 'user')
+          if (i < 0) return
+          const target = messages[i]
+          if (conversationId && !incognito && target.jobId) {
+            const serverId = target.serverId ?? (await conversationsApi.messages(conversationId))
+              .find(m => m.role === 'user' && m.jobId === target.jobId)?.id
+            if (serverId) await conversationsApi.rewind(conversationId, serverId)
+          }
+          const gone = new Set(messages.slice(i).map(m => m.jobId).filter(Boolean))
+          set(s => ({
+            messages: s.messages.slice(0, s.messages.findIndex(m => m.id === id)),
+            jobOrder: s.jobOrder.filter(j => !gone.has(j)),
+            conversationsVersion: s.conversationsVersion + 1,
+          }))
+          await get().send(text)
+        },
+
         stop: async () => {
           const jobId = get().activeJobId
           if (!jobId) return
@@ -586,6 +620,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
     text: m.content,
+    ...(m.role === 'user' ? { serverId: m.id } : {}),
     jobId: m.jobId ?? m.metadata?.jobId,
     streaming: m.status === 'streaming',
     error: m.status === 'failed',

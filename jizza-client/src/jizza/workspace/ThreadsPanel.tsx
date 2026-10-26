@@ -15,22 +15,21 @@ const GROUPS: { stage: ConversationStage; label: string }[] = [
 ]
 
 /**
- * Every thread at a glance, grouped by where it stands: waiting on the user (a lead asked
+ * This chat's threads at a glance, grouped by where they stand: waiting on the user (a lead asked
  * something or needs an approval), working (a reply is being worked on), idle, and resolved
- * (archived). Shows the open chat's threads, or every chat's.
+ * (archived). Only this chat's: a thread belongs to the chat it was opened from.
  */
 export function ThreadsPanel({ mainId, currentId }: { mainId?: string; currentId?: string }) {
   const version = useAssistantStore(s => s.conversationsVersion)
   const qc = useQueryClient()
-  const [scope, setScope] = useState<'chat' | 'all'>(mainId ? 'chat' : 'all')
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [folded, setFolded] = useState<Record<string, boolean>>({ resolved: true })
-  const inChat = scope === 'chat' && !!mainId
 
   const { data, isLoading } = useQuery({
-    queryKey: ['threads-panel', inChat ? mainId : 'all', version],
-    queryFn: () => (inChat ? conversationsApi.threads(mainId!) : conversationsApi.allThreads()),
+    queryKey: ['threads-panel', mainId, version],
+    queryFn: () => conversationsApi.threads(mainId!),
+    enabled: !!mainId,
     retry: false,
     // A thread that is working changes stage on its own; look again until it settles.
     refetchInterval: q => ((q.state.data as ConversationSummary[] | undefined)?.some(t => t.stage === 'working') ? 3_000 : 15_000),
@@ -51,18 +50,7 @@ export function ThreadsPanel({ mainId, currentId }: { mainId?: string; currentId
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-3">
-        {mainId ? (
-          <div role="radiogroup" aria-label="Which threads" className="flex rounded-lg bg-gray-100 p-0.5 text-xs dark:bg-gray-800">
-            {([['chat', 'This chat'], ['all', 'All chats']] as const).map(([id, label]) => (
-              <button key={id} type="button" role="radio" aria-checked={scope === id} onClick={() => setScope(id)}
-                className={`rounded-md px-2 py-0.5 font-medium transition-colors ${scope === id
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-gray-100'
-                  : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : <span className="text-xs font-medium text-gray-500 dark:text-gray-400">All chats</span>}
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Threads in this chat</span>
         <span className="flex-1" />
         <button type="button" aria-label={searching ? 'Close search' : 'Search threads'} onClick={() => { setSearching(!searching); setQuery('') }}
           className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
@@ -77,7 +65,7 @@ export function ThreadsPanel({ mainId, currentId }: { mainId?: string; currentId
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {isLoading && <p className="px-2 py-3 text-xs text-gray-400">Loading…</p>}
+        {isLoading && !!mainId && <p className="px-2 py-3 text-xs text-gray-400">Loading…</p>}
         {GROUPS.map(({ stage, label }) => {
           const rows = byStage(stage)
           const open = !folded[stage]
@@ -101,9 +89,9 @@ export function ThreadsPanel({ mainId, currentId }: { mainId?: string; currentId
             </section>
           )
         })}
-        {!isLoading && (data ?? []).length === 0 && (
+        {(!mainId || (!isLoading && (data ?? []).length === 0)) && (
           <p className="px-3 py-6 text-center text-xs text-gray-400">
-            No threads yet. Turn threads on for a chat and Jizza moves each topic into a thread led by its specialist.
+            No threads in this chat yet. Jizza opens one for each purpose you bring up, led by its specialist.
           </p>
         )}
       </div>

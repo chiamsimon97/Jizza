@@ -37,6 +37,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -86,12 +87,15 @@ public class TurnRunner implements ChatService {
   private final ObjectProvider<ConversationUpkeep> upkeep;
   private final ObjectProvider<ThreadService> threads;
   private final ObjectProvider<ThreadGuideKeeper> guides;
+  private final ObjectProvider<com.jizza.engine.chat.thread.ThreadCoordinator> coordinator;
 
   public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
                     AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
                     ObjectProvider<MemoryLearner> learner, ObjectProvider<OutputLearner> outputLearner,
                     PlatformTransactionManager transactions, ObjectProvider<ConversationUpkeep> upkeep,
-                    ObjectProvider<ThreadService> threads, ObjectProvider<ThreadGuideKeeper> guides) {
+                    ObjectProvider<ThreadService> threads, ObjectProvider<ThreadGuideKeeper> guides,
+                    ObjectProvider<com.jizza.engine.chat.thread.ThreadCoordinator> coordinator) {
+    this.coordinator = coordinator;
     this.upkeep = upkeep;
     this.threads = threads;
     this.guides = guides;
@@ -252,12 +256,19 @@ public class TurnRunner implements ChatService {
       Supplier<Orchestrator.Turn> respond = () -> framing != null && framing.lead() != null
           ? orchestrator.respondAs(userId, framing.lead().getId(), turnInput)
           : orchestrator.respond(userId, turnInput);
-      turn = Activity.run(recorder, () -> framing == null ? respond.get()
+      // Jizza coordinates the conversation's threads: a message the user typed goes first to
+      // where it belongs, and is answered there instead of here.
+      Optional<Orchestrator.Turn> routed = continuation == null && framing != null
+          ? coordinator.getIfAvailable() == null ? Optional.empty()
+              : Activity.run(recorder, () -> coordinator.getObject().coordinate(framing.scope(), s.text(), history))
+          : Optional.empty();
+      turn = routed.isPresent() ? routed.get() : Activity.run(recorder, () -> framing == null ? respond.get()
           : ChatScope.run(framing.scope(), () -> withThreadActions(respond.get(), framing.scope())));
       Orchestrator.Turn done = turn;
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());
-      ObjectNode lead = framing == null || framing.lead() == null ? null : Json.obj()
+      // A message Jizza moved on is answered by Jizza saying where it went, not by the lead.
+      ObjectNode lead = framing == null || framing.lead() == null || routed.isPresent() ? null : Json.obj()
           .put("agentId", framing.lead().getId().toString())
           .put("key", framing.lead().getKey())
           .put("name", framing.lead().getName());
@@ -288,8 +299,15 @@ public class TurnRunner implements ChatService {
         // thread unless configured otherwise). Bound to the job so what is saved shows under it.
         // Incognito turns never reach here: they read memory but never write it.
         Activity.run(recorder, () -> {
-          // A continuation's input is a system event, not the user's words: nothing to learn there.
-          if (continuation == null) {
+          // A continuation's input is a system event, not the user's words: nothing to learn there,
+          // except a message moved here, which is. A message moved out of this chat is learned
+          // where it went, so a fact belongs to the thread that worked on it.
+          boolean moved = continuation != null
+              && ("handoff".equals(continuation.origin()) || "handback".equals(continuation.origin()));
+          boolean movedAway = answer.actions() != null && answer.actions().stream()
+              .anyMatch(a -> UiAction.THREAD_OPENED.equals(a.type())
+                  || UiAction.THREAD_HANDBACK.equals(a.type()));
+          if ((continuation == null || moved) && !movedAway) {
             learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
                 ref.userMessageId(), s.text(), done.text())));
           }
