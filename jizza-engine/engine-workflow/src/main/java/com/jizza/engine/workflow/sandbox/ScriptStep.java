@@ -48,7 +48,7 @@ public final class ScriptStep {
       throw new SandboxViolationException("'functionId' is not a function id");
     }
     ScriptFunctionDto f = functions == null ? null : functions.find(id).orElse(null);
-    if (f == null || (userId != null && !userId.equals(f.userId()))) {
+    if (f == null || (userId != null && !f.isPublic() && !userId.equals(f.userId()))) {
       throw new SandboxViolationException("The function this step runs was deleted");
     }
     Map<String, JsonNode> args = new LinkedHashMap<>();

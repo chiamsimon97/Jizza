@@ -28,7 +28,7 @@ describe('CanvasInspector', () => {
       id: 'fn-1', name: 'orderTotal', description: 'Adds up the lines', script: 'return {}', returnType: 'map',
       inputs: [{ name: 'lines', type: 'list', required: true }, { name: 'rate', type: 'number', default: 0.1 }],
       returnFields: [{ path: 'total', type: 'number' }, { path: 'customer.email', type: 'text' }],
-      usedBy: [], createdAt: '', updatedAt: '',
+      usedBy: [], createdAt: '', updatedAt: '', scope: 'own',
     }
     const { graph, id } = addAfter(emptyGraph(), 'start', null, 'SCRIPT')
     const onSave = vi.fn()

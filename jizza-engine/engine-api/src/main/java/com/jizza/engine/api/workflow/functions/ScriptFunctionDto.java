@@ -15,7 +15,15 @@ import java.util.UUID;
  * @param returnType   text, number, boolean, date, list, map or any
  * @param returnFields for a map, the keys it gives, nested ones dotted: [{path, type}]
  * @param usedBy       the names of the workflows that run it
+ * @param scope        own (the person's, with {@code userId}) or public (Jizza's, which everyone
+ *                     calls and nobody changes; no {@code userId})
  */
 public record ScriptFunctionDto(UUID id, UUID userId, String name, String description, JsonNode inputs,
                                 String script, String returnType, JsonNode returnFields,
-                                List<String> usedBy, Instant createdAt, Instant updatedAt) {}
+                                List<String> usedBy, Instant createdAt, Instant updatedAt, String scope) {
+
+  public static final String OWN = "own";
+  public static final String PUBLIC = "public";
+
+  public boolean isPublic() { return PUBLIC.equals(scope); }
+}

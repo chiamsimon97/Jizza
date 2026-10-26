@@ -20,7 +20,7 @@ const NARROW = fieldClass.replace('w-full', '')
 export function FunctionEditor({ draft, onChange, others, saving, error, onSave, onDelete, saved }: {
   draft: ScriptFunctionDraft
   onChange: (d: ScriptFunctionDraft) => void
-  /** The person's other functions, which this one can call. */
+  /** The person's other functions and the public ones, which this one can call. */
   others: ScriptFunction[]
   saving: boolean
   error?: string | null
@@ -29,7 +29,8 @@ export function FunctionEditor({ draft, onChange, others, saving, error, onSave,
   /** The saved function this draft edits, if any. */
   saved?: ScriptFunction
 }) {
-  const problems = useMemo(() => draftIssues(draft, others.map(o => o.name)), [draft, others])
+  const problems = useMemo(() => draftIssues(draft, others.filter(o => o.scope !== 'public').map(o => o.name),
+    others.filter(o => o.scope === 'public').map(o => o.name)), [draft, others])
   const [touched, setTouched] = useState(false)
   const show = (key: string) => (touched ? problems[key] : undefined)
   const set = (patch: Partial<ScriptFunctionDraft>) => onChange({ ...draft, ...patch })
@@ -164,7 +165,7 @@ function Heading({ title, hint }: { title: string; hint: string }) {
 }
 
 /** Runs the draft as it stands with a value typed for each input, and offers a map's keys as the return keys. */
-function TestPanel({ draft, onUseKeys }: { draft: ScriptFunctionDraft; onUseKeys: (keys: ReturnType<typeof keysOf>) => void }) {
+export function TestPanel({ draft, onUseKeys }: { draft: ScriptFunctionDraft; onUseKeys?: (keys: ReturnType<typeof keysOf>) => void }) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [result, setResult] = useState<FormulaPreview | null>(null)
   const run = useMutation({
@@ -197,7 +198,7 @@ function TestPanel({ draft, onUseKeys }: { draft: ScriptFunctionDraft; onUseKeys
         <Button type="button" size="sm" variant="secondary" loading={run.isPending} disabled={!draft.script.trim()} onClick={() => run.mutate()}>
           <Play className="h-3.5 w-3.5" />Run test
         </Button>
-        {keys.length > 0 && (
+        {onUseKeys && keys.length > 0 && (
           <Button type="button" size="sm" variant="ghost" onClick={() => onUseKeys(keys)}>
             <Wand2 className="h-3.5 w-3.5" />Use these keys
           </Button>

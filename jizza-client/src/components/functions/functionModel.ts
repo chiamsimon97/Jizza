@@ -20,6 +20,14 @@ export const emptyDraft = (): ScriptFunctionDraft => ({
   name: '', description: '', inputs: [], script: '', returnType: 'any', returnFields: [],
 })
 
+/** A copy of a public function to change as the person's own: the same, under a name of its own. */
+export const copyOf = (f: ScriptFunction, taken: string[]): ScriptFunctionDraft => {
+  const base = `my${f.name.charAt(0).toUpperCase()}${f.name.slice(1)}`
+  let name = base
+  for (let n = 2; taken.includes(name); n++) name = `${base}${n}`
+  return { ...draftOf(f), name, description: f.description ?? '' }
+}
+
 export const draftOf = (f: ScriptFunction): ScriptFunctionDraft => ({
   name: f.name, description: f.description ?? '', inputs: f.inputs, script: f.script, returnType: f.returnType, returnFields: f.returnFields ?? [],
 })
@@ -30,11 +38,12 @@ export const infoOf = (f: Pick<ScriptFunction, 'name' | 'inputs' | 'returnType' 
 })
 
 /** Problems with a draft, by field: name, inputs.<i>.name, script, returnFields.<i>.path. */
-export function draftIssues(d: ScriptFunctionDraft, taken: string[] = []): Record<string, string> {
+export function draftIssues(d: ScriptFunctionDraft, taken: string[] = [], publicNames: string[] = []): Record<string, string> {
   const out: Record<string, string> = {}
   const name = d.name.trim()
   if (!FIELD_NAME.test(name)) out.name = 'Use letters, digits and _, starting with a letter.'
   else if (RESERVED.has(name) || BUILT_IN.has(name)) out.name = `${name} is a built-in name; choose another.`
+  else if (publicNames.includes(name)) out.name = `fn.${name} is a public function; choose another name.`
   else if (taken.includes(name)) out.name = `You already have a function called ${name}.`
   const seen = new Set<string>()
   d.inputs.forEach((i, n) => {

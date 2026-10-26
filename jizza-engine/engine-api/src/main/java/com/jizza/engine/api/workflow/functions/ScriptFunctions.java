@@ -8,18 +8,21 @@ import java.util.UUID;
 
 /**
  * The user's script functions: storage, and running one the way a workflow step does. Each person
- * has their own; a name is unique per person, since other functions call it by that name.
+ * has their own; a name is unique per person, since other functions call it by that name. Jizza's
+ * public functions are everyone's to call and nobody's to change, and a person's own can't take
+ * their names.
  *
  * <p>Saving checks what can be checked before a run (the name, the inputs, the return type, that
  * the script compiles); renaming a function updates the calls to it in the person's other functions.
  */
 public interface ScriptFunctions {
 
+  /** The person's functions, then the public ones. */
   List<ScriptFunctionDto> list(UUID userId);
 
   Optional<ScriptFunctionDto> find(UUID functionId);
 
-  /** One of the person's functions by its link name. */
+  /** One of the person's functions by its link name, or else a public one. */
   Optional<ScriptFunctionDto> findByName(UUID userId, String name);
 
   ScriptFunctionDto create(UUID userId, ScriptFunctionDraft draft);

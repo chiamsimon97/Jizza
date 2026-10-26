@@ -815,7 +815,14 @@ function FunctionCallFields({ node, functions, setConfig, isMissing, mapping }: 
       <select aria-label="Function" className={fieldClass} value={id} onChange={e => pick(e.target.value)}>
         <option value="">Choose a function…</option>
         {id && !fn && <option value={id}>{node.config.functionName ? `fn.${String(node.config.functionName)} (deleted)` : 'Deleted function'}</option>}
-        {functions?.map(f => <option key={f.id} value={f.id}>fn.{f.name}({f.inputs.map(i => i.name).join(', ')}) → {f.returnType}</option>)}
+        {(['own', 'public'] as const).map(scope => {
+          const group = functions?.filter(f => (f.scope ?? 'own') === scope) ?? []
+          return group.length > 0 && (
+            <optgroup key={scope} label={scope === 'own' ? 'Your functions' : 'Public functions'}>
+              {group.map(f => <option key={f.id} value={f.id}>fn.{f.name}({f.inputs.map(i => i.name).join(', ')}) → {f.returnType}</option>)}
+            </optgroup>
+          )
+        })}
       </select>
     </Labelled>
     <div className="flex flex-wrap gap-3 text-xs">

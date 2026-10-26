@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.workflow.FormulaPreview;
 import com.jizza.engine.api.workflow.functions.ScriptFunctionDraft;
@@ -18,7 +19,8 @@ import org.springframework.stereotype.Service;
  * type, tests them, and runs them from workflows' Script steps or from each other.
  *
  * <p>What is decided here: a function is its owner's alone (another person's reads as missing),
- * and what is worth auditing. What makes a valid function is checked where it is stored.
+ * Jizza's public functions are everyone's to read and run but nobody's to change, and what is worth
+ * auditing. What makes a valid function is checked where it is stored.
  */
 @Service
 public class ScriptFunctionUseCase {
@@ -36,6 +38,8 @@ public class ScriptFunctionUseCase {
   }
 
   public ScriptFunctionDto get(UUID userId, UUID functionId) {
+    ScriptFunctionDto f = functions.find(functionId).orElse(null);
+    if (f != null && f.isPublic()) return f;
     return owned(userId, functionId);
   }
 
@@ -69,7 +73,10 @@ public class ScriptFunctionUseCase {
 
   private ScriptFunctionDto owned(UUID userId, UUID functionId) {
     ScriptFunctionDto f = functions.find(functionId).orElse(null);
-    if (f == null || !f.userId().equals(userId)) throw new NotFoundException("Function", functionId);
+    if (f != null && f.isPublic()) {
+      throw new ValidationException("fn." + f.name() + " is a public function, so it can't be changed; make a copy to change it");
+    }
+    if (f == null || !userId.equals(f.userId())) throw new NotFoundException("Function", functionId);
     return f;
   }
 }

@@ -39,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class StoredScriptFunctions implements ScriptFunctions {
 
-  /** The most functions one person keeps. */
+  /** The most functions one person keeps; the public ones don't count. */
   static final int MAX_FUNCTIONS = 500;
   static final int MAX_RETURN_FIELDS = 100;
   static final int MAX_DESCRIPTION = 2_000;
@@ -64,21 +64,28 @@ public class StoredScriptFunctions implements ScriptFunctions {
   @Transactional(readOnly = true)
   public List<ScriptFunctionDto> list(UUID userId) {
     Map<UUID, List<String>> usedBy = usages(userId);
-    return functions.findByUserIdOrderByNameAsc(userId).stream()
-        .map(e -> dto(e, usedBy.getOrDefault(e.getId(), List.of()))).toList();
+    List<ScriptFunctionDto> out = new ArrayList<>();
+    for (ScriptFunctionEntity e : functions.findByUserIdOrderByNameAsc(userId)) {
+      out.add(dto(e, usedBy.getOrDefault(e.getId(), List.of())));
+    }
+    for (ScriptFunctionEntity e : functions.findByUserIdIsNullOrderByNameAsc()) {
+      out.add(dto(e, usedBy.getOrDefault(e.getId(), List.of())));
+    }
+    return out;
   }
 
   @Override
   @Transactional(readOnly = true)
   public Optional<ScriptFunctionDto> find(UUID functionId) {
     return functions.findById(functionId)
-        .map(e -> dto(e, usages(e.getUserId()).getOrDefault(e.getId(), List.of())));
+        .map(e -> dto(e, e.getUserId() == null ? List.of() : usages(e.getUserId()).getOrDefault(e.getId(), List.of())));
   }
 
   /** Without its usages: this is what a running script looks up. */
   @Override
   public Optional<ScriptFunctionDto> findByName(UUID userId, String name) {
-    return functions.findByUserIdAndName(userId, name).map(e -> dto(e, List.of()));
+    return functions.findByUserIdAndName(userId, name).or(() -> functions.findByUserIdIsNullAndName(name))
+        .map(e -> dto(e, List.of()));
   }
 
   /** How a script run for {@code userId} finds the functions it calls. */
@@ -97,6 +104,7 @@ public class StoredScriptFunctions implements ScriptFunctions {
     if (functions.existsByUserIdAndName(userId, clean.name())) {
       throw new ConflictException("You already have a function called " + clean.name());
     }
+    refusePublicName(clean.name());
     ScriptFunctionEntity e = new ScriptFunctionEntity();
     e.setUserId(userId);
     apply(e, clean);
@@ -107,11 +115,13 @@ public class StoredScriptFunctions implements ScriptFunctions {
   @Transactional
   public ScriptFunctionDto update(UUID functionId, ScriptFunctionDraft draft) {
     ScriptFunctionEntity e = functions.findById(functionId).orElseThrow(() -> new NotFoundException("Function", functionId));
+    refuseIfPublic(e);
     Clean clean = clean(draft);
     String old = e.getName();
     if (!old.equals(clean.name()) && functions.existsByUserIdAndName(e.getUserId(), clean.name())) {
       throw new ConflictException("You already have a function called " + clean.name());
     }
+    if (!old.equals(clean.name())) refusePublicName(clean.name());
     apply(e, clean);
     functions.save(e);
     if (!old.equals(clean.name())) renameCalls(e.getUserId(), functionId, old, clean.name());
@@ -121,7 +131,39 @@ public class StoredScriptFunctions implements ScriptFunctions {
   @Override
   @Transactional
   public void delete(UUID functionId) {
+    functions.findById(functionId).ifPresent(StoredScriptFunctions::refuseIfPublic);
     functions.deleteById(functionId);
+  }
+
+  /**
+   * Adds the public function {@code draft} describes, or brings the stored one with its name in line
+   * with it. Returns whether anything changed.
+   */
+  @Transactional
+  public boolean savePublic(ScriptFunctionDraft draft) {
+    Clean clean = clean(draft);
+    ScriptFunctionEntity e = functions.findByUserIdIsNullAndName(clean.name()).orElse(null);
+    if (e != null && clean.equals(new Clean(e.getName(), e.getDescription(), e.getInputs(), e.getScript(),
+        e.getReturnType(), e.getReturnFields()))) {
+      return false;
+    }
+    if (e == null) e = new ScriptFunctionEntity();
+    apply(e, clean);
+    functions.save(e);
+    return true;
+  }
+
+  private static void refuseIfPublic(ScriptFunctionEntity e) {
+    if (e.getUserId() == null) {
+      throw new ValidationException("fn." + e.getName() + " is a public function, so it can't be changed; "
+          + "make a copy to change it");
+    }
+  }
+
+  private void refusePublicName(String name) {
+    if (functions.existsByUserIdIsNullAndName(name)) {
+      throw new ConflictException("fn." + name + " is a public function; choose another name");
+    }
   }
 
   @Override
@@ -129,7 +171,7 @@ public class StoredScriptFunctions implements ScriptFunctions {
     try {
       ScriptFunctionDto f = new ScriptFunctionDto(null, userId, draft.name() == null ? "" : draft.name().strip(),
           draft.description(), inputsOf(draft), draft.script(), returnTypeOf(draft), Json.mapper().createArrayNode(),
-          List.of(), null, null);
+          List.of(), null, null, ScriptFunctionDto.OWN);
       Map<String, JsonNode> given = new LinkedHashMap<>();
       if (args != null && args.isObject()) args.fields().forEachRemaining(en -> given.put(en.getKey(), en.getValue()));
       JsonNode value = sandbox.runFunction(f, given, lookupFor(userId));
@@ -254,7 +296,8 @@ public class StoredScriptFunctions implements ScriptFunctions {
 
   private static ScriptFunctionDto dto(ScriptFunctionEntity e, List<String> usedBy) {
     return new ScriptFunctionDto(e.getId(), e.getUserId(), e.getName(), e.getDescription(), e.getInputs(),
-        e.getScript(), e.getReturnType(), e.getReturnFields(), List.copyOf(usedBy), e.getCreatedAt(), e.getUpdatedAt());
+        e.getScript(), e.getReturnType(), e.getReturnFields(), List.copyOf(usedBy), e.getCreatedAt(), e.getUpdatedAt(),
+        e.getUserId() == null ? ScriptFunctionDto.PUBLIC : ScriptFunctionDto.OWN);
   }
 
   private static String typeOf(JsonNode value) {
