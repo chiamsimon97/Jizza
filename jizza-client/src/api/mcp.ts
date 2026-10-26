@@ -1,11 +1,13 @@
 import { api } from '@/lib/api'
-import type { ActionType, McpServer, McpServerInput, ToolRunResult } from '@/types'
+import type { ActionType, McpCatalog, McpServer, McpServerInput, ToolRunResult } from '@/types'
 
 const base = (id: string) => `/api/mcp-servers/${id}`
 
 /** Remote MCP servers added as connectors: their sign-in, tools and agents. */
 export const mcpApi = {
   list: () => api.get<McpServer[]>('/api/mcp-servers'),
+  /** Ready-made servers to install with one click. */
+  catalog: () => api.get<McpCatalog>('/api/mcp-servers/catalog'),
   get: (id: string) => api.get<McpServer>(base(id)),
   create: (body: McpServerInput) => api.post<McpServer>('/api/mcp-servers', body),
   update: (id: string, body: McpServerInput) => api.patch<McpServer>(base(id), body),

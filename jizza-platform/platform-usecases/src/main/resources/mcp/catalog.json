@@ -1,0 +1,176 @@
+[
+  {
+    "id": "gmail", "name": "Gmail", "publisher": "Google", "category": "personal",
+    "description": "Search your inbox, read threads and draft replies.",
+    "url": "https://gmailmcp.googleapis.com/mcp/v1", "authType": "OAUTH", "ownClient": true,
+    "oauthScopes": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose",
+    "agentKeys": ["jizza", "professional"],
+    "note": "Google asks for an OAuth client of your own: in Google Cloud, enable the Gmail API and its MCP service, create a Web application client, tick \"Use this client for an AI-powered agent\", and add Jizza's sign-in address as a redirect URI. Google's Workspace MCP servers are in its Developer Preview.",
+    "docsUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers"
+  },
+  {
+    "id": "google-calendar", "name": "Google Calendar", "publisher": "Google", "category": "personal",
+    "description": "See your calendars, events and when you are free.",
+    "url": "https://calendarmcp.googleapis.com/mcp/v1", "authType": "OAUTH", "ownClient": true,
+    "oauthScopes": "https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.freebusy https://www.googleapis.com/auth/calendar.events.readonly",
+    "agentKeys": ["jizza", "professional"],
+    "note": "Uses an OAuth client of your own, set up as for Gmail: enable the Calendar API and its MCP service, then add Jizza's sign-in address as a redirect URI.",
+    "docsUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers"
+  },
+  {
+    "id": "google-drive", "name": "Google Drive", "publisher": "Google", "category": "personal",
+    "description": "Search, read and upload files in your Drive.",
+    "url": "https://drivemcp.googleapis.com/mcp/v1", "authType": "OAUTH", "ownClient": true,
+    "oauthScopes": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
+    "agentKeys": ["jizza", "professional"],
+    "note": "Uses an OAuth client of your own, set up as for Gmail: enable the Drive API and its MCP service, then add Jizza's sign-in address as a redirect URI.",
+    "docsUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers"
+  },
+  {
+    "id": "todoist", "name": "Todoist", "publisher": "Doist", "category": "personal",
+    "description": "Search, add and complete your tasks.",
+    "url": "https://ai.todoist.net/mcp", "authType": "OAUTH", "agentKeys": ["jizza"]
+  },
+  {
+    "id": "kiwi", "name": "Kiwi.com", "publisher": "Kiwi.com", "category": "personal",
+    "description": "Search flights and compare fares.",
+    "url": "https://mcp.kiwi.com", "authType": "NONE", "agentKeys": ["jizza"]
+  },
+  {
+    "id": "notion", "name": "Notion", "publisher": "Notion", "category": "professional",
+    "description": "Search, read and update pages and databases in your workspace.",
+    "url": "https://mcp.notion.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"],
+    "docsUrl": "https://developers.notion.com/docs/mcp"
+  },
+  {
+    "id": "linear", "name": "Linear", "publisher": "Linear", "category": "professional",
+    "description": "Find, create and update issues and projects.",
+    "url": "https://mcp.linear.app/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"],
+    "docsUrl": "https://linear.app/docs/mcp"
+  },
+  {
+    "id": "atlassian", "name": "Jira and Confluence", "publisher": "Atlassian", "category": "professional",
+    "description": "Work with Jira issues and Confluence pages.",
+    "url": "https://mcp.atlassian.com/v1/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "monday", "name": "monday.com", "publisher": "monday.com", "category": "professional",
+    "description": "Manage boards, items and workflows.",
+    "url": "https://mcp.monday.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "clickup", "name": "ClickUp", "publisher": "ClickUp", "category": "professional",
+    "description": "Search and manage tasks, docs and lists.",
+    "url": "https://mcp.clickup.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "airtable", "name": "Airtable", "publisher": "Airtable", "category": "professional",
+    "description": "Read and update records in your bases.",
+    "url": "https://mcp.airtable.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "box", "name": "Box", "publisher": "Box", "category": "professional",
+    "description": "Search, read and get insights from your Box files.",
+    "url": "https://mcp.box.com", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "canva", "name": "Canva", "publisher": "Canva", "category": "professional",
+    "description": "Search, create, autofill and export designs.",
+    "url": "https://mcp.canva.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "miro", "name": "Miro", "publisher": "Miro", "category": "professional",
+    "description": "Read and add content on your Miro boards.",
+    "url": "https://mcp.miro.com/", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "granola", "name": "Granola", "publisher": "Granola", "category": "professional",
+    "description": "Search your meeting notes and transcripts.",
+    "url": "https://mcp.granola.ai/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "professional"]
+  },
+  {
+    "id": "github", "name": "GitHub", "publisher": "GitHub", "category": "professional",
+    "description": "Work with repositories, issues and pull requests.",
+    "url": "https://api.githubcopilot.com/mcp/", "authType": "BEARER", "agentKeys": ["jizza", "professional"],
+    "secretLabel": "Personal access token",
+    "note": "Create a fine-grained personal access token on GitHub (Settings, Developer settings) with only the repositories and permissions you want Jizza to have.",
+    "docsUrl": "https://github.com/github/github-mcp-server"
+  },
+  {
+    "id": "exa", "name": "Exa web search", "publisher": "Exa", "category": "professional",
+    "description": "Search the web and code documentation.",
+    "url": "https://mcp.exa.ai/mcp", "authType": "NONE", "agentKeys": ["jizza"]
+  },
+  {
+    "id": "context7", "name": "Context7", "publisher": "Upstash", "category": "professional",
+    "description": "Up-to-date documentation for programming libraries.",
+    "url": "https://mcp.context7.com/mcp", "authType": "NONE", "agentKeys": ["jizza"]
+  },
+  {
+    "id": "deepwiki", "name": "DeepWiki", "publisher": "Cognition", "category": "professional",
+    "description": "Ask questions about any public GitHub repository.",
+    "url": "https://mcp.deepwiki.com/mcp", "authType": "NONE", "agentKeys": ["jizza"]
+  },
+  {
+    "id": "kite", "name": "Zerodha Kite", "publisher": "Zerodha", "category": "finance",
+    "description": "Your holdings, positions, quotes and orders on Kite.",
+    "url": "https://mcp.kite.trade/mcp", "authType": "NONE", "agentKeys": ["jizza", "finance"],
+    "note": "Ask Jizza or Kai to log in to Kite first: its login tool gives you a link to sign in with Zerodha."
+  },
+  {
+    "id": "coingecko", "name": "CoinGecko", "publisher": "CoinGecko", "category": "finance",
+    "description": "Live and historical crypto prices, market data and trends.",
+    "url": "https://mcp.api.coingecko.com/mcp", "authType": "NONE", "agentKeys": ["jizza", "finance"],
+    "note": "The free public server shares its rate limit with everyone.",
+    "docsUrl": "https://docs.coingecko.com/docs/mcp-server"
+  },
+  {
+    "id": "alpha-vantage", "name": "Alpha Vantage", "publisher": "Alpha Vantage", "category": "finance",
+    "description": "Stock, forex and crypto prices, fundamentals and indicators.",
+    "url": "https://mcp.alphavantage.co/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "finance"],
+    "note": "Signing in asks for your Alpha Vantage API key; a free one is available on their site.",
+    "docsUrl": "https://mcp.alphavantage.co/"
+  },
+  {
+    "id": "mospi", "name": "MoSPI statistics", "publisher": "Government of India", "category": "finance",
+    "description": "India's official statistics: inflation, GDP, employment and more.",
+    "url": "https://mcp.mospi.gov.in/", "authType": "NONE", "agentKeys": ["jizza", "finance"]
+  },
+  {
+    "id": "stripe", "name": "Stripe", "publisher": "Stripe", "category": "finance",
+    "description": "Customers, payments, invoices and subscriptions on Stripe.",
+    "url": "https://mcp.stripe.com", "authType": "OAUTH", "agentKeys": ["jizza", "finance"],
+    "docsUrl": "https://docs.stripe.com/mcp"
+  },
+  {
+    "id": "paypal", "name": "PayPal", "publisher": "PayPal", "category": "finance",
+    "description": "Invoices, orders, payments and disputes on PayPal.",
+    "url": "https://mcp.paypal.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "finance"]
+  },
+  {
+    "id": "razorpay", "name": "Razorpay", "publisher": "Razorpay", "category": "finance",
+    "description": "Payments, orders, refunds and settlements on Razorpay.",
+    "url": "https://mcp.razorpay.com/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "finance"]
+  },
+  {
+    "id": "pubmed", "name": "PubMed", "publisher": "Anthropic", "category": "health",
+    "description": "Search biomedical literature and read article abstracts.",
+    "url": "https://pubmed.mcp.claude.com/mcp", "authType": "NONE", "agentKeys": ["jizza", "health"]
+  },
+  {
+    "id": "clinical-trials", "name": "Clinical Trials", "publisher": "deepsense.ai", "category": "health",
+    "description": "Search studies on ClinicalTrials.gov by condition, drug or place.",
+    "url": "https://mcp.deepsense.ai/clinical_trials/mcp", "authType": "NONE", "agentKeys": ["jizza", "health"],
+    "docsUrl": "https://docs.mcp.deepsense.ai/guides/clinical_trials.html"
+  },
+  {
+    "id": "icd10", "name": "ICD-10 codes", "publisher": "Anthropic", "category": "health",
+    "description": "Look up ICD-10-CM diagnosis and ICD-10-PCS procedure codes.",
+    "url": "https://hcls.mcp.claude.com/icd10_codes/mcp", "authType": "NONE", "agentKeys": ["jizza", "health"]
+  },
+  {
+    "id": "open-targets", "name": "Open Targets", "publisher": "Open Targets", "category": "health",
+    "description": "Evidence linking genes, drugs and diseases.",
+    "url": "https://mcp.platform.opentargets.org/mcp", "authType": "NONE", "agentKeys": ["jizza", "health"]
+  }
+]

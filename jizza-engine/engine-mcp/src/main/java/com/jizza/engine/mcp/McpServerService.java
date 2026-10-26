@@ -232,6 +232,11 @@ public class McpServerService implements McpServers, StoredMcpServers {
   // ── Sign-in ───────────────────────────────────────────────────────────────────
 
   @Override
+  public String oauthRedirectUri() {
+    return oauth.redirectUri();
+  }
+
+  @Override
   @Transactional
   public URI startAuth(UUID serverId, UUID sessionId) {
     McpServerEntity entity = require(serverId);
