@@ -95,7 +95,7 @@ class ScriptFunctionCallTest {
 
   @Test
   void aCalledFunctionSharesTheCallersTimeLimit() {
-    save("spin", "[]", "var n = 0; for (var i : 1..100000000) { n = n + 1; } return n;", "any");
+    save("spin", "[]", "var n = 0; for (var i : 1..100000000) { for (var j : 1..100000000) { n = n + 1; } } return n;", "any");
     ScriptFunctionDto outer = save("outerSpin", "[]", "return fn.spin();", "any");
     assertThatThrownBy(() -> run(outer, Map.of())).isInstanceOf(SandboxViolationException.class)
         .hasMessageContaining("stopped");
