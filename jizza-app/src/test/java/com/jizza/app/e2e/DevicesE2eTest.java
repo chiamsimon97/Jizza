@@ -140,6 +140,78 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void aToolTheDeviceAddedRunsInAWorkflowWithItsOwnInputsChecked() throws Exception {
+    ObjectNode input = Json.obj().put("type", "object");
+    input.putArray("required").add("ledger");
+    input.putObject("properties").putObject("ledger").put("type", "string");
+    ObjectNode tool = Json.obj().put("action", "x-acme.exportLedger").put("version", 2)
+        .put("title", "Export the ledger").put("timeoutSec", 60);
+    tool.set("input", input);
+    tool.set("output", Json.obj().put("type", "object").set("properties",
+        Json.obj().set("rows", Json.obj().put("type", "integer"))));
+    device.tool(tool, in -> device.json().createObjectNode()
+        .put("rows", 42).put("ledger", in.path("ledger").asText()));
+    device.items("recordings", device.json().createArrayNode()
+        .add(device.json().createObjectNode().put("id", "rec-1").put("name", "Download invoices")));
+    pairAndSignIn();
+    device.connect();
+
+    // The builder sees the tool with its schemas, and the saved items, on the device.
+    var shown = api.get("/api/devices/" + device.deviceId());
+    assertThat(shown.json().path("actions").toString()).contains("x-acme.exportLedger@2");
+    JsonNode described = shown.json().path("tools").get(0);
+    assertThat(described.path("title").asText()).isEqualTo("Export the ledger");
+    assertThat(described.path("input").path("required").get(0).asText()).isEqualTo("ledger");
+    assertThat(described.path("actionType").asText()).isEqualTo("MONEY");
+    assertThat(shown.json().path("items").path("recordings").get(0).path("name").asText())
+        .isEqualTo("Download invoices");
+    // The catalog says which input takes a saved recording.
+    assertThat(api.get("/api/devices/catalog").body()).contains("\"x-items\":\"recordings\"");
+
+    UUID workflowId = approvedWorkflow(Json.obj().put("action", "x-acme.exportLedger")
+        .put("target", device.deviceId().toString())
+        .set("inputs", Json.obj().put("ledger", "2026-Q3")));
+    // Until the owner says what the tool does, it counts as moving money, which never runs alone.
+    var held = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    assertThat(held.json().path("status").asText()).as(held.body())
+        .isEqualTo("PAUSED_WAITING_INSTRUCTION");
+    assertThat(api.get("/api/runs/" + held.json().path("id").asText() + "/trace").body())
+        .contains("guardrails");
+    var typed = api.patch("/api/devices/" + device.deviceId() + "/tools/x-acme.exportLedger",
+        Map.of("actionType", "READ"));
+    assertThat(typed.json().path("tools").get(0).path("actionType").asText()).as(typed.body())
+        .isEqualTo("READ");
+
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    JsonNode finished = awaitRun(run.json().path("id").asText(), Duration.ofSeconds(20));
+    assertThat(finished.path("status").asText())
+        .as(api.get("/api/runs/" + run.json().path("id").asText() + "/trace").body()).isEqualTo("DONE");
+    assertThat(finished.toString()).contains("2026-Q3");
+
+    // Inputs that do not fit the device's own schema are refused before anything is sent.
+    UUID wrong = approvedWorkflow(Json.obj().put("action", "x-acme.exportLedger")
+        .put("target", device.deviceId().toString())
+        .set("inputs", Json.obj().put("year", 2026)));
+    var refused = api.post("/api/workflows/" + wrong + "/run", Map.of("version", 1));
+    assertThat(refused.json().path("status").asText()).as(refused.body())
+        .isEqualTo("PAUSED_WAITING_INSTRUCTION");
+    assertThat(api.get("/api/runs/" + refused.json().path("id").asText() + "/trace").body())
+        .contains("ledger");
+  }
+
+  @Test
+  void aManifestWithABadToolIsRefused() {
+    device.tool(Json.obj().put("action", "acme.notPrefixed"), in -> in);
+    device.enrollWithCode(pairingCode(), "Sim laptop", "windows");
+    device.signIn();
+    device.hello();
+    JsonNode answer = device.sendManifest();
+    assertThat(answer.path("type").asText()).as(answer.toString()).isEqualTo("error");
+    assertThat(answer.toString()).contains("x-acme.export");
+  }
+
+  @Test
   void aStepForAnActionTheDeviceDidNotOfferFailsClearly() {
     pairAndSignIn();
     UUID workflowId = approvedWorkflow(Json.obj().put("action", "browser.open")

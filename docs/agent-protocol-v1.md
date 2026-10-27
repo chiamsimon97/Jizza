@@ -89,7 +89,7 @@ Every message, both directions, on both channels:
 | type | body | server answers |
 | --- | --- | --- |
 | `hello` | `{"protocol":[1], "appVersion", "osVersion", "token"?}` | `welcome` |
-| `manifest` | `{"actions":["browser.open@1",…], "capabilities":{"browser":{"allowedSites":[…]},…}, "limits"?}` | `ack` |
+| `manifest` | `{"actions":["browser.open@1",…], "capabilities":{"browser":{"allowedSites":[…]},…}, "limits"?, "tools"?, "items"?}` (§6.1) | `ack` |
 | `heartbeat` | `{"state":"idle"\|"busy"\|"locked"}` every `heartbeatSec` | nothing |
 | `accepted` | `{"commandId"}` | nothing |
 | `rejected` | `{"commandId","code","message"}` | nothing |
@@ -152,6 +152,36 @@ for the guardrails until the catalog adds them. The server only routes an action
 declared it (except `system.ping`, which every app answers), and checks inputs against the schema
 before sending.
 
+### 6.1 The app's own tools and saved items
+
+Beyond the catalog, a manifest can describe **tools** the app adds itself and the **saved items**
+catalog actions take by id. Both show in the workflow builder's Device action step.
+
+```json
+"tools": [{"action": "x-acme.exportLedger", "version": 2, "title": "Export the ledger",
+           "description": "Writes the ledger to a CSV file",
+           "input": {"type": "object", "properties": {"ledger": {"type": "string"}}, "required": ["ledger"]},
+           "output": {"type": "object", "properties": {"rows": {"type": "integer"}}},
+           "timeoutSec": 60}],
+"items": {"recordings": [{"id": "rec-1", "name": "Download invoices"}],
+          "shortcuts": [{"id": "Log water", "name": "Log water"}]}
+```
+
+* A tool's name is `x-<vendor>.<name>`; it needs no separate entry in `actions`. At most 50 tools,
+  each schema at most 16 KB. `input` defaults to any object; `timeoutSec` to 120 (1 to 86400).
+* The server checks a command's input against the tool's own `input` schema before sending it, and
+  the builder shows one field per property and offers `output` fields to later steps.
+* The server cannot check what a tool does, so the guardrails count it as moving money until the
+  device's owner says what it does (Settings › Devices, `PATCH /api/devices/{id}/tools/{action}`
+  `{"actionType":"READ"}`, step-up guarded). By default that never runs on its own.
+* `items` maps a kind (`[a-z][a-z0-9_]*`, at most 10 kinds) to at most 500 `{id, name,
+  description?}`. A catalog input that takes one says so with `"x-items": "<kind>"`:
+  `browser.runRecording.recordingId` takes `recordings`, `phone.shortcut.name` takes `shortcuts`,
+  and `ui.openApp.app` takes `apps`. The builder then offers the device's list.
+* Send a new manifest whenever tools or items change; each manifest replaces the last.
+
+A manifest whose tools or items break these rules gets `error` naming what is wrong.
+
 ## 7. Error codes
 
 `bad_message`, `unsupported_type`, `unsupported_version`, `unauthorized`, `not_found`,
@@ -174,6 +204,8 @@ An app conforms when it does what `SimDevice` does in each `DevicesE2eTest` scen
 2. answers a test connection (`system.ping`) over HTTPS long-polling;
 3. runs a Device action workflow step over the WebSocket and the run finishes with its output;
 4. an action it did not declare is refused before it is sent;
+   a tool it describes itself runs in a workflow once its owner types it, inputs that break its
+   schema are refused, and a manifest with a badly named tool gets `error`;
 5. refuses a command whose body was changed after signing (`bad_signature`);
 6. enrolls with an enrollment token and carries its tags;
 7. once revoked, can neither sign in nor poll;

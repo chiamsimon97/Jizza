@@ -18,6 +18,7 @@ import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.devices.broker.CommandBroker;
+import com.jizza.engine.devices.catalog.DeviceExtras;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.DeviceEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
@@ -144,7 +145,9 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
       for (JsonNode ref : device.getActions()) {
         String action = ref.asText().split("@")[0];
         if (blocked.contains(action)) continue;
-        Optional<DeviceActionSpec> spec = catalog.resolve(action, 0);
+        Optional<DeviceActionSpec> spec = action.startsWith(DeviceActionSpec.EXTENSION_PREFIX)
+            ? DeviceExtras.spec(device, action).or(() -> catalog.resolve(action, 0))
+            : catalog.resolve(action, 0);
         if (spec.isEmpty() || (spec.get().shell() && !device.isShellEnabled())) continue;
         String name = name(slug, action);
         out.putIfAbsent(name, new Exposed(name, device, spec.get()));

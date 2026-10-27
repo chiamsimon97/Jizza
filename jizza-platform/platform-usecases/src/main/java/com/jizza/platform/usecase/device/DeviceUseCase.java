@@ -69,7 +69,8 @@ public class DeviceUseCase {
     DeviceDto updated = devices.update(device.id(), changes);
     audit.record(access.userId(), ActorType.USER, null, "device.updated", updated.name(),
         Json.obj().put("deviceId", device.id().toString())
-            .put("shellEnabled", updated.shellEnabled()));
+            .put("shellEnabled", updated.shellEnabled())
+            .set("toolTypes", changes.toolTypes() == null ? null : Json.toNode(changes.toolTypes())));
     return updated;
   }
 

@@ -23,6 +23,13 @@ public interface DeviceCommands {
    */
   DeviceCommandDto submit(DeviceCommandRequest request);
 
+  /**
+   * What the request's action is, for the guardrails, before it is submitted: the catalog's entry,
+   * or for a tool a device added itself ({@code x-…}) that device's own description, typed as its
+   * owner said. When several devices could take it, the riskiest type among them.
+   */
+  Optional<DeviceActionSpec> describe(DeviceCommandRequest request);
+
   Optional<DeviceCommandDto> find(UUID commandId);
 
   /** Stops a command; one already on the device is sent a cancel. No-op when it has finished. */

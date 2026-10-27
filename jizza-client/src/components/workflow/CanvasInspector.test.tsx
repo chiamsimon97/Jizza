@@ -5,6 +5,9 @@ import { EditorView } from '@codemirror/view'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
 import type { ScriptFunction } from '@/api/functions'
+import { devicesApi } from '@/api/devices'
+import { queryClient } from '@/lib/queryClient'
+import type { Device, DeviceActionSpec } from '@/types'
 
 /** Types into a field where earlier steps' data shows as chips (a CodeMirror editor). */
 function type(box: HTMLElement, text: string) {
@@ -23,6 +26,38 @@ function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(
 }
 
 describe('CanvasInspector', () => {
+  it('offers a device\'s own tools with their fields, and its saved recordings as a list', async () => {
+    const spec = (over: Partial<DeviceActionSpec>): DeviceActionSpec => ({
+      action: 'browser.runRecording', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Run a recording',
+      description: '', input: { type: 'object', properties: { recordingId: { type: 'string', 'x-items': 'recordings' } }, required: ['recordingId'] },
+      output: null, conditions: [], platforms: [], defaultTimeoutSec: 120, ...over,
+    })
+    const laptop = {
+      id: 'd1', name: 'Work laptop', platform: 'WINDOWS', online: true, actions: ['browser.runRecording@1', 'x-acme.export@1'],
+      tools: [spec({ action: 'x-acme.export', capability: 'x-acme', actionType: 'MONEY', title: 'Export ledger',
+        input: { type: 'object', properties: { ledger: { type: 'string' } }, required: ['ledger'] } })],
+      items: { recordings: [{ id: 'rec-1', name: 'Download invoices' }] },
+    } as unknown as Device
+    queryClient.clear()
+    vi.spyOn(devicesApi, 'catalog').mockResolvedValue([spec({})])
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([laptop])
+    const { graph, id } = addAfter(emptyGraph(), 'start', null, 'DEVICE_ACTION')
+    const onSave = vi.fn()
+    open(graph, id, onSave)
+
+    const action = screen.getByRole('combobox', { name: /^Action/ })
+    expect(await screen.findByRole('option', { name: 'Export ledger' })).toBeInTheDocument()
+    fireEvent.change(action, { target: { value: 'x-acme.export' } })
+    expect(screen.getByText(/counts as moving money/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'ledger' })).toBeInTheDocument()
+
+    fireEvent.change(action, { target: { value: 'browser.runRecording' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'recordingId' }), { target: { value: 'rec-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
+    expect(saved.config).toMatchObject({ action: 'browser.runRecording', inputs: { recordingId: 'rec-1' } })
+  })
+
   it('runs a saved function from a Script step: pick it, map its inputs, see the result keys', () => {
     const fn: ScriptFunction = {
       id: 'fn-1', name: 'orderTotal', description: 'Adds up the lines', script: 'return {}', returnType: 'map',

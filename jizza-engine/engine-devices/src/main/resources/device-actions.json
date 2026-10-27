@@ -626,7 +626,8 @@
         "type": "object",
         "properties": {
           "recordingId": {
-            "type": "string"
+            "type": "string",
+            "x-items": "recordings"
           },
           "inputs": {
             "type": "object"
@@ -665,7 +666,8 @@
         "type": "object",
         "properties": {
           "app": {
-            "type": "string"
+            "type": "string",
+            "x-items": "apps"
           }
         },
         "required": [
@@ -1020,7 +1022,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "x-items": "shortcuts"
           },
           "input": {
             "type": "string"

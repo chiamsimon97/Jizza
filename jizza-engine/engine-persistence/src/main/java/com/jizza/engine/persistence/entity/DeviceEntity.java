@@ -65,6 +65,11 @@ public class DeviceEntity {
   @Column(columnDefinition = "jsonb", nullable = false)
   private JsonNode blockedActions;
 
+  /** The owner's action type for each tool the device added itself; MONEY when not set. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb", nullable = false)
+  private JsonNode toolTypes;
+
   private Instant lastSeenAt;
 
   private String lastIp;
@@ -136,6 +141,8 @@ public class DeviceEntity {
 
   public JsonNode getBlockedActions() { return blockedActions; }
   public void setBlockedActions(JsonNode blockedActions) { this.blockedActions = blockedActions; }
+  public JsonNode getToolTypes() { return toolTypes; }
+  public void setToolTypes(JsonNode toolTypes) { this.toolTypes = toolTypes; }
 
   public Instant getLastSeenAt() { return lastSeenAt; }
   public void setLastSeenAt(Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }

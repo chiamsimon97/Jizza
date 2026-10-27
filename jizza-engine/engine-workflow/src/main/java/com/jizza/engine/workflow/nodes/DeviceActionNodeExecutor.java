@@ -79,18 +79,30 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure("Choose what this step does on the device");
     }
     int version = config.path("version").asInt(0);
-    Optional<DeviceActionSpec> found = actions.resolve(config.get("action").asText(), version);
-    if (found.isEmpty()) {
-      return Outcome.permanentFailure("Devices have no action called '"
-          + config.get("action").asText() + "'");
-    }
-    DeviceActionSpec spec = found.get();
     DeviceTarget target;
     try {
       target = DeviceTarget.from(config.get("target"));
     } catch (IllegalArgumentException e) {
       return Outcome.permanentFailure("The device this step names is not a device id");
     }
+    UUID workspaceId = null;
+    if (config.hasNonNull("workspaceId")) {
+      try {
+        workspaceId = UUID.fromString(config.get("workspaceId").asText());
+      } catch (IllegalArgumentException e) {
+        return Outcome.permanentFailure("'workspaceId' is not an account id");
+      }
+    }
+    String action = config.get("action").asText();
+    // A tool a device added itself is described by that device, and typed as its owner said.
+    Optional<DeviceActionSpec> found = action.startsWith(DeviceActionSpec.EXTENSION_PREFIX)
+        ? broker.describe(new DeviceCommandRequest(execution.userId(), workspaceId, target, action,
+            version, null, null, execution.runId(), execution.node().id(), null, false))
+        : actions.resolve(action, version);
+    if (found.isEmpty()) {
+      return Outcome.permanentFailure("Devices have no action called '" + action + "'");
+    }
+    DeviceActionSpec spec = found.get();
 
     JsonNode inputs;
     try {
@@ -122,14 +134,6 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           + target.describe() + " to " + lower(spec.title()) + ". " + decision.reason() + ".");
     }
 
-    UUID workspaceId = null;
-    if (config.hasNonNull("workspaceId")) {
-      try {
-        workspaceId = UUID.fromString(config.get("workspaceId").asText());
-      } catch (IllegalArgumentException e) {
-        return Outcome.permanentFailure("'workspaceId' is not an account id");
-      }
-    }
     Duration timeout = config.path("timeoutSec").asInt(0) > 0
         ? Duration.ofSeconds(config.get("timeoutSec").asInt()) : null;
     DeviceCommandDto command;
