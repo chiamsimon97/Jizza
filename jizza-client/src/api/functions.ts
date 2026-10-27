@@ -21,14 +21,22 @@ export interface ScriptFunction {
   usedBy: string[]
   createdAt: string
   updatedAt: string
-  /** own: the person's. public: one of Jizza's ready-made functions, which everyone calls and nobody changes. */
+  /** own: the person's. public: one of Jizza's ready-made functions, installed from Explore public functions; nobody changes it. */
   scope: 'own' | 'public'
 }
+
+/** A public function as Explore public functions lists it. */
+export interface PublicFunction { function: ScriptFunction; installed: boolean }
 
 export type ScriptFunctionDraft = Pick<ScriptFunction, 'name' | 'inputs' | 'script' | 'returnType' | 'returnFields'> & { description?: string | null }
 
 export const functionsApi = {
+  /** The person's functions and the public ones they installed. */
   list: () => api.get<ScriptFunction[]>('/api/functions'),
+  /** Every public function, with whether the person installed it. */
+  explore: () => api.get<PublicFunction[]>('/api/functions/public'),
+  install: (id: string) => api.post<{ message: string }>(`/api/functions/${id}/install`, {}),
+  uninstall: (id: string) => api.delete<{ message: string }>(`/api/functions/${id}/install`),
   get: (id: string) => api.get<ScriptFunction>(`/api/functions/${id}`),
   create: (body: ScriptFunctionDraft) => api.post<ScriptFunction>('/api/functions', body),
   update: (id: string, body: ScriptFunctionDraft) => api.put<ScriptFunction>(`/api/functions/${id}`, body),

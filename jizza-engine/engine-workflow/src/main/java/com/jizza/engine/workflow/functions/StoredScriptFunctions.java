@@ -14,7 +14,9 @@ import com.jizza.engine.api.workflow.functions.ScriptFunctionDto;
 import com.jizza.engine.api.workflow.functions.ScriptFunctions;
 import com.jizza.engine.api.workflow.graph.ModuleContract;
 import com.jizza.engine.persistence.entity.ScriptFunctionEntity;
+import com.jizza.engine.persistence.entity.ScriptFunctionInstallEntity;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
+import com.jizza.engine.persistence.repository.ScriptFunctionInstallRepository;
 import com.jizza.engine.persistence.repository.ScriptFunctionRepository;
 import com.jizza.engine.persistence.repository.WorkflowRepository;
 import com.jizza.engine.workflow.sandbox.FormulaRewriter;
@@ -51,11 +53,14 @@ public class StoredScriptFunctions implements ScriptFunctions {
   private static final Pattern PATH = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*){0,4}");
 
   private final ScriptFunctionRepository functions;
+  private final ScriptFunctionInstallRepository installs;
   private final WorkflowRepository workflows;
   private final JexlSandbox sandbox;
 
-  public StoredScriptFunctions(ScriptFunctionRepository functions, WorkflowRepository workflows, JexlSandbox sandbox) {
+  public StoredScriptFunctions(ScriptFunctionRepository functions, ScriptFunctionInstallRepository installs,
+                               WorkflowRepository workflows, JexlSandbox sandbox) {
     this.functions = functions;
+    this.installs = installs;
     this.workflows = workflows;
     this.sandbox = sandbox;
   }
@@ -68,10 +73,48 @@ public class StoredScriptFunctions implements ScriptFunctions {
     for (ScriptFunctionEntity e : functions.findByUserIdOrderByNameAsc(userId)) {
       out.add(dto(e, usedBy.getOrDefault(e.getId(), List.of())));
     }
+    Set<UUID> installed = installed(userId);
     for (ScriptFunctionEntity e : functions.findByUserIdIsNullOrderByNameAsc()) {
-      out.add(dto(e, usedBy.getOrDefault(e.getId(), List.of())));
+      if (installed.contains(e.getId())) out.add(dto(e, usedBy.getOrDefault(e.getId(), List.of())));
     }
     return out;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ScriptFunctionDto> publicFunctions() {
+    return functions.findByUserIdIsNullOrderByNameAsc().stream().map(e -> dto(e, List.of())).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Set<UUID> installed(UUID userId) {
+    Set<UUID> out = new HashSet<>();
+    for (ScriptFunctionInstallEntity i : installs.findByUserId(userId)) out.add(i.getFunctionId());
+    return out;
+  }
+
+  @Override
+  @Transactional
+  public boolean install(UUID userId, UUID functionId) {
+    ScriptFunctionEntity e = functions.findById(functionId).filter(f -> f.getUserId() == null)
+        .orElseThrow(() -> new NotFoundException("Public function", functionId));
+    if (installs.existsByUserIdAndFunctionId(userId, e.getId())) return false;
+    if (functions.existsByUserIdAndName(userId, e.getName())) {
+      throw new ConflictException("You already have a function called " + e.getName()
+          + "; rename it to install the public one");
+    }
+    ScriptFunctionInstallEntity i = new ScriptFunctionInstallEntity();
+    i.setUserId(userId);
+    i.setFunctionId(e.getId());
+    installs.save(i);
+    return true;
+  }
+
+  @Override
+  @Transactional
+  public boolean uninstall(UUID userId, UUID functionId) {
+    return installs.deleteByUserIdAndFunctionId(userId, functionId) > 0;
   }
 
   @Override
@@ -84,7 +127,9 @@ public class StoredScriptFunctions implements ScriptFunctions {
   /** Without its usages: this is what a running script looks up. */
   @Override
   public Optional<ScriptFunctionDto> findByName(UUID userId, String name) {
-    return functions.findByUserIdAndName(userId, name).or(() -> functions.findByUserIdIsNullAndName(name))
+    return functions.findByUserIdAndName(userId, name)
+        .or(() -> functions.findByUserIdIsNullAndName(name)
+            .filter(e -> installs.existsByUserIdAndFunctionId(userId, e.getId())))
         .map(e -> dto(e, List.of()));
   }
 

@@ -55,7 +55,7 @@ describe('Functions page', () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith('fn-1'))
   })
 
-  it('shows a public function to read and test, and copies it to change it', async () => {
+  it('shows an installed public function to read and test, and copies it to change it', async () => {
     const slugify: ScriptFunction = {
       id: 'pub-1', name: 'slugify', description: 'Turns a title into a slug.', inputs: [{ name: 'text', type: 'text', required: true }],
       script: "return text.lower();", returnType: 'text', returnFields: [], usedBy: [], createdAt: '', updatedAt: '1', scope: 'public',
@@ -64,7 +64,7 @@ describe('Functions page', () => {
     const create = vi.spyOn(functionsApi, 'create').mockResolvedValue({ ...slugify, id: 'fn-3', name: 'mySlugify', scope: 'own' })
     page('/functions/pub-1')
 
-    expect(await screen.findByRole('list', { name: 'Public functions' })).toHaveTextContent('fn.slugify')
+    expect(await screen.findByRole('list', { name: 'Installed' })).toHaveTextContent('fn.slugify')
     expect(screen.getByRole('list', { name: 'Your functions' })).toHaveTextContent('fn.withTax')
     expect(screen.getByText('Turns a title into a slug.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
@@ -75,5 +75,38 @@ describe('Functions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create function' }))
     await waitFor(() => expect(create).toHaveBeenCalled())
     expect(create.mock.calls[0][0]).toMatchObject({ name: 'mySlugify', script: 'return text.lower();' })
+  })
+
+  it('explores public functions and installs one', async () => {
+    const pub = (id: string, name: string): ScriptFunction => ({
+      id, name, description: `About ${name}.`, inputs: [{ name: 'text', type: 'text' }], script: 'return text;',
+      returnType: 'text', returnFields: [], usedBy: [], createdAt: '', updatedAt: '1', scope: 'public',
+    })
+    vi.spyOn(functionsApi, 'list').mockResolvedValue([saved])
+    vi.spyOn(functionsApi, 'explore').mockResolvedValue([{ function: pub('p1', 'slugify'), installed: true }, { function: pub('p2', 'maskEmail'), installed: false }])
+    const install = vi.spyOn(functionsApi, 'install').mockResolvedValue({ message: 'Function installed.' })
+    page('/functions')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Explore public functions' }))
+    expect(await screen.findByText('About maskEmail.')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Public functions' })).toHaveTextContent('fn.slugify')
+    expect(screen.getByText('Installed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Install fn.slugify' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Install fn.maskEmail' }))
+    await waitFor(() => expect(install).toHaveBeenCalledWith('p2'))
+  })
+
+  it('uninstalls an installed public function after saying what uses it', async () => {
+    const slugify: ScriptFunction = {
+      id: 'p1', name: 'slugify', description: null, inputs: [], script: 'return 1;', returnType: 'number',
+      returnFields: [], usedBy: ['Blog'], createdAt: '', updatedAt: '1', scope: 'public',
+    }
+    vi.spyOn(functionsApi, 'list').mockResolvedValue([saved, slugify])
+    const uninstall = vi.spyOn(functionsApi, 'uninstall').mockResolvedValue({ message: 'Function uninstalled.' })
+    page('/functions/p1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Uninstall' }))
+    expect(screen.getByText(/"Blog" run it/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Uninstall' }).at(-1)!)
+    await waitFor(() => expect(uninstall).toHaveBeenCalledWith('p1'))
   })
 })

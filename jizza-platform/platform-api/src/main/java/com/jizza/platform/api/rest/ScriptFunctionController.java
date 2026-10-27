@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Functions: the person's script functions, which workflows and other functions call. */
+/** Functions: the person's script functions, which workflows and other functions call, and the public ones they install. */
 @RestController
 @AuthenticatedOnly
 @RequestMapping("/api/functions")
@@ -38,6 +38,24 @@ public class ScriptFunctionController {
   @GetMapping
   public List<ScriptFunctionDto> list() {
     return functions.list(CurrentUser.userId());
+  }
+
+  /** Explore public functions: every public one, with whether the person installed it. */
+  @GetMapping("/public")
+  public List<ScriptFunctionUseCase.PublicFunction> publicFunctions() {
+    return functions.publicFunctions(CurrentUser.userId());
+  }
+
+  @PostMapping("/{id}/install")
+  public Responses.Message install(@PathVariable UUID id) {
+    functions.install(CurrentUser.userId(), id);
+    return new Responses.Message("Function installed.");
+  }
+
+  @DeleteMapping("/{id}/install")
+  public Responses.Message uninstall(@PathVariable UUID id) {
+    functions.uninstall(CurrentUser.userId(), id);
+    return new Responses.Message("Function uninstalled.");
   }
 
   @GetMapping("/{id}")

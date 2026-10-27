@@ -120,30 +120,38 @@ class ScriptFunctionsE2eTest extends E2eSupport {
   }
 
   @Test
-  void everyoneCallsThePublicFunctionsButNobodyChangesThem() {
-    JsonNode all = api.get("/api/functions").json();
-    JsonNode slugify = null;
-    int shared = 0;
-    for (JsonNode f : all) {
-      if (!f.path("scope").asText().equals("public")) continue;
-      shared++;
-      if (f.path("name").asText().equals("slugify")) slugify = f;
+  void publicFunctionsAreInstalledBeforeTheyAreListedOrCalled() {
+    // Explore lists every public function; nothing is installed yet, so Functions lists none.
+    JsonNode explore = api.get("/api/functions/public").json();
+    assertThat(explore.size()).as(explore.toString()).isGreaterThanOrEqualTo(10);
+    String id = null;
+    for (JsonNode p : explore) {
+      assertThat(p.path("installed").asBoolean()).isFalse();
+      if (p.path("function").path("name").asText().equals("slugify")) id = p.path("function").path("id").asText();
     }
-    assertThat(shared).as(all.toString()).isGreaterThanOrEqualTo(10);
-    assertThat(slugify).isNotNull();
-    String id = slugify.path("id").asText();
+    assertThat(id).isNotNull();
+    assertThat(api.get("/api/functions").json().findValuesAsText("scope")).doesNotContain("public");
 
-    // Readable, runnable from a Script step and from the person's own functions, never changed.
+    var own = api.post("/api/functions", function("pageUrl",
+        List.of(Map.of("name", "title", "type", "text")), "return '/blog/' + fn.slugify(title);", "text"));
+    assertThat(own.ok()).as(own.body()).isTrue();
+    var notYet = api.post("/api/functions/test", Map.of("function", function("pageUrl",
+        List.of(Map.of("name", "title", "type", "text")), "return '/blog/' + fn.slugify(title);", "text"),
+        "args", Map.of("title", "Hi")));
+    assertThat(notYet.json().path("error").asText()).contains("no function called fn.slugify");
+
+    assertThat(api.post("/api/functions/" + id + "/install", Map.of()).ok()).isTrue();
+    assertThat(api.post("/api/functions/" + id + "/install", Map.of()).ok()).isTrue(); // twice is fine
+    JsonNode listed = api.get("/api/functions").json();
+    assertThat(listed.findValuesAsText("name")).contains("slugify", "pageUrl");
+
+    // Still nobody's to change, and a person's own function can't take its name.
     assertThat(api.get("/api/functions/" + id).ok()).isTrue();
     assertThat(api.put("/api/functions/" + id, function("slugify",
         List.of(Map.of("name", "text", "type", "text")), "return text;", "text")).status()).isEqualTo(400);
     assertThat(api.delete("/api/functions/" + id).status()).isEqualTo(400);
     assertThat(api.post("/api/functions", function("slugify",
         List.of(Map.of("name", "text", "type", "text")), "return text;", "text")).status()).isEqualTo(409);
-
-    var own = api.post("/api/functions", function("pageUrl",
-        List.of(Map.of("name", "title", "type", "text")), "return '/blog/' + fn.slugify(title);", "text"));
-    assertThat(own.ok()).as(own.body()).isTrue();
 
     UUID workflowId = approvedWorkflow(Json.obj().put("functionId", own.json().path("id").asText())
         .set("inputs", Json.obj().put("title", "{{ input.title }}")));
@@ -154,6 +162,15 @@ class ScriptFunctionsE2eTest extends E2eSupport {
     for (JsonNode step : run.json().path("steps")) if (step.path("nodeId").asText().equals("calc")) output = step.path("output");
     assertThat(output).as(run.body()).isNotNull();
     assertThat(output.path("result").asText()).isEqualTo("/blog/hello-world");
+
+    // Uninstalled, it leaves the list and the calls to it stop working.
+    assertThat(api.delete("/api/functions/" + id + "/install").ok()).isTrue();
+    assertThat(api.get("/api/functions").json().findValuesAsText("name")).doesNotContain("slugify");
+    boolean installed = false;
+    for (JsonNode p : api.get("/api/functions/public").json()) {
+      if (p.path("function").path("id").asText().equals(id)) installed = p.path("installed").asBoolean();
+    }
+    assertThat(installed).isFalse();
   }
 
   private UUID approvedWorkflow(JsonNode config) {

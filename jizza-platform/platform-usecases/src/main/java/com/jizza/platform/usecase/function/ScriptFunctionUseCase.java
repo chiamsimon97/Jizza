@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service;
  * type, tests them, and runs them from workflows' Script steps or from each other.
  *
  * <p>What is decided here: a function is its owner's alone (another person's reads as missing),
- * Jizza's public functions are everyone's to read and run but nobody's to change, and what is worth
- * auditing. What makes a valid function is checked where it is stored.
+ * Jizza's public functions are everyone's to browse, install and run but nobody's to change, and
+ * what is worth auditing. What makes a valid function is checked where it is stored.
  */
 @Service
 public class ScriptFunctionUseCase {
@@ -35,6 +35,28 @@ public class ScriptFunctionUseCase {
 
   public List<ScriptFunctionDto> list(UUID userId) {
     return functions.list(userId);
+  }
+
+  /** Every public function, for Explore public functions; {@code installed} marks the person's. */
+  public record PublicFunction(ScriptFunctionDto function, boolean installed) {}
+
+  public List<PublicFunction> publicFunctions(UUID userId) {
+    var installed = functions.installed(userId);
+    return functions.publicFunctions().stream().map(f -> new PublicFunction(f, installed.contains(f.id()))).toList();
+  }
+
+  public void install(UUID userId, UUID functionId) {
+    if (functions.install(userId, functionId)) {
+      audit.record(userId, ActorType.USER, null, "function.installed", get(userId, functionId).name(),
+          Json.obj().put("functionId", functionId.toString()));
+    }
+  }
+
+  public void uninstall(UUID userId, UUID functionId) {
+    if (functions.uninstall(userId, functionId)) {
+      audit.record(userId, ActorType.USER, null, "function.uninstalled", get(userId, functionId).name(),
+          Json.obj().put("functionId", functionId.toString()));
+    }
   }
 
   public ScriptFunctionDto get(UUID userId, UUID functionId) {
