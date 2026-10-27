@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ThreadCard, UiAction, WorkflowPlan } from '@/types'
+import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -38,6 +38,8 @@ export interface AssistantMessage {
   plan?: WorkflowPlan
   /** A new agent or team Jizza drafted, created only if the user says so. */
   proposal?: AgentProposal
+  /** Steps only the user can take, shown as cards with buttons. */
+  userSteps?: UserSteps[]
   /** Specialists who worked on this reply, shown by their logos. */
   helpers?: { agentId: string; agentName: string }[]
   /** In a thread: the lead who wrote this reply, shown in place of Jizza. */
@@ -156,6 +158,7 @@ function describe(action: UiAction): string {
     case 'reused_workflow': return `Ran your saved workflow "${action.payload.name}"`
     case 'thread_opened': return `Handed to ${action.payload.leadName}`
     case 'thread_handback': return 'Passed back to Jizza'
+    case 'show_steps': return action.payload.title
   }
 }
 
@@ -167,6 +170,7 @@ interface Executed {
   proposal?: AgentProposal
   thread?: ThreadCard
   handback?: AssistantMessage['handback']
+  userSteps?: UserSteps[]
 }
 
 function execute(actions: UiAction[], run = true): Executed {
@@ -176,6 +180,7 @@ function execute(actions: UiAction[], run = true): Executed {
   let proposal: AgentProposal | undefined
   let thread: ThreadCard | undefined
   let handback: AssistantMessage['handback']
+  const userSteps: UserSteps[] = []
   for (const action of actions) {
     switch (action.type) {
       case 'navigate': {
@@ -233,10 +238,14 @@ function execute(actions: UiAction[], run = true): Executed {
         if (!action.payload?.conversationId) continue
         handback = { conversationId: action.payload.conversationId, reason: action.payload.reason }
         continue
+      case 'show_steps':
+        if (!action.payload?.title || !Array.isArray(action.payload.steps) || action.payload.steps.length === 0) continue
+        userSteps.push(action.payload)
+        continue
     }
     steps.push({ label: describe(action) })
   }
-  return { steps, question, plan, proposal, thread, handback }
+  return { steps, question, plan, proposal, thread, handback, ...(userSteps.length ? { userSteps } : {}) }
 }
 
 /** Origins of a job nobody typed in this conversation: it starts with a line or a moved message. */
@@ -374,11 +383,11 @@ export const useAssistantStore = create<AssistantState>()(
             break
           case 'job.completed': {
             const actions = (e.payload.actions ?? []) as UiAction[]
-            const { steps, question, plan, proposal, thread, handback } = execute(actions)
+            const { steps, question, plan, proposal, thread, handback, userSteps } = execute(actions)
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors) }
                 : m)),
               lastReplyId: id,
               // A new thread belongs in the list straight away.
@@ -616,7 +625,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
   }
   const actions = m.metadata?.actions ?? []
-  const { steps, question, plan, proposal, thread, handback } = execute(actions, false)
+  const { steps, question, plan, proposal, thread, handback, userSteps } = execute(actions, false)
   return {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -632,6 +641,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     proposal,
     thread,
     handback,
+    userSteps,
     lead: m.metadata?.lead,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
   }
