@@ -36,11 +36,19 @@ public final class Permissions {
   /** Editing the organization's public profile and asking for, withdrawing or ending a listing. */
   public static final String LISTING_MANAGE = "listing_manage";
 
+  public static final String DEVICE_VIEW = "device_view";
+  public static final String DEVICE_PAIR = "device_pair";
+  /** Sending work to a device from a workflow step or through an agent. */
+  public static final String DEVICE_USE = "device_use";
+  /** Enrollment tokens, workspace devices, and other people's devices in the workspace. */
+  public static final String DEVICE_MANAGE = "device_manage";
+
   public static final java.util.List<String> ALL = java.util.List.of(
       CONNECTOR_VIEW, CONNECTOR_CREATE, CONNECTOR_MODIFY, CONNECTOR_DELETE, CONNECTOR_USE,
       AGENT_VIEW, AGENT_CREATE, AGENT_MODIFY, AGENT_ARCHIVE,
       AGENT_TEMPLATE_VIEW, AGENT_TEMPLATE_MANAGE, AGENT_TEMPLATE_INSTALL,
       MEMBERS_VIEW, MEMBERS_INVITE, MEMBERS_MODIFY, MEMBERS_REMOVE,
       GUARDRAILS_VIEW, GUARDRAILS_LOCK,
-      LISTING_MANAGE);
+      LISTING_MANAGE,
+      DEVICE_VIEW, DEVICE_PAIR, DEVICE_USE, DEVICE_MANAGE);
 }

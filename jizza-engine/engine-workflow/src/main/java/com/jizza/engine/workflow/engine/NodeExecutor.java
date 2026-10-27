@@ -59,7 +59,9 @@ public interface NodeExecutor {
       /** This path waits until {@code wakeAt}; other paths carry on. */
       WAIT,
       /** This path waits for workflows the step started; other paths carry on. */
-      AWAIT_CHILDREN
+      AWAIT_CHILDREN,
+      /** This path waits for a command on a paired device; its result wakes the step. */
+      AWAIT_DEVICE
     }
 
     public static Outcome completed(JsonNode output) {
@@ -97,6 +99,11 @@ public interface NodeExecutor {
 
     public static Outcome awaitChildren() {
       return new Outcome(Status.AWAIT_CHILDREN, null, null, null, null);
+    }
+
+    /** Waits for a device command; {@code deadline} is when the broker gives up on it. */
+    public static Outcome awaitDevice(Instant deadline) {
+      return new Outcome(Status.AWAIT_DEVICE, null, null, null, deadline);
     }
   }
 }

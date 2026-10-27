@@ -93,7 +93,7 @@ public final class RunHistoryDto {
 
   /**
    * The kind of thing that started a run, from its trigger source: {@code manual},
-   * {@code webhook}, {@code schedule}, {@code agent}, {@code event} or {@code subworkflow}.
+   * {@code webhook}, {@code schedule}, {@code agent}, {@code event}, {@code device} or {@code subworkflow}.
    */
   public static String triggerKind(String triggerSource) {
     if (triggerSource == null || triggerSource.isBlank()) return "other";
@@ -105,6 +105,7 @@ public final class RunHistoryDto {
       case "scheduled_task", "schedule" -> "schedule";
       case "skill" -> "agent";
       case "event" -> "event";
+      case "device" -> "device";
       default -> "other";
     };
   }

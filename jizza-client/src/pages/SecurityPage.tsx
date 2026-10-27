@@ -18,12 +18,12 @@ function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
 }
 
-/** Account protection: two-step sign-in, recovery codes, signed-in devices and the password. */
+/** Account protection: two-step sign-in, recovery codes, signed-in browsers and the password. */
 export function SecurityPage() {
   return (
     <div className="page">
       <PageHeader icon={ShieldCheck} title="Security"
-        description="Two-step sign-in, recovery codes, signed-in devices, your password and your data." />
+        description="Two-step sign-in, recovery codes, signed-in browsers, your password and your data." />
       <div className="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">
         <TwoStepCard />
         <SessionsCard />

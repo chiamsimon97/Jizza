@@ -9,4 +9,6 @@ public final class JobTypes {
   public static final String WORKFLOW_ADVANCE = "workflow_advance";
   public static final String NOTIFICATION_ESCALATION = "notification_escalation";
   public static final String INBOUND_EVENT = "inbound_event";
+  /** Something happened on a paired device that may start workflows. */
+  public static final String DEVICE_EVENT = "device_event";
 }

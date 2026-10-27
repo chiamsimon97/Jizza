@@ -9,6 +9,7 @@ export const STEP_FIELDS: Record<string, string> = {
   HUMAN_INTERVENTION: 'prompt (what to ask the user when the run reaches this step)',
   CONNECTOR_TOOL: 'toolId (id of one of the service actions listed under "tools"), toolName (its label), arguments (JSON object of the action\'s arguments; values may use {{ … }})',
   MCP_TOOL: 'serverId (id of one of the servers listed under "mcpServers"), serverName, tool (the tool\'s name on that server), toolLabel, arguments (JSON object keyed by the tool\'s input schema; text values may use {{ … }}, and a value that is just {{ … }} keeps its type)',
+  DEVICE_ACTION: 'action (a device action such as browser.open, browser.extract, notify.show, fs.list, system.info), actionTitle, target (a device id, "any" or "phone"), deviceName, inputs (JSON object keyed by the action\'s input schema; text values may use {{ … }}), timeoutSec (optional)',
   TRANSFORM: 'expression (a JEXL expression over input, nodes, vars and instructions; fmt: helpers such as fmt:upper(s), fmt:round(n, 2))',
   BRANCH: 'condition (a JEXL test over input, nodes and vars, e.g. nodes.check.price < 2000)',
   FILTER: 'condition (a JEXL test; when false this path stops here)',
@@ -71,6 +72,10 @@ export const STEP_STARTERS: Record<string, Starter[]> = {
   ],
   MCP_TOOL: [
     { label: 'Pick the MCP tool', reply: 'What should this step do? I\'ll pick the server and tool that fit and fill in its arguments.' },
+    DESCRIBE,
+  ],
+  DEVICE_ACTION: [
+    { label: 'Pick the device action', reply: 'What should happen on your computer or phone? I\'ll pick the action and the device and fill in its inputs.' },
     DESCRIBE,
   ],
   BRANCH: [{ label: 'Write the condition', reply: 'Say when the workflow should take the "yes" exit, e.g. "the price is below 2000", and I\'ll write the condition.' }],

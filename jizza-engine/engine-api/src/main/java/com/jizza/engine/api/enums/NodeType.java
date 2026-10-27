@@ -19,9 +19,13 @@ package com.jizza.engine.api.enums;
  *
  * <p>{@code SCRIPT} runs a few lines of Jizza script on inputs mapped from earlier steps and gives
  * its declared outputs to later steps, in the same sandbox as formulas.
+ *
+ * <p>{@code DEVICE_ACTION} runs one action of the device action catalog on one of the person's
+ * paired devices (a laptop, a phone) and waits for the device's result without holding a worker.
  */
 public enum NodeType {
   TRIGGER, CONNECTOR_TOOL, AGENT_STEP, TRANSFORM, BRANCH, HUMAN_INTERVENTION, END,
   PARALLEL, JOIN, WAIT, SUB_WORKFLOW, FOR_EACH,
-  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY, MCP_TOOL, SCRIPT
+  APPROVAL, HTTP_REQUEST, FILTER, SWITCH, SET_VARIABLE, STORAGE, NOTIFY, MCP_TOOL, SCRIPT,
+  DEVICE_ACTION
 }

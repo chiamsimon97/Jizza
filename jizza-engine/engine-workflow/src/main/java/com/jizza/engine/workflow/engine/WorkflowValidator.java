@@ -67,6 +67,15 @@ public class WorkflowValidator {
         case SWITCH -> validateSwitch(graph, node);
         case SET_VARIABLE -> validateSetVariable(node);
         case STORAGE -> validateStorage(node);
+        case DEVICE_ACTION -> {
+          requireConfig(node, "action");
+          try {
+            com.jizza.engine.api.device.DeviceTarget.from(node.config().get("target"));
+          } catch (IllegalArgumentException e) {
+            throw new ValidationException("Device step '" + node.id()
+                + "' names a device that is not a device id");
+          }
+        }
         case NOTIFY -> {
           requireConfig(node, "message");
           String channel = node.config().path("channel").asText("app");

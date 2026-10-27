@@ -31,6 +31,9 @@ public class BodySizeLimitFilter extends OncePerRequestFilter {
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
+    // Device apps upload result files as raw bodies; that route enforces its own limit.
+    String path = request.getRequestURI().substring(request.getContextPath().length());
+    if (path.equals("/agent/v1/files")) return true;
     String type = request.getContentType();
     return type != null && type.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/");
   }

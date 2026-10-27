@@ -67,6 +67,7 @@ function detailOf(node: CanvasNode): string {
   switch (node.type) {
     case 'CONNECTOR_TOOL': return pick('toolLabel', 'toolName')
     case 'MCP_TOOL': return pick('tool')
+    case 'DEVICE_ACTION': return pick('actionTitle', 'action')
     case 'AGENT_STEP': return pick('instruction', 'instructionExpr')
     case 'HUMAN_INTERVENTION':
     case 'APPROVAL': return pick('prompt')

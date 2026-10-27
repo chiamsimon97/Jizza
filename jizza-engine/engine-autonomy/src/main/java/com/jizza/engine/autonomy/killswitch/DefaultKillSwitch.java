@@ -4,12 +4,15 @@ import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.autonomy.KillSwitch;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.error.AutonomyDeniedException;
+import com.jizza.engine.api.event.AutonomyPaused;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.KillSwitchEntity;
 import com.jizza.engine.persistence.repository.KillSwitchRepository;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +30,17 @@ public class DefaultKillSwitch implements KillSwitch {
 
   private final KillSwitchRepository repository;
   private final AuditLog audit;
+  private ApplicationEventPublisher events;
 
   public DefaultKillSwitch(KillSwitchRepository repository, AuditLog audit) {
     this.repository = repository;
     this.audit = audit;
+  }
+
+  /** Told when the switch is thrown, so work outside the run engine (device commands) stops too. */
+  @Autowired(required = false)
+  public void setEvents(ApplicationEventPublisher events) {
+    this.events = events;
   }
 
   @Override
@@ -54,6 +64,9 @@ public class DefaultKillSwitch implements KillSwitch {
     audit.record(userId, ActorType.USER, null,
         paused ? "autonomy.kill_switch_engaged" : "autonomy.kill_switch_released", null,
         Json.obj().put("paused", paused));
+    if (paused && events != null) {
+      events.publishEvent(new AutonomyPaused(userId));
+    }
   }
 
   @Override

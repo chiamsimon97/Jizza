@@ -742,7 +742,7 @@ const MINIMAP: Record<NodeType, string> = {
   TRANSFORM: '#7c3aed', BRANCH: '#059669', END: '#9ca3af',
   PARALLEL: '#0d9488', JOIN: '#0f766e', WAIT: '#f97316', SUB_WORKFLOW: '#4f46e5', FOR_EACH: '#c026d3',
   APPROVAL: '#d97706', HTTP_REQUEST: '#0891b2', FILTER: '#65a30d', SWITCH: '#15803d', SET_VARIABLE: '#9333ea', STORAGE: '#475569', NOTIFY: '#f43f5e',
-  MCP_TOOL: '#6d28d9', SCRIPT: '#5b21b6',
+  MCP_TOOL: '#6d28d9', SCRIPT: '#5b21b6', DEVICE_ACTION: '#44403c',
 }
 
 const RUN_LABEL: Record<string, string> = {

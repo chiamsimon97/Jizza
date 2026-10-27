@@ -4,7 +4,9 @@ import { ExternalLink, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-r
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
-import type { AgentDto, McpServer, RunStepDto, TeamStep } from '@/types'
+import { useQuery } from '@tanstack/react-query'
+import type { AgentDto, Device, DeviceActionSpec, McpServer, RunStepDto, TeamStep } from '@/types'
+import { devicesApi } from '@/api/devices'
 import {
   MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type SwitchCase,
@@ -130,11 +132,14 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
+  // The device catalog is read only when a device step is in the workflow.
+  const hasDeviceStep = canvas.nodes.some(n => n.type === 'DEVICE_ACTION')
+  const { data: deviceCatalog } = useQuery({ queryKey: ['devices', 'catalog'], queryFn: devicesApi.catalog, enabled: hasDeviceStep, staleTime: Infinity }, queryClient)
   const mapping: MappingContext = useMemo(() => ({
     graph: canvas,
-    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
+    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...deviceOutputFields(n, deviceCatalog), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
     sample: sampleOf(canvas, outputs),
-  }), [canvas, opened.id, outputs, mcpServers, workflows, functions])
+  }), [canvas, opened.id, outputs, mcpServers, deviceCatalog, workflows, functions])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
@@ -279,6 +284,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         </>}
 
         {node.type === 'MCP_TOOL' && <McpToolFields node={node} servers={mcpServers} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'DEVICE_ACTION' && <DeviceActionFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
 
         {node.type === 'TRANSFORM' && (
           <Labelled group label="Expression" required missing={isMissing('expression')} hint="A formula over earlier steps' data. Press {} or Ctrl+E for data, chain functions with a dot, e.g. a name chip then .trim().upper()">
@@ -1193,6 +1199,79 @@ function McpToolFields({ node, servers, setConfig, isMissing, mapping }: {
     ))}
     {tool && properties.length === 0 && (
       <JsonField key={`${node.id}:${toolName}`} label="Arguments (JSON)" value={node.config.arguments} hint="Text values can use {{ … }} to put in data from earlier steps." onChange={v => setConfig({ arguments: v })} />
+    )}
+  </>
+}
+
+/** What a device step gives later steps: its action's output fields, plus which device ran it. */
+function deviceOutputFields(node: CanvasNode, catalog?: DeviceActionSpec[]): string[] {
+  if (node.type !== 'DEVICE_ACTION') return []
+  const spec = catalog?.find(a => a.action === node.config.action)
+  return schemaFields(spec?.output ?? undefined).map(f => f.path)
+}
+
+/** Which device, which action from the catalog, and one mapped field per input it names. */
+function DeviceActionFields({ node, catalog, setConfig, isMissing, mapping }: {
+  node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: (patch: Record<string, unknown>) => void; isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const { data: devices } = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list }, queryClient)
+  const action = typeof node.config.action === 'string' ? node.config.action : ''
+  const target = typeof node.config.target === 'string' ? node.config.target : 'any'
+  const spec = catalog?.find(a => a.action === action)
+  const device = devices?.find((d: Device) => d.id === target)
+  const inputs = (node.config.inputs && typeof node.config.inputs === 'object' && !Array.isArray(node.config.inputs)
+    ? node.config.inputs : {}) as Record<string, unknown>
+  const schema = (spec?.input ?? {}) as { properties?: Record<string, { description?: string; type?: string; enum?: unknown[] }>; required?: string[] }
+  const properties = Object.entries(schema.properties ?? {})
+  const required = new Set(schema.required ?? [])
+  const offered = (d: Device) => d.actions.some(a => a === action || a.startsWith(`${action}@`)) || action === 'system.ping'
+  const groups = [...new Set((catalog ?? []).map(a => a.capability))]
+  return <>
+    <Labelled label="Device" hint={devices && devices.length === 0 ? 'No devices yet. Pair one under Settings › Devices.'
+      : device && action && !offered(device) ? `${device.name} has not offered this action. Update its Jizza Agent app or choose another device.` : 'Any device picks one of yours that can do it, online first.'}>
+      <select className={fieldClass} value={target}
+        onChange={e => setConfig({ target: e.target.value, deviceName: devices?.find(d => d.id === e.target.value)?.name ?? (e.target.value === 'phone' ? 'your phone' : undefined) })}>
+        <option value="any">Any of my devices</option>
+        <option value="phone">My phone</option>
+        {target !== 'any' && target !== 'phone' && !device && <option value={target}>{String(node.config.deviceName ?? 'Current device')}</option>}
+        {devices?.map(d => <option key={d.id} value={d.id}>{d.name}{d.online ? '' : ' (offline)'}</option>)}
+      </select>
+    </Labelled>
+    <Labelled label="Action" required missing={isMissing('action')}>
+      <select className={fieldClass} value={action}
+        onChange={e => {
+          const a = catalog?.find(x => x.action === e.target.value)
+          setConfig({ action: e.target.value || undefined, actionTitle: a?.title, inputs: undefined })
+        }}>
+        <option value="">Choose an action…</option>
+        {action && !spec && <option value={action}>{String(node.config.actionTitle ?? action)}</option>}
+        {groups.map(g => (
+          <optgroup key={g} label={g}>
+            {catalog?.filter(a => a.capability === g).map(a => <option key={a.action} value={a.action}>{a.title}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </Labelled>
+    {spec?.description && <p className="text-[11px] text-gray-500">{spec.description}</p>}
+    {spec && spec.actionType !== 'READ' && <p className="text-[11px] text-amber-700 dark:text-amber-300">This action changes things on the device, so your guardrails may ask you before it runs.</p>}
+    {spec && properties.map(([key, p]) => (
+      <Labelled group key={key} label={key} required={required.has(key)} hint={[p.description, p.enum ? `One of: ${p.enum.join(', ')}` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
+        <MappedField aria-label={key} mode="template" context={mapping} mono={p.type !== 'string'}
+          value={inputs[key] === undefined || inputs[key] === null ? '' : typeof inputs[key] === 'string' ? inputs[key] as string : JSON.stringify(inputs[key])}
+          onChange={v => {
+            const next = { ...inputs }
+            if (v === '') delete next[key]
+            else next[key] = p.type === 'number' || p.type === 'integer' ? (v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
+              : p.type === 'boolean' ? (v === 'true' ? true : v === 'false' ? false : v) : v
+            setConfig({ inputs: next })
+          }} />
+      </Labelled>
+    ))}
+    {spec && (
+      <Labelled label="Time limit (seconds)" hint={`How long the device has to finish, including waiting for it to come online. Default ${spec.defaultTimeoutSec} s.`}>
+        <input className={fieldClass} type="number" min={1} value={typeof node.config.timeoutSec === 'number' ? node.config.timeoutSec : ''}
+          onChange={e => setConfig({ timeoutSec: e.target.value === '' ? undefined : Number(e.target.value) })} />
+      </Labelled>
     )}
   </>
 }
