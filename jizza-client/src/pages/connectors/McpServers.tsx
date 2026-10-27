@@ -11,13 +11,15 @@ import { SlideOver, Field, fieldClass } from '@/components/ui/SlideOver'
 import { ACTION_LABELS, ACTION_TYPES, MODE_BADGE, MODE_LABELS } from '@/components/guardrails/labels'
 import { mcpApi } from '@/api/mcp'
 import { agentsApi } from '@/api/agents'
-import type { ActionType, AgentDto, McpAuthType, McpServer, McpServerInput, McpTool, ModeLine, ToolRunResult } from '@/types'
+import type { ActionType, AgentDto, McpAuthType, McpCatalogEntry, McpServer, McpServerInput, McpTool, ModeLine, ToolRunResult } from '@/types'
 import { Empty, SectionHeader, Table, errorText } from './shared'
 import { ResultView, schemaFields } from '@/components/connectors/ResultView'
 import { SchemaForm, inputFields } from '@/components/connectors/SchemaForm'
 import { Can } from '@/auth/Can'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
+import { useAuthorization } from '@/auth/useAuthorization'
+import { McpCatalogSection } from './McpCatalog'
 
 export const MCP_AUTH_LABELS: Record<McpAuthType, string> = {
   NONE: 'No sign-in, or the server signs you in itself',
@@ -25,12 +27,6 @@ export const MCP_AUTH_LABELS: Record<McpAuthType, string> = {
   HEADER: 'API key in a header',
   OAUTH: 'OAuth (sign in with the service)',
 }
-
-/** Servers people commonly add, filled in with one click. */
-const PRESETS: Array<{ name: string; url: string; authType: McpAuthType; agentKeys: string[]; note: string }> = [
-  { name: 'Zerodha Kite', url: 'https://mcp.kite.trade/mcp', authType: 'NONE', agentKeys: ['jizza', 'finance'],
-    note: 'Ask Jizza or Kai to log in to Kite first: its login tool gives you a link to sign in with Zerodha.' },
-]
 
 /** The agents a server can be given to: Jizza first, then the specialists. */
 function useLiveAgents() {
@@ -76,21 +72,22 @@ export function McpStatusBadge({ server }: { server: McpServer }) {
 /** The MCP servers on the Connectors page, with a way to add one. */
 export function McpServersSection() {
   const navigate = useNavigate()
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState<{ preset: McpCatalogEntry | null; redirectUri: string | null } | null>(null)
   const { data, isLoading } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list() })
   const canCreate = usePermission(PERMISSIONS.CONNECTOR_CREATE)
   const agents = useLiveAgents()
 
   return (
+    <>
     <section className="mt-10">
       <SectionHeader title="MCP servers"
-        description="Add any remote MCP server, such as Zerodha Kite, by its URL. Its tools become available to the agents you choose, in chat and as workflow steps, under your guardrails."
-        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" variant="secondary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />Add MCP server</Button></Can>} />
+        description="Remote MCP servers, such as Zerodha Kite or Gmail. Their tools become available to the agents you choose, in chat and as workflow steps, under your guardrails."
+        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" variant="secondary" onClick={() => setAdding({ preset: null, redirectUri: null })}><Plus className="h-4 w-4" />Add by URL</Button></Can>} />
 
       {isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
       {!isLoading && (!data || data.length === 0) && (
         <Empty>
-          No MCP servers yet.{canCreate && <> <button type="button" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => setAdding(true)}>Add one</button>, such as Zerodha Kite at https://mcp.kite.trade/mcp.</>}
+          No MCP servers yet.{canCreate && <> Install a ready-made one below, or <button type="button" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => setAdding({ preset: null, redirectUri: null })}>add any server by its URL</button>.</>}
         </Empty>
       )}
       {data && data.length > 0 && (
@@ -117,12 +114,16 @@ export function McpServersSection() {
         </div>
       )}
 
-      <NewMcpServerForm open={adding} onClose={() => setAdding(false)} onCreated={s => navigate(`/connectors/mcp/${s.id}`)} />
+      {adding && <NewMcpServerForm key={adding.preset?.id ?? 'custom'} open preset={adding.preset} redirectUri={adding.redirectUri}
+        onClose={() => setAdding(null)} onCreated={s => navigate(`/connectors/mcp/${s.id}`)} />}
     </section>
+    <McpCatalogSection installed={data ?? []} canInstall={canCreate}
+      onInstall={(preset, redirectUri) => setAdding({ preset, redirectUri })} />
+    </>
   )
 }
 
-function AuthFields({ value, onChange, editing }: { value: McpServerInput; onChange: (v: McpServerInput) => void; editing?: McpServer }) {
+function AuthFields({ value, onChange, editing, secretLabel, ownClient }: { value: McpServerInput; onChange: (v: McpServerInput) => void; editing?: McpServer; secretLabel?: string | null; ownClient?: boolean }) {
   const auth = value.authType ?? 'NONE'
   const keep = editing?.secretPresent && editing.authType === auth ? 'Leave empty to keep the current one' : undefined
   return <>
@@ -136,30 +137,43 @@ function AuthFields({ value, onChange, editing }: { value: McpServerInput; onCha
         onChange={e => onChange({ ...value, headerName: e.target.value })} />
     )}
     {(auth === 'BEARER' || auth === 'HEADER') && (
-      <Input label={auth === 'BEARER' ? 'Token' : 'Key'} type="password" autoComplete="off" value={value.secret ?? ''}
+      <Input label={secretLabel ?? (auth === 'BEARER' ? 'Token' : 'Key')} required={!keep && !!secretLabel} type="password" autoComplete="off" value={value.secret ?? ''}
         hint={keep ?? 'Stored encrypted. It is sent only to this server.'} onChange={e => onChange({ ...value, secret: e.target.value })} />
     )}
     {auth === 'OAUTH' && <>
-      <p className="text-xs text-gray-500 dark:text-gray-400">Jizza finds the server's sign-in page and registers itself. Fill these in only if the service gave you an app of your own.</p>
-      <Input label="Client id (optional)" value={value.oauthClientId ?? ''} onChange={e => onChange({ ...value, oauthClientId: e.target.value })} />
-      <Input label="Client secret (optional)" type="password" autoComplete="off" value={value.oauthClientSecret ?? ''} onChange={e => onChange({ ...value, oauthClientSecret: e.target.value })} />
+      <p className="text-xs text-gray-500 dark:text-gray-400">{ownClient
+        ? 'This service asks for an OAuth client of your own. Paste its client id and secret here.'
+        : "Jizza finds the server's sign-in page and registers itself. Fill these in only if the service gave you an app of your own."}</p>
+      <Input label={ownClient ? 'Client id' : 'Client id (optional)'} required={ownClient && !editing} value={value.oauthClientId ?? ''} onChange={e => onChange({ ...value, oauthClientId: e.target.value })} />
+      <Input label={ownClient ? 'Client secret' : 'Client secret (optional)'} required={ownClient && !editing} type="password" autoComplete="off" value={value.oauthClientSecret ?? ''} onChange={e => onChange({ ...value, oauthClientSecret: e.target.value })} />
       <Input label="Scopes (optional)" value={value.oauthScopes ?? ''} placeholder="read write" onChange={e => onChange({ ...value, oauthScopes: e.target.value })} />
     </>}
   </>
 }
 
-function NewMcpServerForm({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (s: McpServer) => void }) {
+/** What the add form starts from: a catalog server's settings, or nothing for a server added by URL. */
+function presetValue(preset: McpCatalogEntry | null, agents: AgentDto[]): McpServerInput {
+  if (!preset) return { authType: 'NONE' }
+  return {
+    name: preset.name, url: preset.url, authType: preset.authType,
+    headerName: preset.headerName ?? undefined, oauthScopes: preset.oauthScopes ?? undefined,
+    agentKeys: preset.agentKeys.filter(k => k === 'jizza' || agents.length === 0 || agents.some(a => a.key === k)),
+  }
+}
+
+function NewMcpServerForm({ open, onClose, onCreated, preset, redirectUri }: {
+  open: boolean; onClose: () => void; onCreated: (s: McpServer) => void
+  preset: McpCatalogEntry | null; redirectUri: string | null
+}) {
   const qc = useQueryClient()
-  const [value, setValue] = useState<McpServerInput>({ authType: 'NONE' })
-  const [note, setNote] = useState<string | null>(null)
   const agents = useLiveAgents()
-  const keys = value.agentKeys ?? ['jizza']
+  const { data: snapshot } = useAuthorization()
+  const [value, setValue] = useState<McpServerInput>(() => presetValue(preset, agents))
+  const keys = (value.agentKeys ?? ['jizza']).filter(k => k === 'jizza' || agents.length === 0 || agents.some(a => a.key === k))
   const create = useMutation({
     mutationFn: () => mcpApi.create({ ...value, agentKeys: keys.length ? keys : ['jizza'] }),
     onSuccess: async created => {
       await qc.invalidateQueries({ queryKey: ['mcp-servers'] })
-      setValue({ authType: 'NONE' })
-      setNote(null)
       onClose()
       onCreated(created)
     },
@@ -168,36 +182,36 @@ function NewMcpServerForm({ open, onClose, onCreated }: { open: boolean; onClose
     e.preventDefault()
     create.mutate()
   }
+  const account = snapshot?.activeWorkspace?.name
   return (
-    <SlideOver open={open} title="Add an MCP server" description="A remote server that speaks the Model Context Protocol, the same kind Claude connects to." onClose={onClose}
+    <SlideOver open={open} title={preset ? `Install ${preset.name}` : 'Add an MCP server'}
+      description={preset ? `${preset.description} From ${preset.publisher}.` : 'A remote server that speaks the Model Context Protocol, the same kind Claude connects to.'} onClose={onClose}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" form="new-mcp-server" loading={create.isPending}>Add server</Button>
+        <Button type="submit" form="new-mcp-server" loading={create.isPending}>{preset ? 'Install' : 'Add server'}</Button>
       </>}>
       <form id="new-mcp-server" onSubmit={submit} className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2">
-          {PRESETS.map(p => (
-            <button key={p.name} type="button" onClick={() => {
-              setValue({ name: p.name, url: p.url, authType: p.authType, agentKeys: p.agentKeys.filter(k => k === 'jizza' || agents.some(a => a.key === k)) })
-              setNote(p.note)
-            }}
-              className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:border-brand-400 hover:text-brand-700 dark:border-gray-700 dark:text-gray-300">
-              {p.name}
-            </button>
-          ))}
-        </div>
+        {account && <p className="text-xs text-gray-500 dark:text-gray-400">Installs into <span className="font-medium text-gray-700 dark:text-gray-200">{account}</span>. Switch account first to install it somewhere else.</p>}
+        {preset?.note && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">{preset.note}</p>}
+        {preset?.ownClient && redirectUri && (
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Jizza's sign-in address (redirect URI)</span>
+            <code className="break-all rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">{redirectUri}</code>
+          </div>
+        )}
+        {preset?.docsUrl && <a href={preset.docsUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline dark:text-brand-300">{preset.publisher}'s setup guide</a>}
         <Input label="Name" required value={value.name ?? ''} onChange={e => setValue({ ...value, name: e.target.value })} placeholder="Zerodha Kite"
           hint="Its tools reach agents as mcp_<name>__<tool>." />
         <Input label="Server URL" required value={value.url ?? ''} onChange={e => setValue({ ...value, url: e.target.value })} placeholder="https://mcp.example.com/mcp"
           hint="The server's streamable HTTP endpoint. It must be https." />
-        <AuthFields value={value} onChange={setValue} />
+        <AuthFields value={value} onChange={setValue} secretLabel={preset?.secretLabel} ownClient={preset?.ownClient} />
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Who can use it</span>
           <AgentChips agents={agents} keys={keys}
             onChange={(key, on) => setValue({ ...value, agentKeys: on ? [...keys.filter(k => k !== key), key] : keys.filter(k => k !== key) })} />
           <span className="text-xs text-gray-400">Its tools are offered to these agents in chat, each under its own guardrails. Jizza has it unless you choose otherwise.</span>
         </div>
-        {note && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">{note}</p>}
+        {value.authType === 'OAUTH' && <p className="text-xs text-gray-500 dark:text-gray-400">After you install it, press Sign in on its page to connect your {preset?.publisher ?? 'service'} account.</p>}
         <p className="text-xs text-gray-500 dark:text-gray-400">Jizza suggests what each of its tools does from its name (looks things up, places orders…), so each agent's guardrails apply at once: a lookup runs under its rule for looking things up. You can change any of them.</p>
         {create.error && <p className="text-sm text-red-500">{errorText(create.error)}</p>}
       </form>

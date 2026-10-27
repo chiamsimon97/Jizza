@@ -13,6 +13,7 @@ import com.jizza.engine.api.util.StepUpRequired;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.engine.security.session.CurrentWorkspace;
 import com.jizza.platform.api.rest.dto.Responses;
+import com.jizza.platform.usecase.mcp.McpCatalog;
 import com.jizza.platform.usecase.mcp.McpServerUseCase;
 import java.util.List;
 import java.util.UUID;
@@ -51,15 +52,24 @@ public class McpServerController {
   public record ToolInput(Boolean enabled, ActionType actionType) {}
 
   private final McpServerUseCase servers;
+  private final McpCatalog catalog;
 
-  public McpServerController(McpServerUseCase servers) {
+  public McpServerController(McpServerUseCase servers, McpCatalog catalog) {
     this.servers = servers;
+    this.catalog = catalog;
   }
 
   @RequiresPermission(Permissions.CONNECTOR_VIEW)
   @GetMapping
   public List<McpServerDto> list() {
     return servers.list(CurrentWorkspace.access());
+  }
+
+  /** Ready-made servers to install with one click; installing one is an ordinary create. */
+  @RequiresPermission(Permissions.CONNECTOR_VIEW)
+  @GetMapping("/catalog")
+  public McpCatalog.Catalog catalog() {
+    return catalog.catalog();
   }
 
   @RequiresPermission(Permissions.CONNECTOR_VIEW)

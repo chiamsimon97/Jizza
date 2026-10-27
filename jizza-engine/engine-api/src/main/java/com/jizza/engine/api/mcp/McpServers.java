@@ -38,6 +38,9 @@ public interface McpServers {
   /** OAUTH servers: discovers the server's authorization server and returns where to sign in. */
   URI startAuth(UUID serverId, UUID sessionId);
 
+  /** Where OAuth sign-ins come back to, for a person who registers an OAuth client of their own. */
+  default String oauthRedirectUri() { return null; }
+
   /** The OAuth redirect: single-use, expiring state, then the code exchange. */
   McpServerDto completeAuth(String state, String code);
 

@@ -1323,6 +1323,35 @@ export interface McpServerInput {
   oauthScopes?: string
 }
 
+export type McpCatalogCategory = 'personal' | 'professional' | 'finance' | 'health'
+
+/** A ready-made MCP server from Jizza's catalog, installed with one click. */
+export interface McpCatalogEntry {
+  id: string
+  name: string
+  publisher: string
+  category: McpCatalogCategory
+  description: string
+  url: string
+  authType: McpAuthType
+  headerName?: string | null
+  /** What to call the token or key a BEARER or HEADER server asks for. */
+  secretLabel?: string | null
+  /** The service hands out no OAuth client, so you bring your own. */
+  ownClient: boolean
+  oauthScopes?: string | null
+  /** The agents that get it by default; ones you don't have are skipped. */
+  agentKeys: string[]
+  note?: string | null
+  docsUrl?: string | null
+}
+
+export interface McpCatalog {
+  entries: McpCatalogEntry[]
+  /** The redirect URI an OAuth client of your own must allow. */
+  redirectUri?: string | null
+}
+
 // ── Public organizations ─────────────────────────────────────────────────────
 
 /** Only APPROVED shows on Discover (and PENDING, while an edit to a listed profile is in review). */
