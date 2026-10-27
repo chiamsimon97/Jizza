@@ -33,12 +33,17 @@ Browser sessions never work on these paths, and these paths need no CSRF token.
 
 ## 2. Enrolling and signing in
 
-1. The app makes an **Ed25519** key pair and keeps the private key in the best store it has:
+1. The app makes a key pair and keeps the private key in the best store it has. Two kinds are
+   accepted: **Ed25519** (`ed25519:<base64 X.509>`) and **ECDSA P-256** (`p256:<base64 X.509>`),
+   which is the only kind an iPhone's Secure Enclave makes and the usual kind in Android hardware.
+   A P-256 signature is ECDSA with SHA-256, as DER or as raw 64-byte r‖s. Stores:
    `tpm`, `secure_enclave`, `keystore` (Android), `keychain`, `dpapi`, or `file`. It reports which
    in `keyStorage`; Settings flags `file` as weaker.
 2. The person clicks **Pair a device** in Settings › Devices (step-up guarded) and gets a six-digit
    code and a QR code for `jizza://pair?code=482913&server=https://jizza.example.com`. Codes work
-   once, for 10 minutes. A machine nobody sits at uses an **enrollment token** (`jzt_…`) made by
+   once, for 10 minutes. The QR code also carries `&fp=`, the base64url SHA-256 (no padding) of
+   the server signing key's X.509 bytes; the app refuses the enrollment if the key it gets back
+   does not match. A machine nobody sits at uses an **enrollment token** (`jzt_…`) made by
    someone with `device_manage`; it joins as a shared device of the account, with the token's tags.
 3. `POST /agent/v1/enroll`:
 
@@ -53,7 +58,7 @@ Browser sessions never work on these paths, and these paths need no CSRF token.
    Keep `serverSigningKey`: it is how the app knows a command really came from this server.
 4. Sign in: `POST /auth/challenge {"deviceId"}` → `{"nonce", "expiresAt"}` (one minute, single
    use), then `POST /auth/token {"deviceId", "nonce", "signature"}` where `signature` is the
-   base64 Ed25519 signature over the nonce's UTF-8 bytes → `{"token", "expiresAt"}`.
+   base64 signature by the device key over the nonce's UTF-8 bytes → `{"token", "expiresAt"}`.
 
 Enrollment and sign-in are rate limited per address (20 a minute). Every pairing raises an
 in-app notification to the person and an audit entry.
@@ -164,7 +169,7 @@ invalid is forgotten.
 
 An app conforms when it does what `SimDevice` does in each `DevicesE2eTest` scenario:
 
-1. pairs with a code, signs in, says hello and gets `welcome`, sends a manifest and gets `ack`;
+1. pairs with a code (and, with a P-256 key, checks the QR fingerprint), signs in, says hello and gets `welcome`, sends a manifest and gets `ack`;
    the code does not work twice;
 2. answers a test connection (`system.ping`) over HTTPS long-polling;
 3. runs a Device action workflow step over the WebSocket and the run finishes with its output;

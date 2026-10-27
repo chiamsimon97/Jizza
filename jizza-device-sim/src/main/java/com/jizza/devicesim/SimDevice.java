@@ -68,6 +68,7 @@ public final class SimDevice implements AutoCloseable {
   private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
   private final ObjectMapper json = new ObjectMapper();
   private final KeyPair keys;
+  private final boolean p256;
   private final Map<String, Function<JsonNode, JsonNode>> handlers = new LinkedHashMap<>();
   private final ObjectNode capabilities = json.createObjectNode();
   private final List<JsonNode> received = new CopyOnWriteArrayList<>();
@@ -75,16 +76,32 @@ public final class SimDevice implements AutoCloseable {
 
   private UUID deviceId;
   private PublicKey serverKey;
+  private String serverKeyText;
   private String token;
   private WebSocket socket;
   private boolean autoRun = true;
 
   public SimDevice(String baseUrl) {
+    this(baseUrl, false);
+  }
+
+  /**
+   * @param p256 use an ECDSA P-256 key, as a phone's Secure Enclave or Android Keystore makes,
+   *             instead of Ed25519
+   */
+  public SimDevice(String baseUrl, boolean p256) {
     this.base = URI.create(baseUrl.replaceAll("/+$", "") + "/");
+    this.p256 = p256;
     try {
-      this.keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+      if (p256) {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));
+        this.keys = generator.generateKeyPair();
+      } else {
+        this.keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+      }
     } catch (GeneralSecurityException e) {
-      throw new IllegalStateException("This Java has no Ed25519", e);
+      throw new IllegalStateException("This Java has no " + (p256 ? "P-256" : "Ed25519"), e);
     }
     handle("system.ping", input -> json.createObjectNode().put("pong", true));
   }
@@ -129,8 +146,9 @@ public final class SimDevice implements AutoCloseable {
   private JsonNode enroll(String field, String secret, String name, String platform) {
     ObjectNode body = json.createObjectNode();
     body.put(field, secret);
-    body.put("publicKey", "ed25519:" + Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()));
-    body.put("keyStorage", "file");
+    body.put("publicKey", (p256 ? "p256:" : "ed25519:")
+        + Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()));
+    body.put("keyStorage", p256 ? "secure_enclave" : "file");
     body.put("name", name);
     body.put("platform", platform);
     body.put("osVersion", "sim-1");
@@ -138,7 +156,8 @@ public final class SimDevice implements AutoCloseable {
     body.putArray("protocol").add(1);
     JsonNode enrolled = postOk("agent/v1/enroll", body, false);
     deviceId = UUID.fromString(enrolled.path("deviceId").asText());
-    serverKey = parseKey(enrolled.path("serverSigningKey").asText());
+    serverKeyText = enrolled.path("serverSigningKey").asText();
+    serverKey = parseKey(serverKeyText);
     return enrolled;
   }
 
@@ -341,9 +360,23 @@ public final class SimDevice implements AutoCloseable {
 
   // ── Crypto and HTTP ────────────────────────────────────────────────────────
 
+  /**
+   * What a real app compares with the {@code fp} of the pairing QR code before trusting the key:
+   * base64url SHA-256 of the server key's X.509 bytes, without padding.
+   */
+  public String serverKeyFingerprint() {
+    try {
+      byte[] der = Base64.getDecoder().decode(serverKeyText.substring("ed25519:".length()));
+      return Base64.getUrlEncoder().withoutPadding().encodeToString(
+          java.security.MessageDigest.getInstance("SHA-256").digest(der));
+    } catch (GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   public String sign(String text) {
     try {
-      Signature signer = Signature.getInstance("Ed25519");
+      Signature signer = Signature.getInstance(p256 ? "SHA256withECDSA" : "Ed25519");
       signer.initSign(keys.getPrivate());
       signer.update(text.getBytes(StandardCharsets.UTF_8));
       return Base64.getEncoder().encodeToString(signer.sign());

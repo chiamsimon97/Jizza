@@ -26,7 +26,7 @@ import com.jizza.engine.api.util.Hashing;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.devices.broker.CommandBroker;
 import com.jizza.engine.devices.config.DeviceProperties;
-import com.jizza.engine.devices.crypto.Ed25519Keys;
+import com.jizza.engine.devices.crypto.DeviceKeys;
 import com.jizza.engine.devices.crypto.ServerKeys;
 import com.jizza.engine.devices.gateway.DeviceHub;
 import com.jizza.engine.persistence.entity.DeviceChallengeEntity;
@@ -180,7 +180,8 @@ public class DeviceRegistryService implements Devices {
     audit.record(userId, ActorType.USER, null, "device.pairing_started", null,
         Json.obj().put("expiresAt", pairing.getExpiresAt().toString()));
     String qr = "jizza://pair?code=" + code + (serverUrl == null ? ""
-        : "&server=" + URLEncoder.encode(serverUrl, StandardCharsets.UTF_8));
+        : "&server=" + URLEncoder.encode(serverUrl, StandardCharsets.UTF_8))
+        + "&fp=" + serverKeys.fingerprint();
     return new PairingCode(code, pairing.getExpiresAt(), qr);
   }
 
@@ -334,7 +335,7 @@ public class DeviceRegistryService implements Devices {
     if (byCode == byToken) {
       throw new ValidationException("Enroll with either a pairing code or an enrollment token");
     }
-    PublicKey publicKey = Ed25519Keys.parse(in.publicKey());
+    PublicKey publicKey = DeviceKeys.parse(in.publicKey());
     int protocol = negotiate(in.protocol());
     String storage = in.keyStorage() == null ? "file"
         : in.keyStorage().trim().toLowerCase(Locale.ROOT);
@@ -383,7 +384,7 @@ public class DeviceRegistryService implements Devices {
     }
     DeviceKeyEntity key = new DeviceKeyEntity();
     key.setDeviceId(device.getId());
-    key.setPublicKey(Ed25519Keys.encode(publicKey));
+    key.setPublicKey(DeviceKeys.encode(publicKey));
     key.setKeyStorage(storage);
     keys.save(key);
 
@@ -433,7 +434,7 @@ public class DeviceRegistryService implements Devices {
     if (valid) {
       DeviceKeyEntity key = keys.findFirstByDeviceIdAndRetiredAtIsNullOrderByCreatedAtDesc(deviceId)
           .orElse(null);
-      valid = key != null && Ed25519Keys.verify(Ed25519Keys.parse(key.getPublicKey()), nonce, signature);
+      valid = key != null && DeviceKeys.verify(DeviceKeys.parse(key.getPublicKey()), nonce, signature);
     }
     if (!valid) {
       if (device != null) {
@@ -475,9 +476,9 @@ public class DeviceRegistryService implements Devices {
   public void rotateKey(UUID deviceId, String newPublicKey, String signature) {
     DeviceKeyEntity current = keys.findFirstByDeviceIdAndRetiredAtIsNullOrderByCreatedAtDesc(deviceId)
         .orElseThrow(() -> new AuthException("device", "This device has no key to rotate"));
-    PublicKey next = Ed25519Keys.parse(newPublicKey);
-    String encoded = Ed25519Keys.encode(next);
-    if (!Ed25519Keys.verify(Ed25519Keys.parse(current.getPublicKey()), newPublicKey, signature)) {
+    PublicKey next = DeviceKeys.parse(newPublicKey);
+    String encoded = DeviceKeys.encode(next);
+    if (!DeviceKeys.verify(DeviceKeys.parse(current.getPublicKey()), newPublicKey, signature)) {
       throw new AuthException("bad_signature", "Sign the new key with the current one");
     }
     current.setRetiredAt(clock.instant());

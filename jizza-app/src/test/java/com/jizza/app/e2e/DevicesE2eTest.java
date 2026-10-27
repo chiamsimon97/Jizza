@@ -84,6 +84,21 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void aPhoneWithAP256HardwareKeyPairsAndChecksTheServerKeyFingerprint() {
+    var pairing = api.post("/api/devices/pairings", Map.of());
+    String qr = pairing.json().path("qrPayload").asText();
+    SimDevice phone = new SimDevice("http://localhost:" + port, true);
+    phone.enrollWithCode(pairing.json().path("code").asText(), "Chiam's iPhone", "ios");
+    // The phone trusts the key it was given only when it matches the QR code it scanned.
+    assertThat(qr).contains("&fp=" + phone.serverKeyFingerprint());
+    phone.signIn();
+    assertThat(phone.hello().path("type").asText()).isEqualTo("welcome");
+    var shown = api.get("/api/devices/" + phone.deviceId());
+    assertThat(shown.json().path("keyStorage").asText()).isEqualTo("secure_enclave");
+    assertThat(shown.json().path("platform").asText()).isEqualTo("IOS");
+  }
+
+  @Test
   void testConnectionRoundTripsOverHttpsPolling() throws Exception {
     pairAndSignIn();
     AtomicBoolean polling = new AtomicBoolean(true);

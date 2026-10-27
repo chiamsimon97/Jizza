@@ -52,6 +52,21 @@ public class ServerKeys {
     return publicKey;
   }
 
+  /**
+   * Base64url SHA-256 of the signing key's X.509 bytes, without padding. It rides in the pairing QR
+   * code so the app can check the key the enroll answer gives it belongs to this server.
+   */
+  public String fingerprint() {
+    String key = publicKey();
+    try {
+      byte[] der = Base64.getDecoder().decode(key.substring(DeviceKeys.ED25519.length()));
+      return Base64.getUrlEncoder().withoutPadding().encodeToString(
+          java.security.MessageDigest.getInstance("SHA-256").digest(der));
+    } catch (GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   /** Base64 Ed25519 signature over {@code text}, prefixed {@code ed25519:}. */
   public String sign(String text) {
     load();
@@ -59,7 +74,7 @@ public class ServerKeys {
       Signature signer = Signature.getInstance("Ed25519");
       signer.initSign(signingKey);
       signer.update(text.getBytes(StandardCharsets.UTF_8));
-      return Ed25519Keys.PREFIX + Base64.getEncoder().encodeToString(signer.sign());
+      return DeviceKeys.ED25519 + Base64.getEncoder().encodeToString(signer.sign());
     } catch (GeneralSecurityException e) {
       throw new IllegalStateException("Could not sign a device message", e);
     }
@@ -109,7 +124,7 @@ public class ServerKeys {
         KeyPair pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         entity.setPrivateKey(encryption.encrypt(pair.getPrivate().getEncoded()));
         PublicKey pub = pair.getPublic();
-        entity.setPublicKey(Ed25519Keys.encode(pub));
+        entity.setPublicKey(DeviceKeys.encode(pub));
       } catch (GeneralSecurityException e) {
         throw new IllegalStateException("Ed25519 is not available in this Java runtime", e);
       }
