@@ -70,6 +70,7 @@ export const STEP_OUTPUTS: Partial<Record<NodeType, string[]>> = {
   NOTIFY: ['title', 'message', 'sent'],
   WAIT: ['waitedUntil'],
   FOR_EACH: ['count', 'results', 'failed'],
+  DEVICE_ACTION: ['device.name', 'files'],
 }
 
 /** What the known outputs hold, so the formula editor can check and suggest by type. */

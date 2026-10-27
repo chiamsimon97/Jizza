@@ -84,6 +84,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   static final String PAUSED_FOR_PERMISSION = "permission";
   static final String PARKED_ON_TIMER = "timer";
   static final String PARKED_ON_CHILDREN = "children";
+  static final String PARKED_ON_DEVICE = "device";
   /** Nodes whose result picks which of their outgoing paths are taken. */
   private static final Set<NodeType> ROUTES_BY_OUTLET =
       Set.of(NodeType.BRANCH, NodeType.SWITCH, NodeType.APPROVAL, NodeType.FILTER);
@@ -101,6 +102,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   private final Clock clock;
   private final StepInputs stepInputs;
   private final Map<NodeType, NodeExecutor> executors = new EnumMap<>(NodeType.class);
+  private ObjectProvider<com.jizza.engine.api.device.DeviceCommands> deviceCommands;
 
   @Autowired
   public SagaWorkflowEngine(WorkflowRepository workflows, WorkflowVersionRepository versions,
@@ -128,6 +130,13 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     this.clock = clock;
     this.stepInputs = new StepInputs(sandbox);
     nodeExecutors.forEach(executor -> executors.put(executor.type(), executor));
+  }
+
+  /** Paired devices, when the app has them, so a stopped run stops its device commands too. */
+  @Autowired(required = false)
+  public void setDeviceCommands(
+      ObjectProvider<com.jizza.engine.api.device.DeviceCommands> deviceCommands) {
+    this.deviceCommands = deviceCommands;
   }
 
   @Override
@@ -348,7 +357,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
   /**
    * Re-checks a run whose steps are parked: a wait step whose time has come, or a step waiting
-   * on workflows it started. Does nothing, and costs one read, when nothing is due.
+   * on workflows it started or on a device. Does nothing, and costs one read, when nothing is due.
    */
   @Transactional
   public RunDto wake(UUID runId) {
@@ -370,7 +379,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       if (approvalLapsed) {
         clearPause(context, parked.getKey());
         due = true;
-      } else if (timerDue || PARKED_ON_CHILDREN.equals(parked.getValue())) {
+      } else if (timerDue || PARKED_ON_CHILDREN.equals(parked.getValue())
+          || PARKED_ON_DEVICE.equals(parked.getValue())) {
         context.unpark(parked.getKey());
         due = true;
       }
@@ -391,6 +401,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     audit.record(run.getUserId(), ActorType.USER, null, "run.cancelled", runId.toString(), null);
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
+    cancelDeviceCommands(runId, "The run was cancelled");
     wakeParent(context);
   }
 
@@ -498,6 +509,10 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         }
         case AWAIT_CHILDREN -> {
           context.park(nodeId, PARKED_ON_CHILDREN, null);
+          save(current, context);
+        }
+        case AWAIT_DEVICE -> {
+          context.park(nodeId, PARKED_ON_DEVICE, null);
           save(current, context);
         }
         case PERMANENT_FAILURE -> {
@@ -736,7 +751,20 @@ public class SagaWorkflowEngine implements WorkflowEngine {
             .put("error", String.valueOf(message)));
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
+    cancelDeviceCommands(run.getId(), "The run stopped");
     wakeParent(context);
+  }
+
+  /** Stops what this run still has waiting or running on paired devices. */
+  private void cancelDeviceCommands(UUID runId, String reason) {
+    com.jizza.engine.api.device.DeviceCommands commands =
+        deviceCommands == null ? null : deviceCommands.getIfAvailable();
+    if (commands == null) return;
+    try {
+      commands.cancelForRun(runId, reason);
+    } catch (RuntimeException e) {
+      log.warn("Could not cancel the device commands of run {}", runId, e);
+    }
   }
 
   /** Stops every unfinished run this run started, and theirs in turn. */

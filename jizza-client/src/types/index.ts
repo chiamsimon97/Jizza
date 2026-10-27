@@ -1064,7 +1064,7 @@ export interface ActivityCatalog {
 }
 
 // ── Run history ───────────────────────────────────────────────────────────────
-export type TriggerKind = 'manual' | 'webhook' | 'schedule' | 'agent' | 'event' | 'subworkflow' | 'other'
+export type TriggerKind = 'manual' | 'webhook' | 'schedule' | 'agent' | 'event' | 'device' | 'subworkflow' | 'other'
 
 export interface RunSummary {
   id: string
@@ -1438,3 +1438,90 @@ export interface DirectoryProfile extends DirectoryEntry {
   member: boolean
   pendingRequest: JoinRequest | null
 }
+
+// ── Devices (the Jizza Agent app on computers and phones) ─────────────────────
+
+export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'OTHER'
+export type DeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
+export type DeviceCommandStatus = 'QUEUED' | 'DISPATCHED' | 'ACCEPTED' | 'RUNNING' | 'SUCCEEDED'
+  | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
+
+export interface Device {
+  id: string
+  workspaceId: string
+  /** Null for a shared machine enrolled with a token. */
+  ownerUserId: string | null
+  name: string
+  platform: DevicePlatform
+  osVersion: string | null
+  appVersion: string | null
+  protocolVersion: number | null
+  status: DeviceStatus
+  tags: string[]
+  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, dpapi or file. */
+  keyStorage: string
+  online: boolean
+  /** idle, busy or locked, while online. */
+  state: string | null
+  capabilities: Record<string, unknown> | null
+  /** What its app offered, as action@version. */
+  actions: string[]
+  shellEnabled: boolean
+  blockedActions: string[]
+  lastSeenAt: string | null
+  createdAt: string
+}
+
+export interface DeviceActionSpec {
+  action: string
+  version: number
+  capability: string
+  actionType: ActionType
+  title: string
+  description: string
+  input: Record<string, unknown> | null
+  output: Record<string, unknown> | null
+  conditions: string[]
+  platforms: string[]
+  defaultTimeoutSec: number
+}
+
+export interface DeviceCommand {
+  id: string
+  deviceId: string
+  deviceName: string
+  userId: string
+  runId: string | null
+  nodeId: string | null
+  action: string
+  actionVersion: number
+  input: unknown
+  status: DeviceCommandStatus
+  output: unknown
+  errorCode: string | null
+  error: string | null
+  progress: string | null
+  files: string[]
+  deadlineAt: string
+  createdAt: string
+  dispatchedAt: string | null
+  acceptedAt: string | null
+  finishedAt: string | null
+}
+
+export interface DevicePairingCode { code: string; expiresAt: string; qrPayload: string }
+
+export interface DeviceEnrollmentToken {
+  id: string
+  name: string
+  /** Only in the answer that created it. */
+  token: string | null
+  usesLeft: number
+  expiresAt: string
+  tags: string[]
+  createdBy: string
+  createdAt: string
+  revoked: boolean
+}
+
+export interface DeviceLogLine { ts: string; level: string; message: string; commandId: string | null }

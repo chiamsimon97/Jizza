@@ -25,6 +25,7 @@ import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { SecurityPage } from '@/pages/SecurityPage'
+import { DevicesPage } from '@/pages/DevicesPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 import { MembersPage } from '@/pages/MembersPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
@@ -97,6 +98,9 @@ export default function App() {
             <Route path="/connectors/:serviceId/:tab?" element={<ServiceEditorPage />} />
           </Route>
           <Route path="/connections" element={<Navigate to="/connectors" replace />} />
+          <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_VIEW} />}>
+            <Route path="/settings/devices" element={<DevicesPage />} />
+          </Route>
           <Route path="/settings/security" element={<SecurityPage />} />
           <Route path="/settings" element={<Navigate to="/settings/security" replace />} />
         </Route>

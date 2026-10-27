@@ -12,7 +12,8 @@ const ACME = { id: 'ws-acme', type: 'ORGANIZATION' as const, name: 'Acme', role:
 /** What the server grants each role, per the shipped permission file. */
 const GRANTS: Record<WorkspaceType, Record<WorkspaceRole, string[]>> = {
   PERSONAL: {
-    OWNER: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete'],
+    OWNER: ['connector_view', 'connector_create', 'connector_modify', 'connector_delete',
+      'device_view', 'device_pair', 'device_use', 'device_manage'],
     ADMIN: [], DEVELOPER: [], USER: [],
   },
   ORGANIZATION: {

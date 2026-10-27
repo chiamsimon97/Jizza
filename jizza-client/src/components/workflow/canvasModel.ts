@@ -11,7 +11,7 @@ import { contractIssues } from './moduleContract'
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
   | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
   | 'APPROVAL' | 'HTTP_REQUEST' | 'FILTER' | 'SWITCH' | 'SET_VARIABLE' | 'STORAGE' | 'NOTIFY'
-  | 'MCP_TOOL' | 'SCRIPT'
+  | 'MCP_TOOL' | 'SCRIPT' | 'DEVICE_ACTION'
 
 /**
  * Which exit of a node an edge leaves from: "true"/"false" on a branch, a lane letter on a
@@ -79,12 +79,13 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   STORAGE: { label: 'Storage', desc: 'Remembers values between runs.', tone: 'bg-slate-600 text-white' },
   NOTIFY: { label: 'Notify me', desc: 'Sends you a notification.', tone: 'bg-rose-500 text-white' },
   MCP_TOOL: { label: 'MCP tool', desc: 'Calls a tool on an MCP server you added.', tone: 'bg-violet-700 text-white' },
+  DEVICE_ACTION: { label: 'Device action', desc: 'Runs an action on your computer or phone with the Jizza Agent app.', tone: 'bg-stone-700 text-white' },
 }
 
 /** The palette's steps, grouped by what they do. Start is added once, automatically. */
 export const PALETTE_GROUPS: Array<{ title: string; types: NodeType[] }> = [
   { title: 'Agents and people', types: ['AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY'] },
-  { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST'] },
+  { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST', 'DEVICE_ACTION'] },
   { title: 'Data', types: ['TRANSFORM', 'SCRIPT', 'SET_VARIABLE', 'STORAGE'] },
   { title: 'Conditions and paths', types: ['BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN'] },
   { title: 'Flow control', types: ['WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END'] },
@@ -457,6 +458,7 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
   if (n.type === 'AGENT_STEP' && !text(n.config.instruction) && !text(n.config.instructionExpr)) add('instruction', `${name} needs an instruction.`)
   if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add('toolId', `${name} needs a service action.`)
   if (n.type === 'MCP_TOOL' && !text(n.config.serverId)) add('serverId', `${name} needs an MCP server.`)
+  if (n.type === 'DEVICE_ACTION' && !text(n.config.action)) add('action', `${name} needs an action to run on the device.`)
   if (n.type === 'MCP_TOOL' && text(n.config.serverId) && !text(n.config.tool)) add('tool', `${name} needs a tool to call.`)
   if (n.type === 'TRANSFORM' && !text(n.config.expression)) add('expression', `${name} needs an expression.`)
   if ((n.type === 'BRANCH' || n.type === 'FILTER') && !text(n.config.condition)) add('condition', `${name} needs a condition.`)

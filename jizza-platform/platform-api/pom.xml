@@ -29,6 +29,7 @@
     <dependency><groupId>com.jizza</groupId><artifactId>engine-chat</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-connectors-tools</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-mcp</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-devices</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId><scope>runtime</scope></dependency>

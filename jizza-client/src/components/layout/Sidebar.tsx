@@ -5,6 +5,7 @@ import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
   ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, UserCog,
+  MonitorSmartphone,
   type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -53,6 +54,7 @@ const personalSections: NavSection[] = [
       { to: '/activity', icon: Activity,  label: 'Activity' },
       { to: '/runs',     icon: History,   label: 'Run history' },
       { to: '/usage',    icon: BarChart2, label: 'Usage' },
+      { to: '/settings/devices', icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },
@@ -75,6 +77,7 @@ const organizationSections: NavSection[] = [
     items: [
       { to: '/notifications',     icon: Bell,        label: 'Notifications' },
       { to: '/discover',          icon: Compass,     label: 'Discover' },
+      { to: '/settings/devices',  icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },

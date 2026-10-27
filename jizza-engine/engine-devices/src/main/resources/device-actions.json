@@ -1,0 +1,1138 @@
+{
+  "version": 1,
+  "actions": [
+    {
+      "action": "system.ping",
+      "version": 1,
+      "capability": "system",
+      "actionType": "READ",
+      "title": "Check the device answers",
+      "description": "Answers at once; used by Test connection.",
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "pong": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux",
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 30
+    },
+    {
+      "action": "system.info",
+      "version": 1,
+      "capability": "system",
+      "actionType": "READ",
+      "title": "Read device details",
+      "description": "The device's OS, app version, battery and network.",
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "os": {
+            "type": "string"
+          },
+          "osVersion": {
+            "type": "string"
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "battery": {
+            "type": "number"
+          },
+          "network": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux",
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 30
+    },
+    {
+      "action": "system.screenshot",
+      "version": 1,
+      "capability": "screen",
+      "actionType": "READ",
+      "title": "Take a screenshot",
+      "description": "Captures the screen, or one window.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "Window title to capture; the whole screen when empty"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Id of a file the device uploaded"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          }
+        }
+      },
+      "conditions": [
+        "window"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "notify.show",
+      "version": 1,
+      "capability": "notify",
+      "actionType": "READ",
+      "title": "Show a notification",
+      "description": "Shows a notification on the device.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux",
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 30
+    },
+    {
+      "action": "notify.ask",
+      "version": 1,
+      "capability": "notify",
+      "actionType": "READ",
+      "title": "Ask the person on the device",
+      "description": "Shows a question with buttons and returns the one pressed.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux",
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 600
+    },
+    {
+      "action": "fs.list",
+      "version": 1,
+      "capability": "fs",
+      "actionType": "READ",
+      "title": "List a folder",
+      "description": "Lists files in a folder the person allowed.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "folder": {
+                  "type": "boolean"
+                },
+                "modifiedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "fs.read",
+      "version": 1,
+      "capability": "fs",
+      "actionType": "READ",
+      "title": "Read a file",
+      "description": "Reads a file in an allowed folder, as text or as an uploaded file.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "as": {
+            "enum": [
+              "text",
+              "file"
+            ]
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string",
+            "description": "Id of a file the device uploaded"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "fs.write",
+      "version": 1,
+      "capability": "fs",
+      "actionType": "CREATE",
+      "title": "Write a file",
+      "description": "Writes text or a Jizza file into an allowed folder.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "fs.move",
+      "version": 1,
+      "capability": "fs",
+      "actionType": "UPDATE",
+      "title": "Move or rename a file",
+      "description": "Moves a file inside the allowed folders.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "browser.open",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "READ",
+      "title": "Open a page",
+      "description": "Opens a page in the Jizza browser profile.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "browser": {
+            "enum": [
+              "chrome",
+              "edge",
+              "firefox",
+              "default"
+            ]
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "browser.click",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "UPDATE",
+      "title": "Click on a page",
+      "description": "Clicks an element, found by its label, role or CSS selector.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "clicked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "browser.type",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "UPDATE",
+      "title": "Type on a page",
+      "description": "Types into a field. A saved login is named by secretRef; the password never leaves the device.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "secretRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "typed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "browser.extract",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "READ",
+      "title": "Read text or a table from a page",
+      "description": "Reads an element's text, a list or a table.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          },
+          "as": {
+            "enum": [
+              "text",
+              "table",
+              "list"
+            ]
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "browser.download",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "CREATE",
+      "title": "Download a file",
+      "description": "Downloads a file from a page and uploads it to Jizza.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Id of a file the device uploaded"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 300
+    },
+    {
+      "action": "browser.runRecording",
+      "version": 1,
+      "capability": "browser",
+      "actionType": "UPDATE",
+      "title": "Run a recorded browser task",
+      "description": "Replays steps recorded once in the Jizza Agent app.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "recordingId": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "recordingId"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "outputs": {
+            "type": "object"
+          }
+        }
+      },
+      "conditions": [
+        "site"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 900
+    },
+    {
+      "action": "ui.openApp",
+      "version": 1,
+      "capability": "ui",
+      "actionType": "UPDATE",
+      "title": "Open an app",
+      "description": "Starts or focuses a desktop app.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "ui.click",
+      "version": 1,
+      "capability": "ui",
+      "actionType": "UPDATE",
+      "title": "Click in an app",
+      "description": "Clicks a control in an app window, found by its accessibility name.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "element": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "element"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "clicked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "ui.type",
+      "version": 1,
+      "capability": "ui",
+      "actionType": "UPDATE",
+      "title": "Type in an app",
+      "description": "Types into a control in an app window.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "element": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "secretRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "element"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "typed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "ui.readWindow",
+      "version": 1,
+      "capability": "ui",
+      "actionType": "READ",
+      "title": "Read an app window",
+      "description": "Reads the text of a window or one control.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "element": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "office.readSheet",
+      "version": 1,
+      "capability": "office",
+      "actionType": "READ",
+      "title": "Read a spreadsheet",
+      "description": "Reads rows from an Excel or CSV file in an allowed folder.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sheet": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "office.writeSheet",
+      "version": 1,
+      "capability": "office",
+      "actionType": "UPDATE",
+      "title": "Write to a spreadsheet",
+      "description": "Writes rows into an Excel or CSV file in an allowed folder.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sheet": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "rows"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "integer"
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "phone.location",
+      "version": 1,
+      "capability": "location",
+      "actionType": "READ",
+      "title": "Get the phone's location",
+      "description": "Asks the phone where it is.",
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "accuracy": {
+            "type": "number"
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 120
+    },
+    {
+      "action": "phone.photo",
+      "version": 1,
+      "capability": "camera",
+      "actionType": "CREATE",
+      "title": "Take a photo",
+      "description": "Asks the person to take a photo on the phone.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Id of a file the device uploaded"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 900
+    },
+    {
+      "action": "phone.scan",
+      "version": 1,
+      "capability": "camera",
+      "actionType": "CREATE",
+      "title": "Scan a document",
+      "description": "Asks the person to scan a document; returns the file and its text.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Id of a file the device uploaded"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "defaultTimeoutSec": 900
+    },
+    {
+      "action": "phone.shortcut",
+      "version": 1,
+      "capability": "shortcuts",
+      "actionType": "UPDATE",
+      "title": "Run an iOS Shortcut",
+      "description": "Runs one of the person's Shortcuts by name.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "ios"
+      ],
+      "defaultTimeoutSec": 300
+    },
+    {
+      "action": "phone.intent",
+      "version": 1,
+      "capability": "intents",
+      "actionType": "UPDATE",
+      "title": "Send an Android intent",
+      "description": "Starts an app action on Android.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "app"
+      ],
+      "platforms": [
+        "android"
+      ],
+      "defaultTimeoutSec": 300
+    },
+    {
+      "action": "shell.run",
+      "version": 1,
+      "capability": "shell",
+      "actionType": "DELETE",
+      "title": "Run a shell command",
+      "description": "Runs a command. Never sent unless shell is turned on for that device.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "timeoutSec": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "exitCode": {
+            "type": "integer"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          }
+        }
+      },
+      "conditions": [
+        "path"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 600
+    }
+  ]
+}

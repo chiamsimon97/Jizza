@@ -204,6 +204,49 @@
     "dependencies": ["agent_template_view"],
     "permittedAccountTypes": ["organization"],
     "permittedRoles": ["owner", "admin", "developer", "user"]
-  }
+  },
   // ========== AGENT TEMPLATES PERMISSIONS END ==========
+
+  // ========== DEVICE PERMISSIONS BEGIN ==========
+  {
+    "name": "device_view",
+    "label": "View devices",
+    "description": "See your paired computers and phones, what they can do and what was sent to them.",
+    "category": "read",
+    "module": "device",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "device_pair",
+    "label": "Pair devices",
+    "description": "Pair your own computers and phones, rename them, set their limits and revoke them.",
+    "category": "read_and_write",
+    "module": "device",
+    "dependencies": ["device_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "device_use",
+    "label": "Use devices in workflows and chat",
+    "description": "Send work to your paired devices from workflow steps and through your agents.",
+    "category": "read",
+    "module": "device",
+    "dependencies": [],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin", "developer", "user"]
+  },
+  {
+    "name": "device_manage",
+    "label": "Manage the account's devices",
+    "description": "Create enrollment tokens for shared machines, and change or revoke any device in the account.",
+    "category": "read_and_write",
+    "module": "device",
+    "dependencies": ["device_view"],
+    "permittedAccountTypes": ["personal", "organization"],
+    "permittedRoles": ["owner", "admin"]
+  }
+  // ========== DEVICE PERMISSIONS END ==========
 ]

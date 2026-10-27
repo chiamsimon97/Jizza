@@ -38,6 +38,8 @@ public class SecurityConfig {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
       "/api/auth/recover", "/api/auth/recover/**", "/api/auth/invitations/*",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/**",
+      // Paired devices sign in with their own key and short-lived token, never a session.
+      "/agent/v1/**",
       "/actuator/health", "/actuator/health/**", "/actuator/info"
   };
 
@@ -65,9 +67,10 @@ public class SecurityConfig {
         .csrf(csrf -> csrf
             .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
             .csrfTokenRequestHandler(csrfHandler)
-            // The OAuth provider and third-party webhook senders cannot carry our CSRF token;
-            // both are authenticated by their own single-use secrets instead.
+            // The OAuth provider, third-party webhook senders and device apps cannot carry our
+            // CSRF token; each is authenticated by its own secret or signed token instead.
             .ignoringRequestMatchers(
+                new AntPathRequestMatcher("/agent/v1/**"),
                 new AntPathRequestMatcher("/api/oauth/callback"),
                 new AntPathRequestMatcher("/api/mcp/oauth/callback"),
                 new AntPathRequestMatcher("/api/webhooks/**")))

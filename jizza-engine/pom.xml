@@ -20,6 +20,7 @@
     <module>engine-connectors</module>
     <module>engine-connectors-tools</module>
     <module>engine-mcp</module>
+    <module>engine-devices</module>
     <module>engine-scheduler</module>
     <module>engine-workflow</module>
     <module>engine-procedures</module>

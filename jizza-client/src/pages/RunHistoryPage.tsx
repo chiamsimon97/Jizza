@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, Bot, CalendarClock, ChevronRight, GitFork, Hand, History, RefreshCw, Webhook, Zap,
+  AlertTriangle, Bot, CalendarClock, ChevronRight, GitFork, Hand, History, Laptop, RefreshCw, Webhook, Zap,
   type LucideIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -25,9 +25,9 @@ import type { RunStatus, RunSummary, TriggerKind } from '@/types'
 const PAGE = 50
 const DEFAULT_RANGE: TimeRange = { preset: 'last_7d' }
 const STATUSES: RunStatus[] = ['DONE', 'FAILED', 'RUNNING', 'WAITING', 'PAUSED_WAITING_INSTRUCTION', 'CANCELLED']
-const TRIGGERS: TriggerKind[] = ['manual', 'webhook', 'schedule', 'agent', 'subworkflow', 'event', 'other']
+const TRIGGERS: TriggerKind[] = ['manual', 'webhook', 'schedule', 'agent', 'subworkflow', 'event', 'device', 'other']
 const TRIGGER_ICON: Record<TriggerKind, LucideIcon> = {
-  manual: Hand, webhook: Webhook, schedule: CalendarClock, agent: Bot, subworkflow: GitFork, event: Zap, other: Zap,
+  manual: Hand, webhook: Webhook, schedule: CalendarClock, agent: Bot, subworkflow: GitFork, event: Zap, device: Laptop, other: Zap,
 }
 
 export function RunHistoryPage() {

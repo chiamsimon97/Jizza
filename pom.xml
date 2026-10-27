@@ -41,6 +41,7 @@
   <modules>
     <module>jizza-engine</module>
     <module>jizza-platform</module>
+    <module>jizza-device-sim</module>
     <module>jizza-app</module>
     <module>jizza-evals</module>
   </modules>
@@ -89,6 +90,12 @@
       </dependency>
       <dependency>
         <groupId>com.jizza</groupId><artifactId>engine-mcp</artifactId><version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jizza</groupId><artifactId>engine-devices</artifactId><version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jizza</groupId><artifactId>jizza-device-sim</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><version>${project.version}</version>
