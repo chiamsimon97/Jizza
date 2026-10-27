@@ -33,6 +33,8 @@ public final class ActivityTypes {
   public static final String APPROVAL_REQUIRED = "approval.required";
   /** A guardrail settled a call without the user: Jizza approved it, or a never rule stopped it. */
   public static final String GUARDRAIL_DECIDED = "guardrail.decided";
+  /** A tool handed back a link the user must open to sign in; the reply shows it as a button. */
+  public static final String SIGN_IN_LINK = "sign_in.link";
   /** Something Jizza asked the user's screen to do. */
   public static final String UI_ACTION = "ui.action";
   /** The conversation was given a title after its first exchange. */

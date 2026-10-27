@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.jizza.engine.api.orchestrator.AssistantReply;
 import com.jizza.engine.api.orchestrator.Orchestrator;
 import com.jizza.engine.api.orchestrator.UiAction;
+import com.jizza.engine.api.orchestrator.UserSteps;
 import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.chat.activity.JobRecorder;
@@ -267,7 +268,7 @@ public class TurnRunner implements ChatService {
           : Optional.empty();
       turn = routed.isPresent() ? routed.get() : Activity.run(recorder, () -> framing == null ? respond.get()
           : ChatScope.run(framing.scope(), () -> withThreadActions(respond.get(), framing.scope())));
-      Orchestrator.Turn done = turn;
+      Orchestrator.Turn done = routed.isPresent() ? turn : withSignInSteps(turn, recorder.all());
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());
       // A message Jizza moved on is answered by Jizza saying where it went, not by the lead.
@@ -444,6 +445,27 @@ public class TurnRunner implements ChatService {
     if (recorded.isEmpty()) return turn;
     List<UiAction> all = new java.util.ArrayList<>(turn.actions());
     all.addAll(recorded);
+    return new Orchestrator.Turn(turn.text(), turn.delegations(), all, turn.inputTokens(),
+        turn.outputTokens());
+  }
+
+  /**
+   * Sign-in links the job's tools handed back, as a card of steps with buttons on the reply. A
+   * link already on a card the agent made is left there.
+   */
+  public static Orchestrator.Turn withSignInSteps(Orchestrator.Turn turn, List<JobEventDto> events) {
+    java.util.Set<String> shown = new java.util.HashSet<>();
+    turn.actions().forEach(a -> shown.addAll(UserSteps.urls(a)));
+    java.util.Map<String, UserSteps.SignInLink> links = new java.util.LinkedHashMap<>();
+    for (JobEventDto e : events) {
+      if (!ActivityTypes.SIGN_IN_LINK.equals(e.type())) continue;
+      String url = e.payload().path("url").asText("");
+      if (url.isEmpty() || shown.contains(url)) continue;
+      links.putIfAbsent(url, new UserSteps.SignInLink(url, e.payload().path("service").asText("the service")));
+    }
+    if (links.isEmpty()) return turn;
+    List<UiAction> all = new java.util.ArrayList<>(turn.actions());
+    all.add(UserSteps.signInCard(List.copyOf(links.values()).subList(0, Math.min(links.size(), 3))));
     return new Orchestrator.Turn(turn.text(), turn.delegations(), all, turn.inputTokens(),
         turn.outputTokens());
   }

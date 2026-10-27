@@ -8,6 +8,7 @@ import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.activity.Activity;
 import com.jizza.engine.api.activity.ActivityTypes;
+import com.jizza.engine.api.orchestrator.UserSteps;
 import com.jizza.engine.api.activity.JobCancelledException;
 import com.jizza.engine.api.agent.CapabilityRegistry;
 import com.jizza.engine.api.audit.AuditLog;
@@ -300,6 +301,13 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
           .map(com.jizza.engine.api.activity.ActivitySink::conversationId).orElse(null);
       journal.record(conversationId, agentId, agent.getName(), call.name(),
           provider.redactArguments(call.name()) ? null : call.args());
+    }
+    if (result.ok()) {
+      // A link the user must open to sign in becomes a button on the reply, not a raw link.
+      for (UserSteps.SignInLink link : UserSteps.signInLinks(call.name(), result.output())) {
+        Activity.emit(ActivityTypes.SIGN_IN_LINK, agentId, agent.getName(), p -> p
+            .put("tool", call.name()).put("url", link.url()).put("service", link.service()));
+      }
     }
     if (shown) {
       long ms = (System.nanoTime() - started) / 1_000_000;

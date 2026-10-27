@@ -381,6 +381,23 @@ export type UiAction =
   | { type: 'thread_opened'; payload: ThreadCard }
   /** A thread's lead passed a message that does not belong there back to the main chat. */
   | { type: 'thread_handback'; payload: { conversationId: string; threadId: string; reason?: string } }
+  /** Steps only the user can take, with buttons: open a sign-in page, then carry on. */
+  | { type: 'show_steps'; payload: UserSteps }
+
+/** A card of steps for the user, from an agent or from a sign-in link a tool returned. */
+export interface UserSteps {
+  title: string
+  intro?: string
+  source?: 'agent' | 'auto'
+  steps: UserStep[]
+}
+
+export interface UserStep {
+  label: string
+  detail?: string
+  /** A link opens in a new tab; a reply sends its text as the user's message. */
+  button?: { kind: 'link'; label: string; url: string } | { kind: 'reply'; label: string; text: string }
+}
 
 /** A thread as the card on Jizza's reply shows it. */
 export interface ThreadCard {
@@ -558,7 +575,7 @@ export type JobEventType =
   | 'agent.started' | 'agent.message'
   | 'tool.call' | 'tool.api'
   | 'memory.used' | 'memory.saved' | 'output'
-  | 'approval.required' | 'ui.action' | 'conversation.titled'
+  | 'approval.required' | 'ui.action' | 'conversation.titled' | 'sign_in.link'
 
 export interface JobEvent {
   seq: number

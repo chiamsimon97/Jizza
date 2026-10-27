@@ -17,6 +17,7 @@ import { ContextChip, useCurrentContext } from './ContextChip'
 import { commandsFor, helpText, matchCommands, type SlashCommand } from './commands'
 import { useContextStore } from './contextStore'
 import { Markdown } from './Markdown'
+import { UserStepsCard, cardLinks } from './UserStepsCard'
 import { fileAttachment, folderFromFiles, pickLinkedFolder, splitAttachments, withAttachments, type Attachment, type AttachmentKind } from './attachments'
 
 const SUGGESTIONS = [
@@ -221,7 +222,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={option => choose(msg.question!, option)} onOpenJob={onOpenJob}
               inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
               onSendMany={text => void send(text)} onRetry={msg.error && !thinking ? () => retry(msg.id) : undefined}
-              onReply={() => reply(msg)} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
+              onReply={() => reply(msg)} busy={thinking} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
               sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
           ))}
 
@@ -354,8 +355,8 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry, onReply, onEdit, sentToThread }: {
-  msg: AssistantMessage; compact: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry, onReply, onEdit, sentToThread, busy }: {
+  msg: AssistantMessage; compact: boolean; busy?: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
   /** Sends several ticked answers together. */
   onSendMany: (text: string) => void
@@ -440,7 +441,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
             ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
             : 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
         }`}>
-          {msg.error ? msg.text : <Markdown text={msg.text} />}
+          {msg.error ? msg.text : <Markdown text={msg.text} hideLinks={cardLinks(msg.userSteps)} />}
           {msg.streaming && !msg.text && <TypingDots />}
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
@@ -469,6 +470,10 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
           </button>
         )}
         {msg.question && <QuestionCard question={msg.question} onChoose={onChoose} onSendMany={onSendMany} />}
+        {!msg.streaming && msg.userSteps?.map((card, i) => (
+          <UserStepsCard key={i} card={card} onSend={onSendMany} disabled={busy}
+            storageKey={msg.jobId ? `jizza.steps.${msg.jobId}.${i}` : undefined} />
+        ))}
       </div>
     </div>
   )

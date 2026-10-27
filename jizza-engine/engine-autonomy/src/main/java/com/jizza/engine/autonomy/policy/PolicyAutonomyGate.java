@@ -90,6 +90,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_open_form", ActionType.READ),
       Map.entry("app_ask_user", ActionType.READ),
       Map.entry("app_set_theme", ActionType.READ),
+      // Steps with buttons for the user to take (open a sign-in page); nothing changes.
+      Map.entry("app_show_steps", ActionType.READ),
       Map.entry("app_propose_workflow", ActionType.READ),
       Map.entry("app_propose_agent", ActionType.READ),
       // Fills in a Builder step's panel; the user still saves it.

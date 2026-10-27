@@ -11,7 +11,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  *
  * @param type    one of {@code navigate}, {@code open_form}, {@code ask_user}, {@code set_theme},
  *                {@code propose_workflow}, {@code propose_agent}, {@code configure_step},
- *                {@code reused_workflow}, {@code thread_opened}, {@code thread_handback}
+ *                {@code reused_workflow}, {@code thread_opened}, {@code thread_handback},
+ *                {@code show_steps}
  * @param payload the action's arguments, shaped per type
  */
 public record UiAction(String type, JsonNode payload) {
@@ -32,4 +33,6 @@ public record UiAction(String type, JsonNode payload) {
   public static final String THREAD_OPENED = "thread_opened";
   /** A thread's lead passed a message that does not belong there back to the main chat. */
   public static final String THREAD_HANDBACK = "thread_handback";
+  /** Steps only the user can take, with buttons: open a sign-in page, then carry on. */
+  public static final String SHOW_STEPS = "show_steps";
 }

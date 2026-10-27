@@ -6,8 +6,28 @@ import { Check, Copy } from 'lucide-react'
  * inline code, bold, italics and links. Built from React elements, never HTML, so nothing in a
  * reply can run in the page.
  */
-export function Markdown({ text }: { text: string }) {
-  return <div className="flex flex-col gap-2">{blocks(text)}</div>
+export function Markdown({ text, hideLinks }: { text: string; hideLinks?: string[] }) {
+  const shown = hideLinks?.length ? withoutLinks(text, hideLinks) : text
+  return <div className="flex flex-col gap-2">{blocks(shown)}</div>
+}
+
+/**
+ * The reply without links a card already shows as buttons: a line that is only the link goes,
+ * a link inside a sentence keeps its words, and a bare copy of the address goes.
+ */
+export function withoutLinks(text: string, urls: string[]): string {
+  let out = text
+  for (const url of urls) {
+    const esc = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const link = () => new RegExp(`\\[([^\\]]+)\\]\\(${esc}\\)`, 'g')
+    const bare = () => new RegExp(`<?${esc}>?`, 'g')
+    const onlyTheLink = (line: string) =>
+      line.includes(url) && !line.replace(link(), '').replace(bare(), '').replace(/[*_\s:.,-]/g, '')
+    out = out.split('\n').filter(line => !onlyTheLink(line)).join('\n')
+      .replace(link(), '$1')
+      .replace(bare(), '')
+  }
+  return out.replace(/\n{3,}/g, '\n\n')
 }
 
 function blocks(text: string): ReactNode[] {
@@ -74,7 +94,7 @@ function inline(text: string): ReactNode {
     const [whole] = m
     const key = parts.length
     if (m[1]) parts.push(<code key={key} className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200">{whole.slice(1, -1)}</code>)
-    else if (m[2]) parts.push(<strong key={key} className="font-semibold">{whole.slice(2, -2)}</strong>)
+    else if (m[2]) parts.push(<strong key={key} className="font-semibold">{inline(whole.slice(2, -2))}</strong>)
     else if (m[3]) parts.push(<a key={key} href={m[4]} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline hover:no-underline dark:text-brand-300">{whole.slice(1, whole.indexOf(']'))}</a>)
     else parts.push(<em key={key}>{whole.slice(1, -1)}</em>)
     last = m.index! + whole.length
