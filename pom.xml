@@ -104,6 +104,9 @@
         <groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.jizza</groupId><artifactId>engine-webauto</artifactId><version>${project.version}</version>
+      </dependency>
+      <dependency>
         <groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId><version>${project.version}</version>
       </dependency>
       <dependency>

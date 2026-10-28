@@ -7,7 +7,7 @@ import ReactFlow, {
   type OnConnectStartParams,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { ChevronDown, Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
+import { ChevronDown, Globe, Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
@@ -15,7 +15,7 @@ import { api } from '@/lib/api'
 import type { AgentDto, ConnectionDto, GeneratedToolDto, McpServer, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
   NODE_H, NODE_META, NODE_W, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
-  insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType,
+  insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
@@ -229,31 +229,31 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
   const commit = history.commit
 
-  const place = useCallback((type: NodeType, at?: { x: number; y: number }, agent?: AgentDto) => {
+  const place = useCallback((entry: NodeType | PaletteEntry, at?: { x: number; y: number }, agent?: AgentDto) => {
     const anchor = graph.nodes.find(n => n.id === selNodes[0]) ?? graph.nodes[graph.nodes.length - 1]
     const { x, y } = at
       ? { x: Math.round(at.x - NODE_W / 2), y: Math.round(at.y - NODE_H / 2) }
       : freeSpot(graph, anchor ? anchor.x + 250 : 30, anchor ? anchor.y : 150)
-    const result = addNode(graph, type, x, y, selNodes[0])
+    const result = addNode(graph, entry, x, y, selNodes[0])
     commit(agent ? assignAgent(result.graph, result.id, agent) : result.graph)
     select([result.id])
     if (!at) requestAnimationFrame(() => flow.setCenter(x + NODE_W / 2, y + NODE_H / 2, { zoom: flow.getZoom(), duration: 300 }))
   }, [graph, selNodes, commit, select, flow])
 
-  const pick = useCallback((type: NodeType, agent?: AgentDto) => {
+  const pick = useCallback((entry: NodeType | PaletteEntry, agent?: AgentDto) => {
     if (!picker) return
     setPicker(null)
     // Picking an agent adds an agent step that already knows who does it.
     const withAgent = (r: { graph: CanvasGraph; id: string }) =>
       agent ? { ...r, graph: assignAgent(r.graph, r.id, agent) } : r
     if (picker.kind === 'wire') {
-      const r = withAgent(insertOnEdge(graph, picker.edge, type))
+      const r = withAgent(insertOnEdge(graph, picker.edge, entry))
       commit(r.graph)
       select([r.id])
       return
     }
     if (picker.kind === 'after') {
-      const r = withAgent(addAfter(graph, picker.from, picker.branch, type))
+      const r = withAgent(addAfter(graph, picker.from, picker.branch, entry))
       const drop = picker.drop
       const placed = drop
         ? { ...r.graph, nodes: r.graph.nodes.map(n => (n.id === r.id ? { ...n, x: Math.round(drop.x), y: Math.round(drop.y - NODE_H / 2) } : n)) }
@@ -262,7 +262,7 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
       select([r.id])
       return
     }
-    place(type, picker.drop, agent)
+    place(entry, picker.drop, agent)
   }, [picker, graph, commit, select, place])
 
   const deleteSelection = useCallback(() => {
@@ -537,8 +537,11 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
   const onDrop = useCallback((e: DragEvent) => {
     e.preventDefault()
-    const type = e.dataTransfer.getData('application/x-jizza-node') as NodeType
-    if (type) place(type, flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
+    const raw = e.dataTransfer.getData('application/x-jizza-node')
+    if (raw) {
+      const entry = raw.startsWith('{') ? JSON.parse(raw) as PaletteEntry : raw as NodeType
+      place(entry, flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
+    }
   }, [place, flow])
 
   const nodeMenu = useCallback((e: React.MouseEvent, node: Node) => {
@@ -588,8 +591,8 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const [folded, setFolded] = useState<Set<string>>(() => new Set())
   const q = paletteQuery.trim().toLowerCase()
   const palette = PALETTE_GROUPS
-    .map(g => ({ ...g, types: g.types.filter(t => !q || `${NODE_META[t].label} ${NODE_META[t].desc} ${g.title}`.toLowerCase().includes(q)) }))
-    .filter(g => g.types.length)
+    .map(g => ({ ...g, entries: g.entries.filter(e => !q || `${e.label} ${NODE_META[e.type].desc} ${g.title}`.toLowerCase().includes(q)) }))
+    .filter(g => g.entries.length)
   const blocking = issueList.length
 
   return (
@@ -614,20 +617,21 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
               <button type="button" aria-expanded={open} onClick={() => setFolded(f => { const n = new Set(f); if (n.has(group.title)) n.delete(group.title); else n.add(group.title); return n })}
                 className="mt-1 flex items-center gap-1 px-1 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
                 <ChevronDown className={`h-3 w-3 transition-transform ${open ? '' : '-rotate-90'}`} />
+                {group.icon === 'globe' && <Globe className="h-3 w-3" />}
                 <span className="flex-1">{group.title}</span>
-                <span className="font-normal normal-case text-gray-400">{group.types.length}</span>
+                <span className="font-normal normal-case text-gray-400">{group.entries.length}</span>
               </button>
-              {open && group.types.map(type => {
-            const Icon = NODE_ICON[type]
+              {open && group.entries.map((entry, index) => {
+            const Icon = group.icon === 'globe' ? Globe : NODE_ICON[entry.type]
             return (
-              <button key={type} type="button" draggable
-                onDragStart={e => { e.dataTransfer.setData('application/x-jizza-node', type); e.dataTransfer.effectAllowed = 'move' }}
-                onClick={() => place(type)}
+              <button key={`${entry.type}:${entry.label}:${index}`} type="button" draggable
+                onDragStart={e => { e.dataTransfer.setData('application/x-jizza-node', entry.config ? JSON.stringify(entry) : entry.type); e.dataTransfer.effectAllowed = 'move' }}
+                onClick={() => place(entry)}
                 className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-brand-700">
-                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${NODE_META[type].tone}`}><Icon className="h-3.5 w-3.5" /></span>
+                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${NODE_META[entry.type].tone}`}><Icon className="h-3.5 w-3.5" /></span>
                 <span className="min-w-0">
-                  <span className="block text-xs font-medium text-gray-800 dark:text-gray-200">{NODE_META[type].label}</span>
-                  <span className="block text-[11px] leading-snug text-gray-500 dark:text-gray-400">{NODE_META[type].desc}</span>
+                  <span className="block text-xs font-medium text-gray-800 dark:text-gray-200">{entry.label}</span>
+                  <span className="block text-[11px] leading-snug text-gray-500 dark:text-gray-400">{NODE_META[entry.type].desc}</span>
                 </span>
               </button>
             )

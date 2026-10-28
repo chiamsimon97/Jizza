@@ -24,3 +24,34 @@ not line up, plus the narrow choices made so work can continue safely.
 - The existing simulator always enrolled Ed25519 devices with `keyStorage: file`. W0 added an
   explicit simulator key-storage setting so `--browser` and conformance tests can accurately send
   `keyStorage: browser` without changing existing simulator defaults.
+
+## W1
+
+- PRs #60 and #61 are still absent from `release/M2_3_1`. W1 does not depend on saved manifest
+  items and avoids changing the pending Create agent dialog. The Browser selector uses only the
+  device fields already available on this branch.
+- The prompt says a design-time test runs guardrails "as a chat tool would", but the REST response
+  has no approval-card round trip. W1 calls `AutonomyGate.decide`; an allowed action runs, a denied
+  action is forbidden, and an ask/Jizza decision returns a conflict explaining that guardrail
+  approval is required. The explicit Test step click does not silently bypass or rewrite policy.
+- Platform use cases are enforced to compile against `engine-api` only. `BrowserAgents` and
+  `DesignTimeService` are therefore engine-api ports implemented by the new `engine-webauto`
+  module, with that implementation added to the application's runtime classpath.
+- `DeviceCommands.await` returns the current command when the 55-second design-time wait ends; it
+  does not create a separate timeout status. W1 maps an unfinished response to `timed_out` for the
+  synchronous REST response while the durable command remains visible through the existing device
+  command history.
+- Browser affinity applies only to `target = sameBrowser`. Choosing `any` asks the broker to select
+  a browser independently, and choosing a device id always honors that exact device; neither choice
+  silently receives the prior session id.
+- A session named explicitly in a web step is treated as caller-owned unless `browser.open` also
+  requests `in = newSession`. Child runs inherit the parent's affinity as non-owning, while a
+  workflow-owned session is closed on DONE, FAILED or CANCELLED unless the trigger keeps it open.
+- `newBrowserSession` is carried into the child run and forces its first `browser.open` to use
+  `in = newSession`; merely omitting the parent's session is not enough because a browser device
+  may otherwise reuse its ambient session.
+- Workspace browser ids carry their workspace through affinity and terminal cleanup so a browser
+  shown by the workspace-scoped picker remains routable when the workflow runs.
+- Terminal browser closes are safety cleanup rather than new autonomous work. They use a reserved
+  internal command marker, may be queued while autonomy is paused, and are excluded from a later
+  kill-switch sweep; normal callers cannot submit a command with that marker.

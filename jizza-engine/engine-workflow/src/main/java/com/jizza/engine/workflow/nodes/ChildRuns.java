@@ -35,7 +35,10 @@ public class ChildRuns {
   public UUID start(NodeExecutor.Execution execution, UUID workflowId, JsonNode input) {
     SagaWorkflowEngine saga = engine.getIfAvailable();
     if (saga == null) throw new ValidationException("The workflow engine is not available");
-    return saga.startChild(execution.runId(), execution.node().id(), workflowId, input).id();
+    boolean inheritBrowser = execution.node().config() == null
+        || !execution.node().config().path("newBrowserSession").asBoolean(false);
+    return saga.startChild(execution.runId(), execution.node().id(), workflowId, input,
+        inheritBrowser).id();
   }
 
   public Optional<WorkflowRunEntity> find(UUID runId) {

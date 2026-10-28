@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EditorView } from '@codemirror/view'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
-import { addAfter, emptyGraph, type CanvasGraph } from './canvasModel'
+import { addAfter, emptyGraph, WEB_PALETTE, type CanvasGraph } from './canvasModel'
 import type { ScriptFunction } from '@/api/functions'
+import { queryClient } from '@/lib/queryClient'
 
 /** Types into a field where earlier steps' data shows as chips (a CodeMirror editor). */
 function type(box: HTMLElement, text: string) {
@@ -69,9 +70,13 @@ describe('CanvasInspector', () => {
 
     type(screen.getByRole('textbox', { name: 'Input amount' }), '{{ input.total }}')
     expect(save).toBeEnabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Start a new browser session' }))
     fireEvent.click(save)
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
-    expect(saved.config).toMatchObject({ workflowId: 'wf-double', inputs: { amount: '{{ input.total }}' } })
+    expect(saved.config).toMatchObject({
+      workflowId: 'wf-double', newBrowserSession: true,
+      inputs: { amount: '{{ input.total }}' },
+    })
   })
 
   it('declares a workflow\'s inputs on its Start step', () => {
@@ -185,5 +190,64 @@ describe('CanvasInspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === id)!
     expect(saved.config.message).toBe('Hi {{ input.name }}{{ upper() }}')
+  })
+
+  it('renders web schema inputs and round-trips a locator bundle without dropping metadata', async () => {
+    queryClient.clear()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const body = url.includes('/api/devices/catalog') ? [{
+        action: 'browser.click', version: 2, capability: 'browser', actionType: 'UPDATE', title: 'Click',
+        description: 'Clicks an element.', defaultTimeoutSec: 15, conditions: [], platforms: [],
+        input: {
+          type: 'object', required: ['element', 'button'],
+          properties: {
+            element: { type: 'object' },
+            button: { enum: ['left', 'right', 'middle'] },
+            clickCount: { type: 'integer', enum: [1, 2] },
+            trusted: { type: 'boolean' },
+            timeoutMs: { type: 'integer' },
+            screenshotOnError: { type: 'boolean' },
+          },
+        },
+        output: { type: 'object', properties: { clicked: { type: 'boolean' } } },
+      }] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
+    const metadata = {
+      frames: [{ strategies: [{ by: 'css', value: 'iframe' }] }],
+      shadow: [{ by: 'css', value: 'my-widget' }],
+      fingerprint: { tag: 'button', text: 'Go' },
+      label: 'Go button',
+      strategies: [{ by: 'css', value: '#go' }],
+    }
+    const graph = {
+      ...made.graph,
+      nodes: made.graph.nodes.map(n => n.id === made.id
+        ? { ...n, config: { ...n.config, inputs: { element: metadata } } } : n),
+    }
+    const { onSave } = open(graph, made.id)
+    await screen.findByRole('combobox', { name: 'Button' })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Button' }), { target: { value: 'right' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Click count/i }), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit selectors' }))
+    expect(screen.getByRole('textbox', { name: 'Element label' })).toHaveValue('Go button')
+    type(screen.getByRole('textbox', { name: 'Selector value 1' }), '#continue')
+    fireEvent.click(screen.getByRole('button', { name: 'Save selectors' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show options' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Trusted input' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toEqual({
+      button: 'right',
+      clickCount: 2,
+      trusted: true,
+      element: { ...metadata, strategies: [{ by: 'css', value: '#continue' }] },
+    })
+    vi.unstubAllGlobals()
   })
 })

@@ -132,12 +132,32 @@ public class CommandBroker implements DeviceCommands {
   @Transactional(noRollbackFor = {com.jizza.engine.api.error.ValidationException.class,
       com.jizza.engine.api.error.NotFoundException.class})
   public DeviceCommandDto submit(DeviceCommandRequest req) {
+    return submit(req, false);
+  }
+
+  @Override
+  @Transactional(noRollbackFor = {com.jizza.engine.api.error.ValidationException.class,
+      com.jizza.engine.api.error.NotFoundException.class})
+  public DeviceCommandDto submitSafetyCleanup(DeviceCommandRequest req) {
+    if (!"browser.close".equals(req.action()) || req.interactive()) {
+      throw new ValidationException("Safety cleanup may only close a browser in the background");
+    }
+    if (!DeviceCommands.SAFETY_CLEANUP_NODE.equals(req.nodeId())) {
+      throw new ValidationException("Safety cleanup needs its reserved command marker");
+    }
+    return submit(req, true);
+  }
+
+  private DeviceCommandDto submit(DeviceCommandRequest req, boolean safetyCleanup) {
+    if (!safetyCleanup && DeviceCommands.SAFETY_CLEANUP_NODE.equals(req.nodeId())) {
+      throw new ValidationException("The command uses a reserved node id");
+    }
     if (req.idempotencyKey() != null) {
       Optional<DeviceCommandEntity> existing = commands.findByIdempotencyKey(req.idempotencyKey());
       if (existing.isPresent()) return toDto(existing.get());
     }
     KillSwitch ks = killSwitch.getIfAvailable();
-    if (ks != null && ks.paused(req.userId())) {
+    if (!safetyCleanup && ks != null && ks.paused(req.userId())) {
       throw new AutonomyDeniedException("Autonomy is paused, so nothing is sent to your devices "
           + "until you release the kill switch.");
     }
@@ -547,8 +567,10 @@ public class CommandBroker implements DeviceCommands {
   @Transactional
   public int cancelForUser(UUID userId, String reason) {
     List<DeviceCommandEntity> open = commands.findByUserIdAndStatusIn(userId, OPEN);
-    open.forEach(cmd -> cancel(cmd, reason));
-    return open.size();
+    List<DeviceCommandEntity> cancellable = open.stream()
+        .filter(cmd -> !DeviceCommands.SAFETY_CLEANUP_NODE.equals(cmd.getNodeId())).toList();
+    cancellable.forEach(cmd -> cancel(cmd, reason));
+    return cancellable.size();
   }
 
   private void cancel(DeviceCommandEntity cmd, String reason) {

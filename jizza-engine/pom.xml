@@ -23,6 +23,7 @@
     <module>engine-devices</module>
     <module>engine-scheduler</module>
     <module>engine-workflow</module>
+    <module>engine-webauto</module>
     <module>engine-procedures</module>
     <module>engine-notifications</module>
     <module>engine-autonomy</module>

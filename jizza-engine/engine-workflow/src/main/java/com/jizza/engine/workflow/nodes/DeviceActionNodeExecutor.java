@@ -19,6 +19,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import com.jizza.engine.workflow.engine.NodeExecutor;
+import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
 import com.jizza.engine.workflow.sandbox.Templates;
 import java.time.Duration;
@@ -85,9 +86,22 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           + config.get("action").asText() + "'");
     }
     DeviceActionSpec spec = found.get();
+    boolean browserAction = "browser".equals(spec.capability());
+    String configuredTarget = config.path("target").asText("sameBrowser");
+    RunContext.Browser browser = browserAction && "sameBrowser".equals(configuredTarget)
+        ? execution.context().browser() : null;
     DeviceTarget target;
     try {
-      target = DeviceTarget.from(config.get("target"));
+      if (browser != null) {
+        target = DeviceTarget.device(browser.deviceId());
+      } else if (browserAction && ("sameBrowser".equals(configuredTarget)
+          || config.get("target") == null || config.path("target").isNull()
+          || config.path("target").isTextual()
+              && (configuredTarget.isBlank() || "any".equals(configuredTarget)))) {
+        target = new DeviceTarget(null, null, "browser", false);
+      } else {
+        target = DeviceTarget.from(config.get("target"));
+      }
     } catch (IllegalArgumentException e) {
       return Outcome.permanentFailure("The device this step names is not a device id");
     }
@@ -99,6 +113,13 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure("The step's inputs could not be prepared: " + e.getMessage());
     }
     if (!inputs.isObject()) return Outcome.permanentFailure("The step's inputs must be an object");
+    if (browserAction && browser != null && !config.path("inputs").has("session")) {
+      ((ObjectNode) inputs).put("session", browser.sessionId());
+    }
+    if ("browser.open".equals(spec.action()) && execution.context().needsNewBrowserSession()) {
+      ((ObjectNode) inputs).put("in", "newSession");
+      ((ObjectNode) inputs).remove("session");
+    }
 
     UUID actor = execution.owningAgentId() != null ? execution.owningAgentId()
         : agents.findByUserIdAndIsOrchestratorTrue(execution.userId()).map(AgentEntity::getId)
@@ -122,7 +143,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           + target.describe() + " to " + lower(spec.title()) + ". " + decision.reason() + ".");
     }
 
-    UUID workspaceId = null;
+    UUID workspaceId = browser == null ? null : browser.workspaceId();
     if (config.hasNonNull("workspaceId")) {
       try {
         workspaceId = UUID.fromString(config.get("workspaceId").asText());
@@ -143,6 +164,18 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     }
     state.put("commandId", command.id().toString());
     state.put("device", command.deviceName());
+    state.put("browserAction", browserAction);
+    if (browserAction) {
+      if (workspaceId != null) state.put("browserWorkspace", workspaceId.toString());
+      boolean opensNewSession = "browser.open".equals(spec.action())
+          && "newSession".equals(inputs.path("in").asText());
+      String requestedSession = inputs.path("session").isTextual()
+          ? inputs.get("session").asText() : null;
+      boolean reusesAffinity = browser != null && browser.sessionId().equals(requestedSession);
+      state.put("browserOpened", opensNewSession
+          || requestedSession == null && browser == null
+          || reusesAffinity && browser.opened());
+    }
     return follow(broker, state, command.id());
   }
 
@@ -154,20 +187,36 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     }
     if (!command.status().finished()) return Outcome.awaitDevice(command.deadlineAt());
     return switch (command.status()) {
-      case SUCCEEDED -> Outcome.completed(outputOf(command));
-      case FAILED, EXPIRED -> {
+      case SUCCEEDED -> Outcome.completed(outputOf(command,
+          state.path("browserAction").asBoolean(false),
+          state.path("browserOpened").asBoolean(true),
+          state.path("browserWorkspace").asText(null)));
+      case FAILED -> {
         // The next attempt sends a new command rather than reading this one again.
         state.remove("commandId");
-        yield Outcome.retryable(command.explain());
+        preserveError(state, command);
+        String kind = command.output() == null ? null
+            : command.output().path("error").path("kind").asText(null);
+        String message = failureMessage(command);
+        yield state.path("browserAction").asBoolean(false) && kind != null
+            && PERMANENT_BROWSER_FAILURES.contains(kind)
+            ? Outcome.permanentFailure(message) : Outcome.retryable(message);
+      }
+      case EXPIRED -> {
+        state.remove("commandId");
+        preserveError(state, command);
+        yield Outcome.retryable(failureMessage(command));
       }
       default -> Outcome.permanentFailure(command.explain());
     };
   }
 
   /** What the device returned, with which device did it and the files it sent back. */
-  static JsonNode outputOf(DeviceCommandDto command) {
+  static JsonNode outputOf(DeviceCommandDto command, boolean browserAction,
+                           boolean browserOpened, String browserWorkspace) {
     ObjectNode out = command.output() != null && command.output().isObject()
         ? ((ObjectNode) command.output()).deepCopy() : Json.obj();
+    out.remove(java.util.List.of("_browser", "_browserOpened", "_browserClear", "_browserAction"));
     if (command.output() != null && !command.output().isObject() && !command.output().isNull()) {
       out.set("value", command.output());
     }
@@ -177,7 +226,46 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       var files = out.putArray("files");
       command.files().forEach(f -> files.add(f.toString()));
     }
+    if (browserAction) {
+      out.put("_browserAction", command.action());
+      if ("browser.open".equals(command.action()) && out.path("sessionId").isTextual()) {
+        out.putObject("_browser").put("deviceId", command.deviceId().toString())
+            .put("sessionId", out.get("sessionId").asText());
+        if (browserWorkspace != null) {
+          ((ObjectNode) out.get("_browser")).put("workspaceId", browserWorkspace);
+        }
+        out.put("_browserOpened", browserOpened);
+      } else if ("browser.close".equals(command.action())
+          && !"tab".equals(command.input().path("what").asText("session"))
+          && command.input().path("session").isTextual()) {
+        out.putObject("_browserClear").put("deviceId", command.deviceId().toString())
+            .put("sessionId", command.input().get("session").asText());
+      }
+    }
     return out;
+  }
+
+  private static final java.util.Set<String> PERMANENT_BROWSER_FAILURES = java.util.Set.of(
+      "element_not_found", "element_ambiguous", "not_actionable", "site_not_allowed",
+      "bad_input", "secret_missing", "no_session", "cancelled_by_person");
+
+  private static void preserveError(ObjectNode state, DeviceCommandDto command) {
+    ObjectNode error = command.output() != null && command.output().path("error").isObject()
+        ? ((ObjectNode) command.output().path("error")).deepCopy() : Json.obj();
+    if (command.files() != null && !command.files().isEmpty()) {
+      var screenshots = error.putArray("files");
+      command.files().forEach(id -> screenshots.add(id.toString()));
+    }
+    state.set("error", error);
+  }
+
+  private static String failureMessage(DeviceCommandDto command) {
+    String message = command.deviceName() + " could not do it";
+    if (command.error() != null && !command.error().isBlank()) message += ": " + command.error();
+    JsonNode error = command.output() == null ? null : command.output().path("error");
+    String url = error == null ? null : error.path("url").asText(null);
+    if (url == null && command.output() != null) url = command.output().path("url").asText(null);
+    return url == null || url.isBlank() ? message : message + " on " + url;
   }
 
   /** As the chat tool for the same device is named, so one guardrail covers both. */

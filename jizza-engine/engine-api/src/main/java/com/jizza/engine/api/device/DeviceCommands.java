@@ -15,6 +15,8 @@ import java.util.UUID;
  */
 public interface DeviceCommands {
 
+  String SAFETY_CLEANUP_NODE = "__safety_cleanup__";
+
   /**
    * Validates, routes and saves a command, and sends it now when the device is connected.
    *
@@ -22,6 +24,12 @@ public interface DeviceCommands {
    *         the inputs do not fit the action, or the device's limits would refuse it
    */
   DeviceCommandDto submit(DeviceCommandRequest request);
+
+  /**
+   * Queues a narrowly scoped safety cleanup even while autonomy is paused. Callers must use this
+   * only to close resources that an already-authorized command opened.
+   */
+  DeviceCommandDto submitSafetyCleanup(DeviceCommandRequest request);
 
   Optional<DeviceCommandDto> find(UUID commandId);
 

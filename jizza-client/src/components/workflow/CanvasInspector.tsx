@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ExternalLink, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import { useQuery } from '@tanstack/react-query'
 import type { AgentDto, Device, DeviceActionSpec, McpServer, RunStepDto, TeamStep } from '@/types'
 import { devicesApi } from '@/api/devices'
+import { webApi, type WebTestResult } from '@/api/web'
 import {
-  MAX_CASES, NODE_META, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
-  type CanvasGraph, type CanvasNode, type SwitchCase,
+  MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
+  type CanvasGraph, type CanvasNode, type FieldIssue, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 import { dataSourcesFor, type DeclaredField } from './dataMapping'
@@ -119,12 +120,15 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   useEffect(() => { if (focusNote) note.current?.focus() }, [focusNote])
 
   const child = node.type === 'SUB_WORKFLOW' ? workflows?.find(w => w.id === node.config.workflowId) : undefined
+  // The device catalog is read only when a device step is in the workflow.
+  const hasDeviceStep = canvas.nodes.some(n => n.type === 'DEVICE_ACTION')
+  const { data: deviceCatalog } = useQuery({ queryKey: ['devices', 'catalog'], queryFn: devicesApi.catalog, enabled: hasDeviceStep, staleTime: Infinity }, queryClient)
   // A module's required inputs that have no default must be mapped; the module is only known here.
   const unmapped = moduleInputs(child?.graph).filter(f => f.required && f.default === undefined && !mappedInputs(node)[f.name]?.trim())
   // Likewise a function's required inputs, for a Script step that runs one.
   const fn = node.type === 'SCRIPT' ? functions?.find(f => f.id === node.config.functionId) : undefined
   const unmappedFn = (fn?.inputs ?? []).filter(f => f.required && f.default === undefined && !mappedInputs(node)[f.name]?.trim())
-  const missing = [...fieldIssues(node), ...[...unmapped, ...unmappedFn].map(f => ({ field: `inputs.${f.name}`, message: `"${node.label}" needs a value for the input "${f.name}".` }))]
+  const missing = [...fieldIssues(node), ...webInputIssues(node, deviceCatalog), ...[...unmapped, ...unmappedFn].map(f => ({ field: `inputs.${f.name}`, message: `"${node.label}" needs a value for the input "${f.name}".` }))]
   const isMissing = (field: string) => missing.some(m => m.field === field || m.field.startsWith(`${field}.`))
   const issues = [...findIssues(graph).filter(i => i.nodeId === node.id).map(i => i.message), ...extraIssues]
   const setConfig = (patch: Record<string, unknown>, _key?: string) =>
@@ -132,9 +136,6 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
-  // The device catalog is read only when a device step is in the workflow.
-  const hasDeviceStep = canvas.nodes.some(n => n.type === 'DEVICE_ACTION')
-  const { data: deviceCatalog } = useQuery({ queryKey: ['devices', 'catalog'], queryFn: devicesApi.catalog, enabled: hasDeviceStep, staleTime: Infinity }, queryClient)
   const mapping: MappingContext = useMemo(() => ({
     graph: canvas,
     sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...deviceOutputFields(n, deviceCatalog), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
@@ -284,7 +285,9 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         </>}
 
         {node.type === 'MCP_TOOL' && <McpToolFields node={node} servers={mcpServers} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
-        {node.type === 'DEVICE_ACTION' && <DeviceActionFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'DEVICE_ACTION' && (node.config.preset === 'web'
+          ? <WebStepFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />
+          : <DeviceActionFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />)}
 
         {node.type === 'TRANSFORM' && (
           <Labelled group label="Expression" required missing={isMissing('expression')} hint="A formula over earlier steps' data. Press {} or Ctrl+E for data, chain functions with a dot, e.g. a name chip then .trim().upper()">
@@ -325,6 +328,11 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
               Keep going when an item fails
             </label>
           </>}
+          <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+            <input type="checkbox" checked={node.config.newBrowserSession === true}
+              onChange={e => setConfig({ newBrowserSession: e.target.checked || undefined })} />
+            Start a new browser session
+          </label>
           {node.type === 'SUB_WORKFLOW' && <ModuleCallFields key={str('workflowId')} node={node} module={child} setConfig={setConfig} isMissing={isMissing} mapping={mapping} str={str} />}
         </>}
 
@@ -1204,10 +1212,304 @@ function McpToolFields({ node, servers, setConfig, isMissing, mapping }: {
 }
 
 /** What a device step gives later steps: its action's output fields, plus which device ran it. */
-function deviceOutputFields(node: CanvasNode, catalog?: DeviceActionSpec[]): string[] {
+function deviceOutputFields(node: CanvasNode, catalog?: DeviceActionSpec[]): DeclaredField[] {
   if (node.type !== 'DEVICE_ACTION') return []
-  const spec = catalog?.find(a => a.action === node.config.action)
-  return schemaFields(spec?.output ?? undefined).map(f => f.path)
+  const spec = catalog?.find(a => a.action === node.config.action && (!node.config.version || a.version === node.config.version))
+  return schemaFields(spec?.output ?? undefined).map(f => ({
+    path: f.path,
+    type: f.type === 'boolean' ? 'boolean' : f.type === 'number' || f.type === 'integer' ? 'number'
+      : f.type === 'string' ? 'text' : f.type === 'array' ? 'list' : f.type === 'object' ? 'map' : 'any',
+  }))
+}
+
+type WebProperty = {
+  type?: string
+  description?: string
+  enum?: unknown[]
+  default?: unknown
+  oneOf?: unknown[]
+  minimum?: number
+  maximum?: number
+  $ref?: string
+}
+
+function webInputIssues(node: CanvasNode, catalog?: DeviceActionSpec[]): FieldIssue[] {
+  if (node.type !== 'DEVICE_ACTION' || node.config.preset !== 'web') return []
+  const spec = catalog?.find(a => a.action === node.config.action
+    && (!node.config.version || a.version === node.config.version))
+  if (!spec) {
+    return [{
+      field: 'action',
+      message: `"${node.label}" is waiting for its web action definition.`,
+    }]
+  }
+  const schema = (spec?.input ?? {}) as {
+    required?: string[]
+    oneOf?: Array<{ required?: string[] }>
+  }
+  const inputs = asInputs(node.config.inputs)
+  const present = (field: string) => inputs[field] !== undefined && inputs[field] !== null
+    && (typeof inputs[field] !== 'string' || inputs[field].trim() !== '')
+  const issues: FieldIssue[] = []
+  for (const field of schema.required ?? []) {
+    if (field !== 'element' && !present(field)) {
+      issues.push({
+        field: `inputs.${field}`,
+        message: `"${node.label}" needs a value for the input "${field}".`,
+      })
+    }
+  }
+  if (schema.oneOf?.length) {
+    const matches = schema.oneOf.filter(choice => (choice.required ?? []).every(present)).length
+    if (matches !== 1) {
+      const field = schema.oneOf.flatMap(choice => choice.required ?? [])[0] ?? 'inputs'
+      issues.push({
+        field: `inputs.${field}`,
+        message: `"${node.label}" needs exactly one of the available input choices.`,
+      })
+    }
+  }
+  return issues
+}
+
+const asInputs = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+/** Browser-specific device action settings. Pick-on-page intentionally remains unavailable until W2. */
+export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: {
+  node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: SetConfig
+  isMissing: (f: string) => boolean; mapping: MappingContext
+}) {
+  const { data: browsers } = useQuery({ queryKey: ['web', 'browsers'], queryFn: webApi.browsers }, queryClient)
+  const action = typeof node.config.action === 'string' ? node.config.action : WEB_PALETTE[0].config!.action as string
+  const version = typeof node.config.version === 'number' ? node.config.version : 1
+  const target = typeof node.config.target === 'string' ? node.config.target : 'sameBrowser'
+  const spec = catalog?.find(a => a.action === action && a.version === version)
+  const inputs = asInputs(node.config.inputs)
+  const schema = (spec?.input ?? {}) as { properties?: Record<string, WebProperty>; required?: string[] }
+  const required = new Set(schema.required ?? [])
+  const elementAction = WEB_ELEMENT_INPUT_ACTIONS.has(action)
+  const [more, setMore] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<WebTestResult>()
+  const [testError, setTestError] = useState('')
+  const concrete = browsers?.find(b => b.id === target)
+
+  const setInput = (key: string, value: unknown) => {
+    const next = { ...inputs }
+    if (value === undefined || value === '') delete next[key]
+    else next[key] = value
+    setConfig({ inputs: next })
+  }
+  const switchAction = (nextAction: string) => {
+    const preset = WEB_PALETTE.find(e => e.config?.action === nextAction)!
+    const keepElement = WEB_ELEMENT_INPUT_ACTIONS.has(nextAction) ? inputs.element : undefined
+    setConfig({
+      action: nextAction, version: preset.config?.version, actionTitle: preset.label,
+      inputs: keepElement === undefined ? undefined : { element: keepElement },
+    })
+    setTestResult(undefined)
+    setTestError('')
+  }
+  const test = async () => {
+    if (!concrete) return
+    setTesting(true)
+    setTestResult(undefined)
+    setTestError('')
+    try {
+      setTestResult(await webApi.testStep({ deviceId: concrete.id, action, version, inputs }))
+    } catch (e) {
+      const problem = (e as { problem?: { detail?: string; title?: string } }).problem
+      setTestError(problem?.detail ?? problem?.title ?? (e instanceof Error ? e.message : 'The test failed.'))
+    } finally {
+      setTesting(false)
+    }
+  }
+  const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
+    key !== 'session' && key !== 'element' && key !== 'trusted' && key !== 'timeoutMs' && key !== 'screenshotOnError')
+
+  return <>
+    <Labelled label="Browser" hint="Same browser continues the browser used by the previous web step.">
+      <select aria-label="Browser" className={fieldClass} value={target}
+        onChange={e => {
+          const browser = browsers?.find(b => b.id === e.target.value)
+          setConfig({
+            target: e.target.value, deviceName: browser?.name,
+            workspaceId: browser?.workspaceId ?? undefined,
+          })
+        }}>
+        <option value="sameBrowser">Same browser as earlier steps</option>
+        <option value="any">Any browser</option>
+        {target !== 'sameBrowser' && target !== 'any' && !concrete && <option value={target}>{String(node.config.deviceName ?? 'Current browser')}</option>}
+        {browsers?.map(b => <option key={b.id} value={b.id}>{b.name}{b.online ? ' (online)' : ' (offline)'}</option>)}
+      </select>
+    </Labelled>
+
+    <Labelled label="Step">
+      <select aria-label="Step" className={fieldClass} value={action} onChange={e => switchAction(e.target.value)}>
+        {WEB_PALETTE.map(e => <option key={String(e.config?.action)} value={String(e.config?.action)}>{e.label}</option>)}
+      </select>
+    </Labelled>
+    {spec?.description && <p className="text-[11px] text-gray-500">{spec.description}</p>}
+
+    {elementAction && (
+      <ElementField value={inputs.element} deviceId={concrete?.id} mapping={mapping}
+        required={WEB_ELEMENT_ACTIONS.has(action)} missing={isMissing('inputs.element')} onChange={value => setInput('element', value)} />
+    )}
+
+    {ordinary.map(([key, property]) => (
+      <WebSchemaField key={key} name={key} property={property} value={inputs[key]} required={required.has(key)}
+        mapping={mapping} onChange={value => setInput(key, value)} />
+    ))}
+
+    <Section title="More options">
+      <button type="button" aria-expanded={more} onClick={() => setMore(v => !v)}
+        className="inline-flex items-center gap-1 self-start text-xs text-brand-600 dark:text-brand-300">
+        {more ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} {more ? 'Hide options' : 'Show options'}
+      </button>
+      {more && <>
+        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input type="checkbox" checked={inputs.trusted === true} onChange={e => setInput('trusted', e.target.checked || undefined)} /> Trusted input
+        </label>
+        <Labelled group label="Timeout (milliseconds)">
+          <MappedField aria-label="Timeout (milliseconds)" mode="template" context={mapping} mono
+            value={inputs.timeoutMs == null ? '' : String(inputs.timeoutMs)}
+            onChange={v => setInput('timeoutMs', v && !v.includes('{{') && !Number.isNaN(Number(v)) ? Number(v) : v)} />
+        </Labelled>
+        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input type="checkbox" checked={inputs.screenshotOnError !== false} onChange={e => setInput('screenshotOnError', e.target.checked)} /> Screenshot on error
+        </label>
+      </>}
+    </Section>
+
+    <Section title="Test step">
+      <p className="text-[11px] text-gray-500">Test step uses the values as written.</p>
+      {!concrete && <p className="text-xs text-amber-700 dark:text-amber-300">Choose a specific browser above to test this step.</p>}
+      <Button type="button" variant="secondary" size="sm" disabled={!concrete || testing} onClick={test}>
+        {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Test step
+      </Button>
+      {testError && <p className="text-xs text-red-600">{testError}</p>}
+      {testResult && <WebTestResultView result={testResult} deviceId={concrete?.id} />}
+    </Section>
+  </>
+}
+
+function WebSchemaField({ name, property, value, required, mapping, onChange }: {
+  name: string; property: WebProperty; value: unknown; required: boolean
+  mapping: MappingContext; onChange: (value: unknown) => void
+}) {
+  const label = name.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())
+  const hint = property.description
+  if (property.enum) {
+    return <Labelled label={label} required={required} hint={hint}>
+      <select aria-label={label} className={fieldClass} value={value == null ? '' : String(value)}
+        onChange={e => onChange(e.target.value === '' ? undefined
+          : property.enum?.find(v => String(v) === e.target.value))}>
+        <option value="">Choose…</option>
+        {property.enum.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
+      </select>
+    </Labelled>
+  }
+  if (property.type === 'boolean') {
+    return <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+      <input type="checkbox" aria-label={label} checked={value === true} onChange={e => onChange(e.target.checked)} /> {label}
+    </label>
+  }
+  if (property.type === 'object' || property.type === 'array' || property.oneOf || property.$ref) {
+    return <JsonField label={label} value={value} hint={hint ?? 'Enter compact JSON.'} onChange={onChange} />
+  }
+  return <Labelled group label={label} required={required} hint={hint}>
+    <MappedField aria-label={label} mode="template" context={mapping} mono={property.type !== 'string'}
+      value={value == null ? '' : typeof value === 'string' ? value : String(value)}
+      onChange={v => onChange((property.type === 'number' || property.type === 'integer') && v && !v.includes('{{') && !Number.isNaN(Number(v)) ? Number(v) : v)} />
+  </Labelled>
+}
+
+type LocatorStrategy = { by: string; value?: string; role?: string; name?: string; exact?: boolean }
+
+export function ElementField({ value, deviceId, mapping, required, missing, onChange }: {
+  value: unknown; deviceId?: string; mapping: MappingContext; required?: boolean; missing?: boolean; onChange: (value: unknown) => void
+}) {
+  const template = typeof value === 'string' ? value : ''
+  const bundle = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const strategies = Array.isArray(bundle.strategies) ? bundle.strategies as LocatorStrategy[] : []
+  const [editing, setEditing] = useState(false)
+  const preview = typeof bundle.preview === 'string' ? bundle.preview : undefined
+  return <Labelled group label="Element" required={required} missing={missing}>
+    {template ? (
+      <MappedField aria-label="Element" mode="template" context={mapping} mono value={template} onChange={onChange} />
+    ) : (
+      <div className="rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300">
+            {typeof bundle.label === 'string' && bundle.label ? bundle.label : strategies.length ? `${strategies.length} selector${strategies.length === 1 ? '' : 's'}` : 'No element selected'}
+          </span>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit selectors</Button>
+        </div>
+        {preview && deviceId && <img className="mt-2 max-h-32 rounded border border-gray-200" alt="Element preview" src={devicesApi.fileUrl(deviceId, preview)} />}
+      </div>
+    )}
+    <div className="flex items-center gap-2">
+      <Button type="button" variant="secondary" size="sm" disabled title="Coming soon">Pick on page</Button>
+      <span className="text-[11px] text-gray-400">Coming soon</span>
+    </div>
+    {editing && <SelectorDialog bundle={bundle} mapping={mapping} onClose={() => setEditing(false)} onSave={next => { onChange(next); setEditing(false) }} />}
+  </Labelled>
+}
+
+function SelectorDialog({ bundle, mapping, onClose, onSave }: {
+  bundle: Record<string, unknown>; mapping: MappingContext; onClose: () => void; onSave: (value: Record<string, unknown>) => void
+}) {
+  const [label, setLabel] = useState(typeof bundle.label === 'string' ? bundle.label : '')
+  const [rows, setRows] = useState<LocatorStrategy[]>(() =>
+    Array.isArray(bundle.strategies) ? structuredClone(bundle.strategies as LocatorStrategy[]) : [])
+  const update = (i: number, patch: Partial<LocatorStrategy>) => setRows(r => r.map((row, j) => j === i ? { ...row, ...patch } : row))
+  const move = (i: number, by: number) => setRows(r => {
+    const next = [...r]
+    const [row] = next.splice(i, 1)
+    next.splice(i + by, 0, row)
+    return next
+  })
+  return <div role="dialog" aria-modal="true" aria-label="Edit selectors" className="fixed inset-0 z-[80] grid place-items-center bg-black/30 p-4">
+    <div className="flex max-h-[80vh] w-full max-w-xl flex-col gap-3 overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-gray-900">
+      <div className="flex items-center"><h3 className="flex-1 text-sm font-semibold">Edit selectors</h3><button aria-label="Close selectors" onClick={onClose}><X className="h-4 w-4" /></button></div>
+      <Labelled label="Element label"><input aria-label="Element label" className={fieldClass} value={label} onChange={e => setLabel(e.target.value)} /></Labelled>
+      {rows.map((row, i) => <div key={i} className="rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+        <div className="flex gap-1">
+          <select aria-label={`Selector strategy ${i + 1}`} className={fieldClass} value={row.by} onChange={e => update(i, { by: e.target.value })}>
+            {['testid', 'role', 'label', 'placeholder', 'name', 'css', 'text', 'xpath'].map(by => <option key={by}>{by}</option>)}
+          </select>
+          <button aria-label={`Move selector ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp className="h-4 w-4" /></button>
+          <button aria-label={`Move selector ${i + 1} down`} disabled={i === rows.length - 1} onClick={() => move(i, 1)}><ChevronDown className="h-4 w-4" /></button>
+          <button aria-label={`Remove selector ${i + 1}`} onClick={() => setRows(r => r.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></button>
+        </div>
+        {row.by === 'role' ? <div className="mt-2 grid grid-cols-2 gap-2">
+          <MappedField aria-label={`Role ${i + 1}`} mode="template" context={mapping} value={row.role ?? ''} onChange={role => update(i, { role })} />
+          <MappedField aria-label={`Role name ${i + 1}`} mode="template" context={mapping} value={row.name ?? ''} onChange={name => update(i, { name })} />
+        </div> : <div className="mt-2"><MappedField aria-label={`Selector value ${i + 1}`} mode="template" context={mapping} mono
+          value={row.value ?? ''} onChange={v => update(i, { value: v })} /></div>}
+        {['role', 'label', 'text'].includes(row.by) && <label className="mt-2 flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={row.exact === true} onChange={e => update(i, { exact: e.target.checked || undefined })} /> Exact match
+        </label>}
+      </div>)}
+      <button type="button" className="inline-flex items-center gap-1 self-start text-xs text-brand-600" onClick={() => setRows(r => [...r, { by: 'css', value: '' }])}><Plus className="h-3.5 w-3.5" /> Add selector</button>
+      <div className="flex justify-end gap-2"><Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" onClick={() => onSave({ ...bundle, label: label || undefined, strategies: rows })}>Save selectors</Button></div>
+    </div>
+  </div>
+}
+
+function WebTestResultView({ result, deviceId }: { result: WebTestResult; deviceId?: string }) {
+  const candidates = result.error?.candidates
+  const count = Array.isArray(candidates) ? candidates.length
+    : candidates && typeof candidates === 'object' ? Object.keys(candidates as object).length : 0
+  return <div className="rounded-lg bg-gray-50 p-2 text-xs dark:bg-gray-950">
+    <p className="font-medium">{result.status}</p>
+    {result.error && <p className="text-red-600">{result.error.kind ? `${result.error.kind}: ` : ''}{result.error.detail ?? result.message}{count ? ` (${count} candidates)` : ''}</p>}
+    {!result.error && result.message && <p>{result.message}</p>}
+    {result.output != null && <pre className="mt-1 max-h-40 overflow-auto text-[11px]">{JSON.stringify(result.output, null, 2)}</pre>}
+    {deviceId && result.files?.map(file => <img key={file} alt="Test screenshot" className="mt-2 max-h-48 rounded border" src={devicesApi.fileUrl(deviceId, file)} />)}
+  </div>
 }
 
 /** Which device, which action from the catalog, and one mapped field per input it names. */
