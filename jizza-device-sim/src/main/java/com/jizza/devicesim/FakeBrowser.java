@@ -23,6 +23,9 @@ public final class FakeBrowser {
   private String session;
   private Element failedCandidate;
   private final List<ObjectNode> scriptedSteps = new ArrayList<>();
+  /** The action handlers by {@code action@version}, so a batch can run them in turn. */
+  private final Map<String, java.util.function.Function<JsonNode, JsonNode>> actions =
+      new LinkedHashMap<>();
 
   public FakeBrowser(SimDevice device) {
     this.device = device;
@@ -85,13 +88,49 @@ public final class FakeBrowser {
   }
 
   private void handle(String action, java.util.function.Function<JsonNode, JsonNode> handler) {
-    device.handle(action, input -> {
+    java.util.function.Function<JsonNode, JsonNode> guarded = input -> {
       boolean opensItself = "browser.open@2".equals(action)
           || "browser.record@1".equals(action)
           || ("browser.pickElement@1".equals(action) && input.hasNonNull("url"));
       if (!opensItself) requireSession(input);
       return handler.apply(input);
+    };
+    actions.put(action, guarded);
+    device.handle(action, guarded);
+  }
+
+  /**
+   * Declares {@code browser.runSteps@1}, as the extension does from milestone B9. Call it before
+   * the device sends its manifest. Steps run in order and stop at the first that fails.
+   */
+  public FakeBrowser enableRunSteps() {
+    device.handle("browser.runSteps@1", in -> {
+      ObjectNode out = object();
+      ObjectNode outputs = out.putObject("steps");
+      String batchSession = in.path("session").asText(null);
+      for (JsonNode step : in.path("steps")) {
+        String key = step.path("key").asText();
+        ObjectNode input = step.path("input").deepCopy();
+        if (batchSession != null && !input.has("session")) input.put("session", batchSession);
+        if (batchSession == null && session != null && !input.has("session")
+            && !"browser.open".equals(step.path("action").asText())) {
+          input.put("session", session);
+        }
+        var handler = actions.get(step.path("action").asText() + "@" + step.path("version").asInt(1));
+        try {
+          if (handler == null) throw new SimDevice.Failure("failed", "Unknown step");
+          JsonNode result = handler.apply(input);
+          outputs.set(key, result);
+          if (result.path("sessionId").isTextual()) batchSession = result.get("sessionId").asText();
+        } catch (SimDevice.Failure failure) {
+          out.put("failedAt", key);
+          if (failure.output != null && failure.output.has("error")) out.set("error", failure.output.get("error"));
+          throw new SimDevice.Failure(failure.code, failure.getMessage(), out);
+        }
+      }
+      return out;
     });
+    return this;
   }
 
   private void requireSession(JsonNode input) {
@@ -250,9 +289,26 @@ public final class FakeBrowser {
         if ("text".equals(by) && element.text.equals(strategy.path("value").asText())) return element;
       }
     }
+    // As the extension does: elements of the same kind become suggestions, never acted on.
+    ObjectNode error = object().put("kind", "element_not_found")
+        .put("detail", "No scripted element matched").put("url", url);
+    String tag = in.path("element").path("fingerprint").path("tag").asText(null);
+    ArrayNode candidates = error.putArray("candidates");
+    for (Element element : page(url).elements) {
+      if (candidates.size() >= 5) break;
+      boolean sameRole = tag != null ? tag.equals(element.role) : false;
+      for (JsonNode strategy : strategies) {
+        sameRole |= "role".equals(strategy.path("by").asText())
+            && element.role.equals(strategy.path("role").asText());
+      }
+      if (!sameRole) continue;
+      ObjectNode suggestion = candidates.addObject();
+      suggestion.set("element", bundle(element));
+      suggestion.put("score", 0.8).put("text", element.text.isEmpty() ? element.name : element.text);
+    }
+    if (candidates.isEmpty()) error.remove("candidates");
     throw new SimDevice.Failure("failed", "Could not find the scripted element",
-        object().set("error", object().put("kind", "element_not_found")
-            .put("detail", "No scripted element matched").put("url", url)));
+        object().set("error", error));
   }
 
   private Element firstElement() {
@@ -294,6 +350,12 @@ public final class FakeBrowser {
 
     public Page title(String value) {
       this.title = value;
+      return this;
+    }
+
+    /** The page changed: the element with this label is gone. */
+    public Page remove(String label) {
+      elements.removeIf(e -> e.label.equals(label));
       return this;
     }
 

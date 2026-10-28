@@ -99,6 +99,26 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     return toDto(entity);
   }
 
+  @Override
+  @Transactional
+  public WorkflowDto saveNewVersion(UUID workflowId, JsonNode graphJson) {
+    WorkflowEntity entity = require(workflowId);
+    if (entity.getStatus() != com.jizza.engine.api.enums.WorkflowStatus.DRAFT) {
+      throw new com.jizza.engine.api.error.ConflictException("'" + entity.getName()
+          + "' is not a draft, so a new version of it goes through review");
+    }
+    WorkflowGraph graph = WorkflowGraph.from(graphJson);
+    validator.validate(graph);
+    // The version just used stays as its snapshot; runs of it still read it.
+    snapshot(entity);
+    entity.setVersion(entity.getVersion() + 1);
+    entity.setGraph(graph.toJson());
+    entity.setGraphFingerprint(graph.fingerprint());
+    workflows.save(entity);
+    snapshot(entity);
+    return toDto(entity);
+  }
+
   /** Writes the immutable snapshot for the workflow's current version (R2 {@code workflow_versions}). */
   @Transactional
   public void snapshot(WorkflowEntity entity) {

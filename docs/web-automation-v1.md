@@ -66,6 +66,16 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | – | Download (exists, v1) | `browser.download@1` | CREATE | `url`? or `selector` / `element` | `{file, name, size}` |
 | – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, url}` |
 | – | Record (design time) | `browser.record@1` | READ | `recordingId`, `url`?, `session`?, `maxMinutes` | `{stepCount, stoppedBy}` |
+| – | Run steps (fast replay, B9) | `browser.runSteps@1` | UPDATE | `session`?, `steps: [{key, action, version, input}]` (1–100), `stopOnError` (default true) | `{steps: {<key>: output}, failedAt?: key}` |
+
+`browser.runSteps@1` runs its steps in order through the same action code as single commands,
+sending `progress` `{percent, text}` per step. When a step fails it stops, sends `result`
+`status: "failed"` with the outputs of the steps before it in `output.steps`, the failing step's key
+in `output.failedAt` and its `output.error`. The server sends a batch only for a module made only of
+web steps, after every step has passed its own guardrail; it never nests batches or includes
+`browser.record` or `browser.pickElement`, and it checks each step against the device's declared
+versions, blocked actions and allowed sites before sending. Batch steps carry no `session`; the batch's
+own `session` (or the one a `browser.open` step in it opens) is used.
 
 Deadlines: the server's command `deadline` already includes `timeoutMs`; always finish before it.
 Navigation actions wait at most `min(deadline, 60 s)` for `waitUntil`.

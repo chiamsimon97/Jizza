@@ -381,4 +381,140 @@ class WebAutomationWorkflowTest {
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("needs the input 'url'");
   }
+
+  // ---- W5: locator fixes and fast replay ----------------------------------------------------
+
+  private static final String OPEN = """
+      {"preset":"web","action":"browser.open","version":2,"target":"sameBrowser",
+       "inputs":{"url":"https://example.test"}}
+      """;
+  private static final String READ = """
+      {"preset":"web","action":"browser.getText","version":1,"target":"sameBrowser",
+       "inputs":{"element":{"strategies":[{"by":"text","value":"Total"}]}}}
+      """;
+
+  @Test
+  void aStepThatLostItsElementHandsTheCandidatesOverForAFix() {
+    EngineHarness harness = new EngineHarness(line(once("read", READ)));
+    harness.nextDeviceStatus = com.jizza.engine.api.device.DeviceCommandStatus.FAILED;
+    com.fasterxml.jackson.databind.node.ObjectNode error = Json.obj()
+        .put("kind", "element_not_found").put("url", "https://example.test");
+    error.putArray("candidates").addObject().put("score", 0.9).put("text", "Grand total")
+        .putObject("element").putArray("strategies").addObject().put("by", "text")
+        .put("value", "Grand total");
+    harness.nextDeviceOutput = Json.obj().set("error", error);
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isNotEqualTo(RunStatus.DONE);
+    assertThat(harness.proposedFixes).hasSize(1);
+    var fix = harness.proposedFixes.get(0);
+    assertThat(fix.nodeId()).isEqualTo("read");
+    assertThat(fix.workflowId()).isEqualTo(harness.workflow.getId());
+    assertThat(fix.runId()).isEqualTo(run.id());
+    assertThat(fix.error().path("candidates")).hasSize(1);
+  }
+
+  @Test
+  void aLostElementWithoutCandidatesOffersNoFix() {
+    EngineHarness harness = new EngineHarness(line(once("read", READ)));
+    harness.nextDeviceStatus = com.jizza.engine.api.device.DeviceCommandStatus.FAILED;
+    harness.nextDeviceOutput = Json.obj().set("error", Json.obj().put("kind", "element_not_found"));
+
+    harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(harness.proposedFixes).isEmpty();
+  }
+
+  @Test
+  void fastReplayIsOffByDefault() {
+    EngineHarness harness = new EngineHarness(line(node("open", NodeType.DEVICE_ACTION, OPEN),
+        node("read", NodeType.DEVICE_ACTION, READ)));
+    harness.nextDeviceOutput = Json.obj().put("sessionId", "s_one");
+
+    harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(harness.deviceRequests).extracting(r -> r.action())
+        .containsExactly("browser.open", "browser.getText", "browser.close");
+  }
+
+  @Test
+  void fastReplaySendsOneBatchAndMapsEachStepsOutput() {
+    EngineHarness harness = new EngineHarness(line(node("open", NodeType.DEVICE_ACTION, OPEN),
+        node("read", NodeType.DEVICE_ACTION, READ)));
+    harness.deviceActions.setFastReplay(true);
+    com.fasterxml.jackson.databind.node.ObjectNode batch = Json.obj();
+    batch.putObject("steps").set("open", Json.obj().put("sessionId", "s_batch")
+        .put("url", "https://example.test"));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) batch.get("steps"))
+        .set("read", Json.obj().put("text", "Total: 12"));
+    harness.deviceOutputs.put("browser.runSteps", batch);
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.deviceRequests).extracting(r -> r.action())
+        .containsExactly("browser.runSteps", "browser.close");
+    var sent = harness.deviceRequests.get(0).input();
+    assertThat(sent.path("steps")).hasSize(2);
+    assertThat(sent.path("steps").get(0).path("key").asText()).isEqualTo("open");
+    assertThat(sent.path("steps").get(1).path("input").path("element").path("strategies"))
+        .hasSize(1);
+    var context = harness.run(run.id()).getContext();
+    assertThat(context.path("nodes").path("read").path("text").asText()).isEqualTo("Total: 12");
+    assertThat(context.path("nodes").path("open").path("sessionId").asText()).isEqualTo("s_batch");
+    // The session the batch opened is the run's browser, closed at the end as usual.
+    assertThat(harness.deviceRequests.get(1).input().path("session").asText()).isEqualTo("s_batch");
+  }
+
+  @Test
+  void fastReplayFallsBackToStepByStepWhenTheBrowserLacksTheAction() {
+    EngineHarness harness = new EngineHarness(line(node("open", NodeType.DEVICE_ACTION, OPEN),
+        node("read", NodeType.DEVICE_ACTION, READ)));
+    harness.deviceActions.setFastReplay(true);
+    harness.unsupportedDeviceActions.add("browser.runSteps");
+    harness.nextDeviceOutput = Json.obj().put("sessionId", "s_one");
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.deviceRequests).extracting(r -> r.action())
+        .containsExactly("browser.runSteps", "browser.open", "browser.getText", "browser.close");
+  }
+
+  @Test
+  void aBatchThatStopsPartWayRunsTheRestOneByOne() {
+    EngineHarness harness = new EngineHarness(line(node("open", NodeType.DEVICE_ACTION, OPEN),
+        node("read", NodeType.DEVICE_ACTION, READ)));
+    harness.deviceActions.setFastReplay(true);
+    com.fasterxml.jackson.databind.node.ObjectNode batch = Json.obj().put("failedAt", "read");
+    batch.putObject("steps").set("open", Json.obj().put("sessionId", "s_batch"));
+    harness.deviceOutputs.put("browser.runSteps", batch);
+    harness.deviceOutputs.put("browser.getText", Json.obj().put("text", "Total: 12"));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.deviceRequests).extracting(r -> r.action())
+        .containsExactly("browser.runSteps", "browser.getText", "browser.close");
+    assertThat(harness.deviceRequests.get(1).input().path("session").asText()).isEqualTo("s_batch");
+  }
+
+  @Test
+  void fastReplayLeavesModulesWithOtherStepsOrStepReferencesAlone() {
+    String reads = """
+        {"preset":"web","action":"browser.setText","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"Name"}]},
+                   "text":"{{ nodes.open.title }}"}}
+        """;
+    EngineHarness harness = new EngineHarness(line(node("open", NodeType.DEVICE_ACTION, OPEN),
+        node("type", NodeType.DEVICE_ACTION, reads)));
+    harness.deviceActions.setFastReplay(true);
+    harness.nextDeviceOutput = Json.obj().put("sessionId", "s_one").put("title", "Hi");
+
+    harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(harness.deviceRequests).extracting(r -> r.action())
+        .doesNotContain("browser.runSteps");
+  }
 }

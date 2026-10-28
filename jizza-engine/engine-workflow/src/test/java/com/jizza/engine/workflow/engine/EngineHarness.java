@@ -104,6 +104,8 @@ public final class EngineHarness {
       com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED;
   public JsonNode nextDeviceOutput = Json.obj();
   public final java.util.Map<String, JsonNode> deviceOutputs = new java.util.HashMap<>();
+  /** Actions the fake device did not declare: sending one is refused, as the broker refuses it. */
+  public final java.util.Set<String> unsupportedDeviceActions = new java.util.HashSet<>();
   public String nextDeviceErrorCode;
   public String nextDeviceError;
   public List<UUID> nextDeviceFiles = List.of();
@@ -128,6 +130,12 @@ public final class EngineHarness {
               Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, false, null, null, null),
           new com.jizza.engine.api.mcp.McpToolDto("place_order", "mcp_kite__place_order", null,
               null, Json.obj(), false, null, false, null, null, null)), null, null);
+
+  /** Failed web steps handed over for a suggested fix. */
+  public final List<com.jizza.engine.api.webauto.LocatorFixes.FailedStep> proposedFixes =
+      new ArrayList<>();
+  /** The device step, to switch fast replay on. */
+  public DeviceActionNodeExecutor deviceActions;
 
   public final SagaWorkflowEngine engine;
   public final WorkflowRunRepository runs;
@@ -286,8 +294,8 @@ public final class EngineHarness {
         new SetVariableNodeExecutor(sandbox),
         new StorageNodeExecutor(sandbox, storageRepository(), clock),
         new HttpRequestNodeExecutor(sandbox, httpClient()),
-        new DeviceActionNodeExecutor(deviceCommands, deviceCatalog, gate, sandbox,
-            mock(com.jizza.engine.persistence.repository.AgentRepository.class)),
+        deviceActions = new DeviceActionNodeExecutor(deviceCommands, deviceCatalog, gate, sandbox,
+            mock(com.jizza.engine.persistence.repository.AgentRepository.class), locatorFixes()),
         new NotifyNodeExecutor(sandbox, busProvider, mailProvider(), userRepository()),
         new com.jizza.engine.workflow.nodes.McpToolNodeExecutor(mcpServers(), gate, sandbox,
             mock(com.jizza.engine.persistence.repository.AgentRepository.class),
@@ -299,6 +307,18 @@ public final class EngineHarness {
         sandbox);
     engine.setDeviceCommands(deviceCommands);
     self[0] = engine;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<com.jizza.engine.api.webauto.LocatorFixes> locatorFixes() {
+    var fixes = mock(com.jizza.engine.api.webauto.LocatorFixes.class);
+    org.mockito.Mockito.doAnswer(inv -> {
+      proposedFixes.add(inv.getArgument(0));
+      return null;
+    }).when(fixes).propose(any());
+    ObjectProvider<com.jizza.engine.api.webauto.LocatorFixes> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(fixes);
+    return provider;
   }
 
   @SuppressWarnings("unchecked")
@@ -332,6 +352,9 @@ public final class EngineHarness {
     org.mockito.stubbing.Answer<com.jizza.engine.api.device.DeviceCommandDto> submit = inv -> {
       var request = inv.<com.jizza.engine.api.device.DeviceCommandRequest>getArgument(0);
       deviceRequests.add(request);
+      if (unsupportedDeviceActions.contains(request.action())) {
+        throw new com.jizza.engine.api.error.ValidationException("Browser cannot " + request.action());
+      }
       if (idempotent.containsKey(request.idempotencyKey())) {
         return idempotent.get(request.idempotencyKey());
       }

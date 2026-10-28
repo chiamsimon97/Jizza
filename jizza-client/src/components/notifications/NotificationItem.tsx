@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlarmClock, Archive, ArchiveRestore, Bell, Check, ChevronDown, Clock, GitBranch, History,
-  Info, ListTodo, Mail, MailOpen, MessageCircleQuestion, MoreHorizontal, ShieldCheck, X, type LucideIcon,
+  Info, ListTodo, Mail, MailOpen, MessageCircleQuestion, MoreHorizontal, ShieldCheck, Wrench, X, type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
-  KIND_META, agentOf, ago, argsOf, detailsOf, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
+  KIND_META, agentOf, ago, argsOf, detailsOf, fixLinkOf, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
 } from './inbox'
 
 const KIND_ICON: Record<NotificationKind, LucideIcon> = {
@@ -64,6 +64,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const outcome = outcomeOf(n)
   const details = detailsOf(n)
   const inputs = argsOf(n)
+  const fixLink = fixLinkOf(n)
   const unread = n.status === 'UNREAD'
   const tool = typeof n.context?.tool === 'string' ? n.context.tool : null
   const canAlwaysAllow = open && n.kind === 'PERMISSION_REQUEST' && !!tool && !!n.sourceAgentId
@@ -177,7 +178,8 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
             <div className="mt-2 flex flex-wrap gap-3 text-xs">
               {n.runId && <Link to={`/runs?run=${n.runId}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><History className="h-3.5 w-3.5" />Open the run</Link>}
               {n.workflowId && n.kind === 'WORKFLOW_REVIEW' && <Link to="/procedures" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><GitBranch className="h-3.5 w-3.5" />See it in Procedures</Link>}
-              {n.workflowId && n.kind !== 'WORKFLOW_REVIEW' && <Link to={`/workflows?open=${n.workflowId}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><GitBranch className="h-3.5 w-3.5" />Open the workflow</Link>}
+              {fixLink && <Link to={fixLink} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><Wrench className="h-3.5 w-3.5" />Review fix</Link>}
+              {n.workflowId && n.kind !== 'WORKFLOW_REVIEW' && !fixLink && <Link to={`/workflows?open=${n.workflowId}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><GitBranch className="h-3.5 w-3.5" />Open the workflow</Link>}
               {n.taskId && <Link to="/tasks" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><ListTodo className="h-3.5 w-3.5" />Open tasks</Link>}
             </div>
           )}

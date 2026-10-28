@@ -901,6 +901,11 @@
       "output":{"type":"object","properties":{"stepCount":{"type":"integer"},"stoppedBy":{"enum":["person","timeout","server"]}},"required":["stepCount","stoppedBy"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":1800
     },
     {
+      "action":"browser.runSteps","version":1,"capability":"browser","actionType":"UPDATE","title":"Run web steps together","description":"Runs several web steps in one command, in order, stopping at the first that fails. Used for fast replay; each step is judged by the guardrails on its own before it is sent.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"steps":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{"key":{"type":"string","minLength":1,"maxLength":64},"action":{"type":"string","pattern":"^browser\\."},"version":{"type":"integer","minimum":1},"input":{"type":"object"}},"required":["key","action","version","input"]}},"stopOnError":{"type":"boolean","default":true}},"required":["steps"]},
+      "output":{"type":"object","properties":{"steps":{"type":"object"},"failedAt":{"type":"string"}},"required":["steps"]},"conditions":["site"],"platforms":["browser"],"defaultTimeoutSec":600
+    },
+    {
       "action": "browser.runRecording",
       "version": 1,
       "capability": "browser",

@@ -5,6 +5,9 @@ export const workflowsApi = {
   list: () =>
     api.get<WorkflowDto[]>('/api/workflows'),
 
+  get: (id: string) =>
+    api.get<WorkflowDto>(`/api/workflows/${id}`),
+
   save: (workflow: Partial<WorkflowDto>) =>
     api.post<WorkflowDto>('/api/workflows', workflow),
 

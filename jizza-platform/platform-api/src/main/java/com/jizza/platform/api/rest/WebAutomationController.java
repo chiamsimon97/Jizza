@@ -2,9 +2,11 @@ package com.jizza.platform.api.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.authz.Permissions;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.RequiresPermission;
 import com.jizza.engine.api.webauto.BrowserAgents;
 import com.jizza.engine.api.webauto.DesignTimeService;
+import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.api.webauto.Recordings;
 import com.jizza.engine.security.session.CurrentWorkspace;
 import com.jizza.platform.usecase.webauto.WebAutomationUseCase;
@@ -34,6 +36,8 @@ public class WebAutomationController {
   public record StartRecordingRequest(UUID deviceId, String url, String name) {}
 
   public record EditStepsRequest(List<Recordings.EditOp> ops) {}
+
+  public record ApplyFixRequest(Integer candidateIndex) {}
 
   private final WebAutomationUseCase web;
 
@@ -117,5 +121,28 @@ public class WebAutomationController {
   @PostMapping("/recordings/{id}/insert")
   public JsonNode insertRecording(@PathVariable UUID id) {
     return web.insertableRecording(CurrentWorkspace.access(), id);
+  }
+
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @GetMapping("/fixes")
+  public List<LocatorFixes.Fix> fixes(@RequestParam(required = false) String status) {
+    return web.fixes(CurrentWorkspace.access(), status);
+  }
+
+  @RequiresPermission(Permissions.DEVICE_USE)
+  @PostMapping("/fixes/{id}/apply")
+  public LocatorFixes.Applied applyFix(@PathVariable UUID id,
+                                       @RequestBody(required = false) ApplyFixRequest request) {
+    if (request == null || request.candidateIndex() == null) {
+      throw new ValidationException("Choose which suggestion to use");
+    }
+    return web.applyFix(CurrentWorkspace.access(), id, request.candidateIndex());
+  }
+
+  @RequiresPermission(Permissions.DEVICE_USE)
+  @PostMapping("/fixes/{id}/dismiss")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void dismissFix(@PathVariable UUID id) {
+    web.dismissFix(CurrentWorkspace.access(), id);
   }
 }

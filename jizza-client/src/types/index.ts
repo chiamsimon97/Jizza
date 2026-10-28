@@ -1114,6 +1114,8 @@ export interface TraceStep {
   startedAt?: string
   finishedAt?: string
   durationMs?: number
+  /** For a failed device step: what the device said went wrong. */
+  failure?: { kind: string; detail?: string; url?: string; files?: string[]; deviceId?: string; candidates: number } | null
 }
 
 export interface RunTrace {

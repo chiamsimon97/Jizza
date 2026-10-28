@@ -237,6 +237,104 @@ class WebAutomationE2eTest extends E2eSupport {
     assertThat(tested.status()).isEqualTo(404);
   }
 
+  @Test
+  void aPageChangeOffersAFixAndTheFixedVersionPasses() throws Exception {
+    JsonNode graph = Json.read("""
+        {"nodes":[
+          {"id":"start","type":"TRIGGER","label":"Start","config":{}},
+          {"id":"open","type":"DEVICE_ACTION","label":"Open the portal","config":{"preset":"web",
+            "action":"browser.open","version":2,"target":"sameBrowser",
+            "inputs":{"url":"https://example.com"}}},
+          {"id":"read","type":"DEVICE_ACTION","label":"Read the sign-in button","config":{
+            "preset":"web","action":"browser.getText","version":1,"target":"sameBrowser",
+            "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Sign in"}],
+              "fingerprint":{"tag":"button","text":"Sign in"},"label":"Sign in button"}}}},
+          {"id":"end","type":"END","label":"Done","config":{}}],
+         "edges":[{"from":"start","to":"open"},{"from":"open","to":"read"},{"from":"read","to":"end"}]}
+        """);
+    var saved = api.post("/api/workflows", Map.of("name", "Read sign-in", "graph", graph));
+    assertThat(saved.ok()).as(saved.body()).isTrue();
+    String workflowId = saved.json().path("id").asText();
+
+    // The site renamed its button.
+    fake.page("https://example.com").remove("Sign in").element("Log in", "button", "Log in")
+        .text("Log in");
+    JsonNode failed = runToEnd(workflowId, 1);
+    assertThat(failed.path("status").asText()).as(failed.toString()).isNotEqualTo("DONE");
+
+    JsonNode fixes = api.get("/api/web/fixes?status=open").json();
+    assertThat(fixes).as(fixes.toString()).hasSize(1);
+    JsonNode fix = fixes.get(0);
+    assertThat(fix.path("nodeId").asText()).isEqualTo("read");
+    assertThat(fix.path("workflowName").asText()).isEqualTo("Read sign-in");
+    assertThat(fix.path("candidates").get(0).path("text").asText()).isEqualTo("Log in");
+    assertThat(api.get("/api/notifications").body()).contains("could not find Sign in button");
+    JsonNode trace = api.get("/api/runs/" + failed.path("id").asText() + "/trace").json();
+    assertThat(trace.toString()).contains("element_not_found");
+
+    ApiClient other = signedIn("web-other");
+    assertThat(other.get("/api/web/fixes").json()).isEmpty();
+    assertThat(other.post("/api/web/fixes/" + fix.path("id").asText() + "/apply",
+        Map.of("candidateIndex", 0)).status()).isEqualTo(404);
+    assertThat(other.post("/api/web/fixes/" + fix.path("id").asText() + "/dismiss", Map.of())
+        .status()).isEqualTo(404);
+
+    var applied = api.post("/api/web/fixes/" + fix.path("id").asText() + "/apply",
+        Map.of("candidateIndex", 0));
+    assertThat(applied.ok()).as(applied.body()).isTrue();
+    assertThat(applied.json().path("version").asInt()).isEqualTo(2);
+    JsonNode element = api.get("/api/workflows/" + workflowId).json().path("graph").path("nodes")
+        .get(2).path("config").path("inputs").path("element");
+    assertThat(element.path("strategies").get(0).path("name").asText()).isEqualTo("Log in");
+    assertThat(element.path("strategies").get(1).path("name").asText()).isEqualTo("Sign in");
+    assertThat(api.get("/api/web/fixes?status=open").json()).isEmpty();
+
+    JsonNode passed = runToEnd(workflowId, 2);
+    assertThat(passed.path("status").asText()).as(passed.toString()).isEqualTo("DONE");
+  }
+
+  @Test
+  void aDismissedFixIsClosed() throws Exception {
+    JsonNode graph = Json.read("""
+        {"nodes":[
+          {"id":"start","type":"TRIGGER","label":"Start","config":{}},
+          {"id":"open","type":"DEVICE_ACTION","label":"Open","config":{"preset":"web",
+            "action":"browser.open","version":2,"target":"sameBrowser",
+            "inputs":{"url":"https://example.com/b"}}},
+          {"id":"read","type":"DEVICE_ACTION","label":"Read","config":{"preset":"web",
+            "action":"browser.getText","version":1,"target":"sameBrowser",
+            "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Gone"}],
+              "fingerprint":{"tag":"button"}}}}},
+          {"id":"end","type":"END","label":"Done","config":{}}],
+         "edges":[{"from":"start","to":"open"},{"from":"open","to":"read"},{"from":"read","to":"end"}]}
+        """);
+    String workflowId = api.post("/api/workflows", Map.of("name", "Dismiss me", "graph", graph))
+        .json().path("id").asText();
+    runToEnd(workflowId, 1);
+    String fixId = api.get("/api/web/fixes?status=open").json().get(0).path("id").asText();
+
+    assertThat(api.post("/api/web/fixes/" + fixId + "/dismiss", Map.of()).status()).isEqualTo(204);
+
+    assertThat(api.get("/api/web/fixes?status=open").json()).isEmpty();
+    assertThat(api.post("/api/web/fixes/" + fixId + "/apply", Map.of("candidateIndex", 0))
+        .status()).isEqualTo(409);
+    assertThat(api.get("/api/workflows/" + workflowId).json().path("version").asInt()).isEqualTo(1);
+  }
+
+  /** Runs a version by hand and waits until it has finished, failed or stopped for the person. */
+  private JsonNode runToEnd(String workflowId, int version) throws Exception {
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", version));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    JsonNode current = run.json();
+    for (int i = 0; i < 80 && java.util.Set.of("RUNNING", "WAITING")
+        .contains(current.path("status").asText()); i++) {
+      drainDeviceEvents();
+      Thread.sleep(250);
+      current = api.get("/api/runs/" + run.json().path("id").asText()).json();
+    }
+    return current;
+  }
+
   private ApiClient signedIn(String prefix) {
     ApiClient client = new ApiClient(port);
     client.prime();

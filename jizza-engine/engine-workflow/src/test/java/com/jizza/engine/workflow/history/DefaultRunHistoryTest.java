@@ -210,4 +210,20 @@ class DefaultRunHistoryTest {
     s.setAttempts(1);
     return s;
   }
+
+  @Test
+  void aFailedDeviceStepShowsTheErrorKindAndScreenshotButNotTheSuggestedElements() {
+    var error = com.jizza.engine.api.util.Json.read("""
+        {"kind":"element_not_found","detail":"No match after 15000 ms","url":"https://shop.test",
+         "files":["f1"],"candidates":[{"element":{"strategies":[]}},{"element":{}}]}
+        """);
+
+    var failure = DefaultRunHistory.deviceFailure(error);
+
+    assertThat(failure.path("kind").asText()).isEqualTo("element_not_found");
+    assertThat(failure.path("files").get(0).asText()).isEqualTo("f1");
+    assertThat(failure.path("candidates").asInt()).isEqualTo(2);
+    assertThat(failure.toString()).doesNotContain("strategies");
+    assertThat(DefaultRunHistory.deviceFailure(com.jizza.engine.api.util.Json.obj())).isNull();
+  }
 }

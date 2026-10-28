@@ -153,6 +153,8 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
       for (JsonNode ref : device.getActions()) {
         String action = ref.asText().split("@")[0];
         if (blocked.contains(action)) continue;
+        // A replay batch only exists for workflow runs, which judge each of its steps.
+        if (CommandBroker.RUN_STEPS.equals(action)) continue;
         Optional<DeviceActionSpec> spec = catalog.resolve(action, 0);
         if (spec.isEmpty() || (spec.get().shell() && !device.isShellEnabled())) continue;
         String name = name(slug, action);

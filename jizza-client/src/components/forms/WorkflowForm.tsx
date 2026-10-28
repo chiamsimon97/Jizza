@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, Bot, Hand, List, Network, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { WorkflowCanvas } from '@/components/workflow/WorkflowCanvas'
+import { LocatorFixPanel } from '@/components/web/LocatorFixPanel'
+import type { LocatorFix } from '@/api/web'
 import { emptyGraph, fromGraph, problems as canvasProblems, toGraph as canvasToGraph, type CanvasGraph } from '@/components/workflow/canvasModel'
 import { agentsApi } from '@/api/agents'
 import { workflowsApi } from '@/api/workflows'
@@ -150,7 +152,7 @@ export function WorkflowForm() {
     setDescription(str(request.fields.description))
     setSteps(stepsFrom(request.fields.steps, agents))
     setError('')
-    setNotice('')
+    setNotice(str(request.fields.notice))
   }, [request?.nonce, agents])
 
   useEffect(() => { setRunId(null) }, [request?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -164,6 +166,21 @@ export function WorkflowForm() {
     else if (request.byJizza) setMode('steps')
     else setMode(preferredMode())
   }, [request?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A run history or notification link names the step to look at, such as one with a fix to review.
+  const focusNode = str(request?.fields.focusNode) || null
+  const openForm = useFormStore(s => s.open)
+  // An applied fix saved a new version: open that, on the same step.
+  async function reopenFixed(fix: LocatorFix, version: number) {
+    void qc.invalidateQueries({ queryKey: ['workflows'] })
+    try {
+      const wf = await workflowsApi.get(fix.workflowId)
+      openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, focusNode: fix.nodeId,
+        notice: wf.status === 'DRAFT' ? `Saved version ${version} with the new element for ${fix.nodeLabel}.` : `Version ${version}, with the new element for ${fix.nodeLabel}, is waiting for review in Procedures.` })
+    } catch {
+      setNotice(`Saved version ${version}. Close and open the workflow to see it.`)
+    }
+  }
 
   const save = useMutation({
     mutationFn: () => workflowsApi.save({
@@ -317,7 +334,8 @@ export function WorkflowForm() {
           <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Need branches or service actions? Switch to Canvas at the top.</p>
         </div>}
         </fieldset>
-        {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} />}
+        {workflowId && <LocatorFixPanel workflowId={workflowId} focusNode={focusNode} onApplied={reopenFixed} />}
+        {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} focusNode={focusNode} />}
         {askInputs && declaredInputs.length > 0 && (
           <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 animate-fade-in dark:border-gray-800 dark:bg-gray-950">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Inputs for this run</p>

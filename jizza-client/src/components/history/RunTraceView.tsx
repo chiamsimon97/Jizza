@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle, ArrowUpRight, CheckCircle2, CircleDashed, Clock, Copy, CornerDownRight, GitFork,
-  Hourglass, Pencil, RotateCw, XCircle,
+  Hourglass, Pencil, RotateCw, Wrench, XCircle,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { JsonView } from './JsonView'
@@ -11,6 +11,9 @@ import { RUN_STATUS, TRIGGER_LABEL } from './palette'
 import { layoutMap, waterfall, type StepState } from './traceModel'
 import { NODE_META, type NodeType } from '@/components/workflow/canvasModel'
 import { runsApi } from '@/api/runs'
+import { webApi } from '@/api/web'
+import { devicesApi } from '@/api/devices'
+import { errorKindWords, reviewFixLink } from '@/components/web/fixModel'
 import { formatDuration } from '@/lib/timeRange'
 import type { RunSummary, RunTrace, TraceStep } from '@/types'
 
@@ -349,7 +352,10 @@ function StepPanel({ trace, step, nodeId, nodeLabel, nodeType }: { trace: RunTra
           )}
           {tab === 'output' && <JsonView value={step.output} empty={step.status === 'FAILED' ? 'It failed before producing anything.' : 'It produced nothing.'} />}
           {tab === 'error' && (
-            <p className="whitespace-pre-wrap rounded-lg bg-red-50 px-3 py-2 font-mono text-xs text-red-800 dark:bg-red-900/20 dark:text-red-300">{step.error}</p>
+            <div className="space-y-2">
+              {step.failure && <WebFailure trace={trace} step={step} failure={step.failure} />}
+              <p className="whitespace-pre-wrap rounded-lg bg-red-50 px-3 py-2 font-mono text-xs text-red-800 dark:bg-red-900/20 dark:text-red-300">{step.error}</p>
+            </div>
           )}
           <dl className="mt-3 grid grid-cols-2 gap-1 text-[11px] text-gray-400">
             <dt>Started</dt><dd className="text-gray-600 dark:text-gray-300">{step.startedAt ? new Date(step.startedAt).toLocaleString() : '—'}</dd>
@@ -359,6 +365,35 @@ function StepPanel({ trace, step, nodeId, nodeLabel, nodeType }: { trace: RunTra
         </div>
       )}
     </section>
+  )
+}
+
+/** A browser step that failed: what went wrong in words, its screenshot, and the fix to review. */
+export function WebFailure({ trace, step, failure }: { trace: RunTrace; step: TraceStep; failure: NonNullable<TraceStep['failure']> }) {
+  const { data: fixes } = useQuery({
+    queryKey: ['web-fixes', 'open'],
+    queryFn: () => webApi.fixes('open').catch(() => []),
+    enabled: failure.candidates > 0,
+    staleTime: 15_000,
+  })
+  const hasFix = fixes?.some(f => f.workflowId === trace.run.workflowId && f.nodeId === step.nodeId)
+  const shot = failure.deviceId && failure.files?.[0] ? devicesApi.fileUrl(failure.deviceId, failure.files[0]) : null
+  return (
+    <div className="rounded-lg border border-red-200 px-3 py-2 text-xs dark:border-red-900/50">
+      <p className="font-medium text-gray-900 dark:text-gray-100">{errorKindWords(failure.kind)}</p>
+      {failure.url && <p className="mt-0.5 truncate text-gray-500 dark:text-gray-400">On {failure.url}</p>}
+      {shot && (
+        <a href={shot} target="_blank" rel="noreferrer" className="mt-2 block">
+          <img src={shot} alt="Screenshot of the page when the step failed" className="max-h-56 rounded-md border border-gray-200 dark:border-gray-700" />
+        </a>
+      )}
+      {hasFix && (
+        <Link to={reviewFixLink(trace.run.workflowId, step.nodeId)}
+          className="mt-2 inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400">
+          <Wrench className="h-3.5 w-3.5" />Review fix
+        </Link>
+      )}
+    </div>
   )
 }
 

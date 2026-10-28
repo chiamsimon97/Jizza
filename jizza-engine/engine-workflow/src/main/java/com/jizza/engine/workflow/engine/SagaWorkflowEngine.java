@@ -502,7 +502,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       NodeExecutor.Outcome outcome;
       try {
         outcome = executor.execute(new NodeExecutor.Execution(runId, run.getUserId(),
-            owningAgentOf(run), node, context, attempt, run.getWorkflowId(), run.getVersion()));
+            owningAgentOf(run), node, context, attempt, run.getWorkflowId(), run.getVersion(),
+            graph));
       } catch (RuntimeException e) {
         log.warn("Node {} of run {} threw", nodeId, runId, e);
         outcome = NodeExecutor.Outcome.retryable(String.valueOf(e.getMessage()));
