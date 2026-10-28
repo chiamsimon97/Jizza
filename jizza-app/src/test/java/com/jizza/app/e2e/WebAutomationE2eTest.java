@@ -29,7 +29,8 @@ class WebAutomationE2eTest extends E2eSupport {
   void setUp() {
     api = signedIn("web");
     device = new SimDevice("http://localhost:" + port);
-    new FakeBrowser(device).page("https://example.com").title("Example");
+    new FakeBrowser(device).page("https://example.com").title("Example")
+        .element("Sign in", "button", "Sign in");
     device.keyStorage("browser");
     String code = api.post("/api/devices/pairings", Map.of()).json().path("code").asText();
     device.enrollWithCode(code, "Chrome on MacBook", "browser");
@@ -74,7 +75,7 @@ class WebAutomationE2eTest extends E2eSupport {
       if (!"waiting".equals(result.path("status").asText())) break;
       Thread.sleep(250);
     }
-    assertThat(result.path("status").asText()).isEqualTo("done");
+    assertThat(result.path("status").asText()).as(result.toString()).isEqualTo("done");
     assertThat(result.path("element").path("strategies")).isNotEmpty();
     assertThat(result.path("url").asText()).isEqualTo("https://example.com");
 
