@@ -7,7 +7,7 @@ import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import { useQuery } from '@tanstack/react-query'
 import type { AgentDto, Device, DeviceActionSpec, McpServer, RunStepDto, TeamStep } from '@/types'
 import { devicesApi } from '@/api/devices'
-import { webApi, type WebTestResult } from '@/api/web'
+import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
   MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type FieldIssue, type SwitchCase,
@@ -1275,7 +1275,7 @@ function webInputIssues(node: CanvasNode, catalog?: DeviceActionSpec[]): FieldIs
 const asInputs = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-/** Browser-specific device action settings. Pick-on-page intentionally remains unavailable until W2. */
+/** Browser-specific device action settings. Includes Pick on page. */
 export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: {
   node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: SetConfig
   isMissing: (f: string) => boolean; mapping: MappingContext
@@ -1353,7 +1353,8 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
     {spec?.description && <p className="text-[11px] text-gray-500">{spec.description}</p>}
 
     {elementAction && (
-      <ElementField value={inputs.element} deviceId={concrete?.id} mapping={mapping}
+      <ElementField value={inputs.element} deviceId={concrete?.id} browsers={browsers}
+        hasEarlierOpen={mapping.graph.nodes.some(n => n.id !== node.id && n.config.action === 'browser.open')} mapping={mapping}
         required={WEB_ELEMENT_ACTIONS.has(action)} missing={isMissing('inputs.element')} onChange={value => setInput('element', value)} />
     )}
 
@@ -1427,14 +1428,61 @@ function WebSchemaField({ name, property, value, required, mapping, onChange }: 
 
 type LocatorStrategy = { by: string; value?: string; role?: string; name?: string; exact?: boolean }
 
-export function ElementField({ value, deviceId, mapping, required, missing, onChange }: {
-  value: unknown; deviceId?: string; mapping: MappingContext; required?: boolean; missing?: boolean; onChange: (value: unknown) => void
+export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mapping, required, missing, onChange }: {
+  value: unknown; deviceId?: string; browsers?: BrowserAgent[]; hasEarlierOpen?: boolean
+  mapping: MappingContext; required?: boolean; missing?: boolean; onChange: (value: unknown) => void
 }) {
   const template = typeof value === 'string' ? value : ''
   const bundle = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
   const strategies = Array.isArray(bundle.strategies) ? bundle.strategies as LocatorStrategy[] : []
   const [editing, setEditing] = useState(false)
   const preview = typeof bundle.preview === 'string' ? bundle.preview : undefined
+  const online = (browsers ?? []).filter(b => b.online)
+  const [chosen, setChosen] = useState('')
+  const pickDevice = deviceId ?? (online.length === 1 ? online[0].id : chosen)
+  const browserName = browsers?.find(b => b.id === pickDevice)?.family
+  const family = browserName ? browserName[0].toUpperCase() + browserName.slice(1) : 'your browser'
+  const [pageUrl, setPageUrl] = useState('')
+  const [picking, setPicking] = useState<string>()
+  const [pickError, setPickError] = useState('')
+  const latestChange = useRef(onChange)
+  latestChange.current = onChange
+  useEffect(() => {
+    if (!picking) return
+    let stop = false
+    const timer = setInterval(async () => {
+      try {
+        const r = await webApi.pickResult(picking)
+        if (stop || r.status === 'waiting') return
+        setPicking(undefined)
+        if (r.status === 'done' && r.element) {
+          latestChange.current({ ...r.element, ...(r.preview ? { preview: r.preview } : {}) })
+        } else if (r.error?.kind !== 'cancelled_by_person') {
+          setPickError(r.error?.detail ?? 'Picking did not finish.')
+        }
+      } catch (e) {
+        if (stop) return
+        setPicking(undefined)
+        setPickError(e instanceof Error ? e.message : 'Picking did not finish.')
+      }
+    }, 1000)
+    return () => { stop = true; clearInterval(timer) }
+  }, [picking])
+  const startPick = async () => {
+    setPickError('')
+    try {
+      const started = await webApi.pick({ deviceId: pickDevice, url: pageUrl.trim() || undefined })
+      setPicking(started.commandId)
+    } catch (e) {
+      const problem = (e as { problem?: { detail?: string; title?: string } }).problem
+      setPickError(problem?.detail ?? problem?.title ?? (e instanceof Error ? e.message : 'Could not start picking.'))
+    }
+  }
+  const cancelPick = () => {
+    const id = picking
+    setPicking(undefined)
+    if (id && pickDevice) devicesApi.cancelCommand(pickDevice, id).catch(() => {})
+  }
   return <Labelled group label="Element" required={required} missing={missing}>
     {template ? (
       <MappedField aria-label="Element" mode="template" context={mapping} mono value={template} onChange={onChange} />
@@ -1446,13 +1494,32 @@ export function ElementField({ value, deviceId, mapping, required, missing, onCh
           </span>
           <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit selectors</Button>
         </div>
-        {preview && deviceId && <img className="mt-2 max-h-32 rounded border border-gray-200" alt="Element preview" src={devicesApi.fileUrl(deviceId, preview)} />}
+        {preview && pickDevice && <img className="mt-2 max-h-32 rounded border border-gray-200" alt="Element preview" src={devicesApi.fileUrl(pickDevice, preview)} />}
       </div>
     )}
-    <div className="flex items-center gap-2">
-      <Button type="button" variant="secondary" size="sm" disabled title="Coming soon">Pick on page</Button>
-      <span className="text-[11px] text-gray-400">Coming soon</span>
-    </div>
+    {picking ? (
+      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="flex-1">Click the element in {family}… Press Esc in {family} to cancel</span>
+        <Button type="button" variant="secondary" size="sm" onClick={cancelPick}>Cancel</Button>
+      </div>
+    ) : <>
+      {!deviceId && online.length > 1 && (
+        <select aria-label="Browser to pick in" className={fieldClass} value={chosen} onChange={e => setChosen(e.target.value)}>
+          <option value="">Choose a browser…</option>
+          {online.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+      )}
+      {!hasEarlierOpen && (
+        <input aria-label="Open this page first" className={fieldClass} placeholder="Open this page first (optional), e.g. https://example.com"
+          value={pageUrl} onChange={e => setPageUrl(e.target.value)} />
+      )}
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="secondary" size="sm" disabled={!pickDevice} onClick={startPick}>Pick on page</Button>
+        {!pickDevice && <span className="text-[11px] text-gray-400">{online.length === 0 ? 'No browser agent is online.' : 'Choose a browser to pick in.'}</span>}
+      </div>
+    </>}
+    {pickError && <p className="text-xs text-red-600">{pickError}</p>}
     {editing && <SelectorDialog bundle={bundle} mapping={mapping} onClose={() => setEditing(false)} onSave={next => { onChange(next); setEditing(false) }} />}
   </Labelled>
 }

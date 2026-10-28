@@ -250,4 +250,60 @@ describe('CanvasInspector', () => {
     })
     vi.unstubAllGlobals()
   })
+
+  describe('Pick on page', () => {
+    const clickSpec = {
+      action: 'browser.click', version: 2, capability: 'browser', actionType: 'UPDATE', title: 'Click',
+      description: '', defaultTimeoutSec: 15, conditions: [], platforms: [],
+      input: { type: 'object', required: ['element'], properties: { element: { type: 'object' } } },
+      output: { type: 'object' },
+    }
+    const browser = { id: 'dev-1', workspaceId: null, name: 'Chrome', online: true, family: 'chrome', version: '131', allowedSites: [], sessions: 1, lastSeenAt: null }
+    const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+
+    function stub(pickStatuses: unknown[]) {
+      const calls: string[] = []
+      const polls = [...pickStatuses]
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        calls.push(`${init?.method ?? 'GET'} ${url}`)
+        if (url.includes('/api/devices/catalog')) return respond([clickSpec])
+        if (url.includes('/api/web/browsers')) return respond([browser])
+        if (url.endsWith('/api/web/pick')) return respond({ commandId: 'cmd-1' })
+        if (url.includes('/api/web/pick/')) return respond(polls.length > 1 ? polls.shift() : polls[0])
+        return respond({})
+      }))
+      return calls
+    }
+
+    it('shows the waiting state and cancels through the command route', async () => {
+      queryClient.clear()
+      const calls = stub([{ status: 'waiting' }])
+      const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
+      open(made.graph, made.id)
+      const pick = await screen.findByRole('button', { name: 'Pick on page' })
+      await waitFor(() => expect(pick).toBeEnabled())
+      fireEvent.click(pick)
+      expect(await screen.findByText(/Click the element in Chrome… Press Esc in Chrome to cancel/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(calls).toContain('POST /api/devices/dev-1/commands/cmd-1/cancel'))
+      expect(screen.getByRole('button', { name: 'Pick on page' })).toBeInTheDocument()
+      vi.unstubAllGlobals()
+    })
+
+    it('fills the element from the pick and keeps its preview', async () => {
+      queryClient.clear()
+      stub([{ status: 'waiting' }, { status: 'done', element: { strategies: [{ by: 'css', value: '#go' }], label: 'Go' }, preview: 'file-1', url: 'https://example.com' }])
+      const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
+      const { onSave } = open(made.graph, made.id)
+      const pick = await screen.findByRole('button', { name: 'Pick on page' })
+      await waitFor(() => expect(pick).toBeEnabled())
+      fireEvent.click(pick)
+      await waitFor(() => expect(screen.getByText('Go')).toBeInTheDocument(), { timeout: 5000 })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+      expect(saved.config.inputs).toMatchObject({ element: { strategies: [{ by: 'css', value: '#go' }], preview: 'file-1' } })
+      vi.unstubAllGlobals()
+    }, 10000)
+  })
 })

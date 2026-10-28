@@ -62,6 +62,26 @@ class WebAutomationE2eTest extends E2eSupport {
   }
 
   @Test
+  void pickReturnsTheElementOnlyToItsOwner() throws Exception {
+    var started = api.post("/api/web/pick", Map.of("deviceId", device.deviceId(),
+        "url", "https://example.com"));
+    assertThat(started.ok()).as(started.body()).isTrue();
+    String commandId = started.json().path("commandId").asText();
+
+    JsonNode result = null;
+    for (int i = 0; i < 40; i++) {
+      result = api.get("/api/web/pick/" + commandId).json();
+      if (!"waiting".equals(result.path("status").asText())) break;
+      Thread.sleep(250);
+    }
+    assertThat(result.path("status").asText()).isEqualTo("done");
+    assertThat(result.path("element").path("strategies")).isNotEmpty();
+    assertThat(result.path("url").asText()).isEqualTo("https://example.com");
+
+    assertThat(signedIn("web-other").get("/api/web/pick/" + commandId).status()).isEqualTo(404);
+  }
+
+  @Test
   void anotherAccountCannotTestOnThisBrowser() {
     ApiClient other = signedIn("web-other");
     var tested = other.post("/api/web/test-step", Map.of(
