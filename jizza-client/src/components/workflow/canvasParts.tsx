@@ -291,10 +291,12 @@ function WireButton({ label, danger, onClick, children }: { label: string; dange
  * The "what comes next?" list n8n shows when you press + or drop a wire on empty canvas. Type to
  * filter, arrows to move, Enter to add.
  */
-export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose }: {
+export function StepPicker({ at, title, allowEnd = true, agents, onPick, onRecord, onClose }: {
   at: { x: number; y: number }; title: string; allowEnd?: boolean
   /** Agents offered as ready-made agent steps, under the step types. */
   agents?: AgentDto[]
+  /** Offers "Record steps here" under Web Automation. */
+  onRecord?: () => void
   onPick: (entry: NodeType | PaletteEntry, agent?: AgentDto) => void; onClose: () => void
 }) {
   const [query, setQuery] = useState('')
@@ -339,6 +341,13 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
           }}
           className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100" />
       </label>
+      {onRecord && (!query.trim() || 'record steps here web automation'.includes(query.trim().toLowerCase())) && (
+        <button type="button" onClick={onRecord}
+          className="mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-gray-900 hover:bg-brand-50 dark:text-gray-100 dark:hover:bg-brand-500/15">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-red-500 text-white"><span className="h-2 w-2 rounded-full bg-white" /></span>
+          Record steps here
+        </button>
+      )}
       <ul role="listbox" className="max-h-64 overflow-y-auto">
         {options.map(({ type: t, entry, agent }, i) => {
           const Icon = NODE_ICON[t]
