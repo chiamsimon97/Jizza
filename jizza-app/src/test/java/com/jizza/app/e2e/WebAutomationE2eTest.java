@@ -29,7 +29,8 @@ class WebAutomationE2eTest extends E2eSupport {
   void setUp() {
     api = signedIn("web");
     device = new SimDevice("http://localhost:" + port);
-    new FakeBrowser(device).page("https://example.com").title("Example");
+    new FakeBrowser(device).page("https://example.com").title("Example")
+        .element("Sign in", "button", "Sign in");
     device.keyStorage("browser");
     String code = api.post("/api/devices/pairings", Map.of()).json().path("code").asText();
     device.enrollWithCode(code, "Chrome on MacBook", "browser");
@@ -59,6 +60,26 @@ class WebAutomationE2eTest extends E2eSupport {
     assertThat(tested.json().path("status").asText()).isEqualTo("succeeded");
     assertThat(tested.json().path("output").path("title").asText()).isEqualTo("Example");
     assertThat(tested.json().path("output").path("sessionId").asText()).startsWith("s_");
+  }
+
+  @Test
+  void pickReturnsTheElementOnlyToItsOwner() throws Exception {
+    var started = api.post("/api/web/pick", Map.of("deviceId", device.deviceId(),
+        "url", "https://example.com"));
+    assertThat(started.ok()).as(started.body()).isTrue();
+    String commandId = started.json().path("commandId").asText();
+
+    JsonNode result = null;
+    for (int i = 0; i < 40; i++) {
+      result = api.get("/api/web/pick/" + commandId).json();
+      if (!"waiting".equals(result.path("status").asText())) break;
+      Thread.sleep(250);
+    }
+    assertThat(result.path("status").asText()).as(result.toString()).isEqualTo("done");
+    assertThat(result.path("element").path("strategies")).isNotEmpty();
+    assertThat(result.path("url").asText()).isEqualTo("https://example.com");
+
+    assertThat(signedIn("web-other").get("/api/web/pick/" + commandId).status()).isEqualTo(404);
   }
 
   @Test

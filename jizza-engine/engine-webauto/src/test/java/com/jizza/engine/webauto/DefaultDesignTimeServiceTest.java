@@ -82,6 +82,76 @@ class DefaultDesignTimeServiceTest {
         Json.obj())).isInstanceOf(NotFoundException.class);
   }
 
+  @Test
+  void pickStartsAnInteractiveLongCommandAndReportsItsStates() {
+    Devices devices = mock(Devices.class);
+    DeviceCommands commands = mock(DeviceCommands.class);
+    DeviceActionCatalog catalog = mock(DeviceActionCatalog.class);
+    AgentDirectory agents = mock(AgentDirectory.class);
+    AutonomyGate autonomy = mock(AutonomyGate.class);
+    Access access = new Access(UUID.randomUUID(), UUID.randomUUID());
+    DeviceDto browser = new DeviceDto(UUID.randomUUID(), access.workspaceId(), access.userId(),
+        "Chrome", DevicePlatform.BROWSER, null, null, 1, DeviceStatus.ACTIVE, List.of(), "browser",
+        true, "idle", Json.obj(), List.of("browser.pickElement@1"), false, List.of(),
+        Instant.now(), Instant.now());
+    DeviceActionSpec spec = new DeviceActionSpec("browser.pickElement", 1, "browser",
+        ActionType.READ, "Pick element", null, Json.obj(), Json.obj(), List.of("site"),
+        List.of("browser"), 150);
+    UUID commandId = UUID.randomUUID();
+    when(devices.list(access.workspaceId(), access.userId())).thenReturn(List.of(browser));
+    when(catalog.resolve("browser.pickElement", 0)).thenReturn(Optional.of(spec));
+    when(agents.orchestrator(access.userId())).thenReturn(new AgentDto(UUID.randomUUID(),
+        access.userId(), "jizza", "Jizza", null, "", true, true));
+    when(autonomy.decide(any())).thenReturn(Decision.allow("default"));
+    when(commands.submit(any())).thenReturn(pick(commandId, browser, access.userId(),
+        DeviceCommandStatus.QUEUED, null));
+    var service = new DefaultDesignTimeService(devices, commands, catalog, agents, autonomy);
+
+    var started = service.startPick(access, browser.id(), "s_1", "https://example.com", "Pick it");
+
+    assertThat(started.commandId()).isEqualTo(commandId);
+    ArgumentCaptor<DeviceCommandRequest> request = ArgumentCaptor.forClass(DeviceCommandRequest.class);
+    verify(commands).submit(request.capture());
+    assertThat(request.getValue().interactive()).isTrue();
+    assertThat(request.getValue().timeout()).isEqualTo(java.time.Duration.ofSeconds(150));
+    assertThat(request.getValue().input().path("session").asText()).isEqualTo("s_1");
+
+    when(commands.find(commandId)).thenReturn(Optional.of(pick(commandId, browser,
+        access.userId(), DeviceCommandStatus.DISPATCHED, null)));
+    assertThat(service.pickResult(access, commandId).status()).isEqualTo("waiting");
+
+    var element = Json.obj();
+    element.putArray("strategies").addObject().put("by", "css").put("value", "#go");
+    var pickOutput = Json.obj();
+    pickOutput.set("element", element);
+    pickOutput.put("preview", "f1").put("url", "https://example.com");
+    when(commands.find(commandId)).thenReturn(Optional.of(pick(commandId, browser,
+        access.userId(), DeviceCommandStatus.SUCCEEDED, pickOutput)));
+    var done = service.pickResult(access, commandId);
+    assertThat(done.status()).isEqualTo("done");
+    assertThat(done.element().path("strategies")).hasSize(1);
+    assertThat(done.preview()).isEqualTo("f1");
+
+    when(commands.find(commandId)).thenReturn(Optional.of(pick(commandId, browser,
+        access.userId(), DeviceCommandStatus.CANCELLED, null)));
+    var cancelled = service.pickResult(access, commandId);
+    assertThat(cancelled.status()).isEqualTo("failed");
+    assertThat(cancelled.error().kind()).isEqualTo("cancelled_by_person");
+
+    Access other = new Access(access.workspaceId(), UUID.randomUUID());
+    assertThatThrownBy(() -> service.pickResult(other, commandId))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  private static DeviceCommandDto pick(UUID id, DeviceDto browser, UUID userId,
+                                       DeviceCommandStatus status,
+                                       com.fasterxml.jackson.databind.JsonNode output) {
+    return new DeviceCommandDto(id, browser.id(), browser.name(), userId, null, null,
+        "browser.pickElement", 1, Json.obj(), status, output, null, null, null, List.of(),
+        Instant.now().plusSeconds(150), Instant.now(), null, null,
+        status.finished() ? Instant.now() : null);
+  }
+
   private static DeviceDto browser(Access access) {
     return new DeviceDto(UUID.randomUUID(), access.workspaceId(), access.userId(), "Chrome",
         DevicePlatform.BROWSER, null, null, 1, DeviceStatus.ACTIVE, List.of(), "browser", true,

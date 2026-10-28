@@ -26,7 +26,18 @@ export interface WebTestResult {
   message?: string | null
 }
 
+export interface PickResult {
+  status: 'waiting' | 'done' | 'failed'
+  element?: Record<string, unknown>
+  preview?: string | null
+  url?: string | null
+  error?: WebTestError | null
+}
+
 export const webApi = {
+  pick: (body: { deviceId: string; sessionId?: string; url?: string; prompt?: string }) =>
+    api.post<{ commandId: string }>('/api/web/pick', body),
+  pickResult: (commandId: string) => api.get<PickResult>(`/api/web/pick/${commandId}`),
   browsers: () => api.get<BrowserAgent[]>('/api/web/browsers'),
   testStep: (body: { deviceId: string; action: string; version: number; inputs: Record<string, unknown> }) =>
     api.post<WebTestResult>('/api/web/test-step', body),

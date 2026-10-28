@@ -37,4 +37,17 @@ public class WebAutomationUseCase {
         Json.obj().put("deviceId", deviceId.toString()).put("status", result.status()));
     return result;
   }
+
+  public DesignTimeService.PickStarted startPick(Access access, UUID deviceId, String sessionId,
+                                                 String url, String prompt) {
+    DesignTimeService.PickStarted started =
+        designTime.startPick(access, deviceId, sessionId, url, prompt);
+    audit.record(access.userId(), ActorType.USER, null, "web.pick_started",
+        started.commandId().toString(), Json.obj().put("deviceId", deviceId.toString()));
+    return started;
+  }
+
+  public DesignTimeService.PickResult pickResult(Access access, UUID commandId) {
+    return designTime.pickResult(access, commandId);
+  }
 }

@@ -35,6 +35,8 @@ public class DefaultDesignTimeService implements DesignTimeService {
 
   private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(60);
   private static final Duration WAIT = Duration.ofSeconds(55);
+  private static final Duration PICK_TIMEOUT = Duration.ofSeconds(150);
+  private static final String PICK_ACTION = "browser.pickElement";
 
   private final Devices devices;
   private final DeviceCommands commands;
@@ -71,21 +73,70 @@ public class DefaultDesignTimeService implements DesignTimeService {
     JsonNode literalInputs = inputs == null || inputs.isNull() ? Json.obj() : inputs;
     if (!literalInputs.isObject()) throw new ValidationException("Step inputs must be an object");
 
+    judge(access, device, spec, literalInputs);
+
+    DeviceCommandDto sent = commands.submit(new DeviceCommandRequest(access.userId(),
+        access.workspaceId(), DeviceTarget.device(device.id()), spec.action(), spec.version(),
+        literalInputs, COMMAND_TIMEOUT, null, null, "web-test:" + UUID.randomUUID(), true));
+    return result(commands.await(sent.id(), WAIT));
+  }
+
+  @Override
+  public PickStarted startPick(Access access, UUID deviceId, String sessionId, String url,
+                               String prompt) {
+    DeviceDto device = devices.list(access.workspaceId(), access.userId()).stream()
+        .filter(candidate -> candidate.id().equals(deviceId))
+        .findFirst()
+        .orElseThrow(() -> new NotFoundException("Browser", deviceId));
+    DeviceActionSpec spec = catalog.resolve(PICK_ACTION, 0)
+        .filter(candidate -> "browser".equals(candidate.capability()))
+        .orElseThrow(() -> new ValidationException("Picking is not available"));
+    if (!device.declares(spec.action())) {
+      throw new ValidationException(device.name() + " cannot pick elements");
+    }
+    var input = Json.obj();
+    if (sessionId != null && !sessionId.isBlank()) input.put("session", sessionId);
+    if (url != null && !url.isBlank()) input.put("url", url);
+    if (prompt != null && !prompt.isBlank()) input.put("prompt", prompt);
+
+    judge(access, device, spec, input);
+
+    DeviceCommandDto sent = commands.submit(new DeviceCommandRequest(access.userId(),
+        access.workspaceId(), DeviceTarget.device(device.id()), spec.action(), spec.version(),
+        input, PICK_TIMEOUT, null, null, "web-pick:" + UUID.randomUUID(), true));
+    return new PickStarted(sent.id());
+  }
+
+  @Override
+  public PickResult pickResult(Access access, UUID commandId) {
+    DeviceCommandDto command = commands.find(commandId)
+        .filter(c -> PICK_ACTION.equals(c.action()) && access.userId().equals(c.userId()))
+        .orElseThrow(() -> new NotFoundException("Pick", commandId));
+    if (!command.status().finished()) return new PickResult("waiting", null, null, null, null);
+    JsonNode output = command.output();
+    if (command.status() == DeviceCommandStatus.SUCCEEDED && output != null
+        && output.path("element").isObject()) {
+      return new PickResult("done", output.get("element"), output.path("preview").asText(null),
+          output.path("url").asText(null), null);
+    }
+    Result failed = result(command);
+    Error error = failed.error() != null && failed.error().kind() != null ? failed.error()
+        : new Error(command.status() == DeviceCommandStatus.CANCELLED ? "cancelled_by_person"
+            : "failed", command.error(), null);
+    return new PickResult("failed", null, null, null, error);
+  }
+
+  private void judge(Access access, DeviceDto device, DeviceActionSpec spec, JsonNode inputs) {
     UUID actor = agents.orchestrator(access.userId()).id();
     String toolRef = "device_" + device.id().toString().substring(0, 8) + "__"
         + spec.action().replaceAll("[^A-Za-z0-9]", "_");
-    Decision decision = autonomy.decide(new GuardrailContext(actor, toolRef, literalInputs,
+    Decision decision = autonomy.decide(new GuardrailContext(actor, toolRef, inputs,
         null, null, null, false, spec.actionType()));
     if (decision.denied()) throw new AutonomyDeniedException(decision.reason());
     if (decision.needsPermission() || decision.needsJizza()) {
       throw new ConflictException("This test needs approval under your guardrails: "
           + decision.reason());
     }
-
-    DeviceCommandDto sent = commands.submit(new DeviceCommandRequest(access.userId(),
-        access.workspaceId(), DeviceTarget.device(device.id()), spec.action(), spec.version(),
-        literalInputs, COMMAND_TIMEOUT, null, null, "web-test:" + UUID.randomUUID(), true));
-    return result(commands.await(sent.id(), WAIT));
   }
 
   private Result result(DeviceCommandDto command) {

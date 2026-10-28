@@ -55,3 +55,11 @@ not line up, plus the narrow choices made so work can continue safely.
 - Terminal browser closes are safety cleanup rather than new autonomous work. They use a reserved
   internal command marker, may be queued while autonomy is paused, and are excluded from a later
   kill-switch sweep; normal callers cannot submit a command with that marker.
+
+## W2 — Pick on page
+
+- **Pick and guardrails.** `browser.pickElement` goes through the same guardrail check as Test step. If the guardrail says ASK or JIZZA, `POST /api/web/pick` returns a Conflict instead of starting a pick.
+- **Preview.** The locator bundle schema allows extra properties, so the preview file id is stored inside `inputs.element.preview`. The server does not interpret it.
+- **Session.** For `sameBrowser` steps no session id is sent with the pick; the extension uses the active tab.
+- **Results.** A failed or cancelled pick with no error kind is reported as `cancelled_by_person` or `failed`. Only the command's owner can read it; anyone else gets 404.
+- **Get element selectors.** Its outputs (`element`, `css`, `xpath`) already reach the chips through the catalog output schema, so no code change was needed.

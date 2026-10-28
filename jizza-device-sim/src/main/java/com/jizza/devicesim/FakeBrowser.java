@@ -85,7 +85,9 @@ public final class FakeBrowser {
 
   private void handle(String action, java.util.function.Function<JsonNode, JsonNode> handler) {
     device.handle(action, input -> {
-      if (!"browser.open@2".equals(action)) requireSession(input);
+      boolean opensItself = "browser.open@2".equals(action)
+          || ("browser.pickElement@1".equals(action) && input.hasNonNull("url"));
+      if (!opensItself) requireSession(input);
       return handler.apply(input);
     });
   }
@@ -183,6 +185,7 @@ public final class FakeBrowser {
     if (in.hasNonNull("url")) {
       url = in.path("url").asText();
       page(url);
+      if (session == null) session = sessionId();
     }
     Element element = firstElement();
     ObjectNode out = object();
