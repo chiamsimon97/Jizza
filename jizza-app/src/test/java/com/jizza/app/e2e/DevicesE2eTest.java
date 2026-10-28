@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.devicesim.FakeBrowser;
 import com.jizza.devicesim.SimDevice;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.enums.WorkflowStatus;
@@ -81,6 +82,24 @@ class DevicesE2eTest extends E2eSupport {
         .isInstanceOf(SimDevice.SimException.class);
     // The person is told a device was added.
     assertThat(api.get("/api/notifications").body()).contains("New device paired: Work laptop");
+  }
+
+  @Test
+  void aBrowserPairsWithItsPlatformKeyStorageAndWebManifest() {
+    new FakeBrowser(device);
+    device.keyStorage("browser");
+    device.enrollWithCode(pairingCode(), "Chrome on MacBook", "browser");
+    device.signIn();
+    assertThat(device.hello().path("type").asText()).isEqualTo("welcome");
+    assertThat(device.sendManifest().path("type").asText()).isEqualTo("ack");
+
+    JsonNode browser = api.get("/api/devices").json().get(0);
+    assertThat(browser.path("platform").asText()).isEqualTo("BROWSER");
+    assertThat(browser.path("keyStorage").asText()).isEqualTo("browser");
+    assertThat(browser.path("actions").toString())
+        .contains("browser.open@2", "browser.click@2", "browser.record@1");
+    assertThat(browser.path("capabilities").path("browser").path("family").asText())
+        .isEqualTo("chrome");
   }
 
   @Test

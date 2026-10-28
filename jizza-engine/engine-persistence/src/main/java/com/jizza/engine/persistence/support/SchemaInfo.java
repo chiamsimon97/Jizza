@@ -18,7 +18,8 @@ public final class SchemaInfo {
       "webhook_subscriptions", "inbound_events", "files", "agent_capabilities");
 
   public static final List<String> PLATFORM_TABLES = List.of(
-      "job_queue", "shedlock", "outbox", "llm_usage", "oauth_states", "password_reset_tokens");
+      "job_queue", "shedlock", "outbox", "llm_usage", "oauth_states", "password_reset_tokens",
+      "web_recordings", "web_recording_steps", "web_locator_fixes");
 
   public static final List<String> MEMORY_TABLES = List.of(
       "memory_subjects", "memory_subject_relations", "memories", "memory_about",

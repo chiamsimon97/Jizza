@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /** The operating system a paired device runs. Routing never depends on it; capabilities do. */
 public enum DevicePlatform {
-  WINDOWS, MACOS, LINUX, ANDROID, IOS, OTHER;
+  WINDOWS, MACOS, LINUX, ANDROID, IOS, BROWSER, OTHER;
 
   /** Phones cannot hold a socket open in the background, so they are woken by a push. */
   public boolean phone() {
@@ -20,6 +20,7 @@ public enum DevicePlatform {
       case "linux", "ubuntu" -> LINUX;
       case "android" -> ANDROID;
       case "ios", "ipados" -> IOS;
+      case "browser", "chrome", "chromium", "edge" -> BROWSER;
       default -> OTHER;
     };
   }

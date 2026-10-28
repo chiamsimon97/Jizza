@@ -1,6 +1,8 @@
 package com.jizza.engine.devices.catalog;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.device.DeviceActionCatalog;
 import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.enums.ActionType;
@@ -56,13 +58,38 @@ public class JsonDeviceActionCatalog implements DeviceActionCatalog {
         out.add(new DeviceActionSpec(a.path("action").asText(), a.path("version").asInt(1),
             a.path("capability").asText(),
             ActionType.valueOf(a.path("actionType").asText("MONEY").toUpperCase(Locale.ROOT)),
-            a.path("title").asText(), a.path("description").asText(null), a.get("input"),
-            a.get("output"), List.copyOf(conditions), List.copyOf(platforms),
+            a.path("title").asText(), a.path("description").asText(null),
+            resolveRefs(a.get("input"), root), resolveRefs(a.get("output"), root),
+            List.copyOf(conditions), List.copyOf(platforms),
             a.path("defaultTimeoutSec").asInt(120)));
       }
       return List.copyOf(out);
     } catch (IOException e) {
       throw new IllegalStateException("Could not read " + RESOURCE, e);
     }
+  }
+
+  private static JsonNode resolveRefs(JsonNode node, JsonNode root) {
+      if (node == null) return null;
+      if (node.isObject() && node.has("$ref")) {
+        String ref = node.path("$ref").asText();
+        String prefix = "device-actions.json#/schemas/";
+        if (!ref.startsWith(prefix)) throw new IllegalStateException("Unsupported catalog ref " + ref);
+        JsonNode resolved = root.path("schemas").path(ref.substring(prefix.length()));
+        if (resolved.isMissingNode()) throw new IllegalStateException("Missing catalog ref " + ref);
+        return resolveRefs(resolved, root);
+      }
+      if (node.isObject()) {
+        ObjectNode copy = Json.mapper().createObjectNode();
+        node.fields().forEachRemaining(field ->
+            copy.set(field.getKey(), resolveRefs(field.getValue(), root)));
+        return copy;
+      }
+      if (node.isArray()) {
+        ArrayNode copy = Json.mapper().createArrayNode();
+        node.forEach(value -> copy.add(resolveRefs(value, root)));
+        return copy;
+      }
+      return node.deepCopy();
   }
 }

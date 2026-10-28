@@ -1441,7 +1441,7 @@ export interface DirectoryProfile extends DirectoryEntry {
 
 // ── Devices (the Jizza Agent app on computers and phones) ─────────────────────
 
-export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'OTHER'
+export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'BROWSER' | 'OTHER'
 export type DeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
 export type DeviceCommandStatus = 'QUEUED' | 'DISPATCHED' | 'ACCEPTED' | 'RUNNING' | 'SUCCEEDED'
   | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
@@ -1458,7 +1458,7 @@ export interface Device {
   protocolVersion: number | null
   status: DeviceStatus
   tags: string[]
-  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, dpapi or file. */
+  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, browser or file. */
   keyStorage: string
   online: boolean
   /** idle, busy or locked, while online. */

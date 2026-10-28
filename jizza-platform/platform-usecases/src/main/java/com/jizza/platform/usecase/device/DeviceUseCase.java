@@ -144,7 +144,10 @@ public class DeviceUseCase {
   }
 
   public List<DeviceActionSpec> catalog() {
-    return catalog.all();
+    return catalog.all().stream()
+        .filter(action -> action.description() == null
+            || !action.description().startsWith("Deprecated:"))
+        .toList();
   }
 
   private boolean manager(Access access) {

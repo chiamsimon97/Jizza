@@ -152,6 +152,9 @@ for the guardrails until the catalog adds them. The server only routes an action
 declared it (except `system.ping`, which every app answers), and checks inputs against the schema
 before sending.
 
+Browser devices and every `browser.*` action follow the shared
+[Web Automation Contract v1](web-automation-v1.md).
+
 ## 7. Error codes
 
 `bad_message`, `unsupported_type`, `unsupported_version`, `unauthorized`, `not_found`,

@@ -2,13 +2,16 @@ package com.jizza.engine.api.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Minimal, dependency-free JSON Schema check applied to <em>every</em> tool call before it is
  * executed (R16). Deliberately conservative: it understands the subset of JSON Schema that the
- * tool generator and the built-in tools emit (type, required, properties, enum, additionalProperties,
- * items, minimum/maximum, minLength/maxLength).
+ * tool generator and the built-in tools emit. Catalog loaders must resolve external references
+ * before calling this validator.
  */
 public final class ToolSchemaValidator {
 
@@ -27,6 +30,24 @@ public final class ToolSchemaValidator {
   private static void check(JsonNode schema, JsonNode value, String path, List<String> errors) {
     if (schema == null || !schema.isObject()) return;
     if (value == null) value = com.fasterxml.jackson.databind.node.NullNode.instance;
+
+    for (String composition : List.of("allOf", "anyOf", "oneOf")) {
+      JsonNode choices = schema.get(composition);
+      if (choices == null || !choices.isArray()) continue;
+      int matches = 0;
+      for (JsonNode choice : choices) {
+        List<String> choiceErrors = new ArrayList<>();
+        check(choice, value, path, choiceErrors);
+        if (choiceErrors.isEmpty()) matches++;
+      }
+      if ("allOf".equals(composition) && matches != choices.size()) {
+        errors.add(path + ": does not satisfy allOf");
+      } else if ("anyOf".equals(composition) && matches == 0) {
+        errors.add(path + ": does not satisfy anyOf");
+      } else if ("oneOf".equals(composition) && matches != 1) {
+        errors.add(path + ": does not satisfy exactly one oneOf option");
+      }
+    }
 
     JsonNode typeNode = schema.get("type");
     if (typeNode != null && typeNode.isTextual()) {
@@ -68,6 +89,19 @@ public final class ToolSchemaValidator {
     }
 
     if (value.isArray()) {
+      if (schema.has("minItems") && value.size() < schema.get("minItems").asInt())
+        errors.add(path + ": fewer than minItems");
+      if (schema.has("maxItems") && value.size() > schema.get("maxItems").asInt())
+        errors.add(path + ": more than maxItems");
+      if (schema.path("uniqueItems").asBoolean(false)) {
+        HashSet<JsonNode> seen = new HashSet<>();
+        for (JsonNode item : value) {
+          if (!seen.add(item)) {
+            errors.add(path + ": duplicate item");
+            break;
+          }
+        }
+      }
       JsonNode items = schema.get("items");
       if (items != null) {
         for (int i = 0; i < value.size(); i++) check(items, value.get(i), path + "[" + i + "]", errors);
@@ -86,6 +120,14 @@ public final class ToolSchemaValidator {
         errors.add(path + ": shorter than minLength");
       if (schema.has("maxLength") && value.asText().length() > schema.get("maxLength").asInt())
         errors.add(path + ": longer than maxLength");
+      if (schema.has("pattern")) {
+        try {
+          if (!Pattern.compile(schema.get("pattern").asText()).matcher(value.asText()).find())
+            errors.add(path + ": does not match pattern");
+        } catch (PatternSyntaxException e) {
+          errors.add(path + ": schema has an invalid pattern");
+        }
+      }
     }
   }
 
