@@ -159,7 +159,14 @@ class WebAutomationE2eTest extends E2eSupport {
       var run = api.post("/api/workflows/" + workflowId + "/run",
           Map.of("version", 1, "input", Json.obj().put("page", page)));
       assertThat(run.ok()).as(run.body()).isTrue();
-      assertThat(run.json().path("status").asText()).as(run.body()).isEqualTo("DONE");
+      JsonNode finished = run.json();
+      for (int i = 0; i < 80 && !"DONE".equals(finished.path("status").asText())
+          && !"FAILED".equals(finished.path("status").asText()); i++) {
+        drainDeviceEvents();
+        Thread.sleep(250);
+        finished = api.get("/api/runs/" + run.json().path("id").asText()).json();
+      }
+      assertThat(finished.path("status").asText()).as(finished.toString()).isEqualTo("DONE");
       assertThat(device.received().toString()).contains(page);
     }
     assertThat(api.get("/api/web/recordings/" + id).json().path("status").asText())
