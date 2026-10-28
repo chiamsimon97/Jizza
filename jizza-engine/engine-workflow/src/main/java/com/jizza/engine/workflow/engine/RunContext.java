@@ -35,6 +35,8 @@ import java.util.Map;
  *   "state":    { "nodeId": { ... } },            // a step's own bookkeeping between attempts
  *   "result":   { ... },                          // what the run produced, for a parent run
  *   "parent":   { "runId": "...", "nodeId": "..." },
+ *   "browser":  { "deviceId": "...", "sessionId": "...", "opened": true },
+ *                                                 // browser affinity; inherited sessions are not owned
  *   "depth":    0,                                // how deep in sub-workflows this run is
  *   "legacy":   true                              // started before parallel paths existed
  * }
@@ -44,6 +46,13 @@ import java.util.Map;
  * once: a path parked on a wait or a question does not hold up the others.
  */
 public final class RunContext {
+
+  public record Browser(java.util.UUID deviceId, java.util.UUID workspaceId, String sessionId,
+                        boolean opened) {
+    public Browser(java.util.UUID deviceId, String sessionId, boolean opened) {
+      this(deviceId, null, sessionId, opened);
+    }
+  }
 
   private final ObjectNode root;
 
@@ -285,6 +294,102 @@ public final class RunContext {
   }
 
   public JsonNode vars() { return root.path("vars"); }
+
+  public Browser browser() {
+    JsonNode value = root.path("browser");
+    if (!value.isObject() || !value.path("deviceId").isTextual()
+        || !value.path("sessionId").isTextual()) return null;
+    try {
+      return new Browser(java.util.UUID.fromString(value.get("deviceId").asText()),
+          uuid(value.path("workspaceId")), value.get("sessionId").asText(),
+          value.path("opened").asBoolean(false));
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  public void setBrowser(Browser browser) {
+    if (browser == null) {
+      root.remove("browser");
+      return;
+    }
+
+    ObjectNode value = root.putObject("browser").put("deviceId", browser.deviceId().toString())
+        .put("sessionId", browser.sessionId()).put("opened", browser.opened());
+    if (browser.workspaceId() != null) value.put("workspaceId", browser.workspaceId().toString());
+  }
+
+  public boolean needsNewBrowserSession() {
+    return root.path("_browserNeedsNewSession").asBoolean(false);
+  }
+
+  public void requireNewBrowserSession() {
+    root.put("_browserNeedsNewSession", true);
+  }
+
+  void browserSessionStarted() {
+    root.remove("_browserNeedsNewSession");
+  }
+
+  void rememberOwnedBrowser(Browser browser) {
+    if (browser == null || !browser.opened()) return;
+    var owned = root.withArray("_browserOwned");
+    for (JsonNode value : owned) {
+      if (sameBrowser(value, browser.deviceId(), browser.sessionId())) return;
+    }
+    ObjectNode value = owned.addObject().put("deviceId", browser.deviceId().toString())
+        .put("sessionId", browser.sessionId());
+    if (browser.workspaceId() != null) value.put("workspaceId", browser.workspaceId().toString());
+  }
+
+  void forgetOwnedBrowser(java.util.UUID deviceId, String sessionId) {
+    var owned = root.withArray("_browserOwned");
+    for (int i = owned.size() - 1; i >= 0; i--) {
+      if (sameBrowser(owned.get(i), deviceId, sessionId)) owned.remove(i);
+    }
+  }
+
+  java.util.List<Browser> ownedBrowsers() {
+    java.util.LinkedHashMap<String, Browser> browsers = new java.util.LinkedHashMap<>();
+    for (JsonNode value : root.withArray("_browserOwned")) {
+      java.util.UUID deviceId = uuid(value.path("deviceId"));
+      if (deviceId != null && value.path("sessionId").isTextual()) {
+        Browser browser = new Browser(deviceId, uuid(value.path("workspaceId")),
+            value.get("sessionId").asText(), true);
+        browsers.put(deviceId + ":" + browser.sessionId(), browser);
+      }
+    }
+    Browser current = browser();
+    if (current != null && current.opened()) {
+      browsers.put(current.deviceId() + ":" + current.sessionId(), current);
+    }
+    return java.util.List.copyOf(browsers.values());
+  }
+
+  private boolean sameBrowser(JsonNode value, java.util.UUID deviceId, String sessionId) {
+    return value.path("deviceId").asText().equals(deviceId.toString())
+        && value.path("sessionId").asText().equals(sessionId);
+  }
+
+  private java.util.UUID uuid(JsonNode value) {
+    if (!value.isTextual()) return null;
+    try {
+      return java.util.UUID.fromString(value.asText());
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  void recordBrowserAction(String action) { root.put("_browserLastAction", action); }
+
+  String lastBrowserAction() {
+    return root.path("_browserLastAction").isTextual()
+        ? root.get("_browserLastAction").asText() : null;
+  }
+
+  boolean browserCleanupDone() { return root.path("_browserCleanupDone").asBoolean(false); }
+
+  void recordBrowserCleanup() { root.put("_browserCleanupDone", true); }
 
   /** The variable bindings every expression and template in a run is evaluated against. */
   public Map<String, Object> variables() {

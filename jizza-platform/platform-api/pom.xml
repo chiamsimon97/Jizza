@@ -32,6 +32,7 @@
     <dependency><groupId>com.jizza</groupId><artifactId>engine-devices</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-scheduler</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-workflow</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-webauto</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-procedures</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-notifications</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-autonomy</artifactId><scope>runtime</scope></dependency>
