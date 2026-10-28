@@ -76,3 +76,4 @@ not line up, plus the narrow choices made so work can continue safely.
 - **Saved logins.** PR #60 (`items.logins`) is not merged, so the review screen has a free-text "Saved login id" field. Switch it to a picker when #60 lands. A password step cannot be saved without a login.
 - **Clean-up.** Reviews untouched for 7 days are discarded; steps of discarded recordings are removed (sweep every `jizza.webauto.sweep-interval`, default `PT1M`).
 - **Saved list.** The Recordings page lists workflows with `origin = RECORDED`; drafts are recordings in `recording` or `review`.
+- **Late events.** Steps handled within 3 seconds after a recording went to review are still kept (events are processed by queue workers, so order is not guaranteed). A device edit for a step not yet stored is dropped; the person can make the same edit in review.

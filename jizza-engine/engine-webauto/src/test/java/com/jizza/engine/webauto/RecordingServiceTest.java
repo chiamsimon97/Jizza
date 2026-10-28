@@ -214,8 +214,22 @@ class RecordingServiceTest {
     service.accept(browser.id(), access.userId(), "browser.recording.stopped",
         Json.obj().put("recordingId", id.toString()));
     assertThat(recordingRows.get(id).getStatus()).isEqualTo("review");
+    recordingRows.get(id).setStoppedAt(java.time.Instant.now().minusSeconds(10));
     service.accept(browser.id(), access.userId(), "browser.recording.step", ev);
     assertThat(stepRows).isEmpty();
+  }
+
+  @Test
+  void aStepHandledJustAfterStoppedIsStillKept() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.stopped",
+        Json.obj().put("recordingId", id.toString()));
+    service.accept(browser.id(), access.userId(), "browser.recording.step",
+        event(id, step(0, "browser.click", "Last click", "{}", false)));
+
+    assertThat(stepRows).hasSize(1);
+    assertThat(recordingRows.get(id).getStepCount()).isEqualTo(1);
+    assertThat(recordingRows.get(id).getStatus()).isEqualTo("review");
   }
 
   @Test

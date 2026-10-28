@@ -299,7 +299,7 @@ public class RecordingService implements Recordings, RecordingIntake {
         : recordings.lockById(recordingId).orElse(null);
     if (recording == null || !recording.getOwnerId().equals(ownerId)
         || !deviceId.equals(recording.getDeviceId())
-        || !STATUS_RECORDING.equals(recording.getStatus())) {
+        || !(STATUS_RECORDING.equals(recording.getStatus()) || lateEvent(recording, name))) {
       log.info("Dropped {} for recording {}: not from its device and owner, or not recording",
           name, recordingId);
       return;
@@ -307,9 +307,22 @@ public class RecordingService implements Recordings, RecordingIntake {
     switch (name) {
       case "browser.recording.step" -> addStep(recording, data.path("step"));
       case "browser.recording.edit" -> deviceEdit(recording, data);
-      case "browser.recording.stopped" -> toReview(recording);
+      case "browser.recording.stopped" -> {
+        if (STATUS_RECORDING.equals(recording.getStatus())) toReview(recording);
+      }
       default -> log.info("Dropped unknown recording event {}", name);
     }
+  }
+
+  /**
+   * Events are handled by queue workers, so a step can be handled just after the recording went to
+   * review. Steps (and a repeated stopped) are still taken for a short while, so the last steps
+   * are not lost.
+   */
+  private boolean lateEvent(WebRecordingEntity recording, String name) {
+    return STATUS_REVIEW.equals(recording.getStatus()) && recording.getStoppedAt() != null
+        && recording.getStoppedAt().isAfter(Instant.now().minus(EVENT_GRACE))
+        && ("browser.recording.step".equals(name) || "browser.recording.stopped".equals(name));
   }
 
   private void addStep(WebRecordingEntity recording, JsonNode raw) {
@@ -551,6 +564,11 @@ public class RecordingService implements Recordings, RecordingIntake {
     if (command.finishedAt() != null && command.finishedAt().isAfter(Instant.now().minus(EVENT_GRACE))) {
       return;
     }
+    // Re-read under the row lock: steps may have been stored since this row was loaded.
+    WebRecordingEntity held = recordings.lockById(recording.getId()).orElse(null);
+    if (held == null || !STATUS_RECORDING.equals(held.getStatus())) return;
+    recording = held;
+    recording.setStepCount((int) steps.ordered(recording.getId()).stream().filter(s -> !s.isDeleted()).count());
     if (recording.getStepCount() == 0 && command.status() != com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED) {
       recording.setStatus(STATUS_FAILED);
       recording.setStoppedAt(Instant.now());
