@@ -367,7 +367,7 @@ export interface AssistantReply {
 
 /** A step Jizza asks the app to take alongside its reply. */
 export type UiAction =
-  | { type: 'navigate'; payload: { page: string; reason?: string } }
+  | { type: 'navigate'; payload: { page: string; reason?: string; review?: string } }
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
   | { type: 'ask_user'; payload: { question: string; options?: string[]; multiple?: boolean } }
   | { type: 'set_theme'; payload: { theme: string } }

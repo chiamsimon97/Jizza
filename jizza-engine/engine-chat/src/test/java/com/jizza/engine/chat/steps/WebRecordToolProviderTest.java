@@ -125,6 +125,7 @@ class WebRecordToolProviderTest {
     assertThat(ChatScope.actions(scope)).singleElement().satisfies(a -> {
       assertThat(a.type()).isEqualTo(UiAction.NAVIGATE);
       assertThat(a.payload().path("page").asText()).isEqualTo("recordings");
+      assertThat(a.payload().path("review").asText()).isEqualTo(id.toString());
     });
   }
 

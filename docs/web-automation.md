@@ -30,7 +30,13 @@ you are editing.
 
 ### Record from chat
 
-Tell Jizza you want to show it a task. It starts a recording in your browser agent and puts a card on the screen with **Stop** and **Open review**. Do the task in Chrome, press **Stop**, then open the review. If a saved recording already does the job, Jizza offers to run it and asks you first. Clicking and typing in your browser from chat always asks for your approval.
+Tell Jizza you want to show it a task. It starts a recording in your browser agent and puts a card
+on the screen with **Stop** and **Open review**. Do the task in Chrome and press **Stop**; **Open
+review** takes you to the review of that recording.
+
+If a saved recording already does what you ask, such as "download last month's invoices", Jizza
+offers to run it and runs it only after you say yes. Clicking and typing in your browser from chat
+always asks for your approval.
 
 ## When a page changes
 
@@ -62,3 +68,6 @@ Two options are off unless your server turns them on:
 - A saved recording asks before each run and does not run on a schedule until you allow it.
 - Steps that change a site (clicks that submit, typing) go through your guardrails like any other.
 - Drafts you leave for 7 days are removed.
+- A failed web step shows in the run history with what went wrong in words and a screenshot of the
+  page, when the browser took one.
+- Passwords come from saved logins and are never stored in a recording or a workflow.

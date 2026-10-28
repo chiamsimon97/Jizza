@@ -206,6 +206,74 @@ class WebAutomationE2eTest extends E2eSupport {
   }
 
   @Test
+  void aMatchingRecordingRunsFromChatAfterOneConfirmation() throws Exception {
+    fake.recordedStep("browser.open", 2, "Open the supplier portal",
+            Json.obj().put("url", "https://example.com"), false)
+        .recordedStep("browser.getText", 1, "Invoices heading", withElement(Json.obj()), false);
+    String id = api.post("/api/web/recordings", Map.of("deviceId", device.deviceId(),
+        "url", "https://example.com", "name", "Download invoices")).json().path("id").asText();
+    for (int i = 0; i < 80; i++) {
+      drainDeviceEvents();
+      JsonNode r = api.get("/api/web/recordings/" + id).json();
+      if ("review".equals(r.path("status").asText()) && r.path("steps").size() == 2) break;
+      Thread.sleep(250);
+    }
+    var saved = api.post("/api/web/recordings/" + id + "/save", Map.of("name", "Download invoices",
+        "description", "Download last month's invoices from the supplier portal"));
+    assertThat(saved.ok()).as(saved.body()).isTrue();
+    String workflowId = saved.json().path("workflowId").asText();
+    var entity = workflows.findById(UUID.fromString(workflowId)).orElseThrow();
+    entity.setStatus(WorkflowStatus.APPROVED);
+    workflows.save(entity);
+    int sentBefore = device.received().size();
+
+    // First turn: Jizza finds the recording and asks; nothing runs yet.
+    model.reset();
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("f1", "find_saved_workflows",
+                Json.obj().put("request", "download last month's invoices"))),
+            "tool_use", 5, 5, "m"),
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("r1", "run_saved_workflow",
+                Json.obj().put("workflow_id", workflowId))),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("Shall I run Download invoices?"));
+    var first = api.post("/api/chat", Map.of("message", "Download last month's invoices"));
+    assertThat(first.ok()).as(first.body()).isTrue();
+    String seen = model.everythingTheModelSaw();
+    assertThat(seen).contains(workflowId).contains("needs_confirmation");
+    var code = java.util.regex.Pattern.compile("\"confirmation\":\"([0-9a-f]{8})\"").matcher(seen);
+    assertThat(code.find()).as(seen).isTrue();
+    assertThat(first.json().path("actions").toString()).doesNotContain("reused_workflow");
+    assertThat(device.received()).hasSize(sentBefore);
+
+    // Second turn: the person says yes, and the recording runs in their browser.
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("r2", "run_saved_workflow",
+                Json.obj().put("workflow_id", workflowId).put("confirmation", code.group(1)))),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("Running it now."));
+    var second = api.post("/api/chat", Map.of("conversationId",
+        first.json().path("conversationId").asText(), "message", "Yes, run it"));
+    assertThat(second.ok()).as(second.body()).isTrue();
+    var started = java.util.regex.Pattern.compile("\\{\"run_id\":\"([0-9a-f-]{36})\"")
+        .matcher(model.everythingTheModelSaw());
+    assertThat(started.find()).as(model.everythingTheModelSaw()).isTrue();
+    String runId = started.group(1);
+    JsonNode finished = api.get("/api/runs/" + runId).json();
+    for (int i = 0; i < 80 && !java.util.Set.of("DONE", "FAILED")
+        .contains(finished.path("status").asText()); i++) {
+      drainDeviceEvents();
+      Thread.sleep(250);
+      finished = api.get("/api/runs/" + runId).json();
+    }
+    assertThat(finished.path("status").asText()).as(finished.toString()).isEqualTo("DONE");
+    assertThat(device.received().toString()).contains("browser.getText");
+  }
+
+  @Test
   void aClickInChatAsksForApprovalEvenWhereARuleAllowsIt() {
     api.put("/api/autonomy/policies", Map.of("toolRef", "device_*", "rule", "ALLOW", "precedence", 50));
     api.post("/api/auth/step-up", Map.of("password", PASSWORD));

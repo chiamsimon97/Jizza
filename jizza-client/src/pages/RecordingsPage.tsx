@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Circle, Play, Video } from 'lucide-react'
 import { webApi } from '@/api/web'
 import { workflowsApi } from '@/api/workflows'
@@ -15,8 +15,13 @@ import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 /** Web tasks recorded in Chrome: the saved modules, and recordings still being made or reviewed. */
 export function RecordingsPage() {
   const navigate = useNavigate()
-  const [recording, setRecording] = useState(false)
-  const [resume, setResume] = useState<string | undefined>()
+  const [params, setParams] = useSearchParams()
+  // ?review=<id>: chat's "Open review" lands straight on that recording's review.
+  const [resume, setResume] = useState<string | undefined>(() => params.get('review') ?? undefined)
+  const [recording, setRecording] = useState(() => params.has('review'))
+  useEffect(() => {
+    if (params.has('review')) setParams(p => { p.delete('review'); return p }, { replace: true })
+  }, [params, setParams])
   const drafts = useQuery({ queryKey: ['web-recordings', 'drafts'], queryFn: () => webApi.listRecordings(['recording', 'review']) })
   const modules = useQuery({ queryKey: ['workflows'], queryFn: () => workflowsApi.list() })
   const saved = (modules.data ?? []).filter(w => w.origin === 'RECORDED')

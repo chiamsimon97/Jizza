@@ -22,4 +22,14 @@ describe('RecordingsPage', () => {
     expect(screen.queryByText('Built by hand')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open in builder' })).toHaveAttribute('href', '/workflows?open=w1')
   })
+
+  it('opens one recording\'s review when chat links to it', async () => {
+    vi.spyOn(webApi, 'listRecordings').mockResolvedValue([])
+    vi.spyOn(workflowsApi, 'list').mockResolvedValue([])
+    const get = vi.spyOn(webApi, 'getRecording').mockResolvedValue(
+      { id: 'r9', name: 'Pay bills', status: 'review', deviceId: 'd1', startUrl: 'https://bank.example.com', stepCount: 2, updatedAt: '2026-01-01T00:00:00Z', steps: [] } as never)
+    renderWithSnapshot(<RecordingsPage />, makeSnapshot(), '/recordings?review=r9')
+    expect(await screen.findByText('Record a task in Chrome')).toBeInTheDocument()
+    expect(get).toHaveBeenCalledWith('r9')
+  })
 })
