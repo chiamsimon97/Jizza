@@ -1,5 +1,6 @@
 package com.jizza.engine.workflow.history;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.dto.RunHistoryDto;
 import com.jizza.engine.api.dto.RunHistoryDto.Bucket;
 import com.jizza.engine.api.dto.RunHistoryDto.Page;
@@ -14,6 +15,7 @@ import com.jizza.engine.api.dto.RunHistoryDto.WorkflowCount;
 import com.jizza.engine.api.enums.RunStatus;
 import com.jizza.engine.api.enums.RunStepStatus;
 import com.jizza.engine.api.error.NotFoundException;
+import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.util.TimeBuckets;
 import com.jizza.engine.api.workflow.RunHistory;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
@@ -136,6 +138,22 @@ public class DefaultRunHistory implements RunHistory {
         buckets(matched, slices), workflowCounts, triggerCounts, truncated);
   }
 
+  /**
+   * What the device said about a failed step, without the suggested elements themselves: those
+   * belong to the fix the person reviews, not to the run history.
+   */
+  static JsonNode deviceFailure(JsonNode error) {
+    if (error == null || !error.isObject() || !error.path("kind").isTextual()) return null;
+    com.fasterxml.jackson.databind.node.ObjectNode out = Json.obj()
+        .put("kind", error.get("kind").asText());
+    if (error.path("detail").isTextual()) out.put("detail", error.get("detail").asText());
+    if (error.path("url").isTextual()) out.put("url", error.get("url").asText());
+    if (error.path("files").isArray()) out.set("files", error.get("files").deepCopy());
+    if (error.path("deviceId").isTextual()) out.put("deviceId", error.get("deviceId").asText());
+    out.put("candidates", error.path("candidates").isArray() ? error.get("candidates").size() : 0);
+    return out;
+  }
+
   @Override
   @Transactional(readOnly = true)
   public Trace trace(UUID userId, UUID runId) {
@@ -158,14 +176,18 @@ public class DefaultRunHistory implements RunHistory {
     workflow.ifPresent(w -> names.put(w.getId(), w.getName()));
     Summary summary = summary(row, names, new int[] {stepRows.size(), failed}, now);
 
+    RunContext saved = RunContext.of(run.getContext());
     List<TraceStep> traceSteps = stepRows.stream().map(s -> {
       WorkflowNode node = nodesById.get(s.getNodeId());
       Long duration = s.getStartedAt() == null || s.getFinishedAt() == null ? null
           : Duration.between(s.getStartedAt(), s.getFinishedAt()).toMillis();
+      JsonNode failure = s.getStatus() == RunStepStatus.FAILED && node != null
+          && node.type() == com.jizza.engine.api.enums.NodeType.DEVICE_ACTION
+          ? deviceFailure(saved.state(s.getNodeId()).path("error")) : null;
       return new TraceStep(s.getId(), s.getNodeId(),
           node == null ? s.getNodeId() : labelOf(node), node == null ? null : node.type(),
           s.getStatus(), s.getInput(), s.getOutput(), s.getError(), s.getAttempts(),
-          s.getStartedAt(), s.getFinishedAt(), duration);
+          s.getStartedAt(), s.getFinishedAt(), duration, failure);
     }).toList();
 
     RunContext context = RunContext.of(run.getContext());

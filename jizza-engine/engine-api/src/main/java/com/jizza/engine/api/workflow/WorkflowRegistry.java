@@ -18,4 +18,12 @@ public interface WorkflowRegistry {
   List<WorkflowDto> list(UUID userId);
 
   WorkflowDto save(WorkflowDto workflow);
+
+  /**
+   * Keeps the current version as it is and makes {@code graph} the next one, status unchanged.
+   * For a draft only: a reviewed workflow changes through review instead.
+   */
+  default WorkflowDto saveNewVersion(UUID workflowId, com.fasterxml.jackson.databind.JsonNode graph) {
+    throw new UnsupportedOperationException("New versions are not supported here");
+  }
 }

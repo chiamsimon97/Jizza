@@ -7,6 +7,7 @@ import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.webauto.BrowserAgents;
 import com.jizza.engine.api.webauto.DesignTimeService;
+import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.api.webauto.Recordings;
 import java.util.Collection;
 import java.util.List;
@@ -20,13 +21,15 @@ public class WebAutomationUseCase {
   private final BrowserAgents browsers;
   private final DesignTimeService designTime;
   private final Recordings recordings;
+  private final LocatorFixes fixes;
   private final AuditLog audit;
 
   public WebAutomationUseCase(BrowserAgents browsers, DesignTimeService designTime,
-                              Recordings recordings, AuditLog audit) {
+                              Recordings recordings, LocatorFixes fixes, AuditLog audit) {
     this.browsers = browsers;
     this.designTime = designTime;
     this.recordings = recordings;
+    this.fixes = fixes;
     this.audit = audit;
   }
 
@@ -98,5 +101,24 @@ public class WebAutomationUseCase {
     audit.record(access.userId(), ActorType.USER, null, "web.recording_inserted", id.toString(),
         Json.obj().put("recordingId", id.toString()));
     return graph;
+  }
+
+  public List<LocatorFixes.Fix> fixes(Access access, String status) {
+    return fixes.list(access, status);
+  }
+
+  /** Only ever on the person's word: the fix changes the workflow the step belongs to. */
+  public LocatorFixes.Applied applyFix(Access access, UUID id, int candidateIndex) {
+    LocatorFixes.Applied applied = fixes.apply(access, id, candidateIndex);
+    audit.record(access.userId(), ActorType.USER, null, "web.fix_applied", id.toString(),
+        Json.obj().put("fixId", id.toString()).put("workflowId", applied.workflowId().toString())
+            .put("version", applied.version()).put("candidate", candidateIndex));
+    return applied;
+  }
+
+  public void dismissFix(Access access, UUID id) {
+    fixes.dismiss(access, id);
+    audit.record(access.userId(), ActorType.USER, null, "web.fix_dismissed", id.toString(),
+        Json.obj().put("fixId", id.toString()));
   }
 }

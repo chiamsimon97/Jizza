@@ -367,7 +367,7 @@ export interface AssistantReply {
 
 /** A step Jizza asks the app to take alongside its reply. */
 export type UiAction =
-  | { type: 'navigate'; payload: { page: string; reason?: string } }
+  | { type: 'navigate'; payload: { page: string; reason?: string; review?: string } }
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
   | { type: 'ask_user'; payload: { question: string; options?: string[]; multiple?: boolean } }
   | { type: 'set_theme'; payload: { theme: string } }
@@ -1114,6 +1114,8 @@ export interface TraceStep {
   startedAt?: string
   finishedAt?: string
   durationMs?: number
+  /** For a failed device step: what the device said went wrong. */
+  failure?: { kind: string; detail?: string; url?: string; files?: string[]; deviceId?: string; candidates: number } | null
 }
 
 export interface RunTrace {

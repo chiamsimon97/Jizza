@@ -158,11 +158,13 @@ public class WebRecordToolProvider implements ToolProvider {
     UUID id = idOf(args);
     if (id == null) return ToolResult.error("'recordingId' is not a recording id");
     Recordings.Recording found = service.get(access(agent), id);
+    // The page opens this recording's review itself, so the person lands on the right draft.
     ChatScope.record(new UiAction(UiAction.NAVIGATE, Json.obj().put("page", "recordings")
+        .put("review", found.id().toString())
         .put("reason", "Review \"" + found.name() + "\" and save it as a module")));
     return ToolResult.ok(Json.obj().put("status", found.status())
-        .put("note", "The Recordings page is open. Tell them to resume the draft there to review "
-            + "and save it."));
+        .put("note", "The review of this recording is open on the Recordings page. Tell them to "
+            + "check the steps there and save it."));
   }
 
   private static Access access(AgentEntity agent) {

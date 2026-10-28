@@ -16,6 +16,7 @@ import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.SandboxViolationException;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import com.jizza.engine.workflow.engine.NodeExecutor;
@@ -48,16 +49,25 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private final AutonomyGate autonomyGate;
   private final JexlSandbox sandbox;
   private final AgentRepository agents;
+  private final ObjectProvider<LocatorFixes> fixes;
+  private FastReplay fastReplay = new FastReplay(false);
 
   public DeviceActionNodeExecutor(ObjectProvider<DeviceCommands> commands,
                                   ObjectProvider<DeviceActionCatalog> catalog,
                                   AutonomyGate autonomyGate, JexlSandbox sandbox,
-                                  AgentRepository agents) {
+                                  AgentRepository agents, ObjectProvider<LocatorFixes> fixes) {
     this.commands = commands;
     this.catalog = catalog;
     this.autonomyGate = autonomyGate;
     this.sandbox = sandbox;
     this.agents = agents;
+    this.fixes = fixes;
+  }
+
+  /** Off until the browser extension ships {@code browser.runSteps}; see {@link FastReplay}. */
+  @org.springframework.beans.factory.annotation.Value("${jizza.webauto.fast-replay:false}")
+  public void setFastReplay(boolean on) {
+    this.fastReplay = new FastReplay(on);
   }
 
   @Override
@@ -71,8 +81,20 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure("Devices are not available here");
     }
     ObjectNode state = execution.context().state(execution.node().id());
+    if (state.has(FastReplay.BATCH_OUTPUT)) {
+      // An earlier step sent this one in its batch; the browser has already done it.
+      return Outcome.completed(state.get(FastReplay.BATCH_OUTPUT));
+    }
+    if (state.hasNonNull(FastReplay.BATCH_COMMAND)) {
+      Outcome batched = fastReplay.follow(execution, broker);
+      if (batched != null) return batched;
+    } else if (fastReplay.enabled() && !state.has("commandId")) {
+      Outcome batched = fastReplay.start(execution, broker, actions, autonomyGate,
+          actorFor(execution), this::render);
+      if (batched != null) return batched;
+    }
     if (state.hasNonNull("commandId")) {
-      return follow(broker, state, UUID.fromString(state.get("commandId").asText()));
+      return follow(execution, broker, state, UUID.fromString(state.get("commandId").asText()));
     }
 
     JsonNode config = execution.node().config();
@@ -121,9 +143,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       ((ObjectNode) inputs).remove("session");
     }
 
-    UUID actor = execution.owningAgentId() != null ? execution.owningAgentId()
-        : agents.findByUserIdAndIsOrchestratorTrue(execution.userId()).map(AgentEntity::getId)
-            .orElse(null);
+    UUID actor = actorFor(execution);
     if (actor == null) {
       return Outcome.permanentFailure("No agent is available to run " + spec.title()
           + " under your guardrails");
@@ -176,10 +196,18 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           || requestedSession == null && browser == null
           || reusesAffinity && browser.opened());
     }
-    return follow(broker, state, command.id());
+    return follow(execution, broker, state, command.id());
   }
 
-  private Outcome follow(DeviceCommands broker, ObjectNode state, UUID commandId) {
+  /** Whose guardrails judge the step: the workflow's agent, or the person's Jizza. */
+  private UUID actorFor(Execution execution) {
+    return execution.owningAgentId() != null ? execution.owningAgentId()
+        : agents.findByUserIdAndIsOrchestratorTrue(execution.userId()).map(AgentEntity::getId)
+            .orElse(null);
+  }
+
+  private Outcome follow(Execution execution, DeviceCommands broker, ObjectNode state,
+                         UUID commandId) {
     DeviceCommandDto command = broker.find(commandId).orElse(null);
     if (command == null) {
       state.remove("commandId");
@@ -198,6 +226,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         String kind = command.output() == null ? null
             : command.output().path("error").path("kind").asText(null);
         String message = failureMessage(command);
+        if (state.path("browserAction").asBoolean(false) && "element_not_found".equals(kind)) {
+          proposeFix(execution, command.output().path("error"));
+        }
         yield state.path("browserAction").asBoolean(false) && kind != null
             && PERMANENT_BROWSER_FAILURES.contains(kind)
             ? Outcome.permanentFailure(message) : Outcome.retryable(message);
@@ -214,35 +245,65 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   /** What the device returned, with which device did it and the files it sent back. */
   static JsonNode outputOf(DeviceCommandDto command, boolean browserAction,
                            boolean browserOpened, String browserWorkspace) {
-    ObjectNode out = command.output() != null && command.output().isObject()
-        ? ((ObjectNode) command.output()).deepCopy() : Json.obj();
+    return stepOutput(command.output(), command.deviceId(), command.deviceName(), command.files(),
+        command.action(), command.input(), browserAction, browserOpened, browserWorkspace);
+  }
+
+  /**
+   * One step's output as later steps and the run's browser affinity read it. A batch maps each of
+   * its steps through here too, so a step's output is the same however it was sent.
+   */
+  static JsonNode stepOutput(JsonNode raw, UUID deviceId, String deviceName,
+                             java.util.List<UUID> files, String action, JsonNode input,
+                             boolean browserAction, boolean browserOpened,
+                             String browserWorkspace) {
+    ObjectNode out = raw != null && raw.isObject() ? ((ObjectNode) raw).deepCopy() : Json.obj();
     out.remove(java.util.List.of("_browser", "_browserOpened", "_browserClear", "_browserAction"));
-    if (command.output() != null && !command.output().isObject() && !command.output().isNull()) {
-      out.set("value", command.output());
+    if (raw != null && !raw.isObject() && !raw.isNull()) {
+      out.set("value", raw);
     }
-    out.putObject("device").put("id", command.deviceId().toString())
-        .put("name", command.deviceName());
-    if (command.files() != null && !command.files().isEmpty()) {
-      var files = out.putArray("files");
-      command.files().forEach(f -> files.add(f.toString()));
+    out.putObject("device").put("id", deviceId.toString()).put("name", deviceName);
+    if (files != null && !files.isEmpty()) {
+      var list = out.putArray("files");
+      files.forEach(f -> list.add(f.toString()));
     }
     if (browserAction) {
-      out.put("_browserAction", command.action());
-      if ("browser.open".equals(command.action()) && out.path("sessionId").isTextual()) {
-        out.putObject("_browser").put("deviceId", command.deviceId().toString())
+      out.put("_browserAction", action);
+      if ("browser.open".equals(action) && out.path("sessionId").isTextual()) {
+        out.putObject("_browser").put("deviceId", deviceId.toString())
             .put("sessionId", out.get("sessionId").asText());
         if (browserWorkspace != null) {
           ((ObjectNode) out.get("_browser")).put("workspaceId", browserWorkspace);
         }
         out.put("_browserOpened", browserOpened);
-      } else if ("browser.close".equals(command.action())
-          && !"tab".equals(command.input().path("what").asText("session"))
-          && command.input().path("session").isTextual()) {
-        out.putObject("_browserClear").put("deviceId", command.deviceId().toString())
-            .put("sessionId", command.input().get("session").asText());
+      } else if ("browser.close".equals(action)
+          && !"tab".equals(input.path("what").asText("session"))
+          && input.path("session").isTextual()) {
+        out.putObject("_browserClear").put("deviceId", deviceId.toString())
+            .put("sessionId", input.get("session").asText());
       }
     }
     return out;
+  }
+
+  /**
+   * A page change: the browser could not find the step's element and suggested others. The person
+   * is offered a fix to approve; a fix that cannot be kept never changes how this step fails.
+   */
+  private void proposeFix(Execution execution, JsonNode error) {
+    LocatorFixes service = fixes.getIfAvailable();
+    if (service == null || execution.workflowId() == null
+        || !error.path("candidates").isArray() || error.path("candidates").isEmpty()) {
+      return;
+    }
+    try {
+      service.propose(new LocatorFixes.FailedStep(execution.userId(), execution.workflowId(),
+          execution.workflowVersion(), execution.runId(), execution.node().id(), error));
+    } catch (RuntimeException e) {
+      org.slf4j.LoggerFactory.getLogger(DeviceActionNodeExecutor.class)
+          .warn("Could not keep a fix for step {} of run {}", execution.node().id(),
+              execution.runId(), e);
+    }
   }
 
   private static final java.util.Set<String> PERMANENT_BROWSER_FAILURES = java.util.Set.of(
@@ -252,6 +313,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private static void preserveError(ObjectNode state, DeviceCommandDto command) {
     ObjectNode error = command.output() != null && command.output().path("error").isObject()
         ? ((ObjectNode) command.output().path("error")).deepCopy() : Json.obj();
+    // Which device kept the screenshot, so the run history can show it.
+    if (command.deviceId() != null) error.put("deviceId", command.deviceId().toString());
     if (command.files() != null && !command.files().isEmpty()) {
       var screenshots = error.putArray("files");
       command.files().forEach(id -> screenshots.add(id.toString()));
@@ -280,7 +343,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   /** Text values are templates; everything else is taken as written. */
-  private JsonNode render(JsonNode value, Map<String, Object> variables) {
+  JsonNode render(JsonNode value, Map<String, Object> variables) {
     if (value == null || value.isMissingNode() || value.isNull()) return Json.obj();
     if (value.isTextual()) return Templates.renderValue(value.asText(), sandbox, variables);
     if (value.isObject()) {

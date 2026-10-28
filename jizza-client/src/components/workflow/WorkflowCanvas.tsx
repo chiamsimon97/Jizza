@@ -31,6 +31,8 @@ interface Props {
   readOnly?: boolean
   /** A run to show on the canvas: which steps ran, failed or are waiting, and what they produced. */
   run?: RunDto | null
+  /** A step to open on, such as the one a fix or a failed run points at. */
+  focusNode?: string | null
 }
 
 const nodeTypes = { step: StepNode }
@@ -114,12 +116,12 @@ function assignAgent(graph: CanvasGraph, id: string, agent: AgentDto): CanvasGra
   return updateNode(graph, id, { label: agent.name, config: { ...node?.config, agentId: agent.id } })
 }
 
-export function WorkflowCanvas({ graph, onChange, readOnly = false, run }: Props) {
+export function WorkflowCanvas({ graph, onChange, readOnly = false, run, focusNode }: Props) {
   const history = useHistory(graph, onChange)
   const [fullscreen, setFullscreen] = useState(false)
   const editor = (
     <ReactFlowProvider>
-      <CanvasEditor graph={graph} history={history} readOnly={readOnly} run={run}
+      <CanvasEditor graph={graph} history={history} readOnly={readOnly} run={run} focusNode={focusNode}
         fullscreen={fullscreen} onFullscreen={setFullscreen} />
     </ReactFlowProvider>
   )
@@ -133,8 +135,8 @@ type Picker =
   | { kind: 'wire'; edge: CanvasEdge; at: { x: number; y: number } }
   | { kind: 'free'; at: { x: number; y: number }; drop?: { x: number; y: number } }
 
-function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen }: {
-  graph: CanvasGraph; history: History; readOnly: boolean; run?: RunDto | null
+function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, onFullscreen }: {
+  graph: CanvasGraph; history: History; readOnly: boolean; run?: RunDto | null; focusNode?: string | null
   fullscreen: boolean; onFullscreen: (v: boolean) => void
 }) {
   const flow = useReactFlow()
@@ -311,6 +313,17 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
     const at = rect ? { x: rect.left + rect.width / 2 - 128, y: rect.top + 80 } : { x: 200, y: 200 }
     setPicker({ kind: 'free', at })
   }, [])
+
+  // Opened on a step (a fix to review, a failed step): select it once, when it is on the canvas.
+  const focused = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusNode || focused.current === focusNode) return
+    const node = graph.nodes.find(n => n.id === focusNode)
+    if (!node) return
+    focused.current = focusNode
+    setSelNodes([focusNode])
+    requestAnimationFrame(() => flow.setCenter(node.x + NODE_W / 2, node.y + NODE_H / 2, { zoom: flow.getZoom(), duration: 300 }))
+  }, [focusNode, graph.nodes, flow])
 
   // Settings open over the right of the canvas; slide the view so the step being edited stays in sight.
   useEffect(() => {

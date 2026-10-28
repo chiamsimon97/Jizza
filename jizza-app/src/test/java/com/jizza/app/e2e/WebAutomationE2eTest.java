@@ -206,6 +206,74 @@ class WebAutomationE2eTest extends E2eSupport {
   }
 
   @Test
+  void aMatchingRecordingRunsFromChatAfterOneConfirmation() throws Exception {
+    fake.recordedStep("browser.open", 2, "Open the supplier portal",
+            Json.obj().put("url", "https://example.com"), false)
+        .recordedStep("browser.getText", 1, "Invoices heading", withElement(Json.obj()), false);
+    String id = api.post("/api/web/recordings", Map.of("deviceId", device.deviceId(),
+        "url", "https://example.com", "name", "Download invoices")).json().path("id").asText();
+    for (int i = 0; i < 80; i++) {
+      drainDeviceEvents();
+      JsonNode r = api.get("/api/web/recordings/" + id).json();
+      if ("review".equals(r.path("status").asText()) && r.path("steps").size() == 2) break;
+      Thread.sleep(250);
+    }
+    var saved = api.post("/api/web/recordings/" + id + "/save", Map.of("name", "Download invoices",
+        "description", "Download last month's invoices from the supplier portal"));
+    assertThat(saved.ok()).as(saved.body()).isTrue();
+    String workflowId = saved.json().path("workflowId").asText();
+    var entity = workflows.findById(UUID.fromString(workflowId)).orElseThrow();
+    entity.setStatus(WorkflowStatus.APPROVED);
+    workflows.save(entity);
+    int sentBefore = device.received().size();
+
+    // First turn: Jizza finds the recording and asks; nothing runs yet.
+    model.reset();
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("f1", "find_saved_workflows",
+                Json.obj().put("request", "download last month's invoices"))),
+            "tool_use", 5, 5, "m"),
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("r1", "run_saved_workflow",
+                Json.obj().put("workflow_id", workflowId))),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("Shall I run Download invoices?"));
+    var first = api.post("/api/chat", Map.of("message", "Download last month's invoices"));
+    assertThat(first.ok()).as(first.body()).isTrue();
+    String seen = model.everythingTheModelSaw();
+    assertThat(seen).contains(workflowId).contains("needs_confirmation");
+    var code = java.util.regex.Pattern.compile("\"confirmation\":\"([0-9a-f]{8})\"").matcher(seen);
+    assertThat(code.find()).as(seen).isTrue();
+    assertThat(first.json().path("actions").toString()).doesNotContain("reused_workflow");
+    assertThat(device.received()).hasSize(sentBefore);
+
+    // Second turn: the person says yes, and the recording runs in their browser.
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("r2", "run_saved_workflow",
+                Json.obj().put("workflow_id", workflowId).put("confirmation", code.group(1)))),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("Running it now."));
+    var second = api.post("/api/chat", Map.of("conversationId",
+        first.json().path("conversationId").asText(), "message", "Yes, run it"));
+    assertThat(second.ok()).as(second.body()).isTrue();
+    var started = java.util.regex.Pattern.compile("\\{\"run_id\":\"([0-9a-f-]{36})\"")
+        .matcher(model.everythingTheModelSaw());
+    assertThat(started.find()).as(model.everythingTheModelSaw()).isTrue();
+    String runId = started.group(1);
+    JsonNode finished = api.get("/api/runs/" + runId).json();
+    for (int i = 0; i < 80 && !java.util.Set.of("DONE", "FAILED")
+        .contains(finished.path("status").asText()); i++) {
+      drainDeviceEvents();
+      Thread.sleep(250);
+      finished = api.get("/api/runs/" + runId).json();
+    }
+    assertThat(finished.path("status").asText()).as(finished.toString()).isEqualTo("DONE");
+    assertThat(device.received().toString()).contains("browser.getText");
+  }
+
+  @Test
   void aClickInChatAsksForApprovalEvenWhereARuleAllowsIt() {
     api.put("/api/autonomy/policies", Map.of("toolRef", "device_*", "rule", "ALLOW", "precedence", 50));
     api.post("/api/auth/step-up", Map.of("password", PASSWORD));
@@ -235,6 +303,104 @@ class WebAutomationE2eTest extends E2eSupport {
         "version", 2,
         "inputs", Map.of("url", "https://example.com")));
     assertThat(tested.status()).isEqualTo(404);
+  }
+
+  @Test
+  void aPageChangeOffersAFixAndTheFixedVersionPasses() throws Exception {
+    JsonNode graph = Json.read("""
+        {"nodes":[
+          {"id":"start","type":"TRIGGER","label":"Start","config":{}},
+          {"id":"open","type":"DEVICE_ACTION","label":"Open the portal","config":{"preset":"web",
+            "action":"browser.open","version":2,"target":"sameBrowser",
+            "inputs":{"url":"https://example.com"}}},
+          {"id":"read","type":"DEVICE_ACTION","label":"Read the sign-in button","config":{
+            "preset":"web","action":"browser.getText","version":1,"target":"sameBrowser",
+            "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Sign in"}],
+              "fingerprint":{"tag":"button","text":"Sign in"},"label":"Sign in button"}}}},
+          {"id":"end","type":"END","label":"Done","config":{}}],
+         "edges":[{"from":"start","to":"open"},{"from":"open","to":"read"},{"from":"read","to":"end"}]}
+        """);
+    var saved = api.post("/api/workflows", Map.of("name", "Read sign-in", "graph", graph));
+    assertThat(saved.ok()).as(saved.body()).isTrue();
+    String workflowId = saved.json().path("id").asText();
+
+    // The site renamed its button.
+    fake.page("https://example.com").remove("Sign in").element("Log in", "button", "Log in")
+        .text("Log in");
+    JsonNode failed = runToEnd(workflowId, 1);
+    assertThat(failed.path("status").asText()).as(failed.toString()).isNotEqualTo("DONE");
+
+    JsonNode fixes = api.get("/api/web/fixes?status=open").json();
+    assertThat(fixes).as(fixes.toString()).hasSize(1);
+    JsonNode fix = fixes.get(0);
+    assertThat(fix.path("nodeId").asText()).isEqualTo("read");
+    assertThat(fix.path("workflowName").asText()).isEqualTo("Read sign-in");
+    assertThat(fix.path("candidates").get(0).path("text").asText()).isEqualTo("Log in");
+    assertThat(api.get("/api/notifications").body()).contains("could not find Sign in button");
+    JsonNode trace = api.get("/api/runs/" + failed.path("id").asText() + "/trace").json();
+    assertThat(trace.toString()).contains("element_not_found");
+
+    ApiClient other = signedIn("web-other");
+    assertThat(other.get("/api/web/fixes").json()).isEmpty();
+    assertThat(other.post("/api/web/fixes/" + fix.path("id").asText() + "/apply",
+        Map.of("candidateIndex", 0)).status()).isEqualTo(404);
+    assertThat(other.post("/api/web/fixes/" + fix.path("id").asText() + "/dismiss", Map.of())
+        .status()).isEqualTo(404);
+
+    var applied = api.post("/api/web/fixes/" + fix.path("id").asText() + "/apply",
+        Map.of("candidateIndex", 0));
+    assertThat(applied.ok()).as(applied.body()).isTrue();
+    assertThat(applied.json().path("version").asInt()).isEqualTo(2);
+    JsonNode element = api.get("/api/workflows/" + workflowId).json().path("graph").path("nodes")
+        .get(2).path("config").path("inputs").path("element");
+    assertThat(element.path("strategies").get(0).path("name").asText()).isEqualTo("Log in");
+    assertThat(element.path("strategies").get(1).path("name").asText()).isEqualTo("Sign in");
+    assertThat(api.get("/api/web/fixes?status=open").json()).isEmpty();
+
+    JsonNode passed = runToEnd(workflowId, 2);
+    assertThat(passed.path("status").asText()).as(passed.toString()).isEqualTo("DONE");
+  }
+
+  @Test
+  void aDismissedFixIsClosed() throws Exception {
+    JsonNode graph = Json.read("""
+        {"nodes":[
+          {"id":"start","type":"TRIGGER","label":"Start","config":{}},
+          {"id":"open","type":"DEVICE_ACTION","label":"Open","config":{"preset":"web",
+            "action":"browser.open","version":2,"target":"sameBrowser",
+            "inputs":{"url":"https://example.com/b"}}},
+          {"id":"read","type":"DEVICE_ACTION","label":"Read","config":{"preset":"web",
+            "action":"browser.getText","version":1,"target":"sameBrowser",
+            "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Gone"}],
+              "fingerprint":{"tag":"button"}}}}},
+          {"id":"end","type":"END","label":"Done","config":{}}],
+         "edges":[{"from":"start","to":"open"},{"from":"open","to":"read"},{"from":"read","to":"end"}]}
+        """);
+    String workflowId = api.post("/api/workflows", Map.of("name", "Dismiss me", "graph", graph))
+        .json().path("id").asText();
+    runToEnd(workflowId, 1);
+    String fixId = api.get("/api/web/fixes?status=open").json().get(0).path("id").asText();
+
+    assertThat(api.post("/api/web/fixes/" + fixId + "/dismiss", Map.of()).status()).isEqualTo(204);
+
+    assertThat(api.get("/api/web/fixes?status=open").json()).isEmpty();
+    assertThat(api.post("/api/web/fixes/" + fixId + "/apply", Map.of("candidateIndex", 0))
+        .status()).isEqualTo(409);
+    assertThat(api.get("/api/workflows/" + workflowId).json().path("version").asInt()).isEqualTo(1);
+  }
+
+  /** Runs a version by hand and waits until it has finished, failed or stopped for the person. */
+  private JsonNode runToEnd(String workflowId, int version) throws Exception {
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", version));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    JsonNode current = run.json();
+    for (int i = 0; i < 80 && java.util.Set.of("RUNNING", "WAITING")
+        .contains(current.path("status").asText()); i++) {
+      drainDeviceEvents();
+      Thread.sleep(250);
+      current = api.get("/api/runs/" + run.json().path("id").asText()).json();
+    }
+    return current;
   }
 
   private ApiClient signedIn(String prefix) {

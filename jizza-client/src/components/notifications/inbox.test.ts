@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NotificationDto } from '@/types'
-import { NO_FILTERS, buildInbox, countsByView, matches, snoozeOptions, timeLeft, viewOf } from './inbox'
+import { NO_FILTERS, buildInbox, countsByView, fixLinkOf, matches, snoozeOptions, timeLeft, viewOf } from './inbox'
 
 const NOW = Date.parse('2026-10-23T10:00:00Z')
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString()
@@ -66,5 +66,13 @@ describe('inbox', () => {
     expect(timeLeft(at(30), NOW)).toEqual({ text: 'Expires in 30 min', soon: true })
     expect(timeLeft(at(180), NOW)).toEqual({ text: 'Expires in 3h', soon: false })
     expect(timeLeft(null, NOW)).toBeNull()
+  })
+
+  it('links a web fix notification to the builder, and nothing else', () => {
+    const link = '/workflows?open=0b8a6c1e-1111-4a2b-9c3d-123456789abc&node=submit'
+    expect(fixLinkOf(n({ kind: 'INFO', context: { source: 'webauto', kind: 'locator_fix', link } }))).toBe(link)
+    expect(fixLinkOf(n({ kind: 'INFO', context: { source: 'webauto', kind: 'locator_fix', link: 'https://evil.test' } }))).toBeNull()
+    expect(fixLinkOf(n({ kind: 'INFO', context: { source: 'device', link } }))).toBeNull()
+    expect(fixLinkOf(n({ kind: 'INFO' }))).toBeNull()
   })
 })

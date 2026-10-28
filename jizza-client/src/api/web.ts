@@ -77,6 +77,25 @@ export interface EditOp {
   check?: { action: string; afterSeq: number }
 }
 
+export interface FixCandidate {
+  element: Record<string, unknown> & { label?: string; strategies?: Array<Record<string, unknown>> }
+  score?: number
+  text?: string
+}
+
+/** A suggested new element for a web step that could no longer find its own. */
+export interface LocatorFix {
+  id: string
+  workflowId: string
+  workflowName: string
+  nodeId: string
+  nodeLabel: string
+  candidates: FixCandidate[]
+  status: 'open' | 'applied' | 'dismissed' | string
+  runId?: string | null
+  createdAt: string
+}
+
 export const webApi = {
   startRecording: (body: { deviceId: string; url: string; name: string }) => api.post<Recording>('/api/web/recordings', body),
   listRecordings: (status?: string[]) =>
@@ -94,6 +113,10 @@ export const webApi = {
     api.post<{ commandId: string }>('/api/web/pick', body),
   pickResult: (commandId: string) => api.get<PickResult>(`/api/web/pick/${commandId}`),
   browsers: () => api.get<BrowserAgent[]>('/api/web/browsers'),
+  fixes: (status?: string) => api.get<LocatorFix[]>(`/api/web/fixes${status ? `?status=${status}` : ''}`),
+  applyFix: (id: string, candidateIndex: number) =>
+    api.post<{ workflowId: string; version: number }>(`/api/web/fixes/${id}/apply`, { candidateIndex }),
+  dismissFix: (id: string) => api.post<void>(`/api/web/fixes/${id}/dismiss`, {}),
   testStep: (body: { deviceId: string; action: string; version: number; inputs: Record<string, unknown> }) =>
     api.post<WebTestResult>('/api/web/test-step', body),
 }
