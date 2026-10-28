@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
+  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
   toDuration, toGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
 } from './canvasModel'
 
@@ -258,5 +258,26 @@ describe('palette groups', () => {
       config: { ...made.graph.nodes.find(n => n.id === made.id)!.config, inputs: { element: { strategies: [{ by: 'css', value: '#save' }] } } },
     })
     expect(issues(configured).map(i => i.message)).not.toContain('Pick the element this step works on.')
+  })
+
+  it('splices a recorded chain after a step, under new ids, ahead of what followed', () => {
+    let graph = emptyGraph()
+    const start = graph.nodes[0].id
+    const end = addAfter(graph, start, null, 'END')
+    graph = end.graph
+    const chain = {
+      nodes: [
+        { id: 'step_1', type: 'DEVICE_ACTION' as const, label: 'Open', config: {}, x: 0, y: 0 },
+        { id: 'step_2', type: 'DEVICE_ACTION' as const, label: 'Click', config: {}, x: 250, y: 0 },
+      ],
+      edges: [{ from: 'step_1', to: 'step_2', branch: null }],
+    }
+    const r = insertChain(graph, start, null, chain)
+    expect(r.ids).toHaveLength(2)
+    expect(r.ids).not.toContain('step_1')
+    expect(graph.edges.find(e => e.from === start)?.to).toBe(end.id)
+    expect(r.graph.edges.find(e => e.from === start)?.to).toBe(r.ids[0])
+    expect(r.graph.edges.find(e => e.from === r.ids[0])?.to).toBe(r.ids[1])
+    expect(r.graph.edges.find(e => e.from === r.ids[1])?.to).toBe(end.id)
   })
 })

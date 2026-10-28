@@ -11,7 +11,7 @@ function renderSidebar(snapshot = makeSnapshot()) {
 describe('Sidebar', () => {
   it('shows the personal sections, with Connectors, for a Personal account', () => {
     const nav = renderSidebar(makeSnapshot('PERSONAL'))
-    for (const label of ['Chat', 'Notifications', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Functions', 'Procedures',
+    for (const label of ['Chat', 'Notifications', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Recordings', 'Functions', 'Procedures',
       'Connectors', 'Guardrails', 'Activity', 'Usage', 'Security']) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }

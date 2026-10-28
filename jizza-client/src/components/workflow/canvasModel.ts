@@ -375,6 +375,27 @@ export function addAfter(graph: CanvasGraph, from: string, branch: ExitKey, type
 }
 
 /**
+ * Puts a chain of steps (such as a recording) after a node, under new ids. Whatever followed that
+ * exit now follows the chain, so the chain is spliced in, not added beside it.
+ */
+export function insertChain(graph: CanvasGraph, from: string, branch: ExitKey, chain: { nodes: CanvasNode[]; edges: CanvasEdge[] }): { graph: CanvasGraph; ids: string[] } {
+  if (chain.nodes.length === 0) return { graph, ids: [] }
+  const ids = new Map(chain.nodes.map(n => [n.id, newId(n.type)]))
+  const source = graph.nodes.find(n => n.id === from)
+  const heads = chain.nodes.filter(n => !chain.edges.some(e => e.to === n.id))
+  const tails = chain.nodes.filter(n => !chain.edges.some(e => e.from === n.id))
+  const at = freeSpot(graph, (source?.x ?? 0) + COL_W, source?.y ?? 0)
+  const first = chain.nodes[0]
+  const nodes = chain.nodes.map(n => ({ ...n, id: ids.get(n.id)!, config: structuredClone(n.config), x: at.x + (n.x - first.x), y: at.y + (n.y - first.y) }))
+  const edges = chain.edges.map(e => ({ ...e, from: ids.get(e.from)!, to: ids.get(e.to)! }))
+  const previous = graph.edges.find(e => e.from === from && e.branch === branch)?.to
+  let next: CanvasGraph = { nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }
+  next = setNext(next, from, branch, ids.get(heads[0].id)!)
+  if (previous && tails.length === 1) next = setNext(next, ids.get(tails[0].id)!, null, previous)
+  return { graph: next, ids: nodes.map(n => n.id) }
+}
+
+/**
  * Copies nodes (with the connections between them) to new ids, offset so the copy is visible.
  * Start is never copied: a workflow has exactly one.
  */

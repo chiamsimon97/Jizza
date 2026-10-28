@@ -63,3 +63,16 @@ not line up, plus the narrow choices made so work can continue safely.
 - **Session.** For `sameBrowser` steps no session id is sent with the pick; the extension uses the active tab.
 - **Results.** A failed or cancelled pick with no error kind is reported as `cancelled_by_person` or `failed`. Only the command's owner can read it; anyone else gets 404.
 - **Get element selectors.** Its outputs (`element`, `css`, `xpath`) already reach the chips through the catalog output schema, so no code change was needed.
+
+## W3 — Record and save as a module
+
+- **Insert route (addition).** `POST /api/web/recordings/{id}/insert` is not in the REST table. The builder's "Record steps here" needs steps, not a saved workflow, so it compiles the reviewed steps without Start and End and marks the recording `saved`. Mapped inputs keep their recorded value, because a half-built workflow has no module inputs to fill.
+- **Stop.** `POST /recordings/{id}/stop` moves the recording to `review` at once. If the extension's own `stopped` event arrives later it is ignored.
+- **Grace period.** When a record command has finished but the recording is still `recording`, the server waits 3 seconds before moving it to review, so events still in the intake queue are not lost. Nothing captured moves it to `failed`.
+- **Order.** New steps get `position = seq`. Events can arrive out of order, so steps are keyed by `seq`, duplicates are dropped, and edits renumber positions.
+- **Limits.** 500 steps per recording and 32 KB per step. Values of sensitive steps are removed on intake, never stored.
+- **Guardrails.** Starting a recording is judged as `browser.record`. If it needs approval the call returns a Conflict, as Pick does.
+- **Default reuse profile.** A saved recording asks before each run and is not allowed to run on a schedule. The person changes this in the workflow's reuse settings.
+- **Saved logins.** PR #60 (`items.logins`) is not merged, so the review screen has a free-text "Saved login id" field. Switch it to a picker when #60 lands. A password step cannot be saved without a login.
+- **Clean-up.** Reviews untouched for 7 days are discarded; steps of discarded recordings are removed (sweep every `jizza.webauto.sweep-interval`, default `PT1M`).
+- **Saved list.** The Recordings page lists workflows with `origin = RECORDED`; drafts are recordings in `recording` or `review`.

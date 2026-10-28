@@ -15,12 +15,13 @@ import { api } from '@/lib/api'
 import type { AgentDto, ConnectionDto, GeneratedToolDto, McpServer, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
   NODE_H, NODE_META, NODE_W, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
-  insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type NodeType, type PaletteEntry,
+  insertChain, insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type CanvasNode, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
   type Exit, type MenuAt, type MenuItem, type StepData, type StepRun, type WireData,
 } from './canvasParts'
+import { RecordFlow } from '@/components/web/RecordFlow'
 import { CanvasInspector, type ToolOption, type WorkflowOption } from './CanvasInspector'
 import { canConfigureWithJizza } from '@/jizza/commands'
 
@@ -143,6 +144,8 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
   const [hovered, setHovered] = useState<string | null>(null)
   const hoverTimer = useRef<number>()
   const [picker, setPicker] = useState<Picker | null>(null)
+  /** Where recorded steps go once the person has reviewed them. */
+  const [recordAt, setRecordAt] = useState<{ from: string | null; branch: Exit } | null>(null)
   /** {@code nodeId} is the step whose options menu this is, which keeps its button showing. */
   const [menu, setMenu] = useState<{ at: MenuAt; items: MenuItem[]; nodeId?: string } | null>(null)
   /** Whether the open step settings have changes not yet saved, and whether to open them at the note. */
@@ -721,8 +724,17 @@ function CanvasEditor({ graph, history, readOnly, run, fullscreen, onFullscreen 
 
       </div>
 
+      <RecordFlow open={!!recordAt} mode="insert" onClose={() => setRecordAt(null)}
+        onInsert={chain => {
+          const from = recordAt?.from ?? graph.nodes.find(n => n.type === 'TRIGGER')?.id
+          if (!from) return
+          const r = insertChain(graph, from, recordAt?.branch ?? null, chain as { nodes: CanvasNode[]; edges: CanvasEdge[] })
+          commit(r.graph)
+          select(r.ids.slice(0, 1))
+        }} />
       {picker && (
         <StepPicker at={picker.at} onClose={() => setPicker(null)} onPick={pick} agents={agents}
+          onRecord={readOnly ? undefined : () => { setRecordAt(picker.kind === 'after' ? { from: picker.from, branch: picker.branch } : { from: selNodes[0] ?? null, branch: null }); setPicker(null) }}
           title={picker.kind === 'wire' ? 'Insert a step' : picker.kind === 'after' ? 'Add the next step' : 'Add a step'}
           allowEnd={picker.kind !== 'wire'} />
       )}
