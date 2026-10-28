@@ -262,7 +262,9 @@ public class WorkflowPlanToolProvider implements ToolProvider {
             + "request through with the relevant specialists and nothing is left that only the "
             + "user can decide, or to offer to save a job you just did that the user will want "
             + "again (fill in reuse). Approving saves it as a draft workflow; you never save it "
-            + "yourself.",
+            + "yourself. For a task in the user's browser, use a saved recording if "
+            + "find_saved_workflows has one that fits, or offer web_record so they can show it "
+            + "once; never invent page elements or selectors.",
         JsonSchemas.object(new LinkedHashMap<>(Map.of(
             "name", JsonSchemas.string("Short name, e.g. Gold rate checker"),
             "description", JsonSchemas.string("What the workflow does, in one or two sentences"),

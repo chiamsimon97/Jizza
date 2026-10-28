@@ -32,6 +32,7 @@ class WebAutomationE2eTest extends E2eSupport {
   private FakeBrowser fake;
 
   @Autowired private WorkflowRepository workflows;
+  @Autowired private E2eSupport.ScriptedLlmClient model;
   @Autowired private com.jizza.engine.persistence.repository.JobRepository jobs;
   @Autowired private com.jizza.engine.devices.events.DeviceEventIntake events;
 
@@ -182,6 +183,47 @@ class WebAutomationE2eTest extends E2eSupport {
     assertThat(other.get("/api/web/recordings/" + id).status()).isEqualTo(404);
     assertThat(other.delete("/api/web/recordings/" + id).status()).isEqualTo(404);
     assertThat(other.get("/api/web/recordings").json()).isEmpty();
+  }
+
+  @Test
+  void webRecordInChatStartsARecordingAndShowsStopAndReview() {
+    model.reset();
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("w1", "web_record", Json.obj()
+                .put("url", "https://example.com").put("name", "Read heading"))),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("Do the task in Chrome, then press Stop."));
+
+    var reply = api.post("/api/chat", Map.of("message", "Let me show you how I read the heading"));
+
+    assertThat(reply.ok()).as(reply.body()).isTrue();
+    assertThat(reply.json().path("actions").toString()).contains("show_steps").contains("Stop")
+        .contains("Open review").contains("Chrome on MacBook");
+    JsonNode drafts = api.get("/api/web/recordings").json();
+    assertThat(drafts).hasSize(1);
+    assertThat(drafts.get(0).path("status").asText()).isEqualTo("recording");
+  }
+
+  @Test
+  void aClickInChatAsksForApprovalEvenWhereARuleAllowsIt() {
+    api.put("/api/autonomy/policies", Map.of("toolRef", "device_*", "rule", "ALLOW", "precedence", 50));
+    api.post("/api/auth/step-up", Map.of("password", PASSWORD));
+    model.reset();
+    ObjectNode click = Json.obj();
+    click.putObject("element").putArray("strategies").addObject().put("by", "role")
+        .put("role", "button").put("name", "Sign in");
+    model.scriptFor("Jizza",
+        new com.jizza.engine.api.llm.LlmResponse("", java.util.List.of(
+            new com.jizza.engine.api.tool.ToolCall("w1", "device_chrome_on_macbook__browser_click", click)),
+            "tool_use", 5, 5, "m"),
+        com.jizza.engine.api.llm.LlmResponse.text("It needs your approval first."));
+
+    var reply = api.post("/api/chat", Map.of("message", "Click Sign in on the page"));
+
+    assertThat(reply.ok()).as(reply.body()).isTrue();
+    assertThat(device.received().toString()).as("nothing reached the browser").doesNotContain("browser.click");
+    assertThat(api.get("/api/notifications").json().toString()).containsIgnoringCase("approv");
   }
 
   @Test

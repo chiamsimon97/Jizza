@@ -28,6 +28,10 @@ click the element, and the step stores how to find it. **Test step** runs it onc
 In the builder, **Record steps here** (in the add-step list) records straight into the workflow
 you are editing.
 
+### Record from chat
+
+Tell Jizza you want to show it a task. It starts a recording in your browser agent and puts a card on the screen with **Stop** and **Open review**. Do the task in Chrome, press **Stop**, then open the review. If a saved recording already does the job, Jizza offers to run it and asks you first. Clicking and typing in your browser from chat always asks for your approval.
+
 ## Good to know
 
 - A saved recording asks before each run and does not run on a schedule until you allow it.
