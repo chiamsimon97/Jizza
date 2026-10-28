@@ -77,3 +77,12 @@ not line up, plus the narrow choices made so work can continue safely.
 - **Clean-up.** Reviews untouched for 7 days are discarded; steps of discarded recordings are removed (sweep every `jizza.webauto.sweep-interval`, default `PT1M`).
 - **Saved list.** The Recordings page lists workflows with `origin = RECORDED`; drafts are recordings in `recording` or `review`.
 - **Late events.** Steps handled within 3 seconds after a recording went to review are still kept (events are processed by queue workers, so order is not guaranteed). A device edit for a step not yet stored is dropped; the person can make the same edit in review.
+
+## W4 — Chat
+
+- **Stop and Open review buttons.** Steps cards can only link to absolute http(s) addresses or send a reply, so both buttons are replies. `web_record` therefore takes `action` (`start`, `stop`, `review`) and `recordingId` as well as `url`, `name` and `deviceId`; the Stop reply asks Jizza to call it with `stop`.
+- **Open review.** The recordings page is added to the pages Jizza can open (`app_navigate`, key `recordings`). It opens the list, where the draft is resumed; there is no deep link to one recording yet.
+- **Which browser.** With one browser agent that can record, it is used. With several, Jizza must ask and pass `deviceId`.
+- **Always ask.** `ActionTypeSource` gained a default `alwaysAsks` method. The gate turns an ALLOW or JIZZA answer into ASK for a tool whose source says so; a DENY stays a DENY. Only `DeviceToolProvider` uses it, for `browser.*` actions whose type is not READ, in chat. Workflow runs are unchanged: each step still meets its own rule.
+- **Saved recordings in chat.** `find_saved_workflows` and `run_saved_workflow` already include any described workflow, and a saved recording is described when it is saved, so no code change was needed. Its reuse profile asks before each run.
+- **Help text.** `app_propose_workflow` has no web step kind (its steps are tool, agent or ask), so its description only says to prefer a saved recording or `web_record` and never to invent selectors. The web step shape is in the `propose_workflow` graph help.

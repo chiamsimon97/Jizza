@@ -92,6 +92,8 @@ public class PolicyAutonomyGate implements AutonomyGate {
       Map.entry("app_set_theme", ActionType.READ),
       // Steps with buttons for the user to take (open a sign-in page); nothing changes.
       Map.entry("app_show_steps", ActionType.READ),
+      // Watching what the user does in their own browser, for them to review before saving.
+      Map.entry("web_record", ActionType.READ),
       Map.entry("app_propose_workflow", ActionType.READ),
       Map.entry("app_propose_agent", ActionType.READ),
       // Fills in a Builder step's panel; the user still saves it.
@@ -170,6 +172,25 @@ public class PolicyAutonomyGate implements AutonomyGate {
 
   @Override
   public Decision evaluate(GuardrailContext ctx) {
+    Decision decision = evaluateRules(ctx);
+    if (decision.rule().strictness() < AutonomyRule.ASK.strictness()
+        && alwaysAsks(ctx)) {
+      return decision.withRule(AutonomyRule.ASK,
+          "Changing a page in your browser always needs your approval in chat");
+    }
+    return decision;
+  }
+
+  /** True when a tool source says this call must be approved whatever the rules allow. */
+  private boolean alwaysAsks(GuardrailContext ctx) {
+    if (actionTypeSources == null || ctx.toolRef() == null) return false;
+    for (var source : actionTypeSources) {
+      if (source.alwaysAsks(ctx.agentId(), ctx.toolRef())) return true;
+    }
+    return false;
+  }
+
+  private Decision evaluateRules(GuardrailContext ctx) {
     Optional<AgentEntity> found = agents.findById(ctx.agentId());
     if (found.isEmpty()) return Decision.deny("Unknown agent", "no-agent");
     AgentEntity agent = found.get();
