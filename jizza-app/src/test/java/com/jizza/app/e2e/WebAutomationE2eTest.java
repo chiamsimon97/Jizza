@@ -32,6 +32,8 @@ class WebAutomationE2eTest extends E2eSupport {
   private FakeBrowser fake;
 
   @Autowired private WorkflowRepository workflows;
+  @Autowired private com.jizza.engine.persistence.repository.JobRepository jobs;
+  @Autowired private com.jizza.engine.devices.events.DeviceEventIntake events;
 
   @BeforeEach
   void setUp() {
@@ -91,6 +93,18 @@ class WebAutomationE2eTest extends E2eSupport {
     assertThat(signedIn("web-other").get("/api/web/pick/" + commandId).status()).isEqualTo(404);
   }
 
+  /** The e2e profile runs without the job queue, so the test hands device events to the intake itself. */
+  private void drainDeviceEvents() {
+    jobs.findByStatus(com.jizza.engine.api.enums.JobStatus.READY).stream()
+        .filter(j -> com.jizza.engine.api.queue.JobTypes.DEVICE_EVENT.equals(j.getType()))
+        .sorted(java.util.Comparator.comparing(com.jizza.engine.persistence.entity.JobEntity::getRunAfter))
+        .forEach(j -> {
+          events.handle(j.getPayload());
+          j.setStatus(com.jizza.engine.api.enums.JobStatus.DONE);
+          jobs.save(j);
+        });
+  }
+
   private static ObjectNode withElement(ObjectNode input) {
     input.set("element", Json.read(
         "{\"strategies\":[{\"by\":\"role\",\"role\":\"button\",\"name\":\"Sign in\"}]}"));
@@ -112,6 +126,7 @@ class WebAutomationE2eTest extends E2eSupport {
 
     JsonNode recording = null;
     for (int i = 0; i < 80; i++) {
+      drainDeviceEvents();
       recording = api.get("/api/web/recordings/" + id).json();
       if ("review".equals(recording.path("status").asText())
           && recording.path("steps").size() == 3) break;
