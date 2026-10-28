@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, type CanvasNode, type ExitKey, type NodeType } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
 import { fieldsOf } from './moduleContract'
 
 export type Exit = ExitKey
@@ -291,24 +291,26 @@ function WireButton({ label, danger, onClick, children }: { label: string; dange
  * The "what comes next?" list n8n shows when you press + or drop a wire on empty canvas. Type to
  * filter, arrows to move, Enter to add.
  */
-export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose }: {
+export function StepPicker({ at, title, allowEnd = true, agents, onPick, onRecord, onClose }: {
   at: { x: number; y: number }; title: string; allowEnd?: boolean
   /** Agents offered as ready-made agent steps, under the step types. */
   agents?: AgentDto[]
-  onPick: (type: NodeType, agent?: AgentDto) => void; onClose: () => void
+  /** Offers "Record steps here" under Web Automation. */
+  onRecord?: () => void
+  onPick: (entry: NodeType | PaletteEntry, agent?: AgentDto) => void; onClose: () => void
 }) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const box = useRef<HTMLDivElement>(null)
   const options = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const steps: { type: NodeType; agent?: AgentDto }[] = PALETTE
-      .filter(t => (allowEnd || t !== 'END') && (!q || `${NODE_META[t].label} ${NODE_META[t].desc}`.toLowerCase().includes(q)))
-      .map(type => ({ type }))
+    const steps: { type: NodeType; entry?: PaletteEntry; agent?: AgentDto }[] = PALETTE
+      .filter(e => (allowEnd || e.type !== 'END') && (!q || `${e.label} ${NODE_META[e.type].desc}`.toLowerCase().includes(q)))
+      .map(entry => ({ type: entry.type, entry }))
     // Only agents that can take work now; drafts, paused and archived ones would just fail the run.
     const ready = (agents ?? []).filter(a => !a.orchestrator && a.enabled && (a.status ?? 'active') === 'active'
       && (!q || `${a.name} ${a.description ?? ''} ${a.domain ?? ''}`.toLowerCase().includes(q)))
-    return [...steps, ...ready.map(agent => ({ type: 'AGENT_STEP' as NodeType, agent }))]
+    return [...steps, ...ready.map(agent => ({ type: 'AGENT_STEP' as NodeType, entry: undefined, agent }))]
   }, [query, allowEnd, agents])
 
   useEffect(() => {
@@ -334,27 +336,35 @@ export function StepPicker({ at, title, allowEnd = true, agents, onPick, onClose
           onKeyDown={e => {
             if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(options.length - 1, a + 1)) }
             if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(0, a - 1)) }
-            if (e.key === 'Enter') { e.preventDefault(); if (options[active]) onPick(options[active].type, options[active].agent) }
+            if (e.key === 'Enter') { e.preventDefault(); if (options[active]) onPick(options[active].entry ?? options[active].type, options[active].agent) }
             if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose() }
           }}
           className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100" />
       </label>
+      {onRecord && (!query.trim() || 'record steps here web automation'.includes(query.trim().toLowerCase())) && (
+        <button type="button" onClick={onRecord}
+          className="mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-gray-900 hover:bg-brand-50 dark:text-gray-100 dark:hover:bg-brand-500/15">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-red-500 text-white"><span className="h-2 w-2 rounded-full bg-white" /></span>
+          Record steps here
+        </button>
+      )}
       <ul role="listbox" className="max-h-64 overflow-y-auto">
-        {options.map(({ type: t, agent }, i) => {
+        {options.map(({ type: t, entry, agent }, i) => {
           const Icon = NODE_ICON[t]
-          const group = agent ? 'Your agents' : groupOf(t)
+          const group = agent ? 'Your agents' : entry?.config?.preset === 'web' ? 'Web Automation' : groupOf(t)
           const prev = options[i - 1]
-          const heading = !prev || (prev.agent ? 'Your agents' : groupOf(prev.type)) !== group
+          const previousGroup = prev?.agent ? 'Your agents' : prev?.entry?.config?.preset === 'web' ? 'Web Automation' : prev ? groupOf(prev.type) : ''
+          const heading = !prev || previousGroup !== group
           return (
-            <li key={agent ? `agent:${agent.id}` : t} role="option" aria-selected={i === active}>
+            <li key={agent ? `agent:${agent.id}` : `${t}:${entry?.label}:${i}`} role="option" aria-selected={i === active}>
               {heading && <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{group}</p>}
-              <button type="button" onMouseEnter={() => setActive(i)} onClick={() => onPick(t, agent)}
+              <button type="button" onMouseEnter={() => setActive(i)} onClick={() => onPick(entry ?? t, agent)}
                 className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left ${i === active ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
                 {agent
                   ? <span className="mt-0.5 shrink-0"><AgentLogo agentKey={agent.key} avatar={agent.avatar} size={24} /></span>
                   : <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md ${NODE_META[t].tone}`}><Icon className="h-3.5 w-3.5" /></span>}
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">{agent ? agent.name : NODE_META[t].label}</span>
+                  <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">{agent ? agent.name : entry?.label ?? NODE_META[t].label}</span>
                   <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">{agent ? agent.description ?? agent.domain ?? 'Agent step' : NODE_META[t].desc}</span>
                 </span>
               </button>

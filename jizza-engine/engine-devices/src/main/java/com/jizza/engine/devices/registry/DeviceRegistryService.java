@@ -82,7 +82,7 @@ public class DeviceRegistryService implements Devices {
 
   private static final Pattern TAG = Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");
   private static final Set<String> KEY_STORAGES =
-      Set.of("tpm", "keychain", "secure_enclave", "keystore", "file");
+      Set.of("tpm", "keychain", "secure_enclave", "keystore", "file", "browser");
   private static final int MAX_ACTIONS = 500;
   private static final Base64.Encoder URL = Base64.getUrlEncoder().withoutPadding();
 

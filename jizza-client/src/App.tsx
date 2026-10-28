@@ -17,6 +17,7 @@ import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { McpServerPage } from '@/pages/connectors/McpServers'
 import { FunctionsPage } from '@/pages/FunctionsPage'
+import { RecordingsPage } from '@/pages/RecordingsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
 import { GuardrailsPage } from '@/pages/GuardrailsPage'
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="/memory/:agentId" element={<CosmosView />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/workflows" element={<WorkflowsPage />} />
+            <Route path="/recordings" element={<RecordingsPage />} />
             <Route path="/procedures" element={<ProceduresPage />} />
             <Route path="/functions/:functionId?" element={<FunctionsPage />} />
             <Route path="/guardrails" element={<GuardrailsPage />} />

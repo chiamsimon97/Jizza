@@ -6,6 +6,8 @@ import com.jizza.engine.api.workflow.graph.WorkflowEdge;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.api.workflow.graph.WorkflowNode;
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,6 +16,14 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class WorkflowValidator {
+
+  private ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> deviceActions;
+
+  @Autowired(required = false)
+  public void setDeviceActions(
+      ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> deviceActions) {
+    this.deviceActions = deviceActions;
+  }
 
   public void validate(WorkflowGraph graph) {
     graph.validate();
@@ -69,11 +79,18 @@ public class WorkflowValidator {
         case STORAGE -> validateStorage(node);
         case DEVICE_ACTION -> {
           requireConfig(node, "action");
-          try {
-            com.jizza.engine.api.device.DeviceTarget.from(node.config().get("target"));
-          } catch (IllegalArgumentException e) {
-            throw new ValidationException("Device step '" + node.id()
-                + "' names a device that is not a device id");
+          boolean web = "web".equals(node.config().path("preset").asText())
+              || node.config().path("action").asText().startsWith("browser.");
+          if (web) {
+            validateWebAction(node);
+          }
+          if (!(web && "sameBrowser".equals(node.config().path("target").asText()))) {
+            try {
+              com.jizza.engine.api.device.DeviceTarget.from(node.config().get("target"));
+            } catch (IllegalArgumentException e) {
+              throw new ValidationException("Device step '" + node.id()
+                  + "' names a device that is not a device id");
+            }
           }
         }
         case NOTIFY -> {
@@ -103,7 +120,72 @@ public class WorkflowValidator {
       java.util.Set.of("get", "set", "increment", "append", "delete");
   private static final java.util.regex.Pattern VARIABLE_NAME =
       java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,63}");
+  private static final java.util.regex.Pattern WHOLE_TEMPLATE =
+      java.util.regex.Pattern.compile("\\{\\{(?:(?!\\{\\{|}})[\\s\\S])+}}");
   static final int MAX_SWITCH_CASES = 10;
+  private static final java.util.Set<String> WEB_ELEMENT_ACTIONS = java.util.Set.of(
+      "browser.click", "browser.hover", "browser.setText", "browser.getText",
+      "browser.setCheckbox", "browser.getCheckbox", "browser.selectItem",
+      "browser.extractTable", "browser.typeInto", "browser.exists");
+
+  private void validateWebAction(WorkflowNode node) {
+    String action = node.config().path("action").asText();
+    int version = node.config().path("version").asInt(0);
+    var catalog = deviceActions == null ? null : deviceActions.getIfAvailable();
+    var spec = catalog == null ? java.util.Optional
+        .<com.jizza.engine.api.device.DeviceActionSpec>empty() : catalog.resolve(action, version);
+    if (!action.startsWith("browser.") || spec.isEmpty()
+        || !"browser".equals(spec.get().capability())) {
+      throw new ValidationException("Web step '" + node.id()
+          + "' needs an available browser action");
+    }
+    var inputs = node.config().path("inputs");
+    validateRequiredInputs(node, spec.get().input(), inputs);
+    var element = inputs.get("element");
+    if (element == null && !WEB_ELEMENT_ACTIONS.contains(action)) return;
+    boolean locator = element != null && element.isObject()
+        && element.path("strategies").isArray() && !element.path("strategies").isEmpty();
+    boolean template = element != null && element.isTextual()
+        && WHOLE_TEMPLATE.matcher(element.asText().trim()).matches();
+    if (!locator && !template) {
+      throw new ValidationException("Pick the element this step works on.");
+    }
+  }
+
+  private void validateRequiredInputs(WorkflowNode node, com.fasterxml.jackson.databind.JsonNode schema,
+                                      com.fasterxml.jackson.databind.JsonNode inputs) {
+    if (schema == null || !schema.isObject()) return;
+    var required = schema.path("required");
+    if (required.isArray()) {
+      for (var field : required) {
+        if ("element".equals(field.asText())) continue;
+        if (!hasInput(inputs, field.asText())) {
+          throw new ValidationException("Web step '" + node.id()
+              + "' needs the input '" + field.asText() + "'");
+        }
+      }
+    }
+    var choices = schema.path("oneOf");
+    if (choices.isArray() && !choices.isEmpty()) {
+      int matches = 0;
+      for (var choice : choices) {
+        boolean allPresent = true;
+        for (var field : choice.path("required")) {
+          if (!hasInput(inputs, field.asText())) allPresent = false;
+        }
+        if (allPresent) matches++;
+      }
+      if (matches != 1) {
+        throw new ValidationException("Web step '" + node.id()
+            + "' needs one of the catalog's input choices");
+      }
+    }
+  }
+
+  private boolean hasInput(com.fasterxml.jackson.databind.JsonNode inputs, String field) {
+    var value = inputs == null ? null : inputs.get(field);
+    return value != null && !value.isNull() && (!value.isTextual() || !value.asText().isBlank());
+  }
 
   private void validateApproval(WorkflowGraph graph, WorkflowNode node) {
     var config = node.config();

@@ -152,6 +152,9 @@ for the guardrails until the catalog adds them. The server only routes an action
 declared it (except `system.ping`, which every app answers), and checks inputs against the schema
 before sending.
 
+Browser devices and every `browser.*` action follow the shared
+[Web Automation Contract v1](web-automation-v1.md).
+
 ### 6.1 The app's own tools and saved items
 
 Beyond the catalog, a manifest can describe **tools** the app adds itself and the **saved items**
@@ -163,8 +166,8 @@ catalog actions take by id. Both show in the workflow builder's Device action st
            "input": {"type": "object", "properties": {"ledger": {"type": "string"}}, "required": ["ledger"]},
            "output": {"type": "object", "properties": {"rows": {"type": "integer"}}},
            "timeoutSec": 60}],
-"items": {"recordings": [{"id": "rec-1", "name": "Download invoices"}],
-          "shortcuts": [{"id": "Log water", "name": "Log water"}]}
+"items": {"shortcuts": [{"id": "Log water", "name": "Log water"}],
+          "apps": [{"id": "com.microsoft.Excel", "name": "Excel"}]}
 ```
 
 * A tool's name is `x-<vendor>.<name>`; it needs no separate entry in `actions`. At most 50 tools,
@@ -176,8 +179,9 @@ catalog actions take by id. Both show in the workflow builder's Device action st
   `{"actionType":"READ"}`, step-up guarded). By default that never runs on its own.
 * `items` maps a kind (`[a-z][a-z0-9_]*`, at most 10 kinds) to at most 500 `{id, name,
   description?}`. A catalog input that takes one says so with `"x-items": "<kind>"`:
-  `browser.runRecording.recordingId` takes `recordings`, `phone.shortcut.name` takes `shortcuts`,
-  and `ui.openApp.app` takes `apps`. The builder then offers the device's list.
+  `phone.shortcut.name` takes `shortcuts` and `ui.openApp.app` takes `apps`. The builder then
+  offers the device's list. (Browser recordings live on the server; see the Web Automation
+  Contract.)
 * Send a new manifest whenever tools or items change; each manifest replaces the last.
 
 A manifest whose tools or items break these rules gets `error` naming what is wrong.

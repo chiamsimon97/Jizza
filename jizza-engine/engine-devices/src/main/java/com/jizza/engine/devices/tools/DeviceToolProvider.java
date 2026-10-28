@@ -127,6 +127,15 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
     return e == null ? Optional.empty() : Optional.of(e.spec().actionType());
   }
 
+  /** Browser actions that do more than read always ask in chat; reading may run within the rules. */
+  @Override
+  public boolean alwaysAsks(UUID agentId, String toolRef) {
+    if (toolRef == null || !toolRef.startsWith(PREFIX)) return false;
+    Exposed e = exposed(agentId).get(toolRef);
+    return e != null && e.spec().action().startsWith("browser.")
+        && e.spec().actionType() != ActionType.READ;
+  }
+
   private Map<String, Exposed> exposed(UUID agentId) {
     Map<String, Exposed> out = new LinkedHashMap<>();
     AgentEntity agent = agentId == null ? null : agents.findById(agentId).orElse(null);
@@ -145,6 +154,8 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
       for (JsonNode ref : device.getActions()) {
         String action = ref.asText().split("@")[0];
         if (blocked.contains(action)) continue;
+        // A replay batch only exists for workflow runs, which judge each of its steps.
+        if (CommandBroker.RUN_STEPS.equals(action)) continue;
         Optional<DeviceActionSpec> spec = action.startsWith(DeviceActionSpec.EXTENSION_PREFIX)
             ? DeviceExtras.spec(device, action).or(() -> catalog.resolve(action, 0))
             : catalog.resolve(action, 0);

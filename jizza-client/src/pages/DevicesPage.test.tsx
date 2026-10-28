@@ -28,7 +28,7 @@ describe('Devices', () => {
     expect(await screen.findByText('Work laptop')).toBeInTheDocument()
     expect(screen.getByText('Online')).toBeInTheDocument()
     expect(screen.getByText('office')).toBeInTheDocument()
-    expect(screen.getByText(/kept in a file rather than secure hardware/)).toBeInTheDocument()
+    expect(screen.getByText(/kept outside secure hardware/)).toBeInTheDocument()
     // Someone who manages devices also sees enrollment tokens.
     expect(screen.getByText('Enrollment tokens')).toBeInTheDocument()
   })
@@ -42,6 +42,9 @@ describe('Devices', () => {
     renderWithSnapshot(<DevicesPage />, makeSnapshot())
     fireEvent.click((await screen.findAllByRole('button', { name: /Pair a device/ }))[0])
     expect(await screen.findByLabelText('Pairing code')).toHaveTextContent('482913')
+    fireEvent.click(screen.getByRole('tab', { name: /Browser/ }))
+    expect(screen.getByText(/Load unpacked for testing/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy installation key' })).toBeInTheDocument()
   })
 
   it('reports a test connection round trip', async () => {

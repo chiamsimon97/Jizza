@@ -57,6 +57,14 @@ export interface CanvasGraph {
   edges: CanvasEdge[]
 }
 
+/** A palette item may be a plain node type or a ready-configured version of one. */
+export interface PaletteEntry {
+  type: NodeType
+  label: string
+  group: string
+  config?: Record<string, unknown>
+}
+
 export const NODE_META: Record<NodeType, { label: string; desc: string; tone: string }> = {
   TRIGGER: { label: 'Start', desc: 'Where the workflow begins.', tone: 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' },
   AGENT_STEP: { label: 'Ask an agent', desc: 'A specialist does a task.', tone: 'bg-brand-500 text-white' },
@@ -82,20 +90,67 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   DEVICE_ACTION: { label: 'Device action', desc: 'Runs an action on your computer or phone with the Jizza Agent app.', tone: 'bg-stone-700 text-white' },
 }
 
+const entries = (group: string, ...types: NodeType[]): PaletteEntry[] => types.map(type => ({ type, label: NODE_META[type].label, group }))
+const web = (label: string, action: string, version = 1): PaletteEntry => ({
+  type: 'DEVICE_ACTION', label, group: 'Web Automation', config: { preset: 'web', action, version, target: 'sameBrowser' },
+})
+
+/** Web steps are deliberately ordered to match the browser action contract. */
+export const WEB_PALETTE: PaletteEntry[] = [
+  web('Open URL', 'browser.open', 2),
+  web('Click', 'browser.click', 2),
+  web('Hover', 'browser.hover'),
+  web('Set text', 'browser.setText'),
+  web('Get text', 'browser.getText'),
+  web('Set checkbox', 'browser.setCheckbox'),
+  web('Get checkbox state', 'browser.getCheckbox'),
+  web('Select item', 'browser.selectItem'),
+  web('Extract table data', 'browser.extractTable'),
+  web('Select radio button', 'browser.selectRadio'),
+  web('Get radio button state', 'browser.getRadio'),
+  web('Scroll', 'browser.scroll'),
+  web('Send hotkeys', 'browser.sendKeys'),
+  web('Type into', 'browser.typeInto'),
+  web('Check if element exists', 'browser.exists'),
+  web('Switch to', 'browser.switchTo'),
+  web('Refresh page', 'browser.refresh'),
+  web('Get element selectors', 'browser.getSelectors'),
+  web('Get web page details', 'browser.pageInfo'),
+  web('Go forward a page', 'browser.forward'),
+  web('Go back a page', 'browser.back'),
+  web('Close browser', 'browser.close'),
+  web('Wait', 'browser.wait'),
+  web('Screenshot', 'browser.screenshot'),
+]
+
+/** Browser actions whose contract requires a concrete element locator. */
+export const WEB_ELEMENT_ACTIONS = new Set([
+  'browser.click', 'browser.hover', 'browser.setText', 'browser.getText', 'browser.setCheckbox',
+  'browser.getCheckbox', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
+])
+
+/** Actions that can use an element, including those where it is an optional targeting mode. */
+export const WEB_ELEMENT_INPUT_ACTIONS = new Set([
+  ...WEB_ELEMENT_ACTIONS,
+  'browser.selectRadio', 'browser.getRadio', 'browser.scroll', 'browser.sendKeys', 'browser.switchTo',
+  'browser.getSelectors', 'browser.wait', 'browser.screenshot',
+])
+
 /** The palette's steps, grouped by what they do. Start is added once, automatically. */
-export const PALETTE_GROUPS: Array<{ title: string; types: NodeType[] }> = [
-  { title: 'Agents and people', types: ['AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY'] },
-  { title: 'Apps and webhooks', types: ['CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST', 'DEVICE_ACTION'] },
-  { title: 'Data', types: ['TRANSFORM', 'SCRIPT', 'SET_VARIABLE', 'STORAGE'] },
-  { title: 'Conditions and paths', types: ['BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN'] },
-  { title: 'Flow control', types: ['WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END'] },
+export const PALETTE_GROUPS: Array<{ title: string; icon?: 'globe'; entries: PaletteEntry[] }> = [
+  { title: 'Agents and people', entries: entries('Agents and people', 'AGENT_STEP', 'HUMAN_INTERVENTION', 'APPROVAL', 'NOTIFY') },
+  { title: 'Apps and webhooks', entries: entries('Apps and webhooks', 'CONNECTOR_TOOL', 'MCP_TOOL', 'HTTP_REQUEST', 'DEVICE_ACTION') },
+  { title: 'Web Automation', icon: 'globe', entries: WEB_PALETTE },
+  { title: 'Data', entries: entries('Data', 'TRANSFORM', 'SCRIPT', 'SET_VARIABLE', 'STORAGE') },
+  { title: 'Conditions and paths', entries: entries('Conditions and paths', 'BRANCH', 'SWITCH', 'FILTER', 'PARALLEL', 'JOIN') },
+  { title: 'Flow control', entries: entries('Flow control', 'WAIT', 'FOR_EACH', 'SUB_WORKFLOW', 'END') },
 ]
 
 /** What can be dragged from the palette, in group order. */
-export const PALETTE: NodeType[] = PALETTE_GROUPS.flatMap(g => g.types)
+export const PALETTE: PaletteEntry[] = PALETTE_GROUPS.flatMap(g => g.entries)
 
 /** The title of the group a step type is listed under. */
-export const groupOf = (type: NodeType): string => PALETTE_GROUPS.find(g => g.types.includes(type))?.title ?? ''
+export const groupOf = (type: NodeType): string => PALETTE.find(e => e.type === type && !e.config)?.group ?? ''
 
 const toExit = (v: unknown): ExitKey => (v === true ? 'true' : v === false ? 'false' : typeof v === 'string' && v ? v : null)
 
@@ -111,12 +166,17 @@ export function newId(type: NodeType): string {
  * A new step. Paths and set-variable steps start with one empty row, so there is something to fill
  * in; a wait starts at an hour and a webhook as a JSON POST, which is what their settings show.
  */
-export function newNode(type: NodeType, x: number, y: number): CanvasNode {
+export function newNode(typeOrEntry: NodeType | PaletteEntry, x: number, y: number): CanvasNode {
+  const entry = typeof typeOrEntry === 'string' ? undefined : typeOrEntry
+  const type = entry?.type ?? typeOrEntry as NodeType
   const config: Record<string, unknown> = type === 'SWITCH' ? { cases: [{ id: 'case1', label: 'Path 1', condition: '' }] }
     : type === 'SET_VARIABLE' ? { variables: [{ name: '', expr: '' }] }
     : type === 'WAIT' ? { duration: 'PT1H' }
     : type === 'HTTP_REQUEST' ? { method: 'POST', bodyType: 'json' } : {}
-  return { id: type === 'TRIGGER' ? 'start' : newId(type), type, label: NODE_META[type].label, config, x, y }
+  return {
+    id: type === 'TRIGGER' ? 'start' : newId(type), type, label: entry?.label ?? NODE_META[type].label,
+    config: { ...config, ...entry?.config }, x, y,
+  }
 }
 
 export function emptyGraph(): CanvasGraph {
@@ -288,7 +348,7 @@ export function freeSpot(graph: CanvasGraph, x: number, y: number): { x: number;
 }
 
 /** Puts a new step on an existing connection: from → new → to, keeping the from side's exit. */
-export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeType): { graph: CanvasGraph; id: string } {
+export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeType | PaletteEntry): { graph: CanvasGraph; id: string } {
   const from = graph.nodes.find(n => n.id === edge.from)
   const to = graph.nodes.find(n => n.id === edge.to)
   const at = freeSpot(graph, from && to ? Math.round((from.x + to.x) / 2) : 0, from && to ? Math.round((from.y + to.y) / 2) + ROW_H : 0)
@@ -297,12 +357,12 @@ export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeTyp
   edges.push({ from: edge.from, to: node.id, branch: edge.branch })
   // The onward path leaves from the first exit: a branch's "yes", a parallel step's first lane,
   // an approval's "approved", a paths step's first case.
-  if (type !== 'END') edges.push({ from: node.id, to: edge.to, branch: exitsOf(node)[0] })
+  if (node.type !== 'END') edges.push({ from: node.id, to: edge.to, branch: exitsOf(node)[0] })
   return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 /** Adds a step on a given exit of a node, replacing whatever that exit pointed at before. */
-export function addAfter(graph: CanvasGraph, from: string, branch: ExitKey, type: NodeType): { graph: CanvasGraph; id: string } {
+export function addAfter(graph: CanvasGraph, from: string, branch: ExitKey, type: NodeType | PaletteEntry): { graph: CanvasGraph; id: string } {
   const source = graph.nodes.find(n => n.id === from)
   const siblings = graph.edges.filter(e => e.from === from).length
   // One row down per exit; the first of several goes up a row when something is already connected.
@@ -312,6 +372,27 @@ export function addAfter(graph: CanvasGraph, from: string, branch: ExitKey, type
   const node = newNode(type, at.x, at.y)
   const withNode = { ...graph, nodes: [...graph.nodes, node] }
   return { graph: setNext(withNode, from, branch, node.id), id: node.id }
+}
+
+/**
+ * Puts a chain of steps (such as a recording) after a node, under new ids. Whatever followed that
+ * exit now follows the chain, so the chain is spliced in, not added beside it.
+ */
+export function insertChain(graph: CanvasGraph, from: string, branch: ExitKey, chain: { nodes: CanvasNode[]; edges: CanvasEdge[] }): { graph: CanvasGraph; ids: string[] } {
+  if (chain.nodes.length === 0) return { graph, ids: [] }
+  const ids = new Map(chain.nodes.map(n => [n.id, newId(n.type)]))
+  const source = graph.nodes.find(n => n.id === from)
+  const heads = chain.nodes.filter(n => !chain.edges.some(e => e.to === n.id))
+  const tails = chain.nodes.filter(n => !chain.edges.some(e => e.from === n.id))
+  const at = freeSpot(graph, (source?.x ?? 0) + COL_W, source?.y ?? 0)
+  const first = chain.nodes[0]
+  const nodes = chain.nodes.map(n => ({ ...n, id: ids.get(n.id)!, config: structuredClone(n.config), x: at.x + (n.x - first.x), y: at.y + (n.y - first.y) }))
+  const edges = chain.edges.map(e => ({ ...e, from: ids.get(e.from)!, to: ids.get(e.to)! }))
+  const previous = graph.edges.find(e => e.from === from && e.branch === branch)?.to
+  let next: CanvasGraph = { nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }
+  next = setNext(next, from, branch, ids.get(heads[0].id)!)
+  if (previous && tails.length === 1) next = setNext(next, ids.get(tails[0].id)!, null, previous)
+  return { graph: next, ids: nodes.map(n => n.id) }
 }
 
 /**
@@ -376,7 +457,7 @@ export function setNext(graph: CanvasGraph, from: string, branch: ExitKey, to: s
  * Adds a node and connects it to the flow: from the selected node if it has a free exit,
  * otherwise from the nearest node with one.
  */
-export function addNode(graph: CanvasGraph, type: NodeType, x: number, y: number, after?: string | null): { graph: CanvasGraph; id: string } {
+export function addNode(graph: CanvasGraph, type: NodeType | PaletteEntry, x: number, y: number, after?: string | null): { graph: CanvasGraph; id: string } {
   const node = newNode(type, x, y)
   const freeExit = (n: CanvasNode) => exitsOf(n).find(b => !graph.edges.some(e => e.from === n.id && e.branch === b))
   const candidates = graph.nodes.filter(n => freeExit(n) !== undefined)
@@ -459,6 +540,16 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
   if (n.type === 'CONNECTOR_TOOL' && !text(n.config.toolId)) add('toolId', `${name} needs a service action.`)
   if (n.type === 'MCP_TOOL' && !text(n.config.serverId)) add('serverId', `${name} needs an MCP server.`)
   if (n.type === 'DEVICE_ACTION' && !text(n.config.action)) add('action', `${name} needs an action to run on the device.`)
+  if (n.type === 'DEVICE_ACTION' && n.config.preset === 'web' && WEB_ELEMENT_ACTIONS.has(text(n.config.action))) {
+    const inputs = n.config.inputs && typeof n.config.inputs === 'object' && !Array.isArray(n.config.inputs)
+      ? n.config.inputs as Record<string, unknown> : {}
+    const element = inputs.element
+    const template = typeof element === 'string' && /^\{\{(?:(?!\{\{|}})[\s\S])+}}$/.test(element.trim())
+    const bundle = element && typeof element === 'object' && !Array.isArray(element) ? element as Record<string, unknown> : {}
+    if (!template && (!Array.isArray(bundle.strategies) || bundle.strategies.length === 0)) {
+      add('inputs.element', 'Pick the element this step works on.')
+    }
+  }
   if (n.type === 'MCP_TOOL' && text(n.config.serverId) && !text(n.config.tool)) add('tool', `${name} needs a tool to call.`)
   if (n.type === 'TRANSFORM' && !text(n.config.expression)) add('expression', `${name} needs an expression.`)
   if ((n.type === 'BRANCH' || n.type === 'FILTER') && !text(n.config.condition)) add('condition', `${name} needs a condition.`)

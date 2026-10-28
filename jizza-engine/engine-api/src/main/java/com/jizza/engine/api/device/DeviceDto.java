@@ -9,7 +9,8 @@ import java.util.UUID;
  * A paired device as the app shows it.
  *
  * @param ownerUserId   the person it belongs to; null for a workspace device enrolled by token
- * @param keyStorage    where its private key lives (tpm, keychain, secure_enclave, keystore, file)
+ * @param keyStorage    where its private key lives (tpm, keychain, secure_enclave, keystore, file,
+ *                      browser)
  * @param online        connected now, by socket or a recent poll
  * @param state         what its last heartbeat said: idle, busy, paused
  * @param capabilities  the capabilities its manifest declared, with the user's local limits
@@ -27,6 +28,18 @@ public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name
                         List<String> actions, boolean shellEnabled, List<String> blockedActions,
                         Instant lastSeenAt, Instant createdAt, List<DeviceActionSpec> tools,
                         JsonNode items) {
+
+  /** A device whose app described no tools or saved items of its own. */
+  public DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name,
+                   DevicePlatform platform, String osVersion, String appVersion,
+                   Integer protocolVersion, DeviceStatus status, List<String> tags,
+                   String keyStorage, boolean online, String state, JsonNode capabilities,
+                   List<String> actions, boolean shellEnabled, List<String> blockedActions,
+                   Instant lastSeenAt, Instant createdAt) {
+    this(id, workspaceId, ownerUserId, name, platform, osVersion, appVersion, protocolVersion,
+        status, tags, keyStorage, online, state, capabilities, actions, shellEnabled,
+        blockedActions, lastSeenAt, createdAt, List.of(), null);
+  }
 
   /** Whether it declared {@code action} in any version. */
   public boolean declares(String action) {
@@ -51,6 +64,6 @@ public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name
   }
 
   public boolean weakKeyStorage() {
-    return keyStorage == null || "file".equals(keyStorage);
+    return keyStorage == null || "file".equals(keyStorage) || "browser".equals(keyStorage);
   }
 }

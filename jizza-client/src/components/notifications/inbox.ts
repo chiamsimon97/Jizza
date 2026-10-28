@@ -202,6 +202,17 @@ export function argsOf(n: NotificationDto): string | null {
   return JSON.stringify(args, null, 2)
 }
 
+/**
+ * Where to review a suggested fix for a web step, from a notification the server raised for one.
+ * Only a link into the workflow builder is followed.
+ */
+export function fixLinkOf(n: NotificationDto): string | null {
+  const ctx = n.context
+  if (ctx?.source !== 'webauto' || ctx?.kind !== 'locator_fix') return null
+  const link = ctx.link
+  return typeof link === 'string' && /^\/workflows\?open=[0-9a-f-]+(&node=[^&#]+)?$/i.test(link) ? link : null
+}
+
 /** What became of a request, in words. */
 export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' | 'danger' | 'default' } | null {
   switch (n.status) {

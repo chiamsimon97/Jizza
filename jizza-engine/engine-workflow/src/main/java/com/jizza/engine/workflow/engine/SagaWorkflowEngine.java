@@ -159,7 +159,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
    */
   @Transactional
   public RunDto startChild(UUID parentRunId, String parentNodeId, UUID workflowId,
-                           JsonNode input) {
+                           JsonNode input, boolean inheritBrowser) {
     WorkflowRunEntity parent = requireRun(parentRunId);
     RunContext parentContext = RunContext.of(parent.getContext());
     int depth = parentContext.depth() + 1;
@@ -167,6 +167,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       throw new ValidationException("Workflows can call other workflows at most " + MAX_DEPTH
           + " levels deep");
     }
+
     WorkflowEntity workflow = workflows.findById(workflowId)
         .filter(w -> Objects.equals(w.getUserId(), parent.getUserId()))
         .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
@@ -184,8 +185,21 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     boolean manual = parent.getTriggerSource() != null
         && parent.getTriggerSource().startsWith("manual");
     String trigger = (manual ? "manual:" : "") + "subworkflow:" + parentRunId;
-    return launch(workflow, workflow.getVersion(), input, trigger,
-        context -> context.recordParent(parentRunId, parentNodeId, depth));
+    return launch(workflow, workflow.getVersion(), input, trigger, context -> {
+      context.recordParent(parentRunId, parentNodeId, depth);
+      RunContext.Browser browser = parentContext.browser();
+      if (inheritBrowser && browser != null) {
+        context.setBrowser(new RunContext.Browser(
+            browser.deviceId(), browser.workspaceId(), browser.sessionId(), false));
+      } else if (!inheritBrowser) {
+        context.requireNewBrowserSession();
+      }
+    });
+  }
+
+  public RunDto startChild(UUID parentRunId, String parentNodeId, UUID workflowId,
+                           JsonNode input) {
+    return startChild(parentRunId, parentNodeId, workflowId, input, true);
   }
 
   /** A library run of the current version, whose steps are the ones the user allowed unattended. */
@@ -402,6 +416,11 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
     cancelDeviceCommands(runId, "The run was cancelled");
+    WorkflowGraph graph = graphFor(workflows.findById(run.getWorkflowId())
+        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
+        run.getVersion());
+    cleanupBrowser(run, graph, context);
+    save(run, context);
     wakeParent(context);
   }
 
@@ -464,6 +483,9 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         if (node.type() == NodeType.SET_VARIABLE) {
           SetVariables.apply(context, checkpoint.get().getOutput());
         }
+        if (browserDeviceAction(node)) {
+          BrowserAffinity.apply(context, checkpoint.get().getOutput());
+        }
         finishNode(run, graph, node, context);
         continue;
       }
@@ -480,7 +502,8 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       NodeExecutor.Outcome outcome;
       try {
         outcome = executor.execute(new NodeExecutor.Execution(runId, run.getUserId(),
-            owningAgentOf(run), node, context, attempt, run.getWorkflowId(), run.getVersion()));
+            owningAgentOf(run), node, context, attempt, run.getWorkflowId(), run.getVersion(),
+            graph));
       } catch (RuntimeException e) {
         log.warn("Node {} of run {} threw", nodeId, runId, e);
         outcome = NodeExecutor.Outcome.retryable(String.valueOf(e.getMessage()));
@@ -494,6 +517,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
       switch (outcome.status()) {
         case COMPLETED -> {
           context.recordOutput(nodeId, outcome.output());
+          if (browserDeviceAction(node)) BrowserAffinity.apply(context, outcome.output());
           if (outcome.branch() != null) context.recordBranch(nodeId, outcome.branch());
           checkpoint(runId, nodeId, RunStepStatus.DONE, stepInput, outcome.output(), attempt,
               null, stepStarted);
@@ -711,6 +735,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
   private RunDto completeRun(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
     context.recordResult(resultOf(graph, context));
+    cleanupBrowser(run, graph, context);
     run.setContext(context.toJson());
     run.setStatus(RunStatus.DONE);
     run.setCurrentNode(null);
@@ -720,6 +745,11 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         run.getId().toString(), null);
     wakeParent(context);
     return toDto(run);
+  }
+
+  private boolean browserDeviceAction(WorkflowNode node) {
+    return node.type() == NodeType.DEVICE_ACTION && node.config() != null
+        && node.config().path("action").asText().startsWith("browser.");
   }
 
   /**
@@ -752,7 +782,41 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
     cancelDeviceCommands(run.getId(), "The run stopped");
+    cleanupBrowser(run, graphFor(workflows.findById(run.getWorkflowId())
+        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
+        run.getVersion()), context);
+    save(run, context);
     wakeParent(context);
+  }
+
+  private void cleanupBrowser(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
+    java.util.List<RunContext.Browser> browsers = context.ownedBrowsers();
+    if (browsers.isEmpty() || context.browserCleanupDone()
+        || graph.trigger().config() != null
+            && graph.trigger().config().path("keepBrowserOpen").asBoolean(false)) {
+      return;
+    }
+    com.jizza.engine.api.device.DeviceCommands commands =
+        deviceCommands == null ? null : deviceCommands.getIfAvailable();
+    if (commands == null) return;
+    context.recordBrowserCleanup();
+    for (RunContext.Browser browser : browsers) {
+      try {
+        String cleanupId = java.util.UUID.nameUUIDFromBytes(
+            (browser.deviceId() + ":" + browser.sessionId())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        commands.submitSafetyCleanup(new com.jizza.engine.api.device.DeviceCommandRequest(
+            run.getUserId(), browser.workspaceId(),
+            com.jizza.engine.api.device.DeviceTarget.device(browser.deviceId()),
+            "browser.close", 1,
+            Json.obj().put("session", browser.sessionId()).put("what", "session"),
+            java.time.Duration.ofSeconds(10), null,
+            com.jizza.engine.api.device.DeviceCommands.SAFETY_CLEANUP_NODE,
+            "workflow-browser-cleanup:" + run.getId() + ":" + cleanupId, false));
+      } catch (RuntimeException e) {
+        log.warn("Could not close a browser session of run {}", run.getId(), e);
+      }
+    }
   }
 
   /** Stops what this run still has waiting or running on paired devices. */
@@ -780,7 +844,14 @@ public class SagaWorkflowEngine implements WorkflowEngine {
         runs.save(child);
         audit.record(child.getUserId(), ActorType.SYSTEM, null, "run.cancelled",
             child.getId().toString(), Json.obj().put("reason", "its parent run stopped"));
-        cancelChildren(RunContext.of(child.getContext()));
+        RunContext childContext = RunContext.of(child.getContext());
+        cancelChildren(childContext);
+        cancelDeviceCommands(child.getId(), "The parent run stopped");
+        WorkflowEntity childWorkflow = workflows.findById(child.getWorkflowId()).orElse(null);
+        if (childWorkflow != null) {
+          cleanupBrowser(child, graphFor(childWorkflow, child.getVersion()), childContext);
+          save(child, childContext);
+        }
       });
     }
   }

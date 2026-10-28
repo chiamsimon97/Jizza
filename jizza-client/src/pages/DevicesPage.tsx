@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import QRCode from 'qrcode'
 import {
-  Apple, KeyRound, Laptop, Monitor, MonitorSmartphone, Plus, Smartphone, Terminal, Trash2, Zap,
+  Apple, Globe2, KeyRound, Laptop, Monitor, MonitorSmartphone, Plus, Smartphone, Terminal, Trash2, Zap,
 } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
 import { ACTION_LABELS, ACTION_TYPES } from '@/components/guardrails/labels'
@@ -23,15 +23,17 @@ function errorText(err: unknown) {
 }
 
 const PLATFORM_LABEL: Record<DevicePlatform, string> = {
-  WINDOWS: 'Windows', MACOS: 'macOS', LINUX: 'Linux', ANDROID: 'Android', IOS: 'iPhone', OTHER: 'Other',
+  WINDOWS: 'Windows', MACOS: 'macOS', LINUX: 'Linux', ANDROID: 'Android', IOS: 'iPhone',
+  BROWSER: 'Browser', OTHER: 'Other',
 }
 
 const PLATFORM_ICON: Record<DevicePlatform, typeof Laptop> = {
-  WINDOWS: Monitor, MACOS: Apple, LINUX: Terminal, ANDROID: Smartphone, IOS: Smartphone, OTHER: Laptop,
+  WINDOWS: Monitor, MACOS: Apple, LINUX: Terminal, ANDROID: Smartphone, IOS: Smartphone,
+  BROWSER: Globe2, OTHER: Laptop,
 }
 
 /** Keys kept outside secure hardware are easier to copy off the machine. */
-const WEAK_KEY_STORAGE = new Set(['file'])
+const WEAK_KEY_STORAGE = new Set(['file', 'browser'])
 
 export function ago(iso: string | null, now = Date.now()): string {
   if (!iso) return 'never'
@@ -77,9 +79,10 @@ function PairDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [qr, setQr] = useState('')
   const [error, setError] = useState('')
   const [now, setNow] = useState(Date.now())
+  const [kind, setKind] = useState<'device' | 'browser'>('device')
 
   useEffect(() => {
-    if (!open) { setCode(null); setQr(''); setError(''); return }
+    if (!open) { setCode(null); setQr(''); setError(''); setKind('device'); return }
     let cancelled = false
     devicesApi.pair()
       .then(c => { if (!cancelled) setCode(c) })
@@ -98,13 +101,35 @@ function PairDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const left = code ? Math.max(0, Math.round((new Date(code.expiresAt).getTime() - now) / 1000)) : 0
   return (
     <Dialog open={open} title="Pair a device" onClose={onClose}
-      description="Open the Jizza Agent app and scan this code, or type the six digits.">
+      description={kind === 'browser'
+        ? 'Load the browser agent, then use this installation key.'
+        : 'Open the Jizza Agent app and scan this code, or type the six digits.'}>
+      <div className="mb-4 flex gap-2" role="tablist" aria-label="Device type">
+        <Button size="sm" variant={kind === 'device' ? 'primary' : 'secondary'}
+          onClick={() => setKind('device')} role="tab" aria-selected={kind === 'device'}>
+          Computer or phone
+        </Button>
+        <Button size="sm" variant={kind === 'browser' ? 'primary' : 'secondary'}
+          onClick={() => setKind('browser')} role="tab" aria-selected={kind === 'browser'}>
+          <Globe2 className="h-4 w-4" />Browser
+        </Button>
+      </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!code && !error && <Spinner />}
       {code && (
         <div className="flex flex-col items-center gap-3">
-          {qr && <img src={qr} alt="Pairing QR code" className="h-48 w-48 rounded-lg bg-white p-1" />}
+          {kind === 'device' && qr && <img src={qr} alt="Pairing QR code" className="h-48 w-48 rounded-lg bg-white p-1" />}
+          {kind === 'browser' && (
+            <div className="w-full rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-700">
+              <p className="font-medium text-gray-900 dark:text-gray-100">Browser extension · Coming soon</p>
+              <p className="mt-1 text-gray-500">
+                Load unpacked for testing in Chrome, open the extension, and enter the installation key below.
+              </p>
+            </div>
+          )}
           <p className="font-mono text-3xl tracking-[0.3em] text-gray-900 dark:text-gray-100" aria-label="Pairing code">{code.code}</p>
+          <Button variant="secondary" size="sm"
+            onClick={() => navigator.clipboard.writeText(code.qrPayload)}>Copy installation key</Button>
           <p className="text-xs text-gray-500">{left > 0 ? `Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more.` : 'This code has expired. Close and pair again.'}</p>
           <Button variant="secondary" size="sm" onClick={onClose}>Done</Button>
         </div>
@@ -166,7 +191,7 @@ function DeviceCard({ device }: { device: Device }) {
           )}
           {WEAK_KEY_STORAGE.has(device.keyStorage) && (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              Its key is kept in a file rather than secure hardware, so it is easier to copy off the machine.
+              Its key is kept outside secure hardware, so it is easier to copy off the machine.
             </p>
           )}
         </div>

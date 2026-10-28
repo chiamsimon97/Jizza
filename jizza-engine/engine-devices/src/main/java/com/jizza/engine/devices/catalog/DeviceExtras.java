@@ -17,13 +17,14 @@ import java.util.regex.Pattern;
 
 /**
  * What a device offers beyond the catalog, from its manifest: its own <b>tools</b> ({@code x-}
- * actions it describes with input and output schemas) and its <b>saved items</b> (browser
- * recordings, Shortcuts, apps) that catalog actions take by id.
+ * actions it describes with input and output schemas) and its <b>saved items</b> (Shortcuts,
+ * apps) that catalog actions take by id.
  *
  * <p>A device's own tool is judged by the guardrails as the most consequential kind until its owner
  * says what it does: the app describes it, but the server cannot check that, so a tool that says it
- * only reads still counts as moving money until a person agrees. A catalog input names the kind of saved item it takes with
- * {@code "x-items": "recordings"}, so the builder can offer that device's list.
+ * only reads still counts as moving money until a person agrees. A catalog input names the kind
+ * of saved item it takes with {@code "x-items": "shortcuts"}, so the builder can offer that
+ * device's list.
  */
 public final class DeviceExtras {
 
@@ -69,7 +70,7 @@ public final class DeviceExtras {
     return out;
   }
 
-  /** Checks the manifest's {@code items} ({"recordings": [{"id","name","description"?}]}). */
+  /** Checks the manifest's {@code items} ({"shortcuts": [{"id","name","description"?}]}). */
   public static ObjectNode items(JsonNode declared) {
     ObjectNode out = Json.obj();
     if (declared == null || declared.isMissingNode() || declared.isNull()) return out;
@@ -79,7 +80,7 @@ public final class DeviceExtras {
     }
     for (var kind : declared.properties()) {
       if (!ITEM_KIND.matcher(kind.getKey()).matches()) {
-        throw new ValidationException("'" + kind.getKey() + "' is not an item kind such as recordings");
+        throw new ValidationException("'" + kind.getKey() + "' is not an item kind such as shortcuts");
       }
       if (!kind.getValue().isArray()) {
         throw new ValidationException("The " + kind.getKey() + " items must be a list");

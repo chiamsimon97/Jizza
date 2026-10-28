@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.devicesim.FakeBrowser;
 import com.jizza.devicesim.SimDevice;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.enums.WorkflowStatus;
@@ -84,6 +85,24 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void aBrowserPairsWithItsPlatformKeyStorageAndWebManifest() {
+    new FakeBrowser(device);
+    device.keyStorage("browser");
+    device.enrollWithCode(pairingCode(), "Chrome on MacBook", "browser");
+    device.signIn();
+    assertThat(device.hello().path("type").asText()).isEqualTo("welcome");
+    assertThat(device.sendManifest().path("type").asText()).isEqualTo("ack");
+
+    JsonNode browser = api.get("/api/devices").json().get(0);
+    assertThat(browser.path("platform").asText()).isEqualTo("BROWSER");
+    assertThat(browser.path("keyStorage").asText()).isEqualTo("browser");
+    assertThat(browser.path("actions").toString())
+        .contains("browser.open@2", "browser.click@2", "browser.record@1");
+    assertThat(browser.path("capabilities").path("browser").path("family").asText())
+        .isEqualTo("chrome");
+  }
+
+  @Test
   void aPhoneWithAP256HardwareKeyPairsAndChecksTheServerKeyFingerprint() {
     var pairing = api.post("/api/devices/pairings", Map.of());
     String qr = pairing.json().path("qrPayload").asText();
@@ -151,8 +170,8 @@ class DevicesE2eTest extends E2eSupport {
         Json.obj().set("rows", Json.obj().put("type", "integer"))));
     device.tool(tool, in -> device.json().createObjectNode()
         .put("rows", 42).put("ledger", in.path("ledger").asText()));
-    device.items("recordings", device.json().createArrayNode()
-        .add(device.json().createObjectNode().put("id", "rec-1").put("name", "Download invoices")));
+    device.items("shortcuts", device.json().createArrayNode()
+        .add(device.json().createObjectNode().put("id", "Log water").put("name", "Log water")));
     pairAndSignIn();
     device.connect();
 
@@ -163,10 +182,10 @@ class DevicesE2eTest extends E2eSupport {
     assertThat(described.path("title").asText()).isEqualTo("Export the ledger");
     assertThat(described.path("input").path("required").get(0).asText()).isEqualTo("ledger");
     assertThat(described.path("actionType").asText()).isEqualTo("MONEY");
-    assertThat(shown.json().path("items").path("recordings").get(0).path("name").asText())
-        .isEqualTo("Download invoices");
-    // The catalog says which input takes a saved recording.
-    assertThat(api.get("/api/devices/catalog").body()).contains("\"x-items\":\"recordings\"");
+    assertThat(shown.json().path("items").path("shortcuts").get(0).path("name").asText())
+        .isEqualTo("Log water");
+    // The catalog says which input takes a saved Shortcut.
+    assertThat(api.get("/api/devices/catalog").body()).contains("\"x-items\":\"shortcuts\"");
 
     UUID workflowId = approvedWorkflow(Json.obj().put("action", "x-acme.exportLedger")
         .put("target", device.deviceId().toString())

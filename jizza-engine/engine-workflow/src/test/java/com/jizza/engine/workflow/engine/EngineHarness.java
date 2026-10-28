@@ -39,6 +39,7 @@ import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.nodes.BranchNodeExecutor;
 import com.jizza.engine.workflow.nodes.ChildRuns;
 import com.jizza.engine.workflow.nodes.ConnectorToolNodeExecutor;
+import com.jizza.engine.workflow.nodes.DeviceActionNodeExecutor;
 import com.jizza.engine.workflow.nodes.EndNodeExecutor;
 import com.jizza.engine.workflow.nodes.ForEachNodeExecutor;
 import com.jizza.engine.workflow.nodes.InterventionNodeExecutor;
@@ -97,6 +98,17 @@ public final class EngineHarness {
   public ToolResult nextToolResult = ToolResult.ok(Json.obj().put("sent", true));
   public boolean paused;
   public AutonomyRule toolRule = AutonomyRule.ALLOW;
+  public final List<com.jizza.engine.api.device.DeviceCommandRequest> deviceRequests =
+      new ArrayList<>();
+  public com.jizza.engine.api.device.DeviceCommandStatus nextDeviceStatus =
+      com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED;
+  public JsonNode nextDeviceOutput = Json.obj();
+  public final java.util.Map<String, JsonNode> deviceOutputs = new java.util.HashMap<>();
+  /** Actions the fake device did not declare: sending one is refused, as the broker refuses it. */
+  public final java.util.Set<String> unsupportedDeviceActions = new java.util.HashSet<>();
+  public String nextDeviceErrorCode;
+  public String nextDeviceError;
+  public List<UUID> nextDeviceFiles = List.of();
 
   /** What the storage step keeps, by key, for this harness's user. */
   public final java.util.Map<String, WorkflowStorageEntity> stored = new java.util.LinkedHashMap<>();
@@ -118,6 +130,12 @@ public final class EngineHarness {
               Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, false, null, null, null),
           new com.jizza.engine.api.mcp.McpToolDto("place_order", "mcp_kite__place_order", null,
               null, Json.obj(), false, null, false, null, null, null)), null, null);
+
+  /** Failed web steps handed over for a suggested fix. */
+  public final List<com.jizza.engine.api.webauto.LocatorFixes.FailedStep> proposedFixes =
+      new ArrayList<>();
+  /** The device step, to switch fast replay on. */
+  public DeviceActionNodeExecutor deviceActions;
 
   public final SagaWorkflowEngine engine;
   public final WorkflowRunRepository runs;
@@ -253,6 +271,10 @@ public final class EngineHarness {
     ObjectProvider<SagaWorkflowEngine> engineProvider = mock(ObjectProvider.class);
     when(engineProvider.getIfAvailable()).thenAnswer(inv -> self[0]);
     ChildRuns childRuns = new ChildRuns(engineProvider, runs);
+    var deviceCommands = deviceCommands();
+    var deviceCatalog = deviceCatalog();
+    WorkflowValidator validator = new WorkflowValidator();
+    validator.setDeviceActions(deviceCatalog);
     List<NodeExecutor> executors = List.of(
         new TriggerNodeExecutor(),
         new EndNodeExecutor(sandbox),
@@ -272,6 +294,8 @@ public final class EngineHarness {
         new SetVariableNodeExecutor(sandbox),
         new StorageNodeExecutor(sandbox, storageRepository(), clock),
         new HttpRequestNodeExecutor(sandbox, httpClient()),
+        deviceActions = new DeviceActionNodeExecutor(deviceCommands, deviceCatalog, gate, sandbox,
+            mock(com.jizza.engine.persistence.repository.AgentRepository.class), locatorFixes()),
         new NotifyNodeExecutor(sandbox, busProvider, mailProvider(), userRepository()),
         new com.jizza.engine.workflow.nodes.McpToolNodeExecutor(mcpServers(), gate, sandbox,
             mock(com.jizza.engine.persistence.repository.AgentRepository.class),
@@ -279,9 +303,83 @@ public final class EngineHarness {
         new CountingAgentStep());
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
-        new WorkflowValidator(), killSwitch, mock(AuditLog.class), busProvider, executors, clock,
+        validator, killSwitch, mock(AuditLog.class), busProvider, executors, clock,
         sandbox);
+    engine.setDeviceCommands(deviceCommands);
     self[0] = engine;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<com.jizza.engine.api.webauto.LocatorFixes> locatorFixes() {
+    var fixes = mock(com.jizza.engine.api.webauto.LocatorFixes.class);
+    org.mockito.Mockito.doAnswer(inv -> {
+      proposedFixes.add(inv.getArgument(0));
+      return null;
+    }).when(fixes).propose(any());
+    ObjectProvider<com.jizza.engine.api.webauto.LocatorFixes> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(fixes);
+    return provider;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> deviceCatalog() {
+    var catalog = mock(com.jizza.engine.api.device.DeviceActionCatalog.class);
+    when(catalog.resolve(any(), org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
+      String action = inv.getArgument(0);
+      if (!action.startsWith("browser.")) return Optional.empty();
+      int version = inv.<Integer>getArgument(1);
+      com.fasterxml.jackson.databind.node.ObjectNode input = Json.obj();
+      if ("browser.open".equals(action)) {
+        input.put("type", "object").putArray("required").add("url");
+      }
+      return Optional.of(new com.jizza.engine.api.device.DeviceActionSpec(action,
+          version == 0 ? 1 : version, "browser", com.jizza.engine.api.enums.ActionType.READ,
+          action, action, input, Json.obj(), List.of(), List.of(), 30));
+    });
+    ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> provider =
+        mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(catalog);
+    return provider;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<com.jizza.engine.api.device.DeviceCommands> deviceCommands() {
+    var broker = mock(com.jizza.engine.api.device.DeviceCommands.class);
+    java.util.Map<UUID, com.jizza.engine.api.device.DeviceCommandDto> commands =
+        new java.util.HashMap<>();
+    java.util.Map<String, com.jizza.engine.api.device.DeviceCommandDto> idempotent =
+        new java.util.HashMap<>();
+    org.mockito.stubbing.Answer<com.jizza.engine.api.device.DeviceCommandDto> submit = inv -> {
+      var request = inv.<com.jizza.engine.api.device.DeviceCommandRequest>getArgument(0);
+      deviceRequests.add(request);
+      if (unsupportedDeviceActions.contains(request.action())) {
+        throw new com.jizza.engine.api.error.ValidationException("Browser cannot " + request.action());
+      }
+      if (idempotent.containsKey(request.idempotencyKey())) {
+        return idempotent.get(request.idempotencyKey());
+      }
+      UUID id = UUID.randomUUID();
+      UUID deviceId = request.target().deviceId() == null
+          ? UUID.nameUUIDFromBytes("browser-device".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+          : request.target().deviceId();
+      JsonNode output = deviceOutputs.getOrDefault(request.action(), nextDeviceOutput).deepCopy();
+      var command = new com.jizza.engine.api.device.DeviceCommandDto(id, deviceId, "Browser",
+          request.userId(), request.runId(), request.nodeId(), request.action(), request.version(),
+          request.input(), nextDeviceStatus, output, nextDeviceErrorCode, nextDeviceError, null,
+          nextDeviceFiles, Instant.now().plusSeconds(30), Instant.now(), Instant.now(),
+          Instant.now(), Instant.now());
+      commands.put(id, command);
+      idempotent.put(request.idempotencyKey(), command);
+      return command;
+    };
+    when(broker.submit(any())).thenAnswer(submit);
+    when(broker.submitSafetyCleanup(any())).thenAnswer(submit);
+    when(broker.find(any())).thenAnswer(inv ->
+        Optional.ofNullable(commands.get(inv.<UUID>getArgument(0))));
+    ObjectProvider<com.jizza.engine.api.device.DeviceCommands> provider =
+        mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(broker);
+    return provider;
   }
 
   @SuppressWarnings("unchecked")

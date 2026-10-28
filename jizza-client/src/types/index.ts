@@ -367,7 +367,7 @@ export interface AssistantReply {
 
 /** A step Jizza asks the app to take alongside its reply. */
 export type UiAction =
-  | { type: 'navigate'; payload: { page: string; reason?: string } }
+  | { type: 'navigate'; payload: { page: string; reason?: string; review?: string } }
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
   | { type: 'ask_user'; payload: { question: string; options?: string[]; multiple?: boolean } }
   | { type: 'set_theme'; payload: { theme: string } }
@@ -1114,6 +1114,8 @@ export interface TraceStep {
   startedAt?: string
   finishedAt?: string
   durationMs?: number
+  /** For a failed device step: what the device said went wrong. */
+  failure?: { kind: string; detail?: string; url?: string; files?: string[]; deviceId?: string; candidates: number } | null
 }
 
 export interface RunTrace {
@@ -1441,7 +1443,7 @@ export interface DirectoryProfile extends DirectoryEntry {
 
 // ── Devices (the Jizza Agent app on computers and phones) ─────────────────────
 
-export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'OTHER'
+export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'BROWSER' | 'OTHER'
 export type DeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
 export type DeviceCommandStatus = 'QUEUED' | 'DISPATCHED' | 'ACCEPTED' | 'RUNNING' | 'SUCCEEDED'
   | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
@@ -1458,7 +1460,7 @@ export interface Device {
   protocolVersion: number | null
   status: DeviceStatus
   tags: string[]
-  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, dpapi or file. */
+  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, browser or file. */
   keyStorage: string
   online: boolean
   /** idle, busy or locked, while online. */

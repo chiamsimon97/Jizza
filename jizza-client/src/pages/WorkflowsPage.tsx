@@ -26,20 +26,22 @@ export function WorkflowsPage() {
   })
 
   // A saved workflow opens in the same builder, with its graph read back into steps.
-  const openWorkflow = (wf: WorkflowDto) => {
+  const openWorkflow = (wf: WorkflowDto, focusNode?: string) => {
     const steps = stepsFromGraph(wf.graph)
-    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, ...(steps ? { steps } : {}) })
+    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, ...(steps ? { steps } : {}), ...(focusNode ? { focusNode } : {}) })
   }
 
-  // The run history links here with ?open=<id> to jump straight into that workflow's builder.
+  // The run history links here with ?open=<id> to jump straight into that workflow's builder, and
+  // &node=<step> to open on one step, such as one with a fix to review.
   const [params, setParams] = useSearchParams()
   const openId = params.get('open')
+  const nodeId = params.get('node')
   useEffect(() => {
     const wf = openId ? data?.find(w => w.id === openId) : undefined
     if (!wf) return
-    openWorkflow(wf)
-    setParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); return next }, { replace: true })
-  }, [openId, data])
+    openWorkflow(wf, nodeId ?? undefined)
+    setParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); next.delete('node'); return next }, { replace: true })
+  }, [openId, nodeId, data])
 
   return (
     <div className="page">

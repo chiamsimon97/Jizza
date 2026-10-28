@@ -69,4 +69,28 @@ class SchemaMigrationDbTest extends PostgresIntegrationTest {
             .setParameter("r", runId).executeUpdate())
         .hasMessageContaining("workflow_run_steps_run_node_uk");
   }
+
+  @Test
+  void webAutomationMigrationAddsBrowserAndRecordedVocabularies() {
+    Object userId = em.createNativeQuery(
+        "insert into users (email, password_hash) values ('web@jizza.local', 'x') returning id")
+        .getSingleResult();
+    Object workspaceId = em.createNativeQuery(
+        "insert into workspaces (name, type, created_by_user_id) values ('Web', 'personal', :u) returning id")
+        .setParameter("u", userId).getSingleResult();
+    em.createNativeQuery("""
+        insert into devices (workspace_id, owner_user_id, name, platform)
+        values (:w, :u, 'Chrome', 'browser')
+        """).setParameter("w", workspaceId).setParameter("u", userId).executeUpdate();
+    em.createNativeQuery("""
+        insert into workflows (user_id, name, graph, origin)
+        values (:u, 'Recorded task', '{}'::jsonb, 'recorded')
+        """).setParameter("u", userId).executeUpdate();
+
+    Object stepType = em.createNativeQuery("""
+        select data_type from information_schema.columns
+        where table_name = 'web_recording_steps' and column_name = 'step'
+        """).getSingleResult();
+    assertThat(stepType.toString()).isEqualTo("bytea");
+  }
 }

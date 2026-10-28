@@ -76,6 +76,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class CommandBroker implements DeviceCommands {
 
+  public static final String RUN_STEPS = "browser.runSteps";
+  private static final java.util.Set<String> NOT_BATCHED = java.util.Set.of(
+      RUN_STEPS, "browser.record", "browser.pickElement");
+
   private static final Logger log = LoggerFactory.getLogger(CommandBroker.class);
 
   static final Set<String> OPEN = Set.of("queued", "dispatched", "accepted", "running");
@@ -134,12 +138,32 @@ public class CommandBroker implements DeviceCommands {
   @Transactional(noRollbackFor = {com.jizza.engine.api.error.ValidationException.class,
       com.jizza.engine.api.error.NotFoundException.class})
   public DeviceCommandDto submit(DeviceCommandRequest req) {
+    return submit(req, false);
+  }
+
+  @Override
+  @Transactional(noRollbackFor = {com.jizza.engine.api.error.ValidationException.class,
+      com.jizza.engine.api.error.NotFoundException.class})
+  public DeviceCommandDto submitSafetyCleanup(DeviceCommandRequest req) {
+    if (!"browser.close".equals(req.action()) || req.interactive()) {
+      throw new ValidationException("Safety cleanup may only close a browser in the background");
+    }
+    if (!DeviceCommands.SAFETY_CLEANUP_NODE.equals(req.nodeId())) {
+      throw new ValidationException("Safety cleanup needs its reserved command marker");
+    }
+    return submit(req, true);
+  }
+
+  private DeviceCommandDto submit(DeviceCommandRequest req, boolean safetyCleanup) {
+    if (!safetyCleanup && DeviceCommands.SAFETY_CLEANUP_NODE.equals(req.nodeId())) {
+      throw new ValidationException("The command uses a reserved node id");
+    }
     if (req.idempotencyKey() != null) {
       Optional<DeviceCommandEntity> existing = commands.findByIdempotencyKey(req.idempotencyKey());
       if (existing.isPresent()) return toDto(existing.get());
     }
     KillSwitch ks = killSwitch.getIfAvailable();
-    if (ks != null && ks.paused(req.userId())) {
+    if (!safetyCleanup && ks != null && ks.paused(req.userId())) {
       throw new AutonomyDeniedException("Autonomy is paused, so nothing is sent to your devices "
           + "until you release the kill switch.");
     }
@@ -184,6 +208,7 @@ public class CommandBroker implements DeviceCommands {
     if (limit.isPresent()) {
       throw new ValidationException(device.getName() + " would refuse this: " + limit.get());
     }
+    if (RUN_STEPS.equals(spec.action())) checkBatch(catalog, device, input);
     if (commands.countByDeviceIdAndStatusIn(device.getId(), OPEN) >= props.getMaxQueuedPerDevice()) {
       throw new RateLimitedException(device.getName() + " already has "
           + props.getMaxQueuedPerDevice() + " commands waiting");
@@ -228,6 +253,43 @@ public class CommandBroker implements DeviceCommands {
     UUID commandId = cmd.getId();
     afterCommit(() -> dispatch(deviceId, commandId, phone));
     return toDto(cmd);
+  }
+
+  /**
+   * A batch is held to the same checks as its steps sent one by one: each is a catalog browser
+   * action the device runs at that version, with valid inputs, not turned off, and within the
+   * device's own site limits. Batches never nest, and design-time actions are not replayed.
+   */
+  static void checkBatch(DeviceActionCatalog catalog, DeviceEntity device, JsonNode input) {
+    JsonNode capabilities = device.getManifest() == null ? null
+        : device.getManifest().path("capabilities");
+    for (JsonNode step : input.path("steps")) {
+      String action = step.path("action").asText();
+      int stepVersion = step.path("version").asInt();
+      DeviceActionSpec stepSpec = catalog.resolve(action, stepVersion)
+          .filter(found -> "browser".equals(found.capability()))
+          .filter(found -> !NOT_BATCHED.contains(found.action()))
+          .orElseThrow(() -> new ValidationException("'" + action + "@" + stepVersion
+              + "' cannot run as part of a batch"));
+      if (declaredVersion(device, action) < stepVersion) {
+        throw new ValidationException(device.getName() + " does not run " + stepSpec.ref());
+      }
+      if (stepSpec.input() != null) {
+        ToolSchemaValidator.Result valid = ToolSchemaValidator.validate(stepSpec.input(),
+            step.path("input"));
+        if (!valid.valid()) {
+          throw new ValidationException("The inputs for " + stepSpec.title() + " are not right: "
+              + valid.message());
+        }
+      }
+      if (blocked(device, action)) {
+        throw new ValidationException(stepSpec.title() + " is turned off for " + device.getName());
+      }
+      Optional<String> limit = LocalLimits.check(stepSpec, capabilities, step.path("input"));
+      if (limit.isPresent()) {
+        throw new ValidationException(device.getName() + " would refuse this: " + limit.get());
+      }
+    }
   }
 
   /** The devices this person may use that can run the action, best first. */
@@ -585,8 +647,10 @@ public class CommandBroker implements DeviceCommands {
   @Transactional
   public int cancelForUser(UUID userId, String reason) {
     List<DeviceCommandEntity> open = commands.findByUserIdAndStatusIn(userId, OPEN);
-    open.forEach(cmd -> cancel(cmd, reason));
-    return open.size();
+    List<DeviceCommandEntity> cancellable = open.stream()
+        .filter(cmd -> !DeviceCommands.SAFETY_CLEANUP_NODE.equals(cmd.getNodeId())).toList();
+    cancellable.forEach(cmd -> cancel(cmd, reason));
+    return cancellable.size();
   }
 
   private void cancel(DeviceCommandEntity cmd, String reason) {

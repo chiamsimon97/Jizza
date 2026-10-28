@@ -20,13 +20,20 @@ public interface NodeExecutor {
    * @param attempt  1 for the first try; retries increment it
    * @param workflowId      the workflow being run, so its own guardrails apply to its steps
    * @param workflowVersion the version of it being run
+   * @param graph    that version's graph, for steps that look past themselves; may be null
    */
   record Execution(UUID runId, UUID userId, UUID owningAgentId, WorkflowNode node,
-                   RunContext context, int attempt, UUID workflowId, int workflowVersion) {
+                   RunContext context, int attempt, UUID workflowId, int workflowVersion,
+                   com.jizza.engine.api.workflow.graph.WorkflowGraph graph) {
+
+    public Execution(UUID runId, UUID userId, UUID owningAgentId, WorkflowNode node,
+                     RunContext context, int attempt, UUID workflowId, int workflowVersion) {
+      this(runId, userId, owningAgentId, node, context, attempt, workflowId, workflowVersion, null);
+    }
 
     public Execution(UUID runId, UUID userId, UUID owningAgentId, WorkflowNode node,
                      RunContext context, int attempt) {
-      this(runId, userId, owningAgentId, node, context, attempt, null, 0);
+      this(runId, userId, owningAgentId, node, context, attempt, null, 0, null);
     }
   }
 

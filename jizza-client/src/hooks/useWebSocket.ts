@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Client, type IMessage } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import { useAuthStore } from '@/store/authStore'
+import type { RecordingEvent } from '@/api/web'
 import type { ChatSocketEvent, MemoryRealtimeEvent } from '@/types'
 
 interface UseWebSocketOptions {
@@ -10,6 +11,8 @@ interface UseWebSocketOptions {
   onNotification?: (payload: unknown) => void
   /** Something in the user's memory changed. Carries ids only; refetch to see what. */
   onMemoryEvent?: (event: MemoryRealtimeEvent) => void
+  /** A recording in Chrome gained a step or changed state. */
+  onWebRecording?: (event: RecordingEvent) => void
 }
 
 /**
@@ -44,6 +47,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         client.subscribe('/user/queue/memory', msg => {
           const data = parse(msg) as MemoryRealtimeEvent | null
           if (data) handlers.current.onMemoryEvent?.(data)
+        })
+        client.subscribe('/user/queue/web-recordings', msg => {
+          const data = parse(msg) as RecordingEvent | null
+          if (data?.recordingId) handlers.current.onWebRecording?.(data)
         })
       },
     })

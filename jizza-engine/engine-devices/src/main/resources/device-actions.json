@@ -1,5 +1,131 @@
 {
   "version": 1,
+  "schemas": {
+    "locatorStrategy": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "enum": [
+            "testid",
+            "role",
+            "label",
+            "placeholder",
+            "name",
+            "css",
+            "text",
+            "xpath"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "exact": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "by"
+      ]
+    },
+    "locatorBundle": {
+      "type": "object",
+      "properties": {
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "strategies": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "device-actions.json#/schemas/locatorStrategy"
+                }
+              }
+            },
+            "required": [
+              "strategies"
+            ]
+          }
+        },
+        "shadow": {
+          "type": "array",
+          "items": {
+            "$ref": "device-actions.json#/schemas/locatorStrategy"
+          }
+        },
+        "strategies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "device-actions.json#/schemas/locatorStrategy"
+          }
+        },
+        "fingerprint": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "attrs": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "rect": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number"
+              }
+            },
+            "nearText": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategies"
+      ]
+    },
+    "secretRef": {
+      "type": "object",
+      "properties": {
+        "login": {
+          "type": "string"
+        },
+        "field": {
+          "enum": [
+            "username",
+            "password"
+          ]
+        }
+      },
+      "required": [
+        "login",
+        "field"
+      ]
+    }
+  },
   "actions": [
     {
       "action": "system.ping",
@@ -582,11 +708,32 @@
       "input": {
         "type": "object",
         "properties": {
-          "url": {
+          "session": {
             "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "default": 15000,
+            "maximum": 120000
+          },
+          "trusted": {
+            "type": "boolean",
+            "default": false
+          },
+          "screenshotOnError": {
+            "type": "boolean",
+            "default": true
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://"
           },
           "selector": {
             "type": "string"
+          },
+          "element": {
+            "$ref": "device-actions.json#/schemas/locatorBundle"
           }
         }
       },
@@ -603,12 +750,18 @@
           "size": {
             "type": "integer"
           }
-        }
+        },
+        "required": [
+          "file",
+          "name",
+          "size"
+        ]
       },
       "conditions": [
         "site"
       ],
       "platforms": [
+        "browser",
         "windows",
         "macos",
         "linux"
@@ -616,18 +769,154 @@
       "defaultTimeoutSec": 300
     },
     {
+      "action":"browser.open","version":2,"capability":"browser","actionType":"READ","title":"Open URL","description":"Opens an HTTP or HTTPS URL in a browser session.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"url":{"type":"string","format":"uri","pattern":"^https?://"},"in":{"enum":["newSession","newTab","currentTab"]},"waitUntil":{"enum":["load","domcontentloaded","networkidle"],"default":"load"},"label":{"type":"string"}},"required":["url"]},
+      "output":{"type":"object","properties":{"sessionId":{"type":"string"},"tabId":{"type":"string"},"url":{"type":"string"},"title":{"type":"string"}},"required":["sessionId","tabId","url","title"]},
+      "conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":120
+    },
+    {
+      "action":"browser.click","version":2,"capability":"browser","actionType":"UPDATE","title":"Click element","description":"Clicks a located page element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"button":{"enum":["left","right","middle"],"default":"left"},"clickCount":{"type":"integer","enum":[1,2],"default":1},"modifiers":{"type":"array","items":{"enum":["Alt","Control","Meta","Shift"]},"uniqueItems":true},"offset":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}},"required":["x","y"]},"waitAfter":{"enum":["none","navigation","element"],"default":"none"},"waitElement":{"$ref":"device-actions.json#/schemas/locatorBundle"}},"required":["element"]},
+      "output":{"type":"object","properties":{"clicked":{"type":"boolean"},"navigated":{"type":"boolean"},"url":{"type":"string"}},"required":["clicked","navigated","url"]},
+      "conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.hover","version":1,"capability":"browser","actionType":"READ","title":"Hover over element","description":"Moves the pointer over a located page element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"holdMs":{"type":"integer","minimum":0,"maximum":120000,"default":300}},"required":["element"]},
+      "output":{"type":"object","properties":{"hovered":{"type":"boolean"}},"required":["hovered"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.setText","version":1,"capability":"browser","actionType":"UPDATE","title":"Set text","description":"Sets the value of a text field, optionally from a saved login.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"text":{"type":"string"},"secretRef":{"$ref":"device-actions.json#/schemas/secretRef"},"clearFirst":{"type":"boolean","default":true},"pressEnter":{"type":"boolean","default":false}},"required":["element"],"oneOf":[{"required":["text"]},{"required":["secretRef"]}]},
+      "output":{"type":"object","properties":{"set":{"type":"boolean"},"value":{"type":"string"}},"required":["set"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.getText","version":1,"capability":"browser","actionType":"READ","title":"Get text","description":"Reads text, value, or an attribute from an element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"what":{"enum":["text","value","attribute","html"],"default":"text"},"attribute":{"type":"string"}},"required":["element"]},
+      "output":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.setCheckbox","version":1,"capability":"browser","actionType":"UPDATE","title":"Set checkbox","description":"Checks, unchecks, or toggles a checkbox.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"state":{"enum":["checked","unchecked","toggle"]}},"required":["element","state"]},
+      "output":{"type":"object","properties":{"checked":{"type":"boolean"},"changed":{"type":"boolean"}},"required":["checked","changed"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.getCheckbox","version":1,"capability":"browser","actionType":"READ","title":"Get checkbox state","description":"Reads whether a checkbox is checked.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true}},"required":["element"]},
+      "output":{"type":"object","properties":{"checked":{"type":"boolean"}},"required":["checked"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.selectItem","version":1,"capability":"browser","actionType":"UPDATE","title":"Select item","description":"Selects one or more items in a list or select control.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"by":{"enum":["value","label","index"]},"items":{"type":"array","minItems":1,"items":{"oneOf":[{"type":"string"},{"type":"integer"}]}},"multiple":{"type":"boolean","default":false}},"required":["element","by","items"]},
+      "output":{"type":"object","properties":{"selected":{"type":"array","items":{"type":"object","properties":{"value":{"type":"string"},"label":{"type":"string"}},"required":["value","label"]}}},"required":["selected"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.extractTable","version":1,"capability":"browser","actionType":"READ","title":"Extract table data","description":"Reads rows and columns from a table, including paginated tables.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"headerRow":{"enum":["auto","first","none"],"default":"auto"},"columns":{"type":"array","items":{"type":"string"}},"maxRows":{"type":"integer","minimum":1,"maximum":10000,"default":1000},"nextPage":{"$ref":"device-actions.json#/schemas/locatorBundle"},"maxPages":{"type":"integer","minimum":1,"maximum":50,"default":1},"as":{"enum":["rows","csvFile"],"default":"rows"}},"required":["element"]},
+      "output":{"type":"object","properties":{"columns":{"type":"array","items":{"type":"string"}},"rows":{"type":"array","items":{"type":"object"}},"rowCount":{"type":"integer"},"pages":{"type":"integer"},"file":{"type":"string"}},"required":["columns","rows","rowCount","pages"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":300
+    },
+    {
+      "action":"browser.selectRadio","version":1,"capability":"browser","actionType":"UPDATE","title":"Select radio button","description":"Selects a radio button directly or within a group.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"group":{"type":"string"},"by":{"enum":["label","value"]},"item":{"type":"string"}},"oneOf":[{"required":["element"]},{"required":["group","by","item"]}]},
+      "output":{"type":"object","properties":{"selected":{"type":"object","properties":{"value":{"type":"string"},"label":{"type":"string"}},"required":["value","label"]}},"required":["selected"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.getRadio","version":1,"capability":"browser","actionType":"READ","title":"Get radio state","description":"Reads a radio button or radio group's current state.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"group":{"type":"string"}},"oneOf":[{"required":["element"]},{"required":["group"]}]},
+      "output":{"type":"object","properties":{"checked":{"type":"boolean"},"selected":{"oneOf":[{"type":"object","properties":{"value":{"type":"string"},"label":{"type":"string"}},"required":["value","label"]},{"type":"null"}]}}},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.scroll","version":1,"capability":"browser","actionType":"READ","title":"Scroll page","description":"Scrolls the page, an element, or until another element appears.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"to":{"enum":["top","bottom","element","by"]},"dx":{"type":"number","default":0},"dy":{"type":"number","default":0},"until":{"$ref":"device-actions.json#/schemas/locatorBundle"},"maxScrolls":{"type":"integer","minimum":1,"default":20}},"required":["to"]},
+      "output":{"type":"object","properties":{"scrollX":{"type":"number"},"scrollY":{"type":"number"},"atEnd":{"type":"boolean"}},"required":["scrollX","scrollY","atEnd"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.sendKeys","version":1,"capability":"browser","actionType":"UPDATE","title":"Send hotkeys","description":"Sends one or more keyboard keys, optionally to an element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"keys":{"oneOf":[{"type":"string"},{"type":"array","minItems":1,"items":{"type":"string"}}]}},"required":["keys"]},
+      "output":{"type":"object","properties":{"sent":{"type":"boolean"}},"required":["sent"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.typeInto","version":1,"capability":"browser","actionType":"UPDATE","title":"Type into element","description":"Types into a field with optional per-key delay.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"text":{"type":"string"},"secretRef":{"$ref":"device-actions.json#/schemas/secretRef"},"delayMs":{"type":"integer","minimum":0,"maximum":500,"default":30},"clearFirst":{"type":"boolean","default":false},"pressEnter":{"type":"boolean","default":false}},"required":["element"],"oneOf":[{"required":["text"]},{"required":["secretRef"]}]},
+      "output":{"type":"object","properties":{"typed":{"type":"boolean"}},"required":["typed"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.exists","version":1,"capability":"browser","actionType":"READ","title":"Check element exists","description":"Checks whether a located element exists and is visible.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":3000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"visibleOnly":{"type":"boolean","default":true}},"required":["element"]},
+      "output":{"type":"object","properties":{"exists":{"type":"boolean"},"count":{"type":"integer"},"visible":{"type":"boolean"}},"required":["exists","count","visible"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.switchTo","version":1,"capability":"browser","actionType":"READ","title":"Switch browser context","description":"Switches to a tab, window, or frame.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"to":{"enum":["tab","frame","mainFrame","popup"]},"match":{"oneOf":[{"type":"object","properties":{"titleContains":{"type":"string"},"urlContains":{"type":"string"},"index":{"type":"integer","minimum":0}}},{"enum":["newest"]}]}},"required":["to"]},
+      "output":{"type":"object","properties":{"tabId":{"type":"string"},"url":{"type":"string"},"title":{"type":"string"},"frame":{"type":"string"}},"required":["tabId","url","title"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.refresh","version":1,"capability":"browser","actionType":"READ","title":"Refresh page","description":"Refreshes the current page.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"hard":{"type":"boolean","default":false},"waitUntil":{"enum":["load","domcontentloaded","networkidle"],"default":"load"}}},
+      "output":{"type":"object","properties":{"url":{"type":"string"},"title":{"type":"string"}},"required":["url","title"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.getSelectors","version":1,"capability":"browser","actionType":"READ","title":"Get element selectors","description":"Builds robust selectors for an element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true}}},
+      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"css":{"type":"string"},"xpath":{"type":"string"},"preview":{"type":"string"}},"required":["element","css","xpath"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.pageInfo","version":1,"capability":"browser","actionType":"READ","title":"Get web page details","description":"Returns requested details and files for the current page.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"include":{"type":"array","items":{"enum":["tabs","html","screenshot","meta"]},"uniqueItems":true}}},
+      "output":{"type":"object","properties":{"url":{"type":"string"},"title":{"type":"string"},"readyState":{"type":"string"},"lang":{"type":"string"},"scrollY":{"type":"number"},"tabs":{"type":"array","items":{"type":"object","properties":{"tabId":{"type":"string"},"title":{"type":"string"},"url":{"type":"string"},"active":{"type":"boolean"}},"required":["tabId","title","url","active"]}},"meta":{"type":"object","properties":{"description":{"type":"string"},"canonical":{"type":"string"}}},"html":{"type":"string","description":"Uploaded HTML file id"},"screenshot":{"type":"string","description":"Uploaded screenshot file id"}},"required":["url","title","readyState","lang","scrollY"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.forward","version":1,"capability":"browser","actionType":"READ","title":"Go forward","description":"Moves forward in browser history.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"waitUntil":{"enum":["load","domcontentloaded","networkidle"],"default":"load"}}},
+      "output":{"type":"object","properties":{"url":{"type":"string"},"title":{"type":"string"},"moved":{"type":"boolean"}},"required":["url","title","moved"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.back","version":1,"capability":"browser","actionType":"READ","title":"Go back","description":"Moves back in browser history.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"waitUntil":{"enum":["load","domcontentloaded","networkidle"],"default":"load"}}},
+      "output":{"type":"object","properties":{"url":{"type":"string"},"title":{"type":"string"},"moved":{"type":"boolean"}},"required":["url","title","moved"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.close","version":1,"capability":"browser","actionType":"READ","title":"Close browser","description":"Closes the current tab, session, or browser.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"what":{"enum":["tab","session"],"default":"session"}}},
+      "output":{"type":"object","properties":{"closed":{"type":"boolean"}},"required":["closed"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.wait","version":1,"capability":"browser","actionType":"READ","title":"Wait","description":"Waits for time, page state, or an element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"for":{"enum":["element","elementGone","navigation","time"]},"ms":{"type":"integer","minimum":0,"maximum":120000}},"required":["for"]},
+      "output":{"type":"object","properties":{"waitedMs":{"type":"integer"}},"required":["waitedMs"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.screenshot","version":1,"capability":"browser","actionType":"READ","title":"Take browser screenshot","description":"Captures the page or a located element.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"fullPage":{"type":"boolean","default":false}}},
+      "output":{"type":"object","properties":{"file":{"type":"string"}},"required":["file"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"browser.pickElement","version":1,"capability":"browser","actionType":"READ","title":"Pick element","description":"Lets the person choose an element while designing a workflow.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"url":{"type":"string","format":"uri","pattern":"^https?://"},"prompt":{"type":"string"}}},
+      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"preview":{"type":"string"},"url":{"type":"string"}},"required":["element","preview","url"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":150
+    },
+    {
+      "action":"browser.record","version":1,"capability":"browser","actionType":"READ","title":"Record browser actions","description":"Records browser actions while designing a workflow.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"recordingId":{"type":"string"},"url":{"type":"string","format":"uri","pattern":"^https?://"},"maxMinutes":{"type":"integer","minimum":1,"maximum":30,"default":30}},"required":["recordingId"]},
+      "output":{"type":"object","properties":{"stepCount":{"type":"integer"},"stoppedBy":{"enum":["person","timeout","server"]}},"required":["stepCount","stoppedBy"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":1800
+    },
+    {
+      "action":"browser.runSteps","version":1,"capability":"browser","actionType":"UPDATE","title":"Run web steps together","description":"Runs several web steps in one command, in order, stopping at the first that fails. Used for fast replay; each step is judged by the guardrails on its own before it is sent.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"steps":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{"key":{"type":"string","minLength":1,"maxLength":64},"action":{"type":"string","pattern":"^browser\\."},"version":{"type":"integer","minimum":1},"input":{"type":"object"}},"required":["key","action","version","input"]}},"stopOnError":{"type":"boolean","default":true}},"required":["steps"]},
+      "output":{"type":"object","properties":{"steps":{"type":"object"},"failedAt":{"type":"string"}},"required":["steps"]},"conditions":["site"],"platforms":["browser"],"defaultTimeoutSec":600
+    },
+    {
       "action": "browser.runRecording",
       "version": 1,
       "capability": "browser",
       "actionType": "UPDATE",
       "title": "Run a recorded browser task",
-      "description": "Replays steps recorded once in the Jizza Agent app.",
+      "description": "Deprecated: Replays steps recorded once in the Jizza Agent app.",
       "input": {
         "type": "object",
         "properties": {
           "recordingId": {
-            "type": "string",
-            "x-items": "recordings"
+            "type": "string"
           },
           "inputs": {
             "type": "object"

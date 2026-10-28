@@ -76,10 +76,22 @@ public final class RunHistoryDto {
    *
    * @param input  what the step was handed: its settings with {@code {{ }}} filled in, and the
    *               data that reached it; null for runs recorded before inputs were kept
+   * @param failure  for a failed device step, what the device said went wrong: {@code kind},
+   *                 {@code detail}, {@code url}, screenshot {@code files} and how many
+   *                 {@code candidates} it suggested; null otherwise
    */
   public record TraceStep(UUID id, String nodeId, String label, NodeType type,
                           RunStepStatus status, JsonNode input, JsonNode output, String error,
-                          int attempts, Instant startedAt, Instant finishedAt, Long durationMs) {}
+                          int attempts, Instant startedAt, Instant finishedAt, Long durationMs,
+                          JsonNode failure) {
+
+    public TraceStep(UUID id, String nodeId, String label, NodeType type, RunStepStatus status,
+                     JsonNode input, JsonNode output, String error, int attempts,
+                     Instant startedAt, Instant finishedAt, Long durationMs) {
+      this(id, nodeId, label, type, status, input, output, error, attempts, startedAt, finishedAt,
+          durationMs, null);
+    }
+  }
 
   /**
    * One run, step by step.
