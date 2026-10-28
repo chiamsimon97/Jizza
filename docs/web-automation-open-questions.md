@@ -86,3 +86,7 @@ not line up, plus the narrow choices made so work can continue safely.
 - **Always ask.** `ActionTypeSource` gained a default `alwaysAsks` method. The gate turns an ALLOW or JIZZA answer into ASK for a tool whose source says so; a DENY stays a DENY. Only `DeviceToolProvider` uses it, for `browser.*` actions whose type is not READ, in chat. Workflow runs are unchanged: each step still meets its own rule.
 - **Saved recordings in chat.** `find_saved_workflows` and `run_saved_workflow` already include any described workflow, and a saved recording is described when it is saved, so no code change was needed. Its reuse profile asks before each run.
 - **Help text.** `app_propose_workflow` has no web step kind (its steps are tool, agent or ask), so its description only says to prefer a saved recording or `web_record` and never to invent selectors. The web step shape is in the `propose_workflow` graph help.
+
+## W5 — Reliability
+
+- **Table.** `web_locator_fixes` was already created by V34 in W0, so W5 adds no migration.
