@@ -3,8 +3,6 @@ package com.jizza.engine.webauto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.authz.Access;
 import com.jizza.engine.api.autonomy.AutonomyGate;
-import com.jizza.engine.api.autonomy.Decision;
-import com.jizza.engine.api.autonomy.GuardrailContext;
 import com.jizza.engine.api.device.DeviceActionCatalog;
 import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.device.DeviceCommandDto;
@@ -14,8 +12,6 @@ import com.jizza.engine.api.device.DeviceCommands;
 import com.jizza.engine.api.device.DeviceDto;
 import com.jizza.engine.api.device.DeviceTarget;
 import com.jizza.engine.api.device.Devices;
-import com.jizza.engine.api.error.AutonomyDeniedException;
-import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
@@ -127,16 +123,7 @@ public class DefaultDesignTimeService implements DesignTimeService {
   }
 
   private void judge(Access access, DeviceDto device, DeviceActionSpec spec, JsonNode inputs) {
-    UUID actor = agents.orchestrator(access.userId()).id();
-    String toolRef = "device_" + device.id().toString().substring(0, 8) + "__"
-        + spec.action().replaceAll("[^A-Za-z0-9]", "_");
-    Decision decision = autonomy.decide(new GuardrailContext(actor, toolRef, inputs,
-        null, null, null, false, spec.actionType()));
-    if (decision.denied()) throw new AutonomyDeniedException(decision.reason());
-    if (decision.needsPermission() || decision.needsJizza()) {
-      throw new ConflictException("This test needs approval under your guardrails: "
-          + decision.reason());
-    }
+    new WebGuardrails(agents, autonomy).judge(access, device, spec, inputs, "This test");
   }
 
   private Result result(DeviceCommandDto command) {

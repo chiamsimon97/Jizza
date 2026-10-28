@@ -10,6 +10,7 @@
   <description>Browser discovery and interactive step testing over the existing device gateway.</description>
   <dependencies>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
+    <dependency><groupId>com.jizza</groupId><artifactId>engine-persistence</artifactId></dependency>
     <dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency>
   </dependencies>
 </project>

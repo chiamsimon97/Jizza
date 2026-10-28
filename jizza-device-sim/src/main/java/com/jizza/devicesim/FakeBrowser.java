@@ -22,6 +22,7 @@ public final class FakeBrowser {
   private String url = "about:blank";
   private String session;
   private Element failedCandidate;
+  private final List<ObjectNode> scriptedSteps = new ArrayList<>();
 
   public FakeBrowser(SimDevice device) {
     this.device = device;
@@ -80,12 +81,13 @@ public final class FakeBrowser {
     handle("browser.download@1", in -> object().put("file", "fake-download")
         .put("name", "download.bin").put("size", 0));
     handle("browser.pickElement@1", this::pickElement);
-    handle("browser.record@1", in -> object().put("stepCount", 0).put("stoppedBy", "person"));
+    handle("browser.record@1", this::record);
   }
 
   private void handle(String action, java.util.function.Function<JsonNode, JsonNode> handler) {
     device.handle(action, input -> {
       boolean opensItself = "browser.open@2".equals(action)
+          || "browser.record@1".equals(action)
           || ("browser.pickElement@1".equals(action) && input.hasNonNull("url"));
       if (!opensItself) requireSession(input);
       return handler.apply(input);
@@ -179,6 +181,34 @@ public final class FakeBrowser {
     ObjectNode out = object();
     out.set("element", bundle);
     return out.put("css", "[aria-label=\"" + element.name + "\"]").put("xpath", "//*");
+  }
+
+  /**
+   * Scripts one step the person "does" while a recording runs. A sensitive step is sent without
+   * its value, as the real extension does.
+   */
+  public FakeBrowser recordedStep(String action, int version, String label, ObjectNode input,
+                                  boolean sensitive) {
+    ObjectNode step = object().put("seq", scriptedSteps.size()).put("action", action)
+        .put("version", version).put("label", label);
+    step.set("input", input);
+    ObjectNode meta = step.putObject("meta");
+    meta.put("url", url).put("sensitive", sensitive);
+    if (sensitive) step.putNull("secretRef");
+    scriptedSteps.add(step);
+    return this;
+  }
+
+  private JsonNode record(JsonNode in) {
+    String recordingId = in.path("recordingId").asText();
+    for (ObjectNode step : scriptedSteps) {
+      ObjectNode data = object().put("recordingId", recordingId);
+      data.set("step", step);
+      device.event("browser.recording.step", data);
+    }
+    device.event("browser.recording.stopped", object().put("recordingId", recordingId)
+        .put("stepCount", scriptedSteps.size()).put("stoppedBy", "person"));
+    return object().put("stepCount", scriptedSteps.size()).put("stoppedBy", "person");
   }
 
   private JsonNode pickElement(JsonNode in) {
