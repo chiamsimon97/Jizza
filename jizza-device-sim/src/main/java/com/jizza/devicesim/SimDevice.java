@@ -75,6 +75,7 @@ public final class SimDevice implements AutoCloseable {
   private final List<String> seenNonces = Collections.synchronizedList(new ArrayList<>());
 
   private UUID deviceId;
+  private String hostname;
   private PublicKey serverKey;
   private String serverKeyText;
   private String token;
@@ -135,6 +136,12 @@ public final class SimDevice implements AutoCloseable {
 
   // ── Enrolling and signing in ───────────────────────────────────────────────
 
+  /** The host name it reports when it enrolls; none by default, like an older app. */
+  public SimDevice hostname(String hostname) {
+    this.hostname = hostname;
+    return this;
+  }
+
   public JsonNode enrollWithCode(String code, String name, String platform) {
     return enroll("code", code, name, platform);
   }
@@ -154,6 +161,7 @@ public final class SimDevice implements AutoCloseable {
     body.put("osVersion", "sim-1");
     body.put("appVersion", "0.0.1-sim");
     body.putArray("protocol").add(1);
+    if (hostname != null) body.put("hostname", hostname);
     JsonNode enrolled = postOk("agent/v1/enroll", body, false);
     deviceId = UUID.fromString(enrolled.path("deviceId").asText());
     serverKeyText = enrolled.path("serverSigningKey").asText();

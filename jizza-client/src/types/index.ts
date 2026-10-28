@@ -1470,6 +1470,14 @@ export interface Device {
   blockedActions: string[]
   lastSeenAt: string | null
   createdAt: string
+  /** The machine's own host name; null when its app is too old to send one. */
+  hostname: string | null
+  /** Whether the owner wants the agent app to update itself. */
+  autoUpdate: boolean
+  /** Who paired it, or made the enrollment token it joined with. */
+  createdBy: string | null
+  createdByEmail: string | null
+  updatedAt: string
 }
 
 export interface DeviceActionSpec {
@@ -1509,7 +1517,17 @@ export interface DeviceCommand {
   finishedAt: string | null
 }
 
-export interface DevicePairingCode { code: string; expiresAt: string; qrPayload: string }
+/** qrPayload doubles as the installation key a person pastes into a desktop agent. */
+export interface DevicePairingCode { id: string; code: string; expiresAt: string; qrPayload: string }
+
+export interface DevicePairingStatus {
+  id: string
+  expiresAt: string
+  used: boolean
+  expired: boolean
+  /** The agent that used the key, once one has. */
+  device: Device | null
+}
 
 export interface DeviceEnrollmentToken {
   id: string

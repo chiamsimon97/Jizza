@@ -39,8 +39,10 @@ Browser sessions never work on these paths, and these paths need no CSRF token.
    A P-256 signature is ECDSA with SHA-256, as DER or as raw 64-byte r‖s. Stores:
    `tpm`, `secure_enclave`, `keystore` (Android), `keychain`, `dpapi`, or `file`. It reports which
    in `keyStorage`; Settings flags `file` as weaker.
-2. The person clicks **Pair a device** in Settings › Devices (step-up guarded) and gets a six-digit
-   code and a QR code for `jizza://pair?code=482913&server=https://jizza.example.com`. Codes work
+2. The person clicks **Create agent** in Settings › Devices (step-up guarded) and gets a six-digit
+   code and a QR code for `jizza://pair?code=482913&server=https://jizza.example.com`. The same
+   link is shown as the **installation key** to copy: a desktop app should accept it pasted into
+   its window, exactly as if its QR code had been scanned. Codes work
    once, for 10 minutes. The QR code also carries `&fp=`, the base64url SHA-256 (no padding) of
    the server signing key's X.509 bytes; the app refuses the enrollment if the key it gets back
    does not match. A machine nobody sits at uses an **enrollment token** (`jzt_…`) made by
@@ -50,10 +52,13 @@ Browser sessions never work on these paths, and these paths need no CSRF token.
    ```json
    {"code": "482913", "publicKey": "ed25519:<base64 X.509 SubjectPublicKeyInfo>",
     "keyStorage": "tpm", "name": "Work laptop", "platform": "windows",
-    "osVersion": "11 23H2", "appVersion": "0.1.0", "protocol": [1]}
+    "osVersion": "11 23H2", "appVersion": "0.1.0", "protocol": [1], "hostname": "chiam-9790"}
    ```
 
-   Exactly one of `code` or `enrollmentToken`. `platform` is one of `windows`, `macos`, `linux`,
+   Exactly one of `code` or `enrollmentToken`. `hostname` is optional: the machine's own host
+   name, shown as the agent's host in Settings (and used as its name when `name` is empty).
+   Settings watches the code with `GET /api/devices/pairings/{id}`, so its Create agent dialog
+   moves on as soon as the app has enrolled. `platform` is one of `windows`, `macos`, `linux`,
    `android`, `ios`. The answer is `{"deviceId", "serverSigningKey": "ed25519:…", "protocolVersion"}`.
    Keep `serverSigningKey`: it is how the app knows a command really came from this server.
 4. Sign in: `POST /auth/challenge {"deviceId"}` → `{"nonce", "expiresAt"}` (one minute, single

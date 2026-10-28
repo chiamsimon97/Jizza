@@ -12,6 +12,7 @@ import com.jizza.engine.security.session.CurrentWorkspace;
 import com.jizza.platform.api.rest.dto.Responses;
 import com.jizza.platform.usecase.device.DeviceUseCase;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
@@ -42,7 +43,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class DeviceController {
 
   public record Changes(String name, List<String> tags, Boolean shellEnabled,
-                        List<String> blockedActions) {}
+                        List<String> blockedActions, Boolean autoUpdate) {}
 
   public record TokenInput(String name, Integer uses, Integer validDays, List<String> tags) {}
 
@@ -82,6 +83,23 @@ public class DeviceController {
     return devices.startPairing(CurrentWorkspace.access(), serverUrl());
   }
 
+  /**
+   * Whether the agent has used a code from {@link #pair()}, so the Create agent dialog can move on
+   * once the app has taken its installation key.
+   */
+  @RequiresPermission(Permissions.DEVICE_PAIR)
+  @GetMapping("/pairings/{pairingId}")
+  public Devices.PairingStatus pairing(@PathVariable UUID pairingId) {
+    return devices.pairingStatus(CurrentWorkspace.access(), pairingId);
+  }
+
+  /** Download links for the agent app, by platform and architecture. */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @GetMapping("/installers")
+  public Map<String, String> installers() {
+    return devices.installers();
+  }
+
   @RequiresPermission(Permissions.DEVICE_VIEW)
   @PatchMapping("/{id}")
   public DeviceDto update(@PathVariable UUID id, @RequestBody Changes changes) {
@@ -91,7 +109,7 @@ public class DeviceController {
     }
     return devices.update(CurrentWorkspace.access(), id,
         new Devices.DeviceChanges(changes.name(), changes.tags(), changes.shellEnabled(),
-            changes.blockedActions()));
+            changes.blockedActions(), changes.autoUpdate()));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)
@@ -99,7 +117,7 @@ public class DeviceController {
   @StepUpRequired
   public DeviceDto enableShell(@PathVariable UUID id) {
     return devices.update(CurrentWorkspace.access(), id,
-        new Devices.DeviceChanges(null, null, true, null));
+        new Devices.DeviceChanges(null, null, true, null, null));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)

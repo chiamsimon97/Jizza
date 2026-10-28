@@ -3,6 +3,7 @@ package com.jizza.engine.api.device;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,9 +17,18 @@ public interface Devices {
   /**
    * A one-time pairing code for a person's own device.
    *
-   * @param qrPayload what the QR code encodes: the server address and the code
+   * @param qrPayload what the QR code encodes: the server address and the code. It is also the
+   *                  installation key a person copies into a desktop app
+   * @param id        for asking whether a device has used it yet
    */
-  record PairingCode(String code, Instant expiresAt, String qrPayload) {}
+  record PairingCode(String code, Instant expiresAt, String qrPayload, UUID id) {}
+
+  /**
+   * Whether a pairing code has been used.
+   *
+   * @param device the device that used it; null until one has (or when it was since revoked)
+   */
+  record PairingStatus(UUID id, Instant expiresAt, boolean used, boolean expired, DeviceDto device) {}
 
   /**
    * @param token shown once, when it is created; null when listing
@@ -28,7 +38,7 @@ public interface Devices {
 
   /** Null fields are left as they are. */
   record DeviceChanges(String name, List<String> tags, Boolean shellEnabled,
-                       List<String> blockedActions) {}
+                       List<String> blockedActions, Boolean autoUpdate) {}
 
   /** The person's own devices and the workspace's shared ones. */
   List<DeviceDto> list(UUID workspaceId, UUID userId);
@@ -39,6 +49,15 @@ public interface Devices {
   Optional<DeviceDto> find(UUID deviceId);
 
   PairingCode startPairing(UUID userId, UUID workspaceId, String serverUrl);
+
+  /**
+   * Download links for the agent app by platform and architecture, such as {@code macos-arm64};
+   * a platform with no link has no published installer yet.
+   */
+  Map<String, String> installers();
+
+  /** Whether a code this person started has been used; empty when it is not theirs. */
+  Optional<PairingStatus> pairingStatus(UUID userId, UUID pairingId);
 
   EnrollmentToken createEnrollmentToken(UUID userId, UUID workspaceId, String name, int uses,
                                         Duration validFor, List<String> tags);

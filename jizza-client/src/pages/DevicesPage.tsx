@@ -1,9 +1,6 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, type ReactNode, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import QRCode from 'qrcode'
-import {
-  Apple, KeyRound, Laptop, Monitor, MonitorSmartphone, Plus, Smartphone, Terminal, Trash2, Zap,
-} from 'lucide-react'
+import { KeyRound, MonitorSmartphone, Plus, Search, Terminal } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -15,18 +12,13 @@ import { Input } from '@/components/ui/Input'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState, LoadError } from '@/components/ui/EmptyState'
-import type { Device, DeviceCommand, DeviceEnrollmentToken, DevicePairingCode, DevicePlatform } from '@/types'
+import { Switch } from '@/components/ui/Switch'
+import { CreateAgentDialog } from '@/components/devices/CreateAgentDialog'
+import { PLATFORM_LABEL, PlatformIcon, agentKind, hostOf, stamp } from '@/components/devices/platform'
+import type { Device, DeviceCommand, DeviceEnrollmentToken } from '@/types'
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
-}
-
-const PLATFORM_LABEL: Record<DevicePlatform, string> = {
-  WINDOWS: 'Windows', MACOS: 'macOS', LINUX: 'Linux', ANDROID: 'Android', IOS: 'iPhone', OTHER: 'Other',
-}
-
-const PLATFORM_ICON: Record<DevicePlatform, typeof Laptop> = {
-  WINDOWS: Monitor, MACOS: Apple, LINUX: Terminal, ANDROID: Smartphone, IOS: Smartphone, OTHER: Laptop,
 }
 
 /** Keys kept outside secure hardware are easier to copy off the machine. */
@@ -41,81 +33,151 @@ export function ago(iso: string | null, now = Date.now()): string {
   return `${Math.floor(s / 86400)} d ago`
 }
 
-/** Settings › Devices: computers and phones running the Jizza Agent app. */
+/** Matches the search box against name, host, tags and platform. */
+export function matches(d: Device, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return [d.name, d.hostname ?? '', PLATFORM_LABEL[d.platform], agentKind(d), ...d.tags]
+    .some(v => v.toLowerCase().includes(q))
+}
+
+/** Settings › Devices: the Jizza Agent apps on computers and phones, listed like installed agents. */
 export function DevicesPage() {
   const canPair = usePermission(PERMISSIONS.DEVICE_PAIR)
   const canManage = usePermission(PERMISSIONS.DEVICE_MANAGE)
-  const [pairing, setPairing] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState('')
+  const [viewing, setViewing] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const { data: devices, isLoading, isError, refetch } = useQuery({
     queryKey: ['devices'], queryFn: devicesApi.list, refetchInterval: 15_000,
   })
+  const shown = (devices ?? []).filter(d => matches(d, query))
+  const open = devices?.find(d => d.id === viewing) ?? null
 
   return (
     <div className="page">
-      <PageHeader icon={MonitorSmartphone} title="Devices"
+      <PageHeader icon={MonitorSmartphone} title="Agents"
         description="Computers and phones running the Jizza Agent app. Workflows and Jizza can run steps on them, within your guardrails."
-        actions={canPair && <Button size="sm" onClick={() => setPairing(true)}><Plus className="h-4 w-4" />Pair a device</Button>} />
-      <div className="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">
+        actions={canPair && <Button size="sm" onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Create agent</Button>} />
+      <div className="grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-4">
         {isLoading && <Card padding="lg"><Spinner /></Card>}
-        {isError && <LoadError what="your devices" onRetry={() => refetch()} />}
+        {isError && <LoadError what="your agents" onRetry={() => refetch()} />}
         {devices && devices.length === 0 && (
-          <EmptyState icon={MonitorSmartphone} title="No devices yet"
-            description="Install the Jizza Agent app on a computer or phone, then pair it here with a code."
-            action={canPair ? { label: 'Pair a device', onClick: () => setPairing(true) } : undefined} />
+          <EmptyState icon={MonitorSmartphone} title="No agents yet"
+            description="Install the Jizza Agent app on a computer or phone, then connect it here with an installation key."
+            action={canPair ? { label: 'Create agent', onClick: () => setCreating(true) } : undefined} />
         )}
-        {devices?.map(d => <DeviceCard key={d.id} device={d} />)}
+        {devices && devices.length > 0 && (
+          <Card padding="none">
+            <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+              <div className="relative min-w-0 flex-1 sm:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+                <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search agents here"
+                  aria-label="Search agents"
+                  className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-9 pr-3 text-sm dark:border-gray-700 dark:bg-gray-900" />
+              </div>
+              {notice && (
+                <p role={notice.error ? 'alert' : 'status'} className={`text-sm ${notice.error ? 'text-red-600' : 'text-gray-600 dark:text-gray-300'}`}>{notice.text}</p>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="text-xs font-medium text-gray-500">
+                  <tr className="border-b border-gray-100 dark:border-gray-800">
+                    <th className="px-4 py-2.5 font-medium">Agent name</th>
+                    <th className="px-4 py-2.5 font-medium">Last updated on</th>
+                    <th className="px-4 py-2.5 font-medium">Enable / Disable</th>
+                    <th className="px-4 py-2.5 font-medium">Host</th>
+                    <th className="px-4 py-2.5 font-medium">Status</th>
+                    <th className="px-4 py-2.5 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {shown.map(d => <AgentRow key={d.id} device={d} onView={() => setViewing(d.id)} onNotice={setNotice} />)}
+                  {shown.length === 0 && (
+                    <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">No agents match "{query}".</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
         {canManage && <EnrollmentTokensCard />}
       </div>
-      <PairDialog open={pairing} onClose={() => { setPairing(false); refetch() }} />
+      <CreateAgentDialog open={creating} onClose={() => { setCreating(false); refetch() }} />
+      {open && <AgentDetailsDialog device={open} onClose={() => setViewing(null)} />}
     </div>
   )
 }
 
-function PairDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [code, setCode] = useState<DevicePairingCode | null>(null)
-  const [qr, setQr] = useState('')
-  const [error, setError] = useState('')
-  const [now, setNow] = useState(Date.now())
+function StatusText({ device }: { device: Device }) {
+  if (device.status === 'DISABLED') return <span className="text-amber-600 dark:text-amber-400">Disabled</span>
+  if (!device.online) return <span className="text-gray-500" title={`Last seen ${ago(device.lastSeenAt)}`}>Offline</span>
+  return <span className="text-green-600 dark:text-green-400">{device.state === 'busy' ? 'Busy' : 'Active'}</span>
+}
 
-  useEffect(() => {
-    if (!open) { setCode(null); setQr(''); setError(''); return }
-    let cancelled = false
-    devicesApi.pair()
-      .then(c => { if (!cancelled) setCode(c) })
-      .catch(e => { if (!cancelled) setError(errorText(e)) })
-    return () => { cancelled = true }
-  }, [open])
+function AgentRow({ device, onView, onNotice }: {
+  device: Device; onView: () => void; onNotice: (n: { text: string; error?: boolean } | null) => void
+}) {
+  const qc = useQueryClient()
+  const canUse = usePermission(PERMISSIONS.DEVICE_USE)
+  const disabled = device.status === 'DISABLED'
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => (on ? devicesApi.enable(device.id) : devicesApi.disable(device.id)),
+    onSuccess: d => {
+      onNotice({ text: d.status === 'DISABLED' ? `${d.name} is disabled. Its commands wait until it is enabled again.` : `${d.name} is enabled.` })
+      qc.invalidateQueries({ queryKey: ['devices'] })
+    },
+    onError: e => onNotice({ text: errorText(e), error: true }),
+  })
+  const ping = useMutation({
+    mutationFn: () => devicesApi.test(device.id),
+    onSuccess: c => onNotice(c.status === 'SUCCEEDED'
+      ? { text: `${device.name} answered in ${roundTrip(c)}.` }
+      : { text: `${device.name}: ${explain(c)}`, error: c.status !== 'QUEUED' }),
+    onError: e => onNotice({ text: errorText(e), error: true }),
+  })
 
-  useEffect(() => {
-    if (!code) return
-    QRCode.toDataURL(code.qrPayload, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
-      .then(setQr).catch(() => setQr(''))
-    const t = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [code])
-
-  const left = code ? Math.max(0, Math.round((new Date(code.expiresAt).getTime() - now) / 1000)) : 0
   return (
-    <Dialog open={open} title="Pair a device" onClose={onClose}
-      description="Open the Jizza Agent app and scan this code, or type the six digits.">
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {!code && !error && <Spinner />}
-      {code && (
-        <div className="flex flex-col items-center gap-3">
-          {qr && <img src={qr} alt="Pairing QR code" className="h-48 w-48 rounded-lg bg-white p-1" />}
-          <p className="font-mono text-3xl tracking-[0.3em] text-gray-900 dark:text-gray-100" aria-label="Pairing code">{code.code}</p>
-          <p className="text-xs text-gray-500">{left > 0 ? `Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more.` : 'This code has expired. Close and pair again.'}</p>
-          <Button variant="secondary" size="sm" onClick={onClose}>Done</Button>
+    <tr className="align-middle">
+      <td className="px-4 py-3">
+        <div className="font-medium text-gray-900 dark:text-gray-100">{device.name}</div>
+        <span className="mt-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">{agentKind(device)}</span>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-gray-700 dark:text-gray-300">{stamp(device.updatedAt ?? device.createdAt)}</td>
+      <td className="px-4 py-3">
+        <Switch checked={!disabled} label={`${disabled ? 'Enable' : 'Disable'} ${device.name}`}
+          disabled={toggle.isPending} onChange={on => toggle.mutate(on)} />
+      </td>
+      <td className="px-4 py-3">
+        <span className="flex items-center gap-2 text-gray-800 dark:text-gray-200" title={`${PLATFORM_LABEL[device.platform]}${device.osVersion ? ` ${device.osVersion}` : ''}`}>
+          <PlatformIcon platform={device.platform} />
+          <span className="truncate">{hostOf(device)}</span>
+        </span>
+      </td>
+      <td className="px-4 py-3"><StatusText device={device} /></td>
+      <td className="px-4 py-3">
+        <div className="flex gap-2">
+          {canUse && <Button size="sm" variant="secondary" loading={ping.isPending} disabled={disabled} onClick={() => ping.mutate()}>Ping</Button>}
+          <Button size="sm" variant="ghost" onClick={onView}>View details</Button>
         </div>
-      )}
-    </Dialog>
+      </td>
+    </tr>
   )
 }
 
-function DeviceCard({ device }: { device: Device }) {
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] items-start gap-3 py-1.5 text-sm">
+      <dt className="text-gray-500">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-gray-900 dark:text-gray-100">{children}</dd>
+    </div>
+  )
+}
+
+function AgentDetailsDialog({ device, onClose }: { device: Device; onClose: () => void }) {
   const qc = useQueryClient()
-  const canUse = usePermission(PERMISSIONS.DEVICE_USE)
-  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(device.name)
   const [tags, setTags] = useState(device.tags.join(', '))
@@ -126,13 +188,6 @@ function DeviceCard({ device }: { device: Device }) {
     setError(''); setMessage('')
     fn().then(() => { if (done) setMessage(done); refresh() }).catch(e => setError(errorText(e)))
   }
-  const test = useMutation({
-    mutationFn: () => devicesApi.test(device.id),
-    onSuccess: c => { setError(''); setMessage(c.status === 'SUCCEEDED' ? `It answered in ${roundTrip(c)}.` : explain(c)) },
-    onError: e => setError(errorText(e)),
-  })
-  const Icon = PLATFORM_ICON[device.platform] ?? Laptop
-  const disabled = device.status === 'DISABLED'
 
   function save(e: FormEvent) {
     e.preventDefault()
@@ -141,44 +196,50 @@ function DeviceCard({ device }: { device: Device }) {
     }).then(() => setEditing(false)))
   }
 
+  function unregister() {
+    if (!window.confirm(`Unregister ${device.name}? It is disconnected permanently and cannot sign in again.`)) return
+    setError('')
+    devicesApi.remove(device.id).then(() => { refresh(); onClose() }).catch(e => setError(errorText(e)))
+  }
+
   return (
-    <Card padding="lg">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold text-gray-900 dark:text-gray-100">{device.name}</h2>
-            {disabled ? <Badge variant="warning">Disabled</Badge>
-              : device.online ? <Badge variant="success">{device.state === 'busy' ? 'Busy' : 'Online'}</Badge>
-              : <Badge>Offline</Badge>}
-            {device.ownerUserId === null && <Badge variant="info">Shared</Badge>}
-            {device.shellEnabled && <Badge variant="danger">Shell on</Badge>}
-          </div>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {PLATFORM_LABEL[device.platform]}{device.osVersion ? ` ${device.osVersion}` : ''}
-            {device.appVersion ? ` · app ${device.appVersion}` : ''} · last seen {device.online ? 'now' : ago(device.lastSeenAt)}
-          </p>
-          {device.tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">{device.tags.map(t => <Badge key={t}>{t}</Badge>)}</div>
-          )}
-          {WEAK_KEY_STORAGE.has(device.keyStorage) && (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              Its key is kept in a file rather than secure hardware, so it is easier to copy off the machine.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canUse && <Button size="sm" variant="secondary" loading={test.isPending} disabled={disabled} onClick={() => test.mutate()}><Zap className="h-4 w-4" />Test</Button>}
-          <Button size="sm" variant="ghost" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</Button>
-        </div>
-      </div>
+    <Dialog open title="Agent details" onClose={onClose} size="lg">
+      <dl className="divide-y divide-gray-50 dark:divide-gray-800/60">
+        <DetailRow label="Agent name">{device.name}</DetailRow>
+        <DetailRow label="Host name">
+          <span className="flex items-center gap-2"><PlatformIcon platform={device.platform} className="h-4 w-4" />{hostOf(device)}</span>
+        </DetailRow>
+        <DetailRow label="Operating system">{PLATFORM_LABEL[device.platform]}{device.osVersion ? ` ${device.osVersion}` : ''}</DetailRow>
+        <DetailRow label="Created by">{device.createdByEmail ?? (device.ownerUserId === null ? 'Enrollment token' : '—')}</DetailRow>
+        <DetailRow label="Created at">{stamp(device.createdAt)}</DetailRow>
+        <DetailRow label="Last seen">{device.online ? 'Now' : ago(device.lastSeenAt)}</DetailRow>
+        <DetailRow label="Auto-update">
+          <Switch checked={device.autoUpdate} label="Auto-update"
+            onChange={on => run(() => devicesApi.update(device.id, { autoUpdate: on }),
+              on ? 'The agent app will update itself when a new version is out.' : 'The agent app will not update itself.')} />
+        </DetailRow>
+        <DetailRow label="Version">{device.appVersion ?? '—'}</DetailRow>
+        {device.tags.length > 0 && (
+          <DetailRow label="Tags"><span className="flex flex-wrap gap-1">{device.tags.map(t => <Badge key={t}>{t}</Badge>)}</span></DetailRow>
+        )}
+        <DetailRow label="Agent unregister">
+          <span className="font-normal text-gray-700 dark:text-gray-300">
+            Unregister will disconnect the agent permanently. To proceed,{' '}
+            <button type="button" className="text-brand-600 underline hover:text-brand-700 dark:text-brand-400" onClick={unregister}>click here</button>
+          </span>
+        </DetailRow>
+      </dl>
+      {WEAK_KEY_STORAGE.has(device.keyStorage) && (
+        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+          Its key is kept in a file rather than secure hardware, so it is easier to copy off the machine.
+        </p>
+      )}
       {message && <p className="mt-3 text-sm text-gray-600 dark:text-gray-300" role="status">{message}</p>}
       {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}
 
-      {open && (
-        <div className="mt-4 flex flex-col gap-4 border-t border-gray-100 pt-4 dark:border-gray-800">
+      <details className="mt-4 rounded-lg border border-gray-100 p-3 dark:border-gray-800">
+        <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200">More settings, commands and log</summary>
+        <div className="mt-3 flex flex-col gap-4">
           {editing ? (
             <form onSubmit={save} className="grid gap-2 sm:grid-cols-2">
               <Input id={`${device.id}-name`} label="Name" value={name} onChange={e => setName(e.target.value)} />
@@ -194,12 +255,6 @@ function DeviceCard({ device }: { device: Device }) {
               {device.shellEnabled
                 ? <Button size="sm" variant="secondary" onClick={() => run(() => devicesApi.update(device.id, { shellEnabled: false }), 'Shell actions are off.')}><Terminal className="h-4 w-4" />Turn shell off</Button>
                 : <Button size="sm" variant="secondary" onClick={() => run(() => devicesApi.enableShell(device.id), 'Shell actions are on for this device.')}><Terminal className="h-4 w-4" />Allow shell</Button>}
-              {disabled
-                ? <Button size="sm" variant="secondary" onClick={() => run(() => devicesApi.enable(device.id), 'Enabled.')}>Enable</Button>
-                : <Button size="sm" variant="secondary" onClick={() => run(() => devicesApi.disable(device.id), 'Disabled. Its commands wait until it is enabled again.')}>Disable</Button>}
-              <Button size="sm" variant="danger" onClick={() => {
-                if (window.confirm(`Remove ${device.name}? It will be signed out and cannot sign in again.`)) run(() => devicesApi.remove(device.id))
-              }}><Trash2 className="h-4 w-4" />Remove</Button>
             </div>
           )}
           <div>
@@ -211,8 +266,12 @@ function DeviceCard({ device }: { device: Device }) {
           <CommandsList deviceId={device.id} />
           <LogsList deviceId={device.id} />
         </div>
-      )}
-    </Card>
+      </details>
+
+      <div className="mt-5 flex justify-center border-t border-gray-100 pt-4 dark:border-gray-800">
+        <Button onClick={onClose}>Done</Button>
+      </div>
+    </Dialog>
   )
 }
 

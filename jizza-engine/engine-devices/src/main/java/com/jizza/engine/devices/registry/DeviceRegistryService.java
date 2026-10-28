@@ -43,6 +43,7 @@ import com.jizza.engine.persistence.repository.DeviceLogRepository;
 import com.jizza.engine.persistence.repository.DevicePairingRepository;
 import com.jizza.engine.persistence.repository.DevicePushTokenRepository;
 import com.jizza.engine.persistence.repository.DeviceRepository;
+import com.jizza.engine.persistence.repository.UserRepository;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
@@ -52,9 +53,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -92,6 +95,7 @@ public class DeviceRegistryService implements Devices {
   private final DevicePushTokenRepository pushTokens;
   private final DeviceLogRepository logs;
   private final DeviceFileRepository files;
+  private final UserRepository users;
   private final StorageProvider storage;
   private final EncryptionService encryption;
   private final ServerKeys serverKeys;
@@ -111,7 +115,8 @@ public class DeviceRegistryService implements Devices {
                                DeviceEnrollmentTokenRepository tokens,
                                DeviceChallengeRepository challenges,
                                DevicePushTokenRepository pushTokens, DeviceLogRepository logs,
-                               DeviceFileRepository files, StorageProvider storage,
+                               DeviceFileRepository files, UserRepository users,
+                               StorageProvider storage,
                                EncryptionService encryption, ServerKeys serverKeys, DeviceHub hub,
                                CommandBroker broker, AuditLog audit,
                                ObjectProvider<NotificationBus> notifications,
@@ -124,6 +129,7 @@ public class DeviceRegistryService implements Devices {
     this.pushTokens = pushTokens;
     this.logs = logs;
     this.files = files;
+    this.users = users;
     this.storage = storage;
     this.encryption = encryption;
     this.serverKeys = serverKeys;
@@ -182,7 +188,31 @@ public class DeviceRegistryService implements Devices {
     String qr = "jizza://pair?code=" + code + (serverUrl == null ? ""
         : "&server=" + URLEncoder.encode(serverUrl, StandardCharsets.UTF_8))
         + "&fp=" + serverKeys.fingerprint();
-    return new PairingCode(code, pairing.getExpiresAt(), qr);
+    return new PairingCode(code, pairing.getExpiresAt(), qr, pairing.getId());
+  }
+
+  @Override
+  public Map<String, String> installers() {
+    Map<String, String> out = new LinkedHashMap<>();
+    props.getInstallers().forEach((k, v) -> {
+      if (v != null && !v.isBlank()) out.put(k.trim().toLowerCase(Locale.ROOT), v.trim());
+    });
+    return out;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<PairingStatus> pairingStatus(UUID userId, UUID pairingId) {
+    return pairings.findById(pairingId)
+        .filter(p -> p.getUserId().equals(userId))
+        .map(p -> {
+          DeviceDto device = p.getUsedByDeviceId() == null ? null
+              : devices.findById(p.getUsedByDeviceId())
+                  .filter(d -> status(d) != DeviceStatus.REVOKED).map(this::toDto).orElse(null);
+          boolean used = p.getUsedAt() != null;
+          return new PairingStatus(p.getId(), p.getExpiresAt(), used,
+              !used && !p.getExpiresAt().isAfter(clock.instant()), device);
+        });
   }
 
   @Override
@@ -238,6 +268,7 @@ public class DeviceRegistryService implements Devices {
     if (changes.name() != null) device.setName(validName(changes.name()));
     if (changes.tags() != null) device.setTags(Json.toNode(normaliseTags(changes.tags())));
     if (changes.shellEnabled() != null) device.setShellEnabled(changes.shellEnabled());
+    if (changes.autoUpdate() != null) device.setAutoUpdate(changes.autoUpdate());
     if (changes.blockedActions() != null) {
       List<String> blocked = changes.blockedActions().stream().filter(Objects::nonNull)
           .map(String::trim).filter(s -> !s.isEmpty()).distinct().limit(MAX_ACTIONS).toList();
@@ -342,10 +373,13 @@ public class DeviceRegistryService implements Devices {
     if (!KEY_STORAGES.contains(storage)) storage = "file";
 
     DeviceEntity device = new DeviceEntity();
-    device.setName(validName(in.name() == null || in.name().isBlank() ? "New device" : in.name()));
+    String fallbackName = in.hostname() == null || in.hostname().isBlank() ? "New device"
+        : limit(in.hostname(), 80);
+    device.setName(validName(in.name() == null || in.name().isBlank() ? fallbackName : in.name()));
     device.setPlatform(DevicePlatform.from(in.platform()).wire());
     device.setOsVersion(limit(in.osVersion(), 64));
     device.setAppVersion(limit(in.appVersion(), 64));
+    device.setHostname(limit(in.hostname(), 255));
     device.setProtocolVersion(protocol);
     device.setStatus("active");
     device.setKeyStorage(storage);
@@ -590,7 +624,10 @@ public class DeviceRegistryService implements Devices {
         DevicePlatform.from(d.getPlatform()), d.getOsVersion(), d.getAppVersion(),
         d.getProtocolVersion(), status, tags, d.getKeyStorage(), online,
         online ? hub.state(d.getId()) : "offline", capabilities, actions, d.isShellEnabled(),
-        blocked, seen, d.getCreatedAt());
+        blocked, seen, d.getCreatedAt(), d.getHostname(), d.isAutoUpdate(), d.getEnrolledBy(),
+        d.getEnrolledBy() == null ? null
+            : users.findById(d.getEnrolledBy()).map(u -> u.getEmail()).orElse(null),
+        d.getUpdatedAt());
   }
 
   private EnrollmentToken toDto(DeviceEnrollmentTokenEntity t, String token) {

@@ -21,9 +21,10 @@ public interface DeviceAgentGateway {
    * @param enrollmentToken ... or an enrollment token (a workspace machine), exactly one of them
    * @param publicKey       {@code ed25519:<base64 of the X.509 key>}
    */
+  /** @param hostname the machine's own host name, optional; shown as the agent's host */
   record Enrollment(String code, String enrollmentToken, String publicKey, String keyStorage,
                     String name, String platform, String osVersion, String appVersion,
-                    List<Integer> protocol) {}
+                    List<Integer> protocol, String hostname) {}
 
   record Enrolled(UUID deviceId, String serverSigningKey, int protocolVersion) {}
 

@@ -1,6 +1,8 @@
 package com.jizza.engine.devices.config;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** {@code jizza.devices.*}: the agent gateway's timings and limits. */
@@ -29,6 +31,13 @@ public class DeviceProperties {
   private int authAttemptsPerMinute = 20;
   /** Protocol major versions this server speaks, newest last. */
   private int[] protocolVersions = {1};
+  /**
+   * Where Settings › Devices sends people to download the agent app, by platform and architecture:
+   * windows-x64, windows-x86, macos-arm64, macos-x64, linux-x64, android. A blank one shows as
+   * "not published yet". Android points at the agent repo's CI builds until there is a release.
+   */
+  private Map<String, String> installers = new LinkedHashMap<>(Map.of(
+      "android", "https://github.com/chiamsimon97/jizza-agent-android/actions"));
 
   public Duration getHeartbeat() { return heartbeat; }
   public void setHeartbeat(Duration heartbeat) { this.heartbeat = heartbeat; }
@@ -58,6 +67,9 @@ public class DeviceProperties {
   public void setAuthAttemptsPerMinute(int authAttemptsPerMinute) { this.authAttemptsPerMinute = authAttemptsPerMinute; }
   public int[] getProtocolVersions() { return protocolVersions; }
   public void setProtocolVersions(int[] protocolVersions) { this.protocolVersions = protocolVersions; }
+
+  public Map<String, String> getInstallers() { return installers; }
+  public void setInstallers(Map<String, String> installers) { this.installers = installers; }
 
   public int currentProtocol() {
     return protocolVersions[protocolVersions.length - 1];

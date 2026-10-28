@@ -16,6 +16,7 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -61,6 +62,20 @@ public class DeviceUseCase {
     return devices.startPairing(access.userId(), access.workspaceId(), serverUrl);
   }
 
+  public Devices.PairingStatus pairingStatus(Access access, UUID pairingId) {
+    Devices.PairingStatus status = devices.pairingStatus(access.userId(), pairingId)
+        .orElseThrow(() -> new NotFoundException("Pairing", pairingId));
+    DeviceDto device = status.device();
+    if (device != null && !device.workspaceId().equals(access.workspaceId())) {
+      throw new NotFoundException("Pairing", pairingId);
+    }
+    return status;
+  }
+
+  public Map<String, String> installers() {
+    return devices.installers();
+  }
+
   public DeviceDto update(Access access, UUID deviceId, Devices.DeviceChanges changes) {
     DeviceDto device = visible(access, deviceId);
     if (changes.name() != null && changes.name().isBlank()) {
@@ -69,7 +84,7 @@ public class DeviceUseCase {
     DeviceDto updated = devices.update(device.id(), changes);
     audit.record(access.userId(), ActorType.USER, null, "device.updated", updated.name(),
         Json.obj().put("deviceId", device.id().toString())
-            .put("shellEnabled", updated.shellEnabled()));
+            .put("shellEnabled", updated.shellEnabled()).put("autoUpdate", updated.autoUpdate()));
     return updated;
   }
 

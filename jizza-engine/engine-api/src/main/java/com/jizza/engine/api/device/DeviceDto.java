@@ -16,13 +16,20 @@ import java.util.UUID;
  * @param actions       the actions it declared, as {@code name@version}
  * @param shellEnabled  whether shell commands may be sent to it at all
  * @param blockedActions actions the owner turned off for this device
+ * @param hostname      the machine's own host name, as its app reported it; null for older apps
+ * @param autoUpdate    whether the owner wants the agent app to update itself
+ * @param createdBy     who paired it, or who made the enrollment token it joined with
+ * @param createdByEmail that person's email, for showing; null when they were deleted
+ * @param updatedAt     when its record last changed: a setting, a sign-in or a new manifest
  */
 public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name,
                         DevicePlatform platform, String osVersion, String appVersion,
                         Integer protocolVersion, DeviceStatus status, List<String> tags,
                         String keyStorage, boolean online, String state, JsonNode capabilities,
                         List<String> actions, boolean shellEnabled, List<String> blockedActions,
-                        Instant lastSeenAt, Instant createdAt) {
+                        Instant lastSeenAt, Instant createdAt, String hostname,
+                        boolean autoUpdate, UUID createdBy, String createdByEmail,
+                        Instant updatedAt) {
 
   /** Whether it declared {@code action} in any version. */
   public boolean declares(String action) {
