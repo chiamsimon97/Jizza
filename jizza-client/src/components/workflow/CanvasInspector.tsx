@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import { useQuery } from '@tanstack/react-query'
-import type { AgentDto, Device, DeviceActionSpec, McpServer, RunStepDto, TeamStep } from '@/types'
+import type { AgentDto, Device, DeviceActionSpec, DeviceItem, McpServer, RunStepDto, TeamStep } from '@/types'
 import { devicesApi } from '@/api/devices'
 import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
@@ -136,11 +136,14 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   const str = (k: string) => (typeof node.config[k] === 'string' ? (node.config[k] as string) : '')
   const outputs = useMemo(() => new Map([...(runSteps ?? new Map<string, RunStepDto>())].map(([id, s]) => [id, s.output])), [runSteps])
   // Connections can't change in here, so the earlier steps are those of the graph it opened with.
+  const { data: deviceList } = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list, enabled: hasDeviceStep }, queryClient)
+  // Later steps can map the outputs of a tool a device added itself, as of a catalog action.
+  const deviceSpecs = useMemo(() => [...(deviceCatalog ?? []), ...ownTools(Array.isArray(deviceList) ? deviceList : []).map(t => t.spec)], [deviceCatalog, deviceList])
   const mapping: MappingContext = useMemo(() => ({
     graph: canvas,
-    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...deviceOutputFields(n, deviceCatalog), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
+    sources: dataSourcesFor(canvas, opened.id, outputs, n => [...mcpOutputFields(n, mcpServers), ...deviceOutputFields(n, deviceSpecs), ...moduleOutputFields(n, workflows), ...functionOutputFields(n, functions)]),
     sample: sampleOf(canvas, outputs),
-  }), [canvas, opened.id, outputs, mcpServers, deviceCatalog, workflows, functions])
+  }), [canvas, opened.id, outputs, mcpServers, deviceSpecs, workflows, functions])
   const Icon = NODE_ICON[node.type]
   const location = useLocation()
   const current = agents?.find(a => a.id === str('agentId'))
@@ -1579,18 +1582,58 @@ function WebTestResultView({ result, deviceId }: { result: WebTestResult; device
   </div>
 }
 
-/** Which device, which action from the catalog, and one mapped field per input it names. */
+/** The tools the devices' apps added themselves, each once, with the first device offering it. */
+function ownTools(devices: Device[]): { device: Device; spec: DeviceActionSpec }[] {
+  const seen = new Set<string>()
+  const out: { device: Device; spec: DeviceActionSpec }[] = []
+  for (const d of devices) for (const t of d.tools ?? []) {
+    if (seen.has(t.action)) continue
+    seen.add(t.action)
+    out.push({ device: d, spec: t })
+  }
+  return out
+}
+
+/** An input marked x-items: a list of the device's saved items, or a mapped value instead. */
+function DeviceItemField({ label, required, hint, value, options, mapping, onChange }: {
+  label: string; required: boolean; hint: string; value: string; options: (DeviceItem & { device?: string })[]
+  mapping: MappingContext; onChange: (v: string) => void
+}) {
+  const [other, setOther] = useState(() => value !== '' && !options.some(o => o.id === value))
+  return (
+    <Labelled group label={label} required={required} hint={other ? TEMPLATE_HINT : hint}>
+      <select aria-label={label} className={fieldClass} value={other ? '__other' : value}
+        onChange={e => {
+          if (e.target.value === '__other') { setOther(true); return }
+          setOther(false)
+          onChange(e.target.value)
+        }}>
+        <option value="">Choose…</option>
+        {options.map(o => <option key={`${o.device ?? ''}:${o.id}`} value={o.id}>{o.name}{o.device ? ` (${o.device})` : ''}</option>)}
+        <option value="__other">Something else, or data from an earlier step…</option>
+      </select>
+      {other && <div className="mt-1"><MappedField aria-label={`${label} value`} mode="template" context={mapping} value={value} onChange={onChange} /></div>}
+    </Labelled>
+  )
+}
+
+/** Which device, which action from the catalog or the device's own tools, and one mapped field per input it names. */
 function DeviceActionFields({ node, catalog, setConfig, isMissing, mapping }: {
   node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: (patch: Record<string, unknown>) => void; isMissing: (f: string) => boolean; mapping: MappingContext
 }) {
   const { data: devices } = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list }, queryClient)
   const action = typeof node.config.action === 'string' ? node.config.action : ''
   const target = typeof node.config.target === 'string' ? node.config.target : 'any'
-  const spec = catalog?.find(a => a.action === action)
   const device = devices?.find((d: Device) => d.id === target)
+  // The devices this step could go to: their own tools and saved items are offered too.
+  const reachable = device ? [device] : (devices ?? []).filter(d => target !== 'phone' || d.platform === 'IOS' || d.platform === 'ANDROID')
+  const own = ownTools(reachable)
+  const spec = catalog?.find(a => a.action === action) ?? own.find(t => t.spec.action === action)?.spec
+  const extra = action.startsWith('x-')
+  const itemsOf = (kind: string) => reachable.flatMap(d => (d.items?.[kind] ?? []).map(i => ({ ...i, device: device ? undefined : d.name })))
   const inputs = (node.config.inputs && typeof node.config.inputs === 'object' && !Array.isArray(node.config.inputs)
     ? node.config.inputs : {}) as Record<string, unknown>
-  const schema = (spec?.input ?? {}) as { properties?: Record<string, { description?: string; type?: string; enum?: unknown[] }>; required?: string[] }
+  const schema = (spec?.input ?? {}) as { properties?: Record<string, { description?: string; type?: string; enum?: unknown[]; 'x-items'?: string }>; required?: string[] }
   const properties = Object.entries(schema.properties ?? {})
   const required = new Set(schema.required ?? [])
   const offered = (d: Device) => d.actions.some(a => a === action || a.startsWith(`${action}@`)) || action === 'system.ping'
@@ -1609,7 +1652,7 @@ function DeviceActionFields({ node, catalog, setConfig, isMissing, mapping }: {
     <Labelled label="Action" required missing={isMissing('action')}>
       <select className={fieldClass} value={action}
         onChange={e => {
-          const a = catalog?.find(x => x.action === e.target.value)
+          const a = catalog?.find(x => x.action === e.target.value) ?? own.find(t => t.spec.action === e.target.value)?.spec
           setConfig({ action: e.target.value || undefined, actionTitle: a?.title, inputs: undefined })
         }}>
         <option value="">Choose an action…</option>
@@ -1619,11 +1662,26 @@ function DeviceActionFields({ node, catalog, setConfig, isMissing, mapping }: {
             {catalog?.filter(a => a.capability === g).map(a => <option key={a.action} value={a.action}>{a.title}</option>)}
           </optgroup>
         ))}
+        {[...new Set(own.map(t => t.device))].map(d => (
+          <optgroup key={d.id} label={`Added by ${d.name}`}>
+            {own.filter(t => t.device === d).map(t => <option key={t.spec.action} value={t.spec.action}>{t.spec.title}</option>)}
+          </optgroup>
+        ))}
       </select>
     </Labelled>
     {spec?.description && <p className="text-[11px] text-gray-500">{spec.description}</p>}
-    {spec && spec.actionType !== 'READ' && <p className="text-[11px] text-amber-700 dark:text-amber-300">This action changes things on the device, so your guardrails may ask you before it runs.</p>}
-    {spec && properties.map(([key, p]) => (
+    {spec && extra && spec.actionType === 'MONEY' && <p className="text-[11px] text-amber-700 dark:text-amber-300">The device's app added this tool itself. Until you say what it does under Settings › Devices, it counts as moving money, so your guardrails won't let it run on its own.</p>}
+    {spec && !(extra && spec.actionType === 'MONEY') && spec.actionType !== 'READ' && <p className="text-[11px] text-amber-700 dark:text-amber-300">This action changes things on the device, so your guardrails may ask you before it runs.</p>}
+    {spec && properties.map(([key, p]) => p['x-items'] && itemsOf(p['x-items']).length > 0 ? (
+      <DeviceItemField key={`${node.id}:${key}`} label={key} required={required.has(key)} hint={p.description ?? `Saved on the device as ${p['x-items']}.`}
+        value={typeof inputs[key] === 'string' ? inputs[key] as string : ''} options={itemsOf(p['x-items'])} mapping={mapping}
+        onChange={v => {
+          const next = { ...inputs }
+          if (v === '') delete next[key]
+          else next[key] = v
+          setConfig({ inputs: next })
+        }} />
+    ) : (
       <Labelled group key={key} label={key} required={required.has(key)} hint={[p.description, p.enum ? `One of: ${p.enum.join(', ')}` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
         <MappedField aria-label={key} mode="template" context={mapping} mono={p.type !== 'string'}
           value={inputs[key] === undefined || inputs[key] === null ? '' : typeof inputs[key] === 'string' ? inputs[key] as string : JSON.stringify(inputs[key])}

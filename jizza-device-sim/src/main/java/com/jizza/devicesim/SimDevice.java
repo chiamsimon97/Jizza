@@ -77,6 +77,8 @@ public final class SimDevice implements AutoCloseable {
   private final boolean p256;
   private final Map<String, Function<JsonNode, JsonNode>> handlers = new LinkedHashMap<>();
   private final ObjectNode capabilities = json.createObjectNode();
+  private final ArrayNode tools = json.createArrayNode();
+  private final ObjectNode items = json.createObjectNode();
   private final List<JsonNode> received = new CopyOnWriteArrayList<>();
   private final List<String> seenNonces = Collections.synchronizedList(new ArrayList<>());
 
@@ -143,6 +145,22 @@ public final class SimDevice implements AutoCloseable {
   /** A capability and its local limits, sent in the manifest. */
   public SimDevice capability(String name, ObjectNode limits) {
     capabilities.set(name, limits == null ? json.createObjectNode() : limits);
+    return this;
+  }
+
+  /**
+   * A tool of the app's own, described in the manifest so workflows and chat can use it:
+   * {@code {"action":"x-acme.export","version":1,"title","input":{JSON Schema},"output"?}}.
+   */
+  public SimDevice tool(ObjectNode declaration, Function<JsonNode, JsonNode> handler) {
+    tools.add(declaration);
+    handlers.put(declaration.path("action").asText(), handler);
+    return this;
+  }
+
+  /** Saved items of one kind (recordings, shortcuts, apps), as {@code [{"id","name"}]}. */
+  public SimDevice items(String kind, ArrayNode list) {
+    items.set(kind, list);
     return this;
   }
 
@@ -223,6 +241,8 @@ public final class SimDevice implements AutoCloseable {
     ArrayNode actions = body.putArray("actions");
     handlers.keySet().forEach(actions::add);
     body.set("capabilities", capabilities);
+    if (!tools.isEmpty()) body.set("tools", tools);
+    if (!items.isEmpty()) body.set("items", items);
     return send("manifest", body);
   }
 

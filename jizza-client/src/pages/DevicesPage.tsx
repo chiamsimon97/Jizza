@@ -5,6 +5,7 @@ import {
   Apple, Globe2, KeyRound, Laptop, Monitor, MonitorSmartphone, Plus, Smartphone, Terminal, Trash2, Zap,
 } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
+import { ACTION_LABELS, ACTION_TYPES } from '@/components/guardrails/labels'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -15,7 +16,7 @@ import { Input } from '@/components/ui/Input'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState, LoadError } from '@/components/ui/EmptyState'
-import type { Device, DeviceCommand, DeviceEnrollmentToken, DevicePairingCode, DevicePlatform } from '@/types'
+import type { ActionType, Device, DeviceCommand, DeviceEnrollmentToken, DevicePairingCode, DevicePlatform } from '@/types'
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
@@ -230,9 +231,38 @@ function DeviceCard({ device }: { device: Device }) {
           <div>
             <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">What it can do</h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              {device.actions.length ? device.actions.map(a => a.replace(/@\d+$/, '')).join(', ') : 'Nothing yet: its app has not sent what it can do.'}
+              {device.actions.length ? device.actions.filter(a => !a.startsWith('x-')).map(a => a.replace(/@\d+$/, '')).join(', ') : 'Nothing yet: its app has not sent what it can do.'}
             </p>
+            {Object.entries(device.items ?? {}).some(([, list]) => list.length > 0) && (
+              <p className="mt-1 text-xs text-gray-500">
+                Saved on it: {Object.entries(device.items).filter(([, list]) => list.length > 0).map(([kind, list]) => `${list.length} ${kind}`).join(', ')}. Workflow steps can pick from these.
+              </p>
+            )}
           </div>
+          {(device.tools ?? []).length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Tools its app added</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Jizza can't check what these do, so each counts as moving money until you say otherwise. By default your guardrails never let that run on its own.
+              </p>
+              <ul className="mt-2 flex flex-col gap-2">
+                {device.tools.map(t => (
+                  <li key={t.action} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{t.title}</span>
+                      <span className="ml-2 font-mono text-xs text-gray-500">{t.action}</span>
+                      {t.description && <span className="block text-xs text-gray-500">{t.description}</span>}
+                    </span>
+                    <select aria-label={`What ${t.title} does`} className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
+                      value={t.actionType} disabled={!canUse}
+                      onChange={e => run(() => devicesApi.updateTool(device.id, t.action, e.target.value as ActionType), `${t.title} now counts as: ${ACTION_LABELS[e.target.value as ActionType].label.toLowerCase()}.`)}>
+                      {ACTION_TYPES.map(a => <option key={a} value={a}>{ACTION_LABELS[a].label}</option>)}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <CommandsList deviceId={device.id} />
           <LogsList deviceId={device.id} />
         </div>

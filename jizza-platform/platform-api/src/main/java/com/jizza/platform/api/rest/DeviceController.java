@@ -5,6 +5,7 @@ import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.device.DeviceCommandDto;
 import com.jizza.engine.api.device.DeviceDto;
 import com.jizza.engine.api.device.Devices;
+import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.RequiresPermission;
 import com.jizza.engine.api.util.StepUpRequired;
@@ -12,6 +13,7 @@ import com.jizza.engine.security.session.CurrentWorkspace;
 import com.jizza.platform.api.rest.dto.Responses;
 import com.jizza.platform.usecase.device.DeviceUseCase;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
@@ -43,6 +45,8 @@ public class DeviceController {
 
   public record Changes(String name, List<String> tags, Boolean shellEnabled,
                         List<String> blockedActions) {}
+
+  public record ToolInput(ActionType actionType) {}
 
   public record TokenInput(String name, Integer uses, Integer validDays, List<String> tags) {}
 
@@ -91,7 +95,23 @@ public class DeviceController {
     }
     return devices.update(CurrentWorkspace.access(), id,
         new Devices.DeviceChanges(changes.name(), changes.tags(), changes.shellEnabled(),
-            changes.blockedActions()));
+            changes.blockedActions(), null));
+  }
+
+  /**
+   * Says what a tool the device added itself does, so the guardrails judge it by that rather than
+   * as moving money. A null type goes back to moving money. Like an MCP tool's type, it loosens
+   * what runs without asking, so it needs step-up.
+   */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @PatchMapping("/{id}/tools/{tool}")
+  @StepUpRequired
+  public DeviceDto updateTool(@PathVariable UUID id, @PathVariable String tool,
+                              @RequestBody ToolInput input) {
+    Map<String, ActionType> types = new java.util.HashMap<>();
+    types.put(tool, input == null ? null : input.actionType());
+    return devices.update(CurrentWorkspace.access(), id,
+        new Devices.DeviceChanges(null, null, null, null, types));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)
@@ -99,7 +119,7 @@ public class DeviceController {
   @StepUpRequired
   public DeviceDto enableShell(@PathVariable UUID id) {
     return devices.update(CurrentWorkspace.access(), id,
-        new Devices.DeviceChanges(null, null, true, null));
+        new Devices.DeviceChanges(null, null, true, null, null));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)

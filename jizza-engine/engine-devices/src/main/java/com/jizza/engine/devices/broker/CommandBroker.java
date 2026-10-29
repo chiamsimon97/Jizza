@@ -14,6 +14,7 @@ import com.jizza.engine.api.device.DeviceCommandStatus;
 import com.jizza.engine.api.device.DeviceCommands;
 import com.jizza.engine.api.device.DevicePlatform;
 import com.jizza.engine.api.device.DeviceTarget;
+import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.NotificationKind;
 import com.jizza.engine.api.enums.NotificationPriority;
@@ -26,6 +27,7 @@ import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.realtime.RealtimeGateway;
 import com.jizza.engine.api.tool.ToolSchemaValidator;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.devices.catalog.DeviceExtras;
 import com.jizza.engine.devices.config.DeviceProperties;
 import com.jizza.engine.devices.crypto.ServerKeys;
 import com.jizza.engine.devices.gateway.DeviceHub;
@@ -175,8 +177,12 @@ public class CommandBroker implements DeviceCommands {
     int declared = declaredVersion(device, req.action());
     int version = req.version() > 0 ? req.version()
         : Math.max(1, Math.min(declared == 0 ? newest.version() : declared, newest.version()));
-    DeviceActionSpec spec = catalog.resolve(req.action(), version).orElseThrow(() ->
-        new ValidationException("Version " + version + " of " + req.action() + " does not exist"));
+    DeviceActionSpec spec = newest.extension()
+        // A tool the device described: its own schema and time limit, still judged as the riskiest kind.
+        ? DeviceExtras.spec(device, req.action())
+            .orElseGet(() -> DeviceActionSpec.unknownExtension(req.action(), version))
+        : catalog.resolve(req.action(), version).orElseThrow(() ->
+            new ValidationException("Version " + version + " of " + req.action() + " does not exist"));
     if (!implicit(spec) && declared != 0 && declared < version) {
       throw new ValidationException(device.getName() + " runs version " + declared + " of "
           + spec.action() + "; update its Jizza Agent app for version " + version);
@@ -287,6 +293,38 @@ public class CommandBroker implements DeviceCommands {
   }
 
   /** The devices this person may use that can run the action, best first. */
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<DeviceActionSpec> describe(DeviceCommandRequest req) {
+    if (req.action() == null || req.action().isBlank()) return Optional.empty();
+    Optional<DeviceActionSpec> known = catalog.resolve(req.action(), req.version());
+    if (known.isEmpty() || !known.get().extension()) return known;
+    DeviceActionSpec unknown = known.get();
+    List<DeviceEntity> candidates;
+    try {
+      DeviceEntity routed = route(req, unknown);
+      candidates = req.target() != null && req.target().deviceId() != null ? List.of(routed)
+          // Another of them may take it by the time it is sent, so judge by the riskiest.
+          : (req.workspaceId() == null
+              ? devices.findByOwnerUserIdAndStatusOrderByCreatedAtAsc(req.userId(), "active")
+              : devices.findByWorkspaceIdOrderByCreatedAtAsc(req.workspaceId())).stream()
+              .filter(d -> "active".equals(d.getStatus()) && canRun(d, unknown))
+              .filter(d -> d.getOwnerUserId() == null || d.getOwnerUserId().equals(req.userId()))
+              .toList();
+    } catch (ValidationException | NotFoundException e) {
+      // Nothing would take it; submit says why.
+      return known;
+    }
+    DeviceActionSpec chosen = null;
+    for (DeviceEntity d : candidates) {
+      DeviceActionSpec own = DeviceExtras.spec(d, req.action()).orElse(unknown);
+      if (chosen == null || ActionType.riskier(chosen.actionType(), own.actionType()) != chosen.actionType()) {
+        chosen = own;
+      }
+    }
+    return Optional.of(chosen == null ? unknown : chosen);
+  }
+
   private DeviceEntity route(DeviceCommandRequest req, DeviceActionSpec spec) {
     DeviceTarget target = req.target() == null ? DeviceTarget.any() : req.target();
     // A workflow run belongs to a person, not an account, so without one it uses their own devices.

@@ -10,6 +10,7 @@ const laptop: Device = {
   osVersion: '11', appVersion: '0.1.0', protocolVersion: 1, status: 'ACTIVE', tags: ['office'],
   keyStorage: 'file', online: true, state: 'idle', capabilities: {}, actions: ['system.info@1', 'browser.open@1'],
   shellEnabled: false, blockedActions: [], lastSeenAt: new Date().toISOString(), createdAt: new Date().toISOString(),
+  tools: [], items: {},
 }
 
 const command = (over: Partial<DeviceCommand>): DeviceCommand => ({
@@ -53,6 +54,23 @@ describe('Devices', () => {
     renderWithSnapshot(<DevicesPage />, makeSnapshot())
     fireEvent.click(await screen.findByRole('button', { name: /Test/ }))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('It answered in 120 ms.'))
+  })
+
+  it('lets the owner say what a tool the app added does', async () => {
+    const tool = {
+      action: 'x-acme.export', version: 1, capability: 'x-acme', actionType: 'MONEY' as const, title: 'Export ledger',
+      description: 'Exports the ledger', input: { type: 'object' }, output: null, conditions: [], platforms: [], defaultTimeoutSec: 120,
+    }
+    const withTool: Device = { ...laptop, actions: [...laptop.actions, 'x-acme.export@1'], tools: [tool], items: { recordings: [{ id: 'r1', name: 'Invoices' }] } }
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([withTool])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    const update = vi.spyOn(devicesApi, 'updateTool').mockResolvedValue({ ...withTool, tools: [{ ...tool, actionType: 'READ' }] })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    expect(screen.getByText('Tools its app added')).toBeInTheDocument()
+    expect(screen.getByText(/Saved on it: 1 recordings/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('What Export ledger does'), { target: { value: 'READ' } })
+    await waitFor(() => expect(update).toHaveBeenCalledWith('d1', 'x-acme.export', 'READ'))
   })
 
   it('hides pairing and tokens without the permissions', async () => {

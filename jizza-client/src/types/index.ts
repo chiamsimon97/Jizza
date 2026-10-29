@@ -1472,7 +1472,13 @@ export interface Device {
   blockedActions: string[]
   lastSeenAt: string | null
   createdAt: string
+  /** Tools its app added itself (x-…), with their own input and output schemas. */
+  tools: DeviceActionSpec[]
+  /** Its saved items by kind (recordings, shortcuts, apps), for inputs marked x-items. */
+  items: Record<string, DeviceItem[]>
 }
+
+export interface DeviceItem { id: string; name: string; description?: string }
 
 export interface DeviceActionSpec {
   action: string

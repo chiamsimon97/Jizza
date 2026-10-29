@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.crypto.EncryptionService;
+import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.device.DeviceAgentGateway;
 import com.jizza.engine.api.device.DeviceCommandDto;
 import com.jizza.engine.api.device.DeviceCommandRequest;
@@ -25,6 +26,7 @@ import com.jizza.engine.api.storage.StorageProvider;
 import com.jizza.engine.api.util.Hashing;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.devices.broker.CommandBroker;
+import com.jizza.engine.devices.catalog.DeviceExtras;
 import com.jizza.engine.devices.config.DeviceProperties;
 import com.jizza.engine.devices.crypto.DeviceKeys;
 import com.jizza.engine.devices.crypto.ServerKeys;
@@ -243,6 +245,19 @@ public class DeviceRegistryService implements Devices {
           .map(String::trim).filter(s -> !s.isEmpty()).distinct().limit(MAX_ACTIONS).toList();
       device.setBlockedActions(Json.toNode(blocked));
     }
+    if (changes.toolTypes() != null) {
+      ObjectNode types = device.getToolTypes() != null && device.getToolTypes().isObject()
+          ? (ObjectNode) device.getToolTypes().deepCopy() : Json.obj();
+      changes.toolTypes().forEach((tool, type) -> {
+        if (tool == null || !tool.startsWith(DeviceActionSpec.EXTENSION_PREFIX) || tool.length() > 120) {
+          throw new ValidationException("Only tools a device added itself (x-…) take an action type");
+        }
+        if (type == null) types.remove(tool);
+        else types.put(tool, type.name());
+      });
+      if (types.size() > 200) throw new ValidationException("Too many tool types for one device");
+      device.setToolTypes(types);
+    }
     devices.save(device);
     if (changes.shellEnabled() != null || changes.blockedActions() != null) sendPolicy(device);
     return toDto(device);
@@ -351,6 +366,7 @@ public class DeviceRegistryService implements Devices {
     device.setKeyStorage(storage);
     device.setActions(Json.mapper().createArrayNode());
     device.setBlockedActions(Json.mapper().createArrayNode());
+    device.setToolTypes(Json.obj());
     device.setLastIp(limit(remoteAddress, 64));
 
     String action;
@@ -549,9 +565,20 @@ public class DeviceRegistryService implements Devices {
       }
       actions.add(ref);
     }
+    ArrayNode tools = DeviceExtras.tools(body.get("tools"));
+    // A tool the device describes is one it declares, so it routes like any other action.
+    for (JsonNode t : tools) {
+      actions.removeIf(a -> a.equals(t.get("action").asText()) || a.startsWith(t.get("action").asText() + "@"));
+      actions.add(t.get("action").asText() + "@" + t.get("version").asInt());
+    }
+    if (actions.size() > MAX_ACTIONS) {
+      throw new ValidationException("A manifest can declare at most " + MAX_ACTIONS + " actions");
+    }
     ObjectNode manifest = Json.obj();
     manifest.set("capabilities", capabilities);
     manifest.set("limits", body.path("limits").isObject() ? body.get("limits") : Json.obj());
+    manifest.set("tools", tools);
+    manifest.set("items", DeviceExtras.items(body.get("items")));
     device.setManifest(manifest);
     ArrayNode list = Json.mapper().createArrayNode();
     actions.forEach(list::add);
@@ -590,7 +617,9 @@ public class DeviceRegistryService implements Devices {
         DevicePlatform.from(d.getPlatform()), d.getOsVersion(), d.getAppVersion(),
         d.getProtocolVersion(), status, tags, d.getKeyStorage(), online,
         online ? hub.state(d.getId()) : "offline", capabilities, actions, d.isShellEnabled(),
-        blocked, seen, d.getCreatedAt());
+        blocked, seen, d.getCreatedAt(), DeviceExtras.specs(d),
+        d.getManifest() != null && d.getManifest().path("items").isObject()
+            ? d.getManifest().get("items") : Json.obj());
   }
 
   private EnrollmentToken toDto(DeviceEnrollmentTokenEntity t, String token) {
