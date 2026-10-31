@@ -138,6 +138,28 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void testConnectionRoundTripsOverTheWebSocket() {
+    pairAndSignIn();
+    device.connect();
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("SUCCEEDED");
+  }
+
+  @Test
+  void aCommandSentOverTheWebSocketIsNotReportedAsWaitingForTheDevice() {
+    pairAndSignIn();
+    device.autoRun(false);
+    device.connect();
+    // Sent at once over the open socket, but nobody answers: the page must not say the device
+    // is not connected. The "dispatched" mark is written after the submit commits.
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("DISPATCHED");
+    assertThat(device.received()).anyMatch(m -> "command".equals(m.path("type").asText()));
+  }
+
+  @Test
   void aWorkflowStepRunsOnTheDeviceOverTheWebSocket() throws Exception {
     pairAndSignIn();
     device.connect();
