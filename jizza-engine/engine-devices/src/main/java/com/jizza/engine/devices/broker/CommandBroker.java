@@ -63,6 +63,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -124,7 +125,11 @@ public class CommandBroker implements DeviceCommands {
     this.push = push;
     this.audit = audit;
     this.props = props;
-    this.transactions = transactions;
+    // sendPending runs from afterCommit, where a plain REQUIRED template joins the transaction
+    // that has just committed: its writes ("dispatched") would then never be saved.
+    this.transactions = new TransactionTemplate(
+        Objects.requireNonNull(transactions.getTransactionManager()));
+    this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     this.killSwitch = killSwitch;
     this.notifications = notifications;
     this.realtime = realtime;
