@@ -233,7 +233,7 @@ class AuthAndSecurityE2eTest extends E2eSupport {
     assertThat(replace.status()).isEqualTo(403);
     assertThat(replace.problemType()).endsWith("step-up-required");
 
-    var stepUp = api.post("/api/auth/step-up", Map.of("password", PASSWORD, "code", freshCode(secret)));
+    var stepUp = api.post("/api/auth/step-up", Map.of("password", PASSWORD));
     assertThat(stepUp.ok()).as("step-up: %s", stepUp.body()).isTrue();
     assertThat(api.post("/api/auth/mfa/setup", null).ok()).isTrue();
   }

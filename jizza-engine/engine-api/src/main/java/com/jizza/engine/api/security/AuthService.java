@@ -41,7 +41,7 @@ public interface AuthService {
 
   SecurityStatus status(UUID userId, UUID sessionId);
 
-  void stepUp(UUID userId, UUID sessionId, String password, String code);
+  void stepUp(UUID userId, UUID sessionId, String password);
 
   void logout(UUID userId, UUID sessionId);
 

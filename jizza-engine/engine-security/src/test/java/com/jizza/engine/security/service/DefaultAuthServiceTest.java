@@ -239,22 +239,23 @@ class DefaultAuthServiceTest {
   @Test
   void stepUpRequiresTheCurrentPasswordAndMarksTheSession() {
     UUID sessionId = UUID.randomUUID();
-    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong", null))
+    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong"))
         .isInstanceOf(AuthException.class);
     verify(sessions, never()).markStepUp(any());
 
-    auth.stepUp(user.getId(), sessionId, PASSWORD, null);
+    auth.stepUp(user.getId(), sessionId, PASSWORD);
     verify(sessions).markStepUp(sessionId);
   }
 
   @Test
-  void stepUpAlsoRequiresTheSecondFactorWhenMfaIsOn() {
-    String secret = enableMfa();
+  void stepUpAsksForThePasswordOnlyEvenWhenMfaIsOn() {
+    enableMfa();
     UUID sessionId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, PASSWORD, "000000"))
+    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong"))
         .isInstanceOf(AuthException.class);
-    auth.stepUp(user.getId(), sessionId, PASSWORD, totp.code(secret, Instant.now().getEpochSecond()));
+    verify(sessions, never()).markStepUp(any());
+    auth.stepUp(user.getId(), sessionId, PASSWORD);
     verify(sessions).markStepUp(sessionId);
   }
 
@@ -367,7 +368,7 @@ class DefaultAuthServiceTest {
   void aStepUpFailureIsCountedAgainstTheSession() {
     UUID sessionId = UUID.randomUUID();
     when(sessions.recordStepUpFailure(sessionId)).thenReturn(true);
-    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong", null))
+    assertThatThrownBy(() -> auth.stepUp(user.getId(), sessionId, "wrong"))
         .isInstanceOf(AuthException.class);
     verify(sessions).recordStepUpFailure(sessionId);
     verify(alerts).alert(eq(user.getId()), any(), eq("A Jizza session was signed out"), any());

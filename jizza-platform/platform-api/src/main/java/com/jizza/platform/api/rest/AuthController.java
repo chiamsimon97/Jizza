@@ -179,7 +179,7 @@ public class AuthController {
   @PostMapping("/step-up")
   public Responses.Message stepUp(@Valid @RequestBody Requests.StepUp request) {
     var principal = CurrentUser.require();
-    auth.stepUp(principal.userId(), principal.sessionId(), request.password(), request.code());
+    auth.stepUp(principal.userId(), principal.sessionId(), request.password());
     return new Responses.Message("Re-authenticated. High-risk actions are unlocked briefly.");
   }
 

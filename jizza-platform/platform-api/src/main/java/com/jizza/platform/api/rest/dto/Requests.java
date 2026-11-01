@@ -51,7 +51,7 @@ public final class Requests {
 
   public record MfaCode(@NotBlank @Size(max = 32) String code) {}
 
-  public record StepUp(@NotBlank @Size(max = 256) String password, @Size(max = 32) String code) {}
+  public record StepUp(@NotBlank @Size(max = 256) String password) {}
 
   public record RecoverRequest(@Email @NotBlank @Size(max = 320) String email) {}
 
