@@ -18,6 +18,7 @@ import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { McpServerPage } from '@/pages/connectors/McpServers'
 import { FunctionsPage } from '@/pages/FunctionsPage'
 import { RecordingsPage } from '@/pages/RecordingsPage'
+import { HelpPage } from '@/pages/HelpPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
 import { GuardrailsPage } from '@/pages/GuardrailsPage'
@@ -77,6 +78,7 @@ export default function App() {
           </Route>
 
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/help/:slug?" element={<HelpPage />} />
           <Route path="/invitations" element={<InvitationsPage />} />
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/discover/:orgId" element={<DiscoverProfilePage />} />
