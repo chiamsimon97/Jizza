@@ -32,8 +32,8 @@ public class SecurityProperties {
   private final Invitations invitations = new Invitations();
 
   public static class Session {
-    private Duration idleTimeout = Duration.ofDays(7);
-    private Duration absoluteTimeout = Duration.ofDays(30);
+    private Duration idleTimeout = Duration.ofDays(3);
+    private Duration absoluteTimeout = Duration.ofDays(15);
     private String cookieName = "JIZZA_SESSION";
     private boolean cookieSecure = true;
     /** Strict: the session cookie is never sent on a request another site started. */

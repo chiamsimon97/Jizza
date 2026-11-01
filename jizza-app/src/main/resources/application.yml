@@ -100,8 +100,8 @@ jizza:
     master-key: ${JIZZA_MASTER_KEY:}
     allow-env-master-key: true
     session:
-      idle-timeout: 7d                # signed out after a week with no activity
-      absolute-timeout: 30d           # and always asked to sign in again after 30 days
+      idle-timeout: 3d                # signed out after 3 days with no activity
+      absolute-timeout: 15d           # and always asked to sign in again after 15 days
       cookie-name: JIZZA_SESSION
       cookie-secure: ${JIZZA_COOKIE_SECURE:false}   # true wherever TLS terminates in front
       same-site: Strict
