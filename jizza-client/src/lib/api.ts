@@ -85,11 +85,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
 }
 
 export const api = {
-  get:    <T>(path: string) => request<T>(path, { method: 'GET' }),
+  get:    <T>(path: string, headers?: HeadersInit) => request<T>(path, { method: 'GET', headers }),
   post:   <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST',   body: body != null ? JSON.stringify(body) : undefined }),
   put:    <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT',    body: body != null ? JSON.stringify(body) : undefined }),
   patch:  <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH',  body: body != null ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string, headers?: HeadersInit) => request<T>(path, { method: 'DELETE', headers }),
   upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
   /** Raw bytes, for files shown back to the user. */
   blob:   (path: string) => request<Blob>(path, { method: 'GET' }, 'blob'),

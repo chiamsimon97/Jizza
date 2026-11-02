@@ -37,6 +37,9 @@ public class SecurityConfig {
   public static final String[] PUBLIC_ENDPOINTS = {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
       "/api/auth/recover", "/api/auth/recover/**", "/api/auth/invitations/*",
+      // Smart sign-in: the login page asks for a QR code and waits for a phone to approve it.
+      "/api/auth/smart-sign-in/config", "/api/auth/smart-sign-in/start",
+      "/api/auth/smart-sign-in/attempts/**",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/**",
       // Paired devices sign in with their own key and short-lived token, never a session.
       "/agent/v1/**",

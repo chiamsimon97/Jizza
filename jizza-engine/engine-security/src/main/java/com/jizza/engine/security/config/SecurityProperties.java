@@ -27,6 +27,7 @@ public class SecurityProperties {
   private final Totp totp = new Totp();
   private final Cors cors = new Cors();
   private final Mfa mfa = new Mfa();
+  private final SmartSignIn smartSignIn = new SmartSignIn();
   private final Registration registration = new Registration();
   private final SuperAdmin superAdmin = new SuperAdmin();
   private final Invitations invitations = new Invitations();
@@ -77,6 +78,21 @@ public class SecurityProperties {
     public void setRequired(boolean v) { this.required = v; }
     public int getRecoveryCodes() { return recoveryCodes; }
     public void setRecoveryCodes(int v) { this.recoveryCodes = v; }
+  }
+
+  /** Signing a browser in by scanning its QR code with a phone that is already signed in. */
+  public static class SmartSignIn {
+    private boolean enabled = true;
+    /** How long one QR code can be scanned and approved. */
+    private Duration lifetime = Duration.ofMinutes(2);
+    /** Codes waiting at once across the whole server, so the public start endpoint cannot fill memory. */
+    private int maxPending = 10_000;
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public Duration getLifetime() { return lifetime; }
+    public void setLifetime(Duration v) { this.lifetime = v; }
+    public int getMaxPending() { return maxPending; }
+    public void setMaxPending(int v) { this.maxPending = v; }
   }
 
   public static class Registration {
@@ -169,6 +185,7 @@ public class SecurityProperties {
   public Totp getTotp() { return totp; }
   public Cors getCors() { return cors; }
   public Mfa getMfa() { return mfa; }
+  public SmartSignIn getSmartSignIn() { return smartSignIn; }
   public Registration getRegistration() { return registration; }
   public SuperAdmin getSuperAdmin() { return superAdmin; }
   public Invitations getInvitations() { return invitations; }

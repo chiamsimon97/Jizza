@@ -42,7 +42,10 @@ class ApiContractE2eTest extends E2eSupport {
       "/api/auth/csrf", "/api/auth/login", "/api/auth/register", "/api/auth/recover",
       "/api/auth/recover/complete", "/api/auth/mfa/verify", "/api/auth/invitations/{token}",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/{token}",
-      "/api/auth/logout");
+      "/api/auth/logout",
+      // Smart sign-in: the login page starts and polls before anyone is signed in.
+      "/api/auth/smart-sign-in/config", "/api/auth/smart-sign-in/start",
+      "/api/auth/smart-sign-in/attempts/{id}", "/api/auth/smart-sign-in/attempts/{id}/complete");
 
   /** Routes that end or reshape the caller's own session, which the sweep re-creates instead. */
   private static final Set<String> SESSION_ENDING = Set.of(

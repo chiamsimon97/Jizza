@@ -355,6 +355,18 @@ public class AgentGatewayService implements DeviceAgentGateway {
     return catalog.all();
   }
 
+  @Override
+  public java.util.Optional<Owned> personalOwner(Caller caller) {
+    return devices.findById(caller.deviceId())
+        .filter(d -> d.getOwnerUserId() != null)
+        .map(d -> new Owned(d.getOwnerUserId(), d.getName()));
+  }
+
+  @Override
+  public boolean verifySignature(Caller caller, String text, String signature) {
+    return registry.verifySignature(caller.deviceId(), text, signature);
+  }
+
   private static Instant parseInstant(String text) {
     if (text == null) return Instant.now();
     try {

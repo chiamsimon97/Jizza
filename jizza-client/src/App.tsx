@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { MfaPage } from '@/pages/MfaPage'
 import { RecoverPage } from '@/pages/RecoverPage'
+import { SmartSignInApprovePage } from '@/pages/SmartSignInApprovePage'
 import { ChatPage } from '@/pages/ChatPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { CosmosView } from '@/pages/memory/CosmosView'
@@ -47,6 +48,8 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/mfa" element={<MfaPage />} />
       <Route path="/recover" element={<RecoverPage />} />
+      {/* Opened by a phone that scanned the login page's QR; it checks the sign-in itself. */}
+      <Route path="/smart-sign-in" element={<SmartSignInApprovePage />} />
 
       <Route element={<EnrollmentRoute />}>
         <Route path="/setup-2fa" element={<SetupTwoStepPage />} />

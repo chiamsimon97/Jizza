@@ -22,6 +22,8 @@ In code the apps are called **devices**, so they never clash with Jizza's AI age
 | `POST /agent/v1/push-token` | `{"provider":"apns"\|"fcm","token"}` so the server can wake a phone. |
 | `POST /agent/v1/keys/rotate` | `{"publicKey","signature"}`: the new key, signed by the current one. |
 | `GET /agent/v1/catalog` | The action catalog, to check a manifest before sending it. |
+| `POST /agent/v1/smart-sign-in/scan` | `{"code"}` from a scanned login QR → what to show before approving (section 11). |
+| `POST /agent/v1/smart-sign-in/decide` | `{"code","approve","signature"}`: approve or deny that sign-in (section 11). |
 
 Everything after sign-in carries `Authorization: Bearer jzd_…`. The token lasts 15 minutes; sign in
 again before it runs out. Over the WebSocket the token goes in the `Authorization` header of the
@@ -230,3 +232,29 @@ java -cp jizza-device-sim/target/classes:$(mvn -q -pl jizza-device-sim dependenc
 ```
 
 The simulator answers `system.ping`, `system.info` and `notify.show`.
+
+## 11. Smart sign-in
+
+The Jizza login page can show a QR code instead of asking for a password. A phone paired by a
+person (not a shared machine enrolled with a token) can approve it, and the browser is then signed
+in to **that person's** account.
+
+1. The QR holds a URL: `https://<jizza>/smart-sign-in#<code>`. The code is everything after `#`.
+   Accept only URLs whose origin is the server the app is paired with, and whose path is
+   `/smart-sign-in`; ignore anything else.
+2. `POST /agent/v1/smart-sign-in/scan {"code"}` with the device token. The answer:
+   `{"id","browser","ip","createdAt","expiresAt","sameNetwork","state"}`. `browser` reads like
+   "Chrome on Windows". Scanning claims the code for this person: no other account can approve it.
+3. Show the browser, the IP and the time, and the warning "Only approve if you are signing in on a
+   screen in front of you right now." Ask for the phone's fingerprint, face or PIN (Android
+   `BiometricPrompt` with `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`) before an approval: the server
+   counts an approval from a paired phone as the second factor, so the app must check that the
+   phone's owner is holding it.
+4. Sign `jizza-smart-sign-in:v1:<code>:approve` (or `:deny`) with the device key, the same way as a
+   challenge nonce, and `POST /agent/v1/smart-sign-in/decide {"code","approve":true|false,
+   "signature"}`. The answer is `{"state":"APPROVED"|"DENIED"}`.
+
+Errors are problem details: 404 `smart-sign-in-unknown` (bad code), 410 `smart-sign-in-expired`
+(codes last 2 minutes), 409 `smart-sign-in-used` (already answered, or claimed by another account),
+401 `bad_signature`, 401 `device_not_personal`.
+
