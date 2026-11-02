@@ -442,6 +442,36 @@ class AuthAndSecurityE2eTest extends E2eSupport {
   }
 
   @Test
+  void autoApproveKeepsSensitiveActionsUnlockedForTheChosenWindow() {
+    register();
+    login();
+    var remembered = api.post("/api/auth/step-up", Map.of("password", PASSWORD, "rememberMinutes", 60));
+    assertThat(remembered.ok()).as("step-up: %s", remembered.body()).isTrue();
+    assertThat(remembered.json().path("message").asText()).contains("1 hour");
+
+    // Past the 15-minute default but inside the chosen hour: no second prompt.
+    jdbc.update("update sessions set step_up_at = now() - interval '40 minutes', "
+        + "step_up_until = now() + interval '20 minutes' where user_id = "
+        + "(select id from users where email = ?)", email);
+    assertThat(api.get("/api/autonomy/policies").ok()).isTrue();
+
+    jdbc.update("update sessions set step_up_until = now() - interval '1 second' where user_id = "
+        + "(select id from users where email = ?)", email);
+    assertThat(api.get("/api/autonomy/policies").status()).isEqualTo(403);
+  }
+
+  @Test
+  void autoApproveOffersOnlyTheListedWindows() {
+    register();
+    login();
+    assertThat(api.post("/api/auth/step-up", Map.of("password", PASSWORD, "rememberMinutes", 600))
+        .status()).isEqualTo(400);
+    assertThat(api.post("/api/auth/step-up", Map.of("password", PASSWORD, "rememberMinutes", 0))
+        .ok()).isTrue();
+    assertThat(api.get("/api/autonomy/policies").ok()).isTrue();
+  }
+
+  @Test
   void sessionsCanBeListedRevokedAndRevokedEverywhere() {
     register();
     login();

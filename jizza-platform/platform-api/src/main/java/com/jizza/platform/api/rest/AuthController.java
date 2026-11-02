@@ -179,7 +179,14 @@ public class AuthController {
   @PostMapping("/step-up")
   public Responses.Message stepUp(@Valid @RequestBody Requests.StepUp request) {
     var principal = CurrentUser.require();
-    auth.stepUp(principal.userId(), principal.sessionId(), request.password());
+    java.time.Duration window = stepUpWindow(request.rememberMinutes());
+    auth.stepUp(principal.userId(), principal.sessionId(), request.password(), window);
+    if (request.rememberMinutes() != null && request.rememberMinutes() > 0) {
+      int minutes = request.rememberMinutes();
+      String span = minutes >= 60 ? (minutes / 60) + (minutes == 60 ? " hour" : " hours")
+          : minutes + " minutes";
+      return new Responses.Message("Confirmed. Sensitive actions won't ask again for " + span + ".");
+    }
     return new Responses.Message("Re-authenticated. High-risk actions are unlocked briefly.");
   }
 
@@ -252,6 +259,25 @@ public class AuthController {
     auth.changePassword(principal.userId(), principal.sessionId(), request.currentPassword(),
         request.newPassword());
     return new Responses.Message("Password changed. Other devices were signed out.");
+  }
+
+  /** Auto-approve windows the step-up dialog offers. */
+  private static final java.util.Set<Integer> REMEMBER_MINUTES = java.util.Set.of(15, 60, 180);
+
+  /**
+   * Without "Auto-approve" (0) the confirmation covers the action that asked for it, plus a short
+   * grace for the retried request and anything it starts straight away; then Jizza asks again.
+   */
+  private static final java.time.Duration ONE_ACTION = java.time.Duration.ofMinutes(2);
+
+  private static java.time.Duration stepUpWindow(Integer rememberMinutes) {
+    if (rememberMinutes == null) return null;
+    if (rememberMinutes == 0) return ONE_ACTION;
+    if (!REMEMBER_MINUTES.contains(rememberMinutes)) {
+      throw new com.jizza.engine.api.error.ValidationException(
+          "rememberMinutes must be 0, 15, 60 or 180");
+    }
+    return java.time.Duration.ofMinutes(rememberMinutes);
   }
 
   private String deviceOf(HttpServletRequest request) {

@@ -386,15 +386,17 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
    */
   @Override
   @Transactional
-  public void stepUp(UUID userId, UUID sessionId, String password) {
+  public void stepUp(UUID userId, UUID sessionId, String password, java.time.Duration window) {
     throttle.check("step-up:" + sessionId);
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
       stepUpFailed(user, sessionId);
       throw new AuthException("Password is not correct");
     }
-    sessions.markStepUp(sessionId);
-    audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(), null);
+    if (window == null) sessions.markStepUp(sessionId);
+    else sessions.markStepUp(sessionId, window);
+    audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(),
+        window == null ? null : Json.obj().put("rememberMinutes", window.toMinutes()));
   }
 
   /**

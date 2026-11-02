@@ -37,8 +37,12 @@ export const authApi = {
   disableMfa: (code: string) =>
     api.post<{ message: string }>('/api/auth/mfa/disable', { code }),
 
-  stepUp: (password: string) =>
-    api.post<void>('/api/auth/step-up', { password }),
+  /**
+   * `rememberMinutes`: 15, 60 or 180 to skip asking again for that long (Auto-approve); 0 for this
+   * action only.
+   */
+  stepUp: (password: string, rememberMinutes = 0) =>
+    api.post<{ message: string }>('/api/auth/step-up', { password, rememberMinutes }),
 
   logout: () =>
     api.post<void>('/api/auth/logout'),

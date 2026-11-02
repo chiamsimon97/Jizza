@@ -301,9 +301,10 @@ MANAGEMENT_OTLP_TRACING_ENDPOINT=http://localhost:4318/v1/traces mvn -pl jizza-a
 * **The owner hears about it.** A sign-in from a new device, a spent recovery code, a password
   change or two-step being switched off raises an in-app notification and, when mail is set up,
   an email.
-* **The client cleans up after itself.** It signs out after 15 minutes without activity
-  (`VITE_IDLE_SIGN_OUT_MINUTES`), wipes its query cache on sign-out, and signs out every open tab
-  together.
+* **The client cleans up after itself.** It wipes its query cache on sign-out and signs out every
+  open tab together. A browser-side idle sign-out is available but off by default; set
+  `VITE_IDLE_SIGN_OUT_MINUTES` (for example 15) to turn it on for a shared machine. The server's
+  own idle timeout (3 days) applies either way.
 
 * **The Capability Registry is the only path that executes a tool.** It checks the agent is
   enabled, the kill switch is off, the arguments match the schema and the autonomy policy allows
