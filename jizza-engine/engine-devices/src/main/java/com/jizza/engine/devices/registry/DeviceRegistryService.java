@@ -488,6 +488,15 @@ public class DeviceRegistryService implements Devices {
         ? device.getOwnerUserId() : device.getEnrolledBy(), device.getWorkspaceId());
   }
 
+  /** Checks a signature by the device's current key; false for no key or a bad signature. */
+  @Transactional(readOnly = true)
+  public boolean verifySignature(UUID deviceId, String text, String signature) {
+    if (text == null || signature == null || signature.isBlank()) return false;
+    return keys.findFirstByDeviceIdAndRetiredAtIsNullOrderByCreatedAtDesc(deviceId)
+        .map(k -> DeviceKeys.verify(DeviceKeys.parse(k.getPublicKey()), text, signature))
+        .orElse(false);
+  }
+
   @Transactional
   public void rotateKey(UUID deviceId, String newPublicKey, String signature) {
     DeviceKeyEntity current = keys.findFirstByDeviceIdAndRetiredAtIsNullOrderByCreatedAtDesc(deviceId)

@@ -113,6 +113,11 @@ jizza:
       # authenticator app. Until it is set up, a signed-in session can only reach the setup screens.
       required: ${JIZZA_MFA_REQUIRED:true}
       recovery-codes: 8
+    smart-sign-in:
+      # Sign a browser in by scanning the QR on the login page with a phone already signed in to
+      # Jizza (its browser, or the Jizza Agent app). Each code works once.
+      enabled: ${JIZZA_SMART_SIGN_IN:true}
+      lifetime: 2m
     registration:
       # Single-user: once the owner's account exists, nobody else can register.
       allow-additional-users: ${JIZZA_ALLOW_ADDITIONAL_USERS:false}

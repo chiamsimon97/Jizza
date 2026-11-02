@@ -114,7 +114,7 @@ public class SecurityAlerts {
   }
 
   /** A short human label for a user agent: browser and platform, not the whole string. */
-  static String describe(String userAgent) {
+  public static String describe(String userAgent) {
     if (userAgent == null || userAgent.isBlank()) return "an unknown device";
     String browser = userAgent.contains("Edg/") ? "Edge"
         : userAgent.contains("OPR/") ? "Opera"
