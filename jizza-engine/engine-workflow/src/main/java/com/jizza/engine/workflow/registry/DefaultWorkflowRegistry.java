@@ -71,6 +71,40 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public List<UUID> maintainers(UUID workflowId) {
+    return workflows.findById(workflowId).map(w -> {
+      List<UUID> ids = new java.util.ArrayList<>();
+      if (w.getMaintainerAgentIds() != null) {
+        for (com.fasterxml.jackson.databind.JsonNode id : w.getMaintainerAgentIds()) {
+          try {
+            ids.add(UUID.fromString(id.asText()));
+          } catch (IllegalArgumentException ignored) {
+            // a malformed id names no agent
+          }
+        }
+      }
+      return List.copyOf(ids);
+    }).orElse(List.of());
+  }
+
+  @Override
+  @Transactional
+  public void setMaintainers(UUID workflowId, List<UUID> agentIds) {
+    WorkflowEntity w = workflows.findById(workflowId)
+        .orElseThrow(() -> new com.jizza.engine.api.error.NotFoundException("Workflow", workflowId));
+    if (agentIds == null || agentIds.isEmpty()) {
+      w.setMaintainerAgentIds(null);
+    } else {
+      com.fasterxml.jackson.databind.node.ArrayNode ids =
+          com.jizza.engine.api.util.Json.mapper().createArrayNode();
+      new java.util.LinkedHashSet<>(agentIds).forEach(id -> ids.add(id.toString()));
+      w.setMaintainerAgentIds(ids);
+    }
+    workflows.save(w);
+  }
+
+  @Override
   @Transactional
   public WorkflowDto save(WorkflowDto dto) {
     WorkflowGraph graph = WorkflowGraph.from(dto.graph());

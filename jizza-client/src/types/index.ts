@@ -982,6 +982,8 @@ export interface GuardrailStep {
   toolName?: string | null
   actionType?: ActionType | null
   decision?: GuardrailDecision | null
+  /** The same step under each agent that maintains the workflow; the first one leads. */
+  perAgent?: { agentId: string; agentName?: string | null; decision: GuardrailDecision }[]
 }
 
 export interface WorkflowGuardrails {
@@ -991,6 +993,8 @@ export interface WorkflowGuardrails {
   owningAgentId?: string | null
   steps: GuardrailStep[]
   rules: AutonomyRuleDto[]
+  /** The agents chosen to maintain it, lead first; empty means its owner, else Jizza. */
+  maintainers?: { id: string; name?: string | null }[]
 }
 
 // ── Activity / Audit ──────────────────────────────────────────────────────────

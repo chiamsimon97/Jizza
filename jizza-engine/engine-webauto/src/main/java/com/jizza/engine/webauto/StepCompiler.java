@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
 /**
  * Turns the reviewed steps of a recording into the graph JSON the canvas saves, so a recording
  * becomes an ordinary workflow module: a Start with the inputs the person chose, one web step per
- * kept step, and an End that returns what the recording read.
+ * kept step, a Close browser step, and an End that returns what the recording read. The browser
+ * only closes because of that step: a person who wants the page left open removes it.
  *
  * <p>Pure on purpose: the same steps always compile to the same graph, and nothing here talks to a
  * browser, a database or a model. A step that holds a secret never carries its value; it must name
@@ -25,6 +26,7 @@ import java.util.regex.Pattern;
 final class StepCompiler {
 
   static final String OPEN = "browser.open";
+  static final String CLOSE = "browser.close";
   private static final Pattern FIELD = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
   private static final Set<String> VALUE_FIELDS = Set.of("text", "value", "password", "secret");
 
@@ -116,6 +118,15 @@ final class StepCompiler {
             .put("type", "rows".equals(outputKey) ? "list" : "text")
             .put("value", "{{ nodes." + id + "." + outputKey + " }}"));
       }
+    }
+
+    boolean closes = !steps.isEmpty()
+        && CLOSE.equals(steps.get(steps.size() - 1).path("action").asText());
+    if (!inline && !closes) {
+      nodes.add(node("close", "DEVICE_ACTION", "Close browser",
+          webConfig(CLOSE, 1, Json.obj().put("what", "session")), row++));
+      edges.add(edge(previous, "close"));
+      previous = "close";
     }
 
     if (!inline) {

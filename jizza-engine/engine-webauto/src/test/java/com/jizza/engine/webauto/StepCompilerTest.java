@@ -35,9 +35,11 @@ class StepCompilerTest {
     var graph = StepCompiler.compile("https://portal.example.com", List.of(OPEN, SET, READ, TABLE));
 
     var nodes = graph.path("nodes");
-    assertThat(nodes).hasSize(6);
+    assertThat(nodes).hasSize(7);
     assertThat(nodes.get(0).path("type").asText()).isEqualTo("TRIGGER");
-    assertThat(nodes.get(5).path("type").asText()).isEqualTo("END");
+    assertThat(nodes.get(5).path("config").path("action").asText()).isEqualTo("browser.close");
+    assertThat(nodes.get(5).path("label").asText()).isEqualTo("Close browser");
+    assertThat(nodes.get(6).path("type").asText()).isEqualTo("END");
     var set = nodes.get(2).path("config");
     assertThat(set.path("preset").asText()).isEqualTo("web");
     assertThat(set.path("target").asText()).isEqualTo("sameBrowser");
@@ -49,7 +51,7 @@ class StepCompilerTest {
     assertThat(inputs.get(0).path("default").asText()).isEqualTo("INV-2041");
     assertThat(inputs.get(0).path("required").asBoolean()).isFalse();
 
-    var outputs = nodes.get(5).path("config").path("outputs");
+    var outputs = nodes.get(6).path("config").path("outputs");
     assertThat(outputs).hasSize(2);
     assertThat(outputs.get(0).path("name").asText()).isEqualTo("invoiceTotal");
     assertThat(outputs.get(0).path("value").asText()).isEqualTo("{{ nodes.step_3.text }}");
@@ -57,9 +59,20 @@ class StepCompilerTest {
     assertThat(outputs.get(1).path("value").asText()).isEqualTo("{{ nodes.step_4.rows }}");
 
     var edges = graph.path("edges");
-    assertThat(edges).hasSize(5);
+    assertThat(edges).hasSize(6);
     assertThat(edges.get(0).path("from").asText()).isEqualTo("start");
-    assertThat(edges.get(4).path("to").asText()).isEqualTo("end");
+    assertThat(edges.get(4).path("to").asText()).isEqualTo("close");
+    assertThat(edges.get(5).path("to").asText()).isEqualTo("end");
+  }
+
+  @Test
+  void aRecordingThatAlreadyEndsByClosingGetsNoSecondClose() {
+    JsonNode close = step("""
+        {"seq":2,"action":"browser.close","version":1,"label":"Close browser",
+         "input":{"what":"session"},"meta":{}}""");
+    var graph = StepCompiler.compile("https://x.test", List.of(OPEN, close));
+    assertThat(graph.path("nodes").findValuesAsText("action").stream()
+        .filter("browser.close"::equals)).hasSize(1);
   }
 
   @Test
@@ -101,7 +114,7 @@ class StepCompilerTest {
   @Test
   void outputNamesStayUnique() {
     var graph = StepCompiler.compile("https://x.test", List.of(OPEN, READ, READ));
-    var outputs = graph.path("nodes").get(4).path("config").path("outputs");
+    var outputs = graph.path("nodes").get(5).path("config").path("outputs");
     assertThat(outputs.get(0).path("name").asText()).isNotEqualTo(outputs.get(1).path("name").asText());
   }
 
