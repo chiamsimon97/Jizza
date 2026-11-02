@@ -134,13 +134,26 @@ public class SecurityConfig {
         detail == null ? "" : detail.replace("\"", "'")));
   }
 
-  private CorsConfigurationSource corsSource(SecurityProperties props) {
+  static CorsConfigurationSource corsSource(SecurityProperties props) {
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    // Registered first, so it wins for device paths. A browser-extension agent sends its own
+    // origin (chrome-extension://<id>), which the app's origin list never holds; without this the
+    // CORS filter refuses its sign-in and its WebSocket handshake with 403. No credentials: device
+    // calls are signed with the device key or its bearer token, never a session cookie.
+    CorsConfiguration agent = new CorsConfiguration();
+    List<String> agentOrigins = new java.util.ArrayList<>(props.getCors().getAgentOriginPatterns());
+    agentOrigins.addAll(props.getCors().getAllowedOrigins());
+    agent.setAllowedOriginPatterns(agentOrigins);
+    agent.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
+    agent.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+    agent.setAllowCredentials(false);
+    source.registerCorsConfiguration("/agent/v1/**", agent);
+
     CorsConfiguration config = new CorsConfiguration();
     config.setAllowedOrigins(props.getCors().getAllowedOrigins());
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(List.of("Content-Type", "X-XSRF-TOKEN", "Accept"));
     config.setAllowCredentials(true);
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", config);
     return source;
   }

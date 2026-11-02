@@ -147,6 +147,27 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void aBrowserExtensionPairsSignsInAndConnectsFromItsOwnOrigin() {
+    // A Chromium extension sends Origin: chrome-extension://<id> on every call, including the
+    // WebSocket handshake. The CORS filter used to refuse that origin with 403.
+    device.origin("chrome-extension://abcdefghijklmnopabcdefghijklmnop").keyStorage("browser");
+    device.enrollWithCode(pairingCode(), "Chromium browser", "browser");
+    device.signIn();
+    device.connect();
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("SUCCEEDED");
+  }
+
+  @Test
+  void aWebPageOriginStillCannotCallTheDeviceEndpoints() {
+    device.origin("https://evil.example");
+    assertThatThrownBy(() -> device.enrollWithCode(pairingCode(), "Page", "browser"))
+        .isInstanceOf(SimDevice.SimException.class)
+        .satisfies(e -> assertThat(((SimDevice.SimException) e).status).isEqualTo(403));
+  }
+
+  @Test
   void aCommandSentOverTheWebSocketIsNotReportedAsWaitingForTheDevice() {
     pairAndSignIn();
     device.autoRun(false);

@@ -141,6 +141,8 @@ jizza:
       skew-steps: 1
     cors:
       allowed-origins: ${JIZZA_CORS_ORIGINS:http://localhost:5173}
+      # Browser-extension agents (Chrome, Edge, Ulaa...) call /agent/v1/** from their own origin.
+      agent-origin-patterns: ${JIZZA_AGENT_ORIGIN_PATTERNS:chrome-extension://*}
 
   agents:
     anthropic:

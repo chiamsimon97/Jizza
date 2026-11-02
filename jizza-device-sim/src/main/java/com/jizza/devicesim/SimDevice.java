@@ -89,6 +89,7 @@ public final class SimDevice implements AutoCloseable {
   private WebSocket socket;
   private boolean autoRun = true;
   private String keyStorage;
+  private String origin;
 
   public SimDevice(String baseUrl) {
     this(baseUrl, false);
@@ -133,6 +134,15 @@ public final class SimDevice implements AutoCloseable {
   /** Uses the key-storage name a real platform sends during enrollment. */
   public SimDevice keyStorage(String storage) {
     this.keyStorage = storage;
+    return this;
+  }
+
+  /**
+   * Sends this {@code Origin} header on every request and on the WebSocket handshake, as a
+   * browser extension does (for example {@code chrome-extension://<id>}).
+   */
+  public SimDevice origin(String origin) {
+    this.origin = origin;
     return this;
   }
 
@@ -263,12 +273,13 @@ public final class SimDevice implements AutoCloseable {
 
   /** Uploads a result file for a command and returns its id. */
   public String upload(UUID commandId, String name, byte[] content) {
-    HttpRequest req = HttpRequest.newBuilder(base.resolve("agent/v1/files?commandId=" + commandId
+    HttpRequest.Builder req = HttpRequest.newBuilder(base.resolve("agent/v1/files?commandId=" + commandId
             + "&name=" + java.net.URLEncoder.encode(name, StandardCharsets.UTF_8)))
         .header("Authorization", "Bearer " + token)
         .header("Content-Type", "application/octet-stream")
-        .PUT(HttpRequest.BodyPublishers.ofByteArray(content)).build();
-    return read(exchange(req)).path("fileId").asText();
+        .PUT(HttpRequest.BodyPublishers.ofByteArray(content));
+    if (origin != null) req.header("Origin", origin);
+    return read(exchange(req.build())).path("fileId").asText();
   }
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
@@ -276,9 +287,10 @@ public final class SimDevice implements AutoCloseable {
   /** Opens the socket with the token in the header, then says hello and sends the manifest. */
   public void connect() {
     String ws = base.toString().replaceFirst("^http", "ws") + "agent/v1/ws";
-    socket = http.newWebSocketBuilder()
-        .header("Authorization", "Bearer " + token)
-        .buildAsync(URI.create(ws), new Listener()).join();
+    WebSocket.Builder builder = http.newWebSocketBuilder()
+        .header("Authorization", "Bearer " + token);
+    if (origin != null) builder.header("Origin", origin);
+    socket = builder.buildAsync(URI.create(ws), new Listener()).join();
     hello();
     sendManifest();
   }
@@ -449,6 +461,7 @@ public final class SimDevice implements AutoCloseable {
     HttpRequest.Builder req = HttpRequest.newBuilder(base.resolve(path))
         .timeout(Duration.ofSeconds(60))
         .header("Accept", "application/json");
+    if (origin != null) req.header("Origin", origin);
     if (authenticated) req.header("Authorization", "Bearer " + token);
     if (body != null) {
       req.header("Content-Type", "application/json");
