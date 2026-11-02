@@ -67,6 +67,12 @@ describe('api client', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
   })
 
+  it('a connected app whose sign-in expired does not sign the person out', async () => {
+    fetchMock.mockResolvedValue(reply(401, { type: 'x/connection-expired', title: 'Authentication failed', status: 401 }))
+    await expect(api.get('/api/connections/1/test')).rejects.toBeInstanceOf(ApiError)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+  })
+
   it('a wrong password on sign-in does not sign anyone out', async () => {
     fetchMock.mockResolvedValue(reply(401, { type: 'x/authentication', title: 'Invalid credentials', status: 401 }))
     await expect(api.post('/api/auth/login', {})).rejects.toBeInstanceOf(ApiError)
