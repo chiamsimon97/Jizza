@@ -165,6 +165,17 @@ public class SecurityProperties {
         java.util.List.of("http://localhost:5173"));
     public java.util.List<String> getAllowedOrigins() { return allowedOrigins; }
     public void setAllowedOrigins(java.util.List<String> v) { this.allowedOrigins = v; }
+
+    /**
+     * Origin patterns allowed to call the device endpoints ({@code /agent/v1/**}) and open the
+     * device WebSocket, on top of {@link #allowedOrigins}. Browser-extension agents send their
+     * extension's origin, such as {@code chrome-extension://<id>}. These calls never carry
+     * cookies: each is signed with the device's key or its short-lived token.
+     */
+    private java.util.List<String> agentOriginPatterns = new java.util.ArrayList<>(
+        java.util.List.of("chrome-extension://*"));
+    public java.util.List<String> getAgentOriginPatterns() { return agentOriginPatterns; }
+    public void setAgentOriginPatterns(java.util.List<String> v) { this.agentOriginPatterns = v; }
   }
 
   public String getMasterKeyFile() { return masterKeyFile; }
