@@ -66,7 +66,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
   }
   // The session expired or was revoked. Forget the stale login so the app goes back to sign-in,
   // instead of every page showing its own "couldn't load" error. Auth calls report their own 401s.
-  if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated) {
+  // Only a 401 about the session itself counts: a connected app whose sign-in expired (an OAuth
+  // token, an MCP server, a device token) also answers 401, with its own problem type, and must not
+  // sign the person out of Jizza.
+  if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated
+      && /\/authentication$/.test(String(problem.type ?? ''))) {
     endLocalSession()
   }
   // Two-step sign-in is required and this session has not set it up: the app routes to setup.
