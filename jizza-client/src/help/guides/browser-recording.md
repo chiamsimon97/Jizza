@@ -1,0 +1,166 @@
+---
+title: Browser recording
+summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
+section: Web automation
+order: 10
+updated: 2026-11-01
+---
+
+## What it is
+
+Browser recording turns a task you do once in Chrome into a module that Jizza repeats the same way every time. While you do the task, the Jizza Browser Agent extension writes down each click, typed value and page change. Then you review the steps and save them as an ordinary workflow.
+
+With a saved recording you can:
+
+- **Run it on demand**, from the [Recordings](/recordings) page or by asking Jizza in chat ("download last month's invoices").
+- **Use it inside other workflows**, through "Run a module" or "For each", for example once per row of a spreadsheet.
+- **Change values per run**: any value you typed (an invoice number, a date, a search term) can become an input.
+- **Read data off pages**: pull text, check that something is on the page, or extract a whole table, and pass it to later steps.
+- **Schedule it**, once you allow that in the workflow's reuse settings.
+- **Edit it later** in the workflow builder, step by step, like any other workflow.
+
+Nothing is decided on the fly. You can see and change every step, and a run stops and asks you when a page no longer matches what was recorded.
+
+### How it fits together
+
+1. **Record in Chrome**: do the task once while the extension writes down the steps.
+2. **Review the steps**: rename, reorder, delete, and turn typed values into inputs.
+3. **Save as module**: it becomes a workflow with the Recorded origin.
+4. **Run the module** as often as you need.
+
+A run pauses when a page needs a person and goes on after **Done, continue**. When a step can't find its element, the run waits for you to apply a fix, and applying it saves a new version.
+
+## Before you start
+
+You set up three things once: the extension, a paired browser, and the sites it may work on.
+
+1. **Install the extension.** Load Jizza Browser Agent in Chrome or another Chromium browser (such as Ulaa), version 120 or newer.
+2. **Pair the browser.** In Jizza, open [Settings › Devices](/settings/devices), press **Pair a device**, open the **Browser** tab, and follow the steps. Paste the key into the extension's popup. The browser then shows as **Online**, and **Test** should answer within a few seconds.
+3. **Allow the sites.** In the extension's **Options**, add each site the recorder may work on, as `example.com`, or `*.example.com` to include its subdomains. Chrome asks you to grant access to each one. No site is allowed by default.
+4. **Save your logins (optional).** Also in Options, under **Saved logins**, add a name, the site, the username and the password for each site that needs a sign-in. They stay encrypted in the browser. Jizza only ever sees the login's name.
+
+Keep the browser open while you record or run, because the module runs in that browser, not on the server.
+
+## Record a task
+
+A recording runs from **Record** to **Stop**, and gives you a list of steps to review.
+
+1. In Jizza, open [Recordings](/recordings) and press **Record**.
+2. Choose the **browser agent**, a **start page** (for example `https://portal.example.com/invoices`) and a **name** for the recording.
+3. Chrome opens the start page in its own tab group, and the extension's side panel lists each step as you go.
+4. Do the task the way you normally would: click, type, pick from lists, tick boxes, switch tabs.
+5. To capture something the page shows rather than something you do, use the side panel:
+   - **Add check**: pick an element to check that it is there, or to read its text.
+   - **Add table**: pick a table to extract its rows.
+   - **Mark hover**: pick an element the run should hover over, such as a menu.
+6. If you make a stray click, delete it in the side panel. You can also drag steps into a different order there.
+7. Press **Stop**, in the side panel or in Jizza. Closing the last tab of the recording also stops it.
+
+You can also start a recording in two other ways:
+
+- **From the workflow builder**: choose **Record steps here** in the add-step list. The steps go straight into the workflow you are editing.
+- **From chat**: tell Jizza you want to show it a task. It starts the recording and shows a card with **Stop** and **Open review**.
+
+## What gets recorded
+
+Each thing you do becomes one named step. Steps inside frames (embedded pages) are recorded with their frame, so they replay in the same place.
+
+| What you do | Step you get |
+| --- | --- |
+| Type an address or open a bookmark | Open URL |
+| Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
+| Type in a field | Set text, one step per field when you leave it |
+| Type a password, one-time code or card number | Set text marked as a password; the value is never read |
+| Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
+| Tick or untick a box | Set checkbox |
+| Choose from a drop-down or a custom list | Select item |
+| Choose a radio button | Select radio |
+| Scroll more than a screen and pause | Scroll |
+| Back, Forward, Reload | Go back, Go forward, Refresh |
+| A popup opens, or you move to another tab | Switch to |
+| Close the last tab | Close browser |
+| Add check, Add table, Mark hover (side panel) | Check if element exists or Get text, Extract table data, Hover |
+
+Each step stores several ways to find its element (its label, text, role and position), plus a small picture of it, so you can tell steps apart in review.
+
+## Review and save
+
+After you press **Stop**, the recording waits for you in review. Nothing runs until you save it.
+
+- **Rename** a step so it reads like an instruction, such as "Open the invoice search".
+- **Move up / Move down** to change the order, and **Delete** steps you don't need.
+- **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
+- **Saved login** on each password step: enter the saved login to use. A recording with a password step can't be saved without one. (For now this is a text field for the login's id; a picker is planned.)
+
+Then give the module a name and a short description, and press **Save as module**. The description helps Jizza find the module when you ask for it in chat.
+
+Drafts you leave in review for 7 days are removed.
+
+## Use a saved recording
+
+A saved recording is a workflow with the **Recorded** origin, so it works anywhere a workflow does.
+
+| Where | How | Good for |
+| --- | --- | --- |
+| Recordings page | **Run now** on the saved recording | A one-off run while you watch |
+| Chat | Ask for the task in your own words; Jizza offers the matching recording and runs it after you say yes | Doing the task without opening anything |
+| Another workflow | **Run a module** step, passing its inputs | One step of a bigger process |
+| Many items | **For each** over a list, running the module once per item | The same task for every invoice, order or row |
+| Schedule | First turn on scheduled runs in the workflow's reuse settings | Daily or weekly jobs |
+| Workflow builder | **Open in builder** | Adding steps, conditions or data mapping |
+
+In the builder, the **Web Automation** group has the same steps the recorder makes, so you can also add steps by hand. Each step that needs an element has **Pick on page** (click the element in Chrome) and **Test step** (run that one step).
+
+What a step reads, such as a table's rows or an element's text, is available to later steps through data mapping, like any other step output.
+
+By default, a saved recording asks before each run and does not run on a schedule. You can change that in the workflow's reuse settings.
+
+## Sign-ins and when Jizza needs you
+
+Passwords never go into a recording. A password step types from a saved login, and only into a password field on that login's own site.
+
+Some pages need a person: a CAPTCHA, a one-time code, a "confirm it's you" check, or a sign-in form when no saved login fits. When a step can't go on because of one of these, the run pauses and:
+
+1. You get a notification, "Jizza needs you". Clicking it brings up the tab.
+2. The side panel shows a card that says what the page needs.
+3. You finish that part yourself in the tab, then press **Done, continue**.
+4. The step runs again from the start and the run carries on.
+
+If nobody responds before the step's time limit, the run stops as timed out. Cancelling the run also ends the wait.
+
+## Safety and privacy
+
+The recorder only watches what you allow, and you can stop it at any time.
+
+- **Only allowed sites.** Steps on a site that isn't in your allowed list are not recorded, and the side panel says "Not recording on this site". Browser settings pages, extension pages and the Chrome Web Store are never recorded or automated.
+- **Only its own tabs.** The recorder watches only the tab group it opened, not your other tabs.
+- **Only real actions.** Only the clicks and keys you actually make are recorded, never ones a page fakes.
+- **No secrets stored.** Password, one-time-code and card fields are never read. They are blurred in every screenshot and step picture, and if the server ever receives one of their values, it removes it.
+- **Your approval.** Steps that change a site (submitting, typing) go through your [guardrails](/guardrails) like any other action. In chat, clicking or typing in your browser always asks first.
+- **Stop everything.** **Pause automation** in the extension popup refuses all commands until you resume. **Stop all** (Alt+Shift+S) ends whatever is running now.
+
+## Limits and troubleshooting
+
+### Limits
+
+| Limit | Value |
+| --- | --- |
+| Longest recording | 30 minutes |
+| Steps per recording | 500 |
+| Typed text per step | 4 KB (longer text is cut and flagged) |
+| Drafts left in review | removed after 7 days |
+
+### When a page changes
+
+Sites change, and a step may no longer find its element. When that happens, the run stops at that step and Chrome looks for similar elements (same kind, similar text and position). You get a notification such as "Step 4 of Supplier invoices could not find Submit order. Review a fix". **Review fix** opens the workflow on that step. Choose the right element and press **Apply fix**, or press **Dismiss**. Jizza never picks one for you. Applying saves a new version, and the old ways of finding the element stay as fallbacks.
+
+### Common problems
+
+| What you see | What to do |
+| --- | --- |
+| "Not recording on this site" in the side panel | Add the site in the extension's Options, then grant access when Chrome asks |
+| Test says "It is not connected right now" | Keep the browser open, reload the extension on its extensions page, and check the server address it was paired with |
+| A step is missing after a scroll | This is on purpose: scrolls shorter than a screen, or followed by another step within 2 seconds, are left out |
+| "Choose a saved login for each password step" | Add the login in Options › Saved logins, then enter it on that step in review |
+| A run stops at a sign-in, CAPTCHA or code | Finish it in the tab and press **Done, continue** in the side panel |
+| The run history shows a failed web step | Open it. It says what went wrong and, when the browser took one, shows a screenshot of the page |
