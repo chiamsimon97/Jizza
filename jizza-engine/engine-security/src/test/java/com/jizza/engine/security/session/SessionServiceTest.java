@@ -105,6 +105,40 @@ class SessionServiceTest {
   }
 
   @Test
+  void anAutoApproveWindowOutlastsTheDefaultFreshness() {
+    SessionEntity session = live();
+    when(repository.findById(session.getId())).thenReturn(Optional.of(session));
+    service.markStepUp(session.getId(), Duration.ofHours(1));
+    // Confirmed 30 minutes ago with a one-hour window: still fresh, though past the 15-minute default.
+    session.setStepUpAt(Instant.now().minus(Duration.ofMinutes(30)));
+    session.setStepUpUntil(Instant.now().plus(Duration.ofMinutes(30)));
+    assertThat(service.stepUpFresh(session.getId())).isTrue();
+    session.setStepUpUntil(Instant.now().minusSeconds(1));
+    assertThat(service.stepUpFresh(session.getId())).isFalse();
+  }
+
+  @Test
+  void aShortWindowEndsBeforeTheDefaultFreshness() {
+    SessionEntity session = live();
+    when(repository.findById(session.getId())).thenReturn(Optional.of(session));
+    service.markStepUp(session.getId(), Duration.ofMinutes(2));
+    assertThat(service.stepUpFresh(session.getId())).isTrue();
+    session.setStepUpUntil(Instant.now().minusSeconds(1));
+    assertThat(service.stepUpFresh(session.getId())).isFalse();
+  }
+
+  @Test
+  void withoutAWindowTheConfiguredFreshnessApplies() {
+    SessionEntity session = live();
+    when(repository.findById(session.getId())).thenReturn(Optional.of(session));
+    service.markStepUp(session.getId());
+    assertThat(session.getStepUpUntil()).isNull();
+    assertThat(service.stepUpFresh(session.getId())).isTrue();
+    session.setStepUpAt(Instant.now().minus(Duration.ofHours(1)));
+    assertThat(service.stepUpFresh(session.getId())).isFalse();
+  }
+
+  @Test
   void revokingChecksTheSessionBelongsToTheCaller() {
     SessionEntity session = live();
     when(repository.findById(session.getId())).thenReturn(Optional.of(session));

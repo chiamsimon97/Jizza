@@ -42,6 +42,9 @@ public class SessionEntity {
 
   private Instant stepUpAt;
 
+  /** Until when the last step-up counts, when the person chose a window; else null. */
+  private Instant stepUpUntil;
+
   private Instant lastSeenAt;
 
   /** SHA-256 of the cookie token; the token itself is never stored. */
@@ -81,6 +84,8 @@ public class SessionEntity {
 
   public Instant getStepUpAt() { return stepUpAt; }
   public void setStepUpAt(Instant stepUpAt) { this.stepUpAt = stepUpAt; }
+  public Instant getStepUpUntil() { return stepUpUntil; }
+  public void setStepUpUntil(Instant stepUpUntil) { this.stepUpUntil = stepUpUntil; }
 
   public Instant getLastSeenAt() { return lastSeenAt; }
   public void setLastSeenAt(Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }

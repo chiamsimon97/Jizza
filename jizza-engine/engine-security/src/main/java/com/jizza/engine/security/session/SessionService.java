@@ -121,8 +121,19 @@ public class SessionService {
 
   @Transactional
   public void markStepUp(UUID sessionId) {
+    markStepUp(sessionId, null);
+  }
+
+  /**
+   * Records a step-up that unlocks sensitive actions for {@code window}, or for the configured
+   * freshness when it is null.
+   */
+  @Transactional
+  public void markStepUp(UUID sessionId, java.time.Duration window) {
     sessions.findById(sessionId).ifPresent(s -> {
-      s.setStepUpAt(Instant.now());
+      Instant now = Instant.now();
+      s.setStepUpAt(now);
+      s.setStepUpUntil(window == null ? null : now.plus(window));
       s.setStepUpFailures(0);
       sessions.save(s);
     });
@@ -162,9 +173,12 @@ public class SessionService {
 
   /** True when this session re-authenticated recently enough for a high-risk route (R4). */
   public boolean stepUpFresh(UUID sessionId) {
+    Instant now = Instant.now();
     return sessions.findById(sessionId)
-        .map(SessionEntity::getStepUpAt)
-        .filter(at -> at.isAfter(Instant.now().minus(props.getStepUp().getFreshness())))
+        .filter(s -> s.getStepUpAt() != null)
+        .filter(s -> s.getStepUpUntil() != null
+            ? now.isBefore(s.getStepUpUntil())
+            : s.getStepUpAt().isAfter(now.minus(props.getStepUp().getFreshness())))
         .isPresent();
   }
 
