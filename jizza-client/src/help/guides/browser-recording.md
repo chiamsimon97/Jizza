@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-01
+updated: 2026-11-02
 ---
 
 ## What it is
@@ -40,6 +40,44 @@ You set up three things once: the extension, a paired browser, and the sites it 
 4. **Save your logins (optional).** Also in Options, under **Saved logins**, add a name, the site, the username and the password for each site that needs a sign-in. They stay encrypted in the browser. Jizza only ever sees the login's name.
 
 Keep the browser open while you record or run, because the module runs in that browser, not on the server.
+
+## Step by step: record a task and test it
+
+This is the full procedure, checked end to end against a running Jizza server and the extension on 2 Nov 2026. It records a short task, saves it as a module and replays it.
+
+### A. Check the browser is ready
+
+1. Open the browser that has the Jizza Browser Agent loaded, and keep it open the whole time.
+2. In Jizza, open [Settings › Devices](/settings/devices). Your browser should show **Online**. Press **Test**: it should answer within a few seconds. If it says it is not connected, reload the extension on the browser's extensions page (`chrome://extensions`) and press **Test** again.
+3. Click the Jizza icon in the toolbar, open **Options**, and check that the site you want to record is in **Allowed sites** (for example `portal.example.com`). If you add it now, accept Chrome's prompt to grant access.
+
+### B. Record
+
+4. In Jizza, open [Recordings](/recordings) and press **Record**.
+5. Choose your browser under **Browser agent**, type the full **Start page** address starting with `https://` (or `http://`), give the recording a **Name**, and press **Record**.
+6. A new tab opens on the start page in the browser. Jizza shows "Recording in Chrome on …" with a red dot. Wait for the page to finish loading before you start.
+7. Do the task at a normal pace. Click into a field, type, then click the next thing or press Tab: the typed value is saved as a step when you leave the field. Click buttons and links, tick boxes, choose from lists.
+8. Watch the **Captured steps** list in Jizza (or the extension's side panel, from the browser's side panel button). Each action appears within a second or two. If nothing appears after your first click, see the last part of this section.
+9. When the task is done, press **Stop** in Jizza.
+
+### C. Review and save
+
+10. The review opens. Check every step reads the way you expect. Delete stray clicks, rename steps, and use **Make this an input** on any typed value you want to change on each run.
+11. Check the **Module name**, add a short **Description**, and press **Save as module**.
+
+### D. Test the module
+
+12. The module now shows under saved recordings on the [Recordings](/recordings) page. Keep the browser open and press **Run now**.
+13. The browser opens the start page again and Jizza replays the steps in order.
+14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked, allow these browser steps in [Guardrails](/guardrails).
+15. Open [Run history](/runs). The run should end as **Done**, with every step ticked. A failed step shows what went wrong in words, and a screenshot when the browser took one.
+
+### If recording does not start or captures nothing
+
+- **"Nothing was captured. Try again, and check Chrome is open on the page" straight after you press Record.** The browser refused the recording. Check the browser is **Online** and **Test** answers. Before the extension fix of 2 Nov 2026 every recording failed this way, so update the extension and reload it.
+- **A tab opens but no steps appear.** The site is not in **Allowed sites**, or Chrome was not given access to it. The side panel says "Not recording on this site".
+- **Steps appear only for clicks.** Typed text is saved when you leave the field, so click elsewhere or press Tab after typing.
+- **The run waits and nothing happens.** It is waiting for you to approve a step. See step 14.
 
 ## Record a task
 

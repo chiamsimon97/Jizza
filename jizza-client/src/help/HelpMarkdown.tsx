@@ -143,8 +143,10 @@ function list(lines: string[], start: number, depth: number): [ReactNode, number
     break
   }
   const List = ordered ? 'ol' : 'ul'
+  // A numbered list that goes on from an earlier one (4. after a heading) keeps its numbers.
+  const first = ordered ? Number(lines[start].match(/^\s*(\d+)/)?.[1] ?? 1) : 1
   return [
-    <List className={`${ordered ? 'list-decimal' : 'list-disc'} flex flex-col gap-1 pl-5`}>
+    <List start={ordered && first !== 1 ? first : undefined} className={`${ordered ? 'list-decimal' : 'list-disc'} flex flex-col gap-1 pl-5`}>
       {items.map((item, j) => <li key={j}>{inline(item.text)}{item.children.length > 0 && <div className="mt-1">{item.children}</div>}</li>)}
     </List>,
     i,
