@@ -68,7 +68,7 @@ This is the full procedure, checked end to end against a running Jizza server an
 ### D. Test the module
 
 12. The module now shows under saved recordings on the [Recordings](/recordings) page. Keep the browser open and press **Run now**.
-13. The browser opens the start page again and Jizza replays the steps in order.
+13. The browser opens the start page again and Jizza replays the steps in order. Before each step the extension brings the run's tab to the front, because some sites (for example a booking site's "Select language and format" dialog) only draw part of the page while their tab is visible. You can watch the run in Jizza; the browser tab comes back to the front at the next step.
 14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked, allow these browser steps in [Guardrails](/guardrails).
 15. Open [Run history](/runs). The run should end as **Done**, with every step ticked. A failed step shows what went wrong in words, and a screenshot when the browser took one.
 
@@ -201,4 +201,5 @@ Sites change, and a step may no longer find its element. When that happens, the 
 | A step is missing after a scroll | This is on purpose: scrolls shorter than a screen, or followed by another step within 2 seconds, are left out |
 | "Choose a saved login for each password step" | Add the login in Options › Saved logins, then enter it on that step in review |
 | A run stops at a sign-in, CAPTCHA or code | Finish it in the tab and press **Done, continue** in the side panel |
+| A run waits on a step until you open its tab | Update the extension: since 2 Nov 2026 it brings the run's tab to the front before each step. Also keep the browser window open, not minimised |
 | The run history shows a failed web step | Open it. It says what went wrong and, when the browser took one, shows a screenshot of the page |
