@@ -735,7 +735,9 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
   private RunDto completeRun(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
     context.recordResult(resultOf(graph, context));
-    cleanupBrowser(run, graph, context);
+    // A finished run leaves its browser as its steps left it: closing is a "Close browser" step
+    // (new recordings end with one), so removing that step keeps the page open. A run that fails
+    // or is cancelled still closes what it opened, because no step got the chance to.
     run.setContext(context.toJson());
     run.setStatus(RunStatus.DONE);
     run.setCurrentNode(null);
@@ -912,7 +914,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
   private UUID owningAgentOf(WorkflowRunEntity run) {
     return workflows.findById(run.getWorkflowId())
-        .map(WorkflowEntity::getOwningAgentId).orElse(null);
+        .map(WorkflowEntity::getActingAgentId).orElse(null);
   }
 
   private WorkflowGraph graphFor(WorkflowEntity workflow, int version) {

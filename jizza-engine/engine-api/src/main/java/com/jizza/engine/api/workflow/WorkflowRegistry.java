@@ -26,4 +26,17 @@ public interface WorkflowRegistry {
   default WorkflowDto saveNewVersion(UUID workflowId, com.fasterxml.jackson.databind.JsonNode graph) {
     throw new UnsupportedOperationException("New versions are not supported here");
   }
+
+  /** The agents that maintain the workflow, lead first; empty when none were chosen. */
+  default List<UUID> maintainers(UUID workflowId) {
+    return List.of();
+  }
+
+  /**
+   * Chooses the agents that maintain the workflow, lead first. Changes no version: the steps and
+   * the per-step guardrails of the current version stay as they are.
+   */
+  default void setMaintainers(UUID workflowId, List<UUID> agentIds) {
+    throw new UnsupportedOperationException("Maintainers are not supported here");
+  }
 }

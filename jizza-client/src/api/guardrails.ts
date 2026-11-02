@@ -29,6 +29,10 @@ export const guardrailsApi = {
 
   workflow: (workflowId: string) => api.get<WorkflowGuardrails>(`/api/guardrails/workflows/${workflowId}`),
 
+  /** The agents that maintain a workflow, lead first. The lead's guardrails judge its runs. */
+  setMaintainers: (workflowId: string, agentIds: string[]) =>
+    api.put<WorkflowGuardrails>(`/api/guardrails/workflows/${workflowId}/maintainers`, { agentIds }),
+
   /** What would happen if this call were made now. Nothing runs and nothing is spent. */
   simulate: (input: SimulationInput) => api.post<GuardrailDecision>('/api/guardrails/simulate', input),
 

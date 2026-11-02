@@ -25,7 +25,7 @@ Nothing is decided on the fly. You can see and change every step, and a run stop
 
 1. **Record in Chrome**: do the task once while the extension writes down the steps.
 2. **Review the steps**: rename, reorder, delete, and turn typed values into inputs.
-3. **Save as module**: it becomes a workflow with the Recorded origin.
+3. **Save as module**: it becomes a workflow with the Recorded origin. It ends with a **Close browser** step; remove that step if you want the page left open after a run.
 4. **Run the module** as often as you need.
 
 A run pauses when a page needs a person and goes on after **Done, continue**. When a step can't find its element, the run waits for you to apply a fix, and applying it saves a new version.
@@ -69,7 +69,7 @@ This is the full procedure, checked end to end against a running Jizza server an
 
 12. The module now shows under saved recordings on the [Recordings](/recordings) page. Keep the browser open and press **Run now**.
 13. The browser opens the start page again and Jizza replays the steps in order. Before each step the extension brings the run's tab to the front, because some sites (for example a booking site's "Select language and format" dialog) only draw part of the page while their tab is visible. You can watch the run in Jizza; the browser tab comes back to the front at the next step.
-14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked, allow these browser steps in [Guardrails](/guardrails).
+14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked for a step, open the workflow's **Guardrails** on the [Workflows](/workflows) page and set that step to **Auto** for the agent that leads it (see "Who runs it and which steps ask" below).
 15. Open [Run history](/runs). The run should end as **Done**, with every step ticked. A failed step shows what went wrong in words, and a screenshot when the browser took one.
 
 ### If recording does not start or captures nothing
@@ -152,6 +152,22 @@ In the builder, the **Web Automation** group has the same steps the recorder mak
 What a step reads, such as a table's rows or an element's text, is available to later steps through data mapping, like any other step output.
 
 By default, a saved recording asks before each run and does not run on a schedule. You can change that in the workflow's reuse settings.
+
+## Who runs it and which steps ask
+
+Each workflow has a **Guardrails** panel on the [Workflows](/workflows) page.
+
+- **Maintained by**: pick one or more agents, the same way you pick agents for a connector. The first one you pick **leads**: its guardrails decide every run of this workflow. With none picked, Jizza (or the agent that made the workflow) leads.
+- **Each step, per agent**: every step that acts on your apps or your browser is listed, with what each maintaining agent's guardrails will do: **Auto**, **Ask me**, **Let Jizza decide** or **Never**.
+- **Skip the approval for a step**: set that step to **Auto** for the lead agent. The run then goes on without asking you at that step. It covers this version of the workflow only; after you edit the steps, they are asked about again.
+
+Changing who maintains a workflow, or a step's mode, asks you to confirm it's you.
+
+## When the browser closes
+
+The browser closes only because of a **Close browser** step. A new recording ends with one. Remove it in the workflow builder if you want the page left open after a run, for example to pay for tickets yourself. A run that fails or is cancelled still closes the tabs it opened, because its steps never reached the end.
+
+Recordings saved before 2 Nov 2026 have no Close browser step, so their pages now stay open after a run. Add the step from **Web Automation** in the builder if you want them closed.
 
 ## Sign-ins and when Jizza needs you
 

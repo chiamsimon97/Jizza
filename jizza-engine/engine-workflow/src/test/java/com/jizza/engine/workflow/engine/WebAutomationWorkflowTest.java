@@ -46,7 +46,7 @@ class WebAutomationWorkflowTest {
   }
 
   @Test
-  void sameBrowserStepsUseTheOpenedDeviceAndSessionAndCleanupAtTheEnd() {
+  void sameBrowserStepsUseTheOpenedDeviceAndSessionAndAFinishedRunLeavesItOpen() {
     EngineHarness harness = new EngineHarness(line(
         node("open", NodeType.DEVICE_ACTION,
             """
@@ -68,8 +68,8 @@ class WebAutomationWorkflowTest {
         ? UUID.nameUUIDFromBytes("browser-device".getBytes(java.nio.charset.StandardCharsets.UTF_8))
         : open.target().deviceId());
     assertThat(info.input().path("session").asText()).isEqualTo("s_one");
-    assertThat(harness.deviceRequests.get(2).action()).isEqualTo("browser.close");
-    assertThat(harness.deviceRequests.get(2).runId()).isNull();
+    // No "Close browser" step, so the page stays as the run left it.
+    assertThat(harness.deviceRequests).hasSize(2);
   }
 
   @Test
@@ -180,7 +180,7 @@ class WebAutomationWorkflowTest {
   }
 
   @Test
-  void defaultSessionCloseClearsAffinityButTabCloseStillRunsCleanup() {
+  void aCloseStepIsTheOnlyCloseWhenARunFinishes() {
     EngineHarness sessionClose = new EngineHarness(line(
         node("open", NodeType.DEVICE_ACTION,
             "{\"preset\":\"web\",\"action\":\"browser.open\",\"target\":\"sameBrowser\","
@@ -207,8 +207,8 @@ class WebAutomationWorkflowTest {
     tabClose.engine.start(tabClose.workflow.getId(), 1, Json.obj(), "manual");
 
     assertThat(tabClose.deviceRequests).extracting(r -> r.action())
-        .containsExactly("browser.open", "browser.close", "browser.close");
-    assertThat(tabClose.deviceRequests.get(2).input().path("what").asText()).isEqualTo("session");
+        .containsExactly("browser.open", "browser.close");
+    assertThat(tabClose.deviceRequests.get(1).input().path("what").asText()).isEqualTo("tab");
   }
 
   @Test
@@ -435,7 +435,7 @@ class WebAutomationWorkflowTest {
     harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
 
     assertThat(harness.deviceRequests).extracting(r -> r.action())
-        .containsExactly("browser.open", "browser.getText", "browser.close");
+        .containsExactly("browser.open", "browser.getText");
   }
 
   @Test
@@ -454,7 +454,7 @@ class WebAutomationWorkflowTest {
 
     assertThat(run.status()).isEqualTo(RunStatus.DONE);
     assertThat(harness.deviceRequests).extracting(r -> r.action())
-        .containsExactly("browser.runSteps", "browser.close");
+        .containsExactly("browser.runSteps");
     var sent = harness.deviceRequests.get(0).input();
     assertThat(sent.path("steps")).hasSize(2);
     assertThat(sent.path("steps").get(0).path("key").asText()).isEqualTo("open");
@@ -463,8 +463,6 @@ class WebAutomationWorkflowTest {
     var context = harness.run(run.id()).getContext();
     assertThat(context.path("nodes").path("read").path("text").asText()).isEqualTo("Total: 12");
     assertThat(context.path("nodes").path("open").path("sessionId").asText()).isEqualTo("s_batch");
-    // The session the batch opened is the run's browser, closed at the end as usual.
-    assertThat(harness.deviceRequests.get(1).input().path("session").asText()).isEqualTo("s_batch");
   }
 
   @Test
@@ -479,7 +477,7 @@ class WebAutomationWorkflowTest {
 
     assertThat(run.status()).isEqualTo(RunStatus.DONE);
     assertThat(harness.deviceRequests).extracting(r -> r.action())
-        .containsExactly("browser.runSteps", "browser.open", "browser.getText", "browser.close");
+        .containsExactly("browser.runSteps", "browser.open", "browser.getText");
   }
 
   @Test
@@ -496,7 +494,7 @@ class WebAutomationWorkflowTest {
 
     assertThat(run.status()).isEqualTo(RunStatus.DONE);
     assertThat(harness.deviceRequests).extracting(r -> r.action())
-        .containsExactly("browser.runSteps", "browser.getText", "browser.close");
+        .containsExactly("browser.runSteps", "browser.getText");
     assertThat(harness.deviceRequests.get(1).input().path("session").asText()).isEqualTo("s_batch");
   }
 

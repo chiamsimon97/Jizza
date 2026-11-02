@@ -50,12 +50,24 @@ public class GuardrailsUseCase {
   public record Overview(List<AutonomyRuleDto> rules, List<AgentGuardrails> agents,
                          String defaultRule, boolean paused, QuietHours quietHours) {}
 
-  /** One step of a workflow as the guardrails will judge it on the current version. */
+  /** What one maintaining agent's guardrails decide for a step. */
+  public record AgentDecision(UUID agentId, String agentName, Decision decision) {}
+
+  /**
+   * One step of a workflow as the guardrails will judge it on the current version. {@code agentId}
+   * and {@code decision} are the lead maintainer's, which is whose guardrails a run follows;
+   * {@code perAgent} has the same step under each maintaining agent.
+   */
   public record Step(String nodeId, String label, NodeType type, UUID agentId, String agentName,
-                     String toolName, ActionType actionType, Decision decision) {}
+                     String toolName, ActionType actionType, Decision decision,
+                     List<AgentDecision> perAgent) {}
+
+  /** An agent that maintains the workflow; the first one leads. */
+  public record Maintainer(UUID id, String name) {}
 
   public record WorkflowGuardrails(UUID workflowId, String name, int version, UUID owningAgentId,
-                                   List<Step> steps, List<AutonomyRuleDto> rules) {}
+                                   List<Step> steps, List<AutonomyRuleDto> rules,
+                                   List<Maintainer> maintainers) {}
 
   private final AutonomyGate gate;
   private final AutonomyPolicyStore policies;
@@ -73,6 +85,15 @@ public class GuardrailsUseCase {
   public void setMcpServers(
       org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.mcp.McpServers> mcpServers) {
     this.mcpServers = mcpServers;
+  }
+
+  /** Device actions, for the guardrails of a workflow's device and web steps. */
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> deviceActions;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setDeviceActions(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.device.DeviceActionCatalog> deviceActions) {
+    this.deviceActions = deviceActions;
   }
 
   public GuardrailsUseCase(AutonomyGate gate, AutonomyPolicyStore policies,
@@ -116,45 +137,100 @@ public class GuardrailsUseCase {
   @Transactional(readOnly = true)
   public WorkflowGuardrails workflow(UUID userId, UUID workflowId) {
     WorkflowDto workflow = ownWorkflow(userId, workflowId);
-    UUID jizza = agents.orchestrator(userId).id();
+    List<UUID> chosen = maintainersOf(userId, workflow);
     List<Step> steps = new ArrayList<>();
     for (WorkflowNode node : WorkflowGraph.from(workflow.graph()).nodes()) {
-      if (node.type() == NodeType.CONNECTOR_TOOL) {
-        GeneratedToolDto tool = toolOf(node);
-        UUID actor = workflow.owningAgentId() != null ? workflow.owningAgentId() : jizza;
-        if (tool == null) {
-          steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
-              null, null, Decision.deny("The tool this step calls no longer exists", "no-tool")));
-          continue;
-        }
-        GuardrailContext ctx = new GuardrailContext(actor, tool.name(), null, workflow.id(),
-            workflow.version(), node.id(), true, null).withConnection(tool.connectionId());
-        Decision d = gate.evaluate(ctx);
-        steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
-            tool.name(), d.actionType(), d));
-      } else if (node.type() == NodeType.MCP_TOOL) {
-        UUID actor = workflow.owningAgentId() != null ? workflow.owningAgentId() : jizza;
-        var tool = mcpToolOf(node);
-        if (tool == null) {
-          steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
-              null, null, Decision.deny("The MCP tool this step calls no longer exists", "no-tool")));
-          continue;
-        }
-        Decision d = gate.evaluate(new GuardrailContext(actor, tool.toolName(), null, workflow.id(),
-            workflow.version(), node.id(), true, tool.actionType()));
-        steps.add(new Step(node.id(), node.label(), node.type(), actor, agents.nameOf(actor),
-            tool.toolName(), d.actionType(), d));
-      } else if (node.type() == NodeType.AGENT_STEP) {
+      if (node.type() == NodeType.AGENT_STEP) {
         UUID agentId = uuid(node.config() == null ? null : node.config().path("agentId"));
         // An agent step chooses its tools as it runs; each is judged then, inside this workflow.
         steps.add(new Step(node.id(), node.label(), node.type(), agentId,
-            agentId == null ? null : agents.nameOf(agentId), null, null, null));
+            agentId == null ? null : agents.nameOf(agentId), null, null, null, List.of()));
+        continue;
       }
+      Judged judged = judgeable(node);
+      if (judged == null) continue;
+      List<AgentDecision> perAgent = new ArrayList<>();
+      for (UUID actor : chosen) {
+        Decision d = judged.missing() != null ? Decision.deny(judged.missing(), "no-tool")
+            : gate.evaluate(new GuardrailContext(actor, judged.toolRef(), null, workflow.id(),
+                workflow.version(), node.id(), true, judged.knownType())
+                .withConnection(judged.connectionId()));
+        perAgent.add(new AgentDecision(actor, agents.nameOf(actor), d));
+      }
+      AgentDecision lead = perAgent.get(0);
+      steps.add(new Step(node.id(), node.label(), node.type(), lead.agentId(), lead.agentName(),
+          judged.missing() != null ? null : judged.toolName(),
+          judged.missing() != null ? null : lead.decision().actionType(), lead.decision(),
+          perAgent));
     }
     List<AutonomyRuleDto> rules = policies.list(userId).stream()
         .filter(rule -> workflowId.equals(rule.workflowId())).toList();
+    List<Maintainer> maintainers = workflows.maintainers(workflowId).stream()
+        .filter(chosen::contains)
+        .map(id -> new Maintainer(id, agents.nameOf(id))).toList();
     return new WorkflowGuardrails(workflow.id(), workflow.name(), workflow.version(),
-        workflow.owningAgentId(), steps, rules);
+        workflow.owningAgentId(), steps, rules, maintainers);
+  }
+
+  /**
+   * Chooses the agents that maintain a workflow, lead first. The lead's guardrails judge each run;
+   * the step rules set for each agent stay with that agent. No new version is made.
+   */
+  @Transactional
+  public WorkflowGuardrails setMaintainers(UUID userId, UUID workflowId, List<UUID> agentIds) {
+    ownWorkflow(userId, workflowId);
+    List<UUID> ids = agentIds == null ? List.of() : agentIds.stream().distinct().toList();
+    if (ids.size() > 20) throw new com.jizza.engine.api.error.ValidationException("Choose at most 20 agents");
+    for (UUID id : ids) {
+      agents.byId(id).filter(a -> a.userId().equals(userId) && !"archived".equals(a.status()))
+          .orElseThrow(() -> new NotFoundException("Agent", id));
+    }
+    workflows.setMaintainers(workflowId, ids);
+    audit.record(userId, ActorType.USER, ids.isEmpty() ? null : ids.get(0),
+        "workflow.maintainers_changed", workflowId.toString(),
+        Json.obj().put("count", ids.size()));
+    return workflow(userId, workflowId);
+  }
+
+  /** The maintainers that still are the person's agents, else the owner or Jizza, lead first. */
+  private List<UUID> maintainersOf(UUID userId, WorkflowDto workflow) {
+    List<UUID> chosen = workflows.maintainers(workflow.id()).stream()
+        .filter(id -> agents.byId(id).filter(a -> a.userId().equals(userId)
+            && !"archived".equals(a.status())).isPresent())
+        .toList();
+    if (!chosen.isEmpty()) return chosen;
+    return List.of(workflow.owningAgentId() != null ? workflow.owningAgentId()
+        : agents.orchestrator(userId).id());
+  }
+
+  /** How the gate names a step's call; {@code missing} says why it can't be judged. */
+  private record Judged(String toolName, String toolRef, ActionType knownType, UUID connectionId,
+                        String missing) {}
+
+  private Judged judgeable(WorkflowNode node) {
+    if (node.type() == NodeType.CONNECTOR_TOOL) {
+      GeneratedToolDto tool = toolOf(node);
+      if (tool == null) return new Judged(null, null, null, null, "The tool this step calls no longer exists");
+      return new Judged(tool.name(), tool.name(), null, tool.connectionId(), null);
+    }
+    if (node.type() == NodeType.MCP_TOOL) {
+      var tool = mcpToolOf(node);
+      if (tool == null) {
+        return new Judged(null, null, null, null, "The MCP tool this step calls no longer exists");
+      }
+      return new Judged(tool.toolName(), tool.toolName(), tool.actionType(), null, null);
+    }
+    if (node.type() == NodeType.DEVICE_ACTION) {
+      var catalog = deviceActions == null ? null : deviceActions.getIfAvailable();
+      String action = node.config() == null ? null : node.config().path("action").asText(null);
+      if (catalog == null || action == null) return null;
+      var spec = catalog.resolve(action, node.config().path("version").asInt(0)).orElse(null);
+      if (spec == null) return new Judged(null, null, null, null, "Devices have no action called '" + action + "'");
+      // The device is only known once the run has opened its browser; a step rule matches any.
+      String ref = "device_any__" + spec.action().replaceAll("[^A-Za-z0-9]", "_");
+      return new Judged(spec.title(), ref, spec.actionType(), null, null);
+    }
+    return null;
   }
 
   private com.jizza.engine.api.mcp.McpToolDto mcpToolOf(WorkflowNode node) {

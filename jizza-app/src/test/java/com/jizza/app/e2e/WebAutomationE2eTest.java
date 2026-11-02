@@ -153,6 +153,10 @@ class WebAutomationE2eTest extends E2eSupport {
     java.util.UUID workflowId = java.util.UUID.fromString(saved.json().path("workflowId").asText());
     var entity = workflows.findById(workflowId).orElseThrow();
     assertThat(entity.getOrigin().name()).isEqualTo("RECORDED");
+    // The browser closes because of a step the person can remove, not on its own.
+    JsonNode nodes = entity.getGraph().path("nodes");
+    assertThat(nodes.get(nodes.size() - 2).path("config").path("action").asText())
+        .isEqualTo("browser.close");
     entity.setStatus(WorkflowStatus.APPROVED);
     workflows.save(entity);
 
@@ -390,6 +394,63 @@ class WebAutomationE2eTest extends E2eSupport {
   }
 
   /** Runs a version by hand and waits until it has finished, failed or stopped for the person. */
+  @Test
+  void aWebStepSetToAutoForTheLeadAgentRunsWithoutAskingAndTheTabIsLeftOpen() throws Exception {
+    JsonNode graph = Json.read("""
+        {"nodes":[
+          {"id":"start","type":"TRIGGER","label":"Start","config":{}},
+          {"id":"open","type":"DEVICE_ACTION","label":"Open the portal","config":{"preset":"web",
+            "action":"browser.open","version":2,"target":"sameBrowser",
+            "inputs":{"url":"https://example.com"}}},
+          {"id":"click","type":"DEVICE_ACTION","label":"Click Sign in","config":{
+            "preset":"web","action":"browser.click","version":2,"target":"sameBrowser",
+            "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Sign in"}]}}}},
+          {"id":"end","type":"END","label":"Done","config":{}}],
+         "edges":[{"from":"start","to":"open"},{"from":"open","to":"click"},{"from":"click","to":"end"}]}
+        """);
+    String workflowId = api.post("/api/workflows", Map.of("name", "Click sign in", "graph", graph))
+        .json().path("id").asText();
+
+    // The click is listed under the guardrails, and asks first.
+    JsonNode guard = api.get("/api/guardrails/workflows/" + workflowId).json();
+    JsonNode click = null;
+    for (JsonNode step : guard.path("steps")) if ("click".equals(step.path("nodeId").asText())) click = step;
+    assertThat(click).as(guard.toString()).isNotNull();
+    assertThat(click.path("type").asText()).isEqualTo("DEVICE_ACTION");
+    assertThat(click.path("decision").path("rule").asText()).isNotEqualTo("ALLOW");
+    JsonNode parked = runToEnd(workflowId, 1);
+    assertThat(parked.path("status").asText()).as(parked.toString()).isNotEqualTo("DONE");
+    api.post("/api/runs/" + parked.path("id").asText() + "/cancel", Map.of());
+
+    // Jizza maintains it and leads; its rule for this one step becomes Auto.
+    String jizza = null;
+    for (JsonNode agent : api.get("/api/agents").json()) {
+      if (agent.path("orchestrator").asBoolean()) jizza = agent.path("id").asText();
+    }
+    api.post("/api/auth/step-up", Map.of("password", PASSWORD));
+    var maintained = api.put("/api/guardrails/workflows/" + workflowId + "/maintainers",
+        Map.of("agentIds", java.util.List.of(jizza)));
+    assertThat(maintained.ok()).as(maintained.body()).isTrue();
+    assertThat(maintained.json().path("maintainers").get(0).path("id").asText()).isEqualTo(jizza);
+    var rule = api.put("/api/guardrails/rules", Map.of("agentId", jizza, "toolRef", "*",
+        "rule", "ALLOW", "precedence", 0, "workflowId", workflowId, "nodeId", "click"));
+    assertThat(rule.ok()).as(rule.body()).isTrue();
+    JsonNode after = api.get("/api/guardrails/workflows/" + workflowId).json();
+    for (JsonNode step : after.path("steps")) {
+      if ("click".equals(step.path("nodeId").asText())) {
+        assertThat(step.path("perAgent").get(0).path("decision").path("rule").asText())
+            .isEqualTo("ALLOW");
+      }
+    }
+
+    int sentBefore = device.received().size();
+    JsonNode done = runToEnd(workflowId, 1);
+    assertThat(done.path("status").asText()).as(done.toString()).isEqualTo("DONE");
+    // No Close browser step, so nothing closed the tab afterwards.
+    assertThat(device.received().subList(sentBefore, device.received().size()).toString())
+        .contains("browser.click").doesNotContain("browser.close");
+  }
+
   private JsonNode runToEnd(String workflowId, int version) throws Exception {
     var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", version));
     assertThat(run.ok()).as(run.body()).isTrue();
