@@ -50,6 +50,13 @@ describe('HelpMarkdown', () => {
     expect(screen.getByRole('link', { name: 'site' })).toHaveAttribute('target', '_blank')
   })
 
+  it('keeps the numbers of a list that continues an earlier one', () => {
+    renderText('1. One\n\n### Next\n\n4. Four\n5. Five')
+    const lists = screen.getAllByRole('list')
+    expect(lists[0]).not.toHaveAttribute('start')
+    expect(lists[1]).toHaveAttribute('start', '4')
+  })
+
   it('shows HTML and script links as text, never as markup', () => {
     renderText('<img src=x onerror=alert(1)> [bad](javascript:alert(1))')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
