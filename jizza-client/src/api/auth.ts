@@ -37,8 +37,8 @@ export const authApi = {
   disableMfa: (code: string) =>
     api.post<{ message: string }>('/api/auth/mfa/disable', { code }),
 
-  stepUp: (password: string, code?: string) =>
-    api.post<void>('/api/auth/step-up', { password, code }),
+  stepUp: (password: string) =>
+    api.post<void>('/api/auth/step-up', { password }),
 
   logout: () =>
     api.post<void>('/api/auth/logout'),

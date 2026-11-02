@@ -32,8 +32,8 @@ public class SecurityProperties {
   private final Invitations invitations = new Invitations();
 
   public static class Session {
-    private Duration idleTimeout = Duration.ofMinutes(30);
-    private Duration absoluteTimeout = Duration.ofHours(12);
+    private Duration idleTimeout = Duration.ofDays(3);
+    private Duration absoluteTimeout = Duration.ofDays(15);
     private String cookieName = "JIZZA_SESSION";
     private boolean cookieSecure = true;
     /** Strict: the session cookie is never sent on a request another site started. */
@@ -53,7 +53,7 @@ public class SecurityProperties {
 
   public static class StepUp {
     /** How recently the user must have re-authenticated for a high-risk route to proceed. */
-    private Duration freshness = Duration.ofMinutes(5);
+    private Duration freshness = Duration.ofMinutes(15);
     /**
      * Wrong step-up answers a session may give in a row before it is revoked. Someone holding a
      * stolen session cookie cannot sit and guess the password behind it.

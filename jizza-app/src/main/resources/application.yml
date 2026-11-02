@@ -100,13 +100,13 @@ jizza:
     master-key: ${JIZZA_MASTER_KEY:}
     allow-env-master-key: true
     session:
-      idle-timeout: 30m
-      absolute-timeout: 12h
+      idle-timeout: 3d                # signed out after 3 days with no activity
+      absolute-timeout: 15d           # and always asked to sign in again after 15 days
       cookie-name: JIZZA_SESSION
       cookie-secure: ${JIZZA_COOKIE_SECURE:false}   # true wherever TLS terminates in front
       same-site: Strict
     step-up:
-      freshness: 5m
+      freshness: 15m                  # how long one password confirmation unlocks sensitive actions
       max-failures: 5                 # wrong step-up answers in a row before the session is revoked
     mfa:
       # Jizza holds memory, personal data and live credentials, so every account must use an
