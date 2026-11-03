@@ -363,6 +363,14 @@ public class AgentGatewayService implements DeviceAgentGateway {
   }
 
   @Override
+  public java.util.Optional<Companion> companion(Caller caller) {
+    return devices.findById(caller.deviceId())
+        .filter(d -> d.getOwnerUserId() != null)
+        .map(d -> new Companion(d.getOwnerUserId(), d.getWorkspaceId(), d.getId(), d.getName(),
+            com.jizza.engine.api.device.PhoneAccess.from(d.getPhoneAccess())));
+  }
+
+  @Override
   public boolean verifySignature(Caller caller, String text, String signature) {
     return registry.verifySignature(caller.deviceId(), text, signature);
   }

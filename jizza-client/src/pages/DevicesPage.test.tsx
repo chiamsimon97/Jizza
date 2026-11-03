@@ -47,6 +47,29 @@ describe('Devices', () => {
     expect(screen.getByRole('button', { name: 'Copy installation key' })).toBeInTheDocument()
   })
 
+  it('lets the person who paired a phone choose what the Jizza app on it may do', async () => {
+    const pixel: Device = { ...laptop, id: 'p1', name: 'Pixel', platform: 'ANDROID', keyStorage: 'keystore' }
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([pixel])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    vi.spyOn(devicesApi, 'phoneAccess').mockResolvedValue({ access: 'APPROVE' })
+    const set = vi.spyOn(devicesApi, 'setPhoneAccess').mockResolvedValue({ access: 'FULL' })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Read and approve/ })).toBeChecked())
+    fireEvent.click(screen.getByRole('radio', { name: /Full/ }))
+    await waitFor(() => expect(set).toHaveBeenCalledWith('p1', 'FULL'))
+  })
+
+  it('shows no phone access for a computer', async () => {
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([laptop])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    const read = vi.spyOn(devicesApi, 'phoneAccess').mockResolvedValue({ access: 'APPROVE' })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    expect(screen.queryByRole('radiogroup', { name: 'Phone access' })).not.toBeInTheDocument()
+    expect(read).not.toHaveBeenCalled()
+  })
+
   it('reports a test connection round trip', async () => {
     vi.spyOn(devicesApi, 'list').mockResolvedValue([laptop])
     vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])

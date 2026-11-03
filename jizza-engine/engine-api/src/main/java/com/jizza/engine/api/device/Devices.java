@@ -76,4 +76,13 @@ public interface Devices {
 
   record DeviceFile(UUID id, UUID deviceId, UUID commandId, String name, String contentType,
                     long size, byte[] content) {}
+
+  /** What the Jizza app on this person's phone may do with their account. */
+  default PhoneAccess phoneAccess(UUID deviceId) {
+    return PhoneAccess.APPROVE;
+  }
+
+  default PhoneAccess setPhoneAccess(UUID deviceId, PhoneAccess access) {
+    throw new UnsupportedOperationException("Phone access is not stored here");
+  }
 }

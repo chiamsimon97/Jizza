@@ -5,6 +5,7 @@ import {
   Apple, Globe2, KeyRound, Laptop, Monitor, MonitorSmartphone, Plus, Smartphone, Terminal, Trash2, Zap,
 } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
+import { useAuthStore } from '@/store/authStore'
 import { ACTION_LABELS, ACTION_TYPES } from '@/components/guardrails/labels'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -16,7 +17,7 @@ import { Input } from '@/components/ui/Input'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState, LoadError } from '@/components/ui/EmptyState'
-import type { ActionType, Device, DeviceCommand, DeviceEnrollmentToken, DevicePairingCode, DevicePlatform } from '@/types'
+import type { ActionType, Device, PhoneAccess, DeviceCommand, DeviceEnrollmentToken, DevicePairingCode, DevicePlatform } from '@/types'
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
@@ -263,11 +264,58 @@ function DeviceCard({ device }: { device: Device }) {
               </ul>
             </div>
           )}
+          <PhoneAccessSection device={device} />
           <CommandsList deviceId={device.id} />
           <LogsList deviceId={device.id} />
         </div>
       )}
     </Card>
+  )
+}
+
+const PHONE_ACCESS: { value: PhoneAccess; label: string; hint: string }[] = [
+  { value: 'READ', label: 'Read only', hint: 'See runs, usage, activity, devices and what is waiting.' },
+  { value: 'APPROVE', label: 'Read and approve', hint: 'Also answer approvals and questions, and Pause all.' },
+  { value: 'FULL', label: 'Full', hint: 'Also run workflows, cancel runs and resume after Pause all.' },
+]
+
+/** Only on a phone you paired yourself: what the Jizza app on it may do with your account. */
+function PhoneAccessSection({ device }: { device: Device }) {
+  const qc = useQueryClient()
+  const userId = useAuthStore(s => s.userId)
+  const mine = (device.platform === 'ANDROID' || device.platform === 'IOS') && device.ownerUserId !== null
+    && device.ownerUserId === userId
+  const access = useQuery({
+    queryKey: ['devices', device.id, 'phone-access'],
+    queryFn: () => devicesApi.phoneAccess(device.id),
+    enabled: mine,
+  })
+  const change = useMutation({
+    mutationFn: (value: PhoneAccess) => devicesApi.setPhoneAccess(device.id, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['devices', device.id, 'phone-access'] }),
+  })
+  if (!mine) return null
+  const current = access.data?.access
+  return (
+    <div>
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">What the Jizza app on it may do</h3>
+      <p className="mt-1 text-xs text-gray-500">
+        Every approval or command from the phone is signed with its key, which opens only with your fingerprint, face or PIN.
+      </p>
+      <div role="radiogroup" aria-label="Phone access" className="mt-2 grid gap-2 sm:grid-cols-3">
+        {PHONE_ACCESS.map(o => (
+          <label key={o.value} className={`flex cursor-pointer flex-col rounded-md border px-3 py-2 text-sm ${current === o.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40' : 'border-gray-200 dark:border-gray-700'}`}>
+            <span className="flex items-center gap-2 font-medium text-gray-900 dark:text-gray-100">
+              <input type="radio" name={`${device.id}-phone-access`} value={o.value} checked={current === o.value}
+                disabled={access.isLoading || change.isPending} onChange={() => change.mutate(o.value)} />
+              {o.label}
+            </span>
+            <span className="mt-0.5 text-xs text-gray-500">{o.hint}</span>
+          </label>
+        ))}
+      </div>
+      {change.isError && <p className="mt-2 text-sm text-red-600" role="alert">{errorText(change.error)}</p>}
+    </div>
   )
 }
 

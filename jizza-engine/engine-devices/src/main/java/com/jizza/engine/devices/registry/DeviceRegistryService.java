@@ -488,6 +488,30 @@ public class DeviceRegistryService implements Devices {
         ? device.getOwnerUserId() : device.getEnrolledBy(), device.getWorkspaceId());
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public com.jizza.engine.api.device.PhoneAccess phoneAccess(UUID deviceId) {
+    return com.jizza.engine.api.device.PhoneAccess.from(require(deviceId).getPhoneAccess());
+  }
+
+  @Override
+  @Transactional
+  public com.jizza.engine.api.device.PhoneAccess setPhoneAccess(
+      UUID deviceId, com.jizza.engine.api.device.PhoneAccess access) {
+    if (access == null) throw new ValidationException("Choose read, approve or full");
+    DeviceEntity device = require(deviceId);
+    if (device.getOwnerUserId() == null) {
+      throw new ValidationException("Only a phone paired by a person has phone access");
+    }
+    String before = device.getPhoneAccess();
+    device.setPhoneAccess(access.code());
+    device.setUpdatedAt(clock.instant());
+    devices.save(device);
+    audit.record(device.getOwnerUserId(), ActorType.USER, null, "device.phone_access_changed",
+        device.getId().toString(), Json.obj().put("from", before).put("to", access.code()));
+    return access;
+  }
+
   /** Checks a signature by the device's current key; false for no key or a bad signature. */
   @Transactional(readOnly = true)
   public boolean verifySignature(UUID deviceId, String text, String signature) {

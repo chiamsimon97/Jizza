@@ -1,6 +1,6 @@
 import { api } from '@/lib/api'
 import type {
-  ActionType, Device, DeviceActionSpec, DeviceCommand, DeviceEnrollmentToken, DeviceLogLine, DevicePairingCode,
+  ActionType, PhoneAccess, Device, DeviceActionSpec, DeviceCommand, DeviceEnrollmentToken, DeviceLogLine, DevicePairingCode,
 } from '@/types'
 
 const base = (id: string) => `/api/devices/${id}`
@@ -33,5 +33,10 @@ export const devicesApi = {
   /** Asks for step-up. The token is in this answer only. */
   createEnrollmentToken: (body: { name: string; uses: number; validDays: number; tags: string[] }) =>
     api.post<DeviceEnrollmentToken>('/api/devices/enrollment-tokens', body),
+  /** What the Jizza app on your own phone may do with your account. */
+  phoneAccess: (id: string) => api.get<{ access: PhoneAccess }>(`${base(id)}/phone-access`),
+  /** Asks for step-up. */
+  setPhoneAccess: (id: string, access: PhoneAccess) =>
+    api.put<{ access: PhoneAccess }>(`${base(id)}/phone-access`, { access }),
   revokeEnrollmentToken: (tokenId: string) => api.delete<void>(`/api/devices/enrollment-tokens/${tokenId}`),
 }

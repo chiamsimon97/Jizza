@@ -197,9 +197,16 @@ A manifest whose tools or items break these rules gets `error` naming what is wr
 ## 8. Push
 
 A phone that is not connected is woken by a push carrying no data beyond
-`{"type":"command"|"inbox"}`; the app then polls. The server has a `PushProvider` seam for APNs and
-FCM; without one configured, a phone picks up work at its next poll. A token the provider reports
-invalid is forgotten.
+`{"type":"command"|"inbox"}` and ids; the app then polls. The server has a `PushProvider` seam for
+APNs and FCM; without one configured, a phone picks up work at its next poll. A token the provider
+reports invalid is forgotten.
+
+**FCM (Android)** is built in. Set `JIZZA_FCM_CREDENTIALS` to the path of the Firebase project's
+service account key file (Firebase console › Project settings › Service accounts › Generate new
+private key), kept outside the repository. The server signs in to Google with it and sends each
+push as a high-priority FCM data message; every data value is a string. The app registers its FCM
+token with `POST /agent/v1/push-token {"provider":"fcm","token":"…"}`. A missing or unreadable key
+file is logged at start-up and push stays off. APNs is not built yet.
 
 ## 9. Conformance
 
@@ -258,3 +265,74 @@ Errors are problem details: 404 `smart-sign-in-unknown` (bad code), 410 `smart-s
 (codes last 2 minutes), 409 `smart-sign-in-used` (already answered, or claimed by another account),
 401 `bad_signature`, 401 `device_not_personal`.
 
+## 12. The Jizza app on your phone
+
+The Jizza app is a hands-on companion, not a copy of the web app: it shows a person their runs,
+approvals, usage, activity, devices, agents and guardrails, and lets them approve, run, cancel and
+Pause all from the phone. It uses the same pairing and device key as everything above.
+
+### Signing in on the phone
+
+Besides scanning the pairing QR from Settings › Devices, the app can sign in by itself:
+
+1. `POST /agent/v1/login {"email","password"}` → `{"mfaRequired":true,"mfaToken":"…"}`.
+2. `POST /agent/v1/login/mfa {"mfaToken","code"}` → `{"pairingCode":"482913","expiresAt","pairUrl"}`.
+3. Enroll with that code (`POST /agent/v1/enroll`, section 2), check `fp` from `pairUrl` as usual,
+   then sign in with the device key.
+
+The login opens no session for the phone: the one it creates is closed again at once. Two-step
+sign-in must be on, because a paired phone can approve a browser sign-in as the second factor
+(section 11). Without it the first call answers 403 `two-step-required`. Wrong passwords count
+towards the same lockouts as the web login.
+
+### Reading: `GET /agent/v1/me/…`
+
+Every call takes the device token, and only a phone a person paired gets an answer; a shared
+machine enrolled with a token gets 401 `device_not_personal`. Each route returns the same data as
+its `/api` twin for the phone's owner.
+
+| Route | What it returns |
+| --- | --- |
+| `/agent/v1/me` | `userId`, `workspaceId`, `deviceId`, `deviceName`, `access` |
+| `/agent/v1/me/today?tz=` | The Today screen: `waiting` (needsYou, urgent, unread), `runs` since local midnight (total, done, failed, running, waiting, `active` list), `spend`, `devices` (total, online, offline names), `paused` |
+| `/agent/v1/me/notifications[?unreadOnly=]`, `/notifications/summary`, `/notifications/{id}` | The inbox, as `/api/notifications` |
+| `/agent/v1/me/runs?status=&workflowId=&from=&to=&q=&limit=&offset=&tz=`, `/runs/{id}/trace` | Run history, as `/api/runs` (limit at most 100) |
+| `/agent/v1/me/workflows` | id, name, description, status, version, inputSchema |
+| `/agent/v1/me/usage`, `/usage/entries?limit=` | As `/api/usage/summary` and `/entries` |
+| `/agent/v1/me/activity?limit=&action=` | As `/api/activity` |
+| `/agent/v1/me/guardrails` | As `/api/guardrails` |
+| `/agent/v1/me/devices` | As `/api/devices` |
+| `/agent/v1/me/agents` | id, name, description, status, enabled, modelTier, monthlyCostLimit, parentAgentId (no instructions) |
+
+### Acting: signed requests
+
+A call that changes something must be signed with the device key, which the app unlocks with the
+person's fingerprint, face or PIN (Android `BiometricPrompt` with `BIOMETRIC_STRONG or
+DEVICE_CREDENTIAL`). The app signs
+
+```
+jizza-mobile:v1:<METHOD>:<path>:<signedAt>:<nonce>:<base64url SHA-256 of the exact body bytes, no padding>
+```
+
+where `path` is the request path without the query, `signedAt` is milliseconds since 1970 and
+`nonce` is fresh random text (at most 100 characters), and sends the three as headers
+`X-Jizza-Signature` (base64 signature, as for a challenge), `X-Jizza-Signed-At` and
+`X-Jizza-Nonce`. An empty body hashes the empty string. The server refuses a signature more than
+two minutes from its clock (401 `signature_expired`), one it has already seen from that phone
+(401 `replayed`) and one that does not match (401 `bad_signature`).
+
+| Route | Body | Needs |
+| --- | --- | --- |
+| `POST /agent/v1/me/notifications/{id}/answer` | `{"kind","instruction","feedback"}`, kind APPROVE, DENY or SUBMIT_INSTRUCTION | approve |
+| `POST /agent/v1/me/notifications/{id}/snooze` | `{"until"}` (empty brings it back) | approve |
+| `POST /agent/v1/me/pause` | `{"paused":true}` | approve |
+| `POST /agent/v1/me/pause` | `{"paused":false}` | full |
+| `POST /agent/v1/me/workflows/{id}/run` | `{"input":{…},"version"}` | full |
+| `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
+
+### Phone access
+
+The owner chooses what the app may do in Settings › Devices › Details on that phone (or
+`PUT /api/devices/{id}/phone-access {"access":"FULL"}` with READ, APPROVE or FULL, step-up guarded): read
+only; read and approve (the default); or full. A call beyond it answers 403 `phone-access`. Every
+change from a phone is in the activity log as `device.phone.*` with the phone's id and name.
