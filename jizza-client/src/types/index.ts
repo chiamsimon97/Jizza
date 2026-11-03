@@ -1449,6 +1449,8 @@ export interface DirectoryProfile extends DirectoryEntry {
 
 export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'BROWSER' | 'OTHER'
 export type DeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
+/** What the Jizza app on a person's own phone may do with their account; each includes the ones before. */
+export type PhoneAccess = 'READ' | 'APPROVE' | 'FULL'
 export type DeviceCommandStatus = 'QUEUED' | 'DISPATCHED' | 'ACCEPTED' | 'RUNNING' | 'SUCCEEDED'
   | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
 

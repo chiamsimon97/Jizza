@@ -83,6 +83,25 @@ public class DeviceUseCase {
     return changed;
   }
 
+  /** What the Jizza app on the caller's own phone may do. Only the person who paired it sees it. */
+  public com.jizza.engine.api.device.PhoneAccess phoneAccess(Access access, UUID deviceId) {
+    return devices.phoneAccess(ownPhone(access, deviceId).id());
+  }
+
+  public com.jizza.engine.api.device.PhoneAccess setPhoneAccess(
+      Access access, UUID deviceId, com.jizza.engine.api.device.PhoneAccess level) {
+    return devices.setPhoneAccess(ownPhone(access, deviceId).id(), level);
+  }
+
+  private DeviceDto ownPhone(Access access, UUID deviceId) {
+    DeviceDto device = visible(access, deviceId);
+    if (!access.userId().equals(device.ownerUserId())) {
+      throw new ValidationException("Only the person who paired this device can change what it "
+          + "may do with their account");
+    }
+    return device;
+  }
+
   public void revoke(Access access, UUID deviceId) {
     DeviceDto device = visible(access, deviceId);
     devices.revoke(device.id(), "Removed in Settings");
