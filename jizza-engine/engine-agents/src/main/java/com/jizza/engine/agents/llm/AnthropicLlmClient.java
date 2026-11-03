@@ -14,6 +14,7 @@ import com.jizza.engine.api.llm.LlmClient;
 import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.tool.ToolCall;
+import com.jizza.engine.api.tool.ToolInputSchemas;
 import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.util.Redaction;
@@ -466,7 +467,7 @@ public class AnthropicLlmClient implements LlmClient {
         ObjectNode tool = apiTools.addObject();
         tool.put("name", spec.name());
         tool.put("description", spec.description() == null ? "" : spec.description());
-        tool.set("input_schema", spec.inputSchema());
+        tool.set("input_schema", inputSchema(spec));
       }
     }
 
@@ -495,6 +496,28 @@ public class AnthropicLlmClient implements LlmClient {
     // too; a one-off question is not, since nothing would ever read it back.
     if (inToolLoop) body.set("cache_control", ephemeral());
     return body;
+  }
+
+  /** Tools whose schema was reshaped already, so each is logged once rather than every call. */
+  private final Set<String> reshapedTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+  /**
+   * The provider rejects the whole request when any one tool's schema has oneOf/anyOf/allOf at the
+   * top (some MCP servers and paired devices send those), so every tool's schema is made to fit.
+   */
+  private JsonNode inputSchema(ToolSpec spec) {
+    JsonNode schema = spec.inputSchema();
+    if (!ToolInputSchemas.needsChange(schema)) return schema;
+    if (reshapedTools.add(spec.name())) {
+      log.warn("Tool {} has an input schema the model provider does not accept at the top level;"
+          + " sending a flattened object schema instead. Original: {}", spec.name(),
+          schema == null ? "none" : Redaction.scrub(abbreviate(schema.toString())));
+    }
+    return ToolInputSchemas.forModel(schema);
+  }
+
+  private static String abbreviate(String text) {
+    return text.length() <= 2000 ? text : text.substring(0, 2000) + "…";
   }
 
   private static ObjectNode ephemeral() {
