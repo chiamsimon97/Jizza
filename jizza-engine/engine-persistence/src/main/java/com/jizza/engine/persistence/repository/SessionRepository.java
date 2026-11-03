@@ -30,6 +30,17 @@ public interface SessionRepository extends JpaRepository<SessionEntity, UUID> {
   int moveOffWorkspace(@Param("userId") UUID userId, @Param("workspaceId") UUID workspaceId,
                        @Param("fallback") UUID fallback);
 
+  /**
+   * Slides the idle window without writing the whole row. A full save from the per-request touch
+   * could overwrite what a concurrent request just changed on the same session (a step-up window,
+   * a revocation), so the touch writes only its own two columns.
+   */
+  @Modifying
+  @Query("update SessionEntity s set s.lastSeenAt = :now, s.idleExpiresAt = :idleExpiresAt "
+      + "where s.id = :id")
+  int touch(@Param("id") UUID id, @Param("now") Instant now,
+            @Param("idleExpiresAt") Instant idleExpiresAt);
+
   @Modifying
   @Query("delete from SessionEntity s where s.absoluteExpiresAt < :cutoff")
   int deleteExpired(@Param("cutoff") Instant cutoff);

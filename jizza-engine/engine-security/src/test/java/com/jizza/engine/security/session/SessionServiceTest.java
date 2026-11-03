@@ -157,7 +157,11 @@ class SessionServiceTest {
 
     var refreshed = service.validateAndTouch(TOKEN);
     assertThat(refreshed).isPresent();
-    assertThat(refreshed.get().getIdleExpiresAt()).isAfter(Instant.now().plus(Duration.ofMinutes(25)));
+    var idle = org.mockito.ArgumentCaptor.forClass(Instant.class);
+    org.mockito.Mockito.verify(repository).touch(org.mockito.ArgumentMatchers.eq(session.getId()),
+        any(Instant.class), idle.capture());
+    assertThat(idle.getValue()).isAfter(Instant.now().plus(Duration.ofMinutes(25)));
+    org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).save(session);
   }
 
   @Test
