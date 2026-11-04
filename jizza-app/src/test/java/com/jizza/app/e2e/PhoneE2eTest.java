@@ -4,6 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.devicesim.SimDevice;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.llm.LlmResponse;
+import com.jizza.engine.api.notification.NotificationBus;
+import com.jizza.engine.api.notification.NotificationContext;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.repository.UserRepository;
 import com.jizza.engine.security.mfa.TotpService;
@@ -37,6 +43,9 @@ class PhoneE2eTest extends E2eSupport {
   @LocalServerPort private int port;
   @Autowired private TotpService totp;
   @Autowired private UserRepository users;
+  @Autowired private NotificationBus bus;
+  @Autowired private AgentDirectory agents;
+  @Autowired private E2eSupport.ScriptedLlmClient model;
 
   private ApiClient web;
   private String email;
@@ -204,6 +213,94 @@ class PhoneE2eTest extends E2eSupport {
     assertThat(Json.read(me.body()).path("deviceName").asText()).isEqualTo("Phone sign-in");
   }
 
+  @Test
+  void alwaysAllowSavesARuleAndApprovesButNeedsFullAccess() throws Exception {
+    UUID deviceId = pairPhone();
+    UUID userId = users.findByEmailIgnoreCase(email).orElseThrow().getId();
+    UUID agentId = agents.byKey(userId, "finance").map(AgentDto::id).orElseThrow();
+    UUID itemId = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        new NotificationContext(userId, "Pay Acme?", Json.obj().put("tool", "pay_supplier"),
+            null, null, null, null)).id();
+    String path = "/agent/v1/me/notifications/" + itemId + "/always-allow";
+
+    // Approve access may answer but not loosen a guardrail.
+    var refused = post(path, "{}", signedHeaders("POST", path, "{}"));
+    assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+
+    stepUp();
+    assertThat(web.put("/api/devices/" + deviceId + "/phone-access", Map.of("access", "FULL")).ok())
+        .isTrue();
+    var allowed = post(path, "{}", signedHeaders("POST", path, "{}"));
+    assertThat(allowed.statusCode()).as(allowed.body()).isEqualTo(200);
+    assertThat(Json.read(allowed.body()).path("status").asText()).isEqualTo("APPROVED");
+    assertThat(get("/agent/v1/me/guardrails").body()).contains("pay_supplier").contains("ALLOW");
+
+    // Twice is refused: it is already answered.
+    assertThat(post(path, "{}", signedHeaders("POST", path, "{}")).statusCode()).isEqualTo(400);
+
+    // An information item can't be always allowed.
+    UUID info = bus.raise(NotificationKind.INFO, agentId,
+        new NotificationContext(userId, "FYI", Json.obj().put("tool", "pay_supplier"),
+            null, null, null, null)).id();
+    String infoPath = "/agent/v1/me/notifications/" + info + "/always-allow";
+    assertThat(post(infoPath, "{}", signedHeaders("POST", infoPath, "{}")).statusCode())
+        .isEqualTo(400);
+
+    // It can be archived, and brought back.
+    String archivePath = "/agent/v1/me/notifications/" + info + "/archive";
+    var archived = post(archivePath, "{}", signedHeaders("POST", archivePath, "{}"));
+    assertThat(archived.statusCode()).as(archived.body()).isEqualTo(200);
+    assertThat(Json.read(archived.body()).path("archivedAt").isNull()).isFalse();
+    String back = Json.write(Map.of("archived", false));
+    var unarchived = post(archivePath, back, signedHeaders("POST", archivePath, back));
+    assertThat(Json.read(unarchived.body()).path("archivedAt").isNull()).isTrue();
+
+    // An agent can be turned off and on from the phone (this phone has full access by now).
+    String off = Json.write(Map.of("enabled", false));
+    String agentPath = "/agent/v1/me/agents/" + agentId + "/enabled";
+    var disabled = post(agentPath, off, signedHeaders("POST", agentPath, off));
+    assertThat(disabled.statusCode()).as(disabled.body()).isEqualTo(200);
+    assertThat(Json.read(disabled.body()).path("enabled").asBoolean()).isFalse();
+    String on = Json.write(Map.of("enabled", true));
+    var enabled = post(agentPath, on, signedHeaders("POST", agentPath, on));
+    assertThat(Json.read(enabled.body()).path("enabled").asBoolean()).isTrue();
+
+    // Resuming someone else's (or no) run is not found.
+    String resume = Json.write(Map.of("instruction", "go on"));
+    String resumePath = "/agent/v1/me/runs/" + UUID.randomUUID() + "/resume";
+    assertThat(post(resumePath, resume, signedHeaders("POST", resumePath, resume)).statusCode())
+        .isEqualTo(404);
+  }
+
+  @Test
+  void askAnswersFromTheOwnersFactsAndOnlyOffersCommandsItMay() throws Exception {
+    pairPhone();
+    model.reset();
+    model.script(LlmResponse.text(
+        "{\"answer\": \"Nothing failed today.\", \"command\": {\"type\": \"PAUSE_ALL\"}}"));
+    String body = Json.write(Map.of("question", "What failed today?", "tz", "Asia/Kolkata"));
+    var r = postJsonWithToken("/agent/v1/me/ask", body);
+    assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+    JsonNode answer = Json.read(r.body());
+    assertThat(answer.path("answer").asText()).isEqualTo("Nothing failed today.");
+    assertThat(answer.path("command").path("type").asText()).isEqualTo("PAUSE_ALL");
+    // The model saw the person's facts.
+    assertThat(model.everythingTheModelSaw()).contains("waitingForYou").contains("Asia/Kolkata");
+
+    // A workflow that isn't the person's is never offered.
+    model.script(LlmResponse.text("{\"answer\": \"Sure.\", \"command\": {\"type\": "
+        + "\"RUN_WORKFLOW\", \"workflowId\": \"" + UUID.randomUUID() + "\"}}"));
+    var other = Json.read(postJsonWithToken("/agent/v1/me/ask", body).body());
+    assertThat(other.path("command").isNull() || other.path("command").isMissingNode()).isTrue();
+
+    // Nothing changed: asking only reads.
+    assertThat(Json.read(get("/agent/v1/me/today").body()).path("paused").asBoolean()).isFalse();
+
+    // An empty question is refused.
+    var empty = postJsonWithToken("/agent/v1/me/ask", Json.write(Map.of("question", " ")));
+    assertThat(empty.statusCode()).isEqualTo(400);
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------
 
   private UUID pairPhone() {
@@ -270,6 +367,10 @@ class PhoneE2eTest extends E2eSupport {
         .POST(HttpRequest.BodyPublishers.ofString(body));
     if (headers != null) headers.forEach(b::header);
     return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private HttpResponse<String> postJsonWithToken(String path, String body) throws Exception {
+    return post(path, body, null);
   }
 
   private HttpResponse<String> postJson(String path, String body) throws Exception {
