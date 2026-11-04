@@ -333,6 +333,17 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
 | `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
 
+### Ask
+
+`POST /agent/v1/me/ask {"question","tz"}` (device token, not signed, read only) answers a question
+about the person's own Jizza in a few sentences, on the cheap model, from facts the server gathers:
+today's numbers, the last 7 days of runs, workflows, active runs and what waits for them. It
+answers `{"answer", "command"}`. `command` is null or one of `RUN_WORKFLOW` (with `workflowId`, only a
+workflow that runs without input), `CANCEL_RUN` (with `runId`, only an active run), `PAUSE_ALL` or
+`RESUME_ALL`, each with a `label`. The app shows it as a card to confirm with the fingerprint and
+then calls that action's signed route above; asking itself changes nothing. Spend is recorded as
+`phone-ask` and the budget applies.
+
 ### Phone access
 
 The owner chooses what the app may do in Settings › Devices › Details on that phone (or

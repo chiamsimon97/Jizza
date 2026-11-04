@@ -32,6 +32,7 @@ import com.jizza.platform.usecase.activity.ActivityUseCase;
 import com.jizza.platform.usecase.autonomy.AutonomyUseCase;
 import com.jizza.platform.usecase.autonomy.GuardrailsUseCase;
 import com.jizza.platform.usecase.device.DeviceUseCase;
+import com.jizza.platform.usecase.device.PhoneAskUseCase;
 import com.jizza.platform.usecase.notification.NotificationUseCase;
 import com.jizza.platform.usecase.usage.UsageUseCase;
 import com.jizza.platform.usecase.workflow.RunHistoryUseCase;
@@ -108,6 +109,8 @@ public class PhoneController {
 
   public record ResumeBody(String instruction, Boolean approved) {}
 
+  public record AskBody(String question, String tz) {}
+
   public record Done(String message) {}
 
   private final PhoneRequests phones;
@@ -122,12 +125,14 @@ public class PhoneController {
   private final DeviceUseCase devices;
   private final AgentDirectory agents;
   private final AuditLog audit;
+  private final PhoneAskUseCase asking;
 
   public PhoneController(PhoneRequests phones, NotificationUseCase notifications,
                          RunHistoryUseCase history, WorkflowUseCase workflows,
                          WorkflowEngine engine, UsageUseCase usage, ActivityUseCase activity,
                          GuardrailsUseCase guardrails, AutonomyUseCase autonomy,
-                         DeviceUseCase devices, AgentDirectory agents, AuditLog audit) {
+                         DeviceUseCase devices, AgentDirectory agents, AuditLog audit,
+                         PhoneAskUseCase asking) {
     this.phones = phones;
     this.notifications = notifications;
     this.history = history;
@@ -140,6 +145,7 @@ public class PhoneController {
     this.devices = devices;
     this.agents = agents;
     this.audit = audit;
+    this.asking = asking;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------
@@ -279,6 +285,63 @@ public class PhoneController {
         .filter(a -> !"archived".equals(a.status()))
         .map(PhoneController::item)
         .toList();
+  }
+
+  /**
+   * The Ask tab: a short answer about the person's own Jizza, from what the phone may already
+   * read, on the cheap model. It changes nothing. A command it offers is only a suggestion: the app
+   * confirms it with the fingerprint and sends it to the signed route for it.
+   */
+  @PublicEndpoint
+  @PostMapping("/ask")
+  public PhoneAskUseCase.Answer ask(@RequestBody AskBody body, HttpServletRequest http) {
+    if (body == null) throw new ValidationException("Ask something first");
+    Companion phone = phones.read(http);
+    UUID userId = phone.userId();
+    var zone = TimeBuckets.zoneOf(body.tz());
+    Today today = today(body.tz(), http);
+
+    var week = history.search(userId, new RunHistoryDto.Query(
+        Instant.now().minus(java.time.Duration.ofDays(7)), null, null, null, null, null, 30, 0, zone));
+    var recent = Json.mapper().createArrayNode();
+    java.util.Map<UUID, String> activeRuns = new java.util.LinkedHashMap<>();
+    for (RunHistoryDto.Summary r : week.items()) {
+      var row = Json.obj().put("id", r.id().toString()).put("workflow", r.workflowName())
+          .put("status", r.status().name()).put("startedAt", String.valueOf(r.startedAt()))
+          .put("durationMs", r.durationMs());
+      if (r.error() != null) row.put("error", clip(r.error(), 200));
+      if (r.failedNode() != null) row.put("failedStep", r.failedNode());
+      recent.add(row);
+      if (r.status() == RunStatus.RUNNING || r.status() == RunStatus.WAITING
+          || r.status() == RunStatus.PAUSED_WAITING_INSTRUCTION) {
+        activeRuns.put(r.id(), r.workflowName() == null ? "workflow" : r.workflowName());
+      }
+    }
+
+    var flows = Json.mapper().createArrayNode();
+    java.util.Map<UUID, String> runnable = new java.util.LinkedHashMap<>();
+    for (WorkflowDto w : workflows.list(userId)) {
+      boolean active = w.status() == null || "ACTIVE".equals(w.status().name());
+      JsonNode required = w.inputSchema() == null ? null : w.inputSchema().path("required");
+      boolean free = required == null || !required.isArray() || required.isEmpty();
+      flows.add(Json.obj().put("id", w.id().toString()).put("name", w.name())
+          .put("active", active).put("runsWithoutInput", free));
+      if (active && free) runnable.put(w.id(), w.name());
+    }
+
+    var waiting = Json.mapper().createArrayNode();
+    notifications.list(userId, false).stream().filter(NotificationDto::open).limit(10)
+        .forEach(n -> waiting.add(Json.obj().put("kind", n.kind().name())
+            .put("what", clip(n.body(), 200)).put("agent", n.sourceAgentName())
+            .put("since", String.valueOf(n.createdAt()))));
+
+    var facts = Json.obj().put("timeZone", zone.getId()).put("now", Instant.now().toString());
+    facts.set("today", Json.toNode(today));
+    facts.set("runsLast7Days", recent);
+    facts.set("activeRuns", Json.toNode(activeRuns.keySet().stream().map(UUID::toString).toList()));
+    facts.set("workflows", flows);
+    facts.set("waitingForYou", waiting);
+    return asking.ask(userId, body.question(), facts, runnable, activeRuns);
   }
 
   // ---- Acting: every one of these is signed by the phone's key ----------------------------------
@@ -429,6 +492,11 @@ public class PhoneController {
   private void record(Companion phone, String action, String target, com.fasterxml.jackson.databind.node.ObjectNode detail) {
     audit.record(phone.userId(), ActorType.USER, null, action, target,
         detail.put("deviceId", phone.deviceId().toString()).put("device", phone.deviceName()));
+  }
+
+  private static String clip(String text, int max) {
+    if (text == null) return null;
+    return text.length() > max ? text.substring(0, max) + "…" : text;
   }
 
   private static Access access(Companion phone) {

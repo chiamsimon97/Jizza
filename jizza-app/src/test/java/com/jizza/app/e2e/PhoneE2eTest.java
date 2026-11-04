@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.devicesim.SimDevice;
 import com.jizza.engine.api.dto.AgentDto;
 import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
@@ -44,6 +45,7 @@ class PhoneE2eTest extends E2eSupport {
   @Autowired private UserRepository users;
   @Autowired private NotificationBus bus;
   @Autowired private AgentDirectory agents;
+  @Autowired private E2eSupport.ScriptedLlmClient model;
 
   private ApiClient web;
   private String email;
@@ -260,6 +262,35 @@ class PhoneE2eTest extends E2eSupport {
         .isEqualTo(404);
   }
 
+  @Test
+  void askAnswersFromTheOwnersFactsAndOnlyOffersCommandsItMay() throws Exception {
+    pairPhone();
+    model.reset();
+    model.script(LlmResponse.text(
+        "{\"answer\": \"Nothing failed today.\", \"command\": {\"type\": \"PAUSE_ALL\"}}"));
+    String body = Json.write(Map.of("question", "What failed today?", "tz", "Asia/Kolkata"));
+    var r = postJsonWithToken("/agent/v1/me/ask", body);
+    assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+    JsonNode answer = Json.read(r.body());
+    assertThat(answer.path("answer").asText()).isEqualTo("Nothing failed today.");
+    assertThat(answer.path("command").path("type").asText()).isEqualTo("PAUSE_ALL");
+    // The model saw the person's facts.
+    assertThat(model.everythingTheModelSaw()).contains("waitingForYou").contains("Asia/Kolkata");
+
+    // A workflow that isn't the person's is never offered.
+    model.script(LlmResponse.text("{\"answer\": \"Sure.\", \"command\": {\"type\": "
+        + "\"RUN_WORKFLOW\", \"workflowId\": \"" + UUID.randomUUID() + "\"}}"));
+    var other = Json.read(postJsonWithToken("/agent/v1/me/ask", body).body());
+    assertThat(other.path("command").isNull() || other.path("command").isMissingNode()).isTrue();
+
+    // Nothing changed: asking only reads.
+    assertThat(Json.read(get("/agent/v1/me/today").body()).path("paused").asBoolean()).isFalse();
+
+    // An empty question is refused.
+    var empty = postJsonWithToken("/agent/v1/me/ask", Json.write(Map.of("question", " ")));
+    assertThat(empty.statusCode()).isEqualTo(400);
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------
 
   private UUID pairPhone() {
@@ -326,6 +357,10 @@ class PhoneE2eTest extends E2eSupport {
         .POST(HttpRequest.BodyPublishers.ofString(body));
     if (headers != null) headers.forEach(b::header);
     return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private HttpResponse<String> postJsonWithToken(String path, String body) throws Exception {
+    return post(path, body, null);
   }
 
   private HttpResponse<String> postJson(String path, String body) throws Exception {
