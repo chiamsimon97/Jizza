@@ -1,5 +1,6 @@
 package com.jizza.platform.api.error;
 
+import com.jizza.engine.api.error.FriendlyErrors;
 import com.jizza.engine.api.error.JizzaException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -24,11 +25,16 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(JizzaException.class)
   public ProblemDetail handleJizza(JizzaException e, HttpServletRequest request) {
-    ProblemDetail problem = e.toProblemDetail();
+    String requestId = org.slf4j.MDC.get("requestId");
+    // A model provider's raw reply means nothing to the person: it is logged in full, and they get
+    // a plain message quoting the request id.
+    JizzaException shown = FriendlyErrors.MODEL_TYPES.contains(e.type())
+        ? FriendlyErrors.forPerson(e, requestId) : e;
+    ProblemDetail problem = shown.toProblemDetail();
     problem.setInstance(java.net.URI.create(request.getRequestURI()));
-    problem.setProperty("requestId", org.slf4j.MDC.get("requestId"));
+    problem.setProperty("requestId", requestId);
     if (problem.getStatus() >= 500) {
-      log.error("Request {} failed", request.getRequestURI(), e);
+      log.error("Request {} failed (request {})", request.getRequestURI(), requestId, e);
     }
     return problem;
   }
