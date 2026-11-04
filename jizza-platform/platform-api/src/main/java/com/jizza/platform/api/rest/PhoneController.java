@@ -34,6 +34,7 @@ import com.jizza.platform.usecase.autonomy.AutonomyUseCase;
 import com.jizza.platform.usecase.autonomy.GuardrailsUseCase;
 import com.jizza.platform.usecase.device.DeviceUseCase;
 import com.jizza.platform.usecase.device.PhoneAskUseCase;
+import com.jizza.platform.usecase.help.HelpGuidesUseCase;
 import com.jizza.platform.usecase.notification.NotificationUseCase;
 import com.jizza.platform.usecase.usage.UsageUseCase;
 import com.jizza.platform.usecase.workflow.RunHistoryUseCase;
@@ -130,13 +131,15 @@ public class PhoneController {
   private final AuditLog audit;
   private final PhoneAskUseCase asking;
   private final AgentAdminUseCase agentAdmin;
+  private final HelpGuidesUseCase help;
 
   public PhoneController(PhoneRequests phones, NotificationUseCase notifications,
                          RunHistoryUseCase history, WorkflowUseCase workflows,
                          WorkflowEngine engine, UsageUseCase usage, ActivityUseCase activity,
                          GuardrailsUseCase guardrails, AutonomyUseCase autonomy,
                          DeviceUseCase devices, AgentDirectory agents, AuditLog audit,
-                         PhoneAskUseCase asking, AgentAdminUseCase agentAdmin) {
+                         PhoneAskUseCase asking, AgentAdminUseCase agentAdmin,
+                         HelpGuidesUseCase help) {
     this.phones = phones;
     this.notifications = notifications;
     this.history = history;
@@ -151,6 +154,7 @@ public class PhoneController {
     this.audit = audit;
     this.asking = asking;
     this.agentAdmin = agentAdmin;
+    this.help = help;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------
@@ -297,6 +301,21 @@ public class PhoneController {
    * read, on the cheap model. It changes nothing. A command it offers is only a suggestion: the app
    * confirms it with the fingerprint and sends it to the signed route for it.
    */
+  /** The Help guides the web shows at /help, from the same Markdown files. */
+  @PublicEndpoint
+  @GetMapping("/help")
+  public List<HelpGuidesUseCase.Summary> help(HttpServletRequest http) {
+    phones.read(http);
+    return help.list();
+  }
+
+  @PublicEndpoint
+  @GetMapping("/help/{slug}")
+  public HelpGuidesUseCase.Guide helpGuide(@PathVariable String slug, HttpServletRequest http) {
+    phones.read(http);
+    return help.get(slug);
+  }
+
   @PublicEndpoint
   @PostMapping("/ask")
   public PhoneAskUseCase.Answer ask(@RequestBody AskBody body, HttpServletRequest http) {
@@ -372,6 +391,19 @@ public class PhoneController {
     record(phone, "device.phone.answered", id.toString(),
         Json.obj().put("kind", body.kind().name()));
     return answered;
+  }
+
+  /**
+   * Marks an item read, as opening it on the web does: the phone sends it when the person opens an
+   * item from a push, so the web inbox does not still show it as new. Any access level may.
+   */
+  @PublicEndpoint
+  @PostMapping("/notifications/{id}/read")
+  public NotificationDto read(@PathVariable UUID id, @RequestBody(required = false) byte[] raw,
+                              HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.READ);
+    notifications.markRead(phone.userId(), id);
+    return notifications.get(phone.userId(), id);
   }
 
   /** Hide an item until later; an empty {@code until} brings it back now. */

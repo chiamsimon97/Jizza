@@ -337,6 +337,24 @@ class SagaWorkflowEngineTest {
   }
 
   @Test
+  void aFailedRunIsAnnouncedSoThePhoneCanAlert() {
+    EngineHarness harness = failing("dead_letter", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("upstream 503");
+    var announced = new java.util.ArrayList<Object>();
+    harness.engine.setEvents(announced::add);
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+    assertThat(announced).singleElement().isInstanceOfSatisfying(
+        com.jizza.engine.api.event.RunFailed.class, e -> {
+          assertThat(e.runId()).isEqualTo(run.id());
+          assertThat(e.workflowId()).isEqualTo(harness.workflow.getId());
+          assertThat(e.error()).contains("upstream 503");
+        });
+  }
+
+  @Test
   void aRetrySucceedingOnTheSecondAttemptCompletesTheRun() {
     EngineHarness harness = failing("intervene", 3);
     harness.agentStepBehaviour = nodeId -> harness.agentStepRuns.getOrDefault(nodeId, 0) < 2

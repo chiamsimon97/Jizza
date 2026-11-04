@@ -22,6 +22,19 @@
     <dependency><groupId>com.jizza</groupId><artifactId>jizza-device-sim</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- The Help guides the web app shows at /help, so the phone app reads the same files. -->
+      <resource>
+        <directory>${project.basedir}/../jizza-client/src/help/guides</directory>
+        <targetPath>help/guides</targetPath>
+        <includes>
+          <include>*.md</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>
