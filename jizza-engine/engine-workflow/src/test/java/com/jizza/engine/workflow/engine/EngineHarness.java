@@ -83,6 +83,8 @@ public final class EngineHarness {
   public final List<WorkflowRunEntity> runRows = new ArrayList<>();
   public final List<WorkflowRunStepEntity> stepRows = new ArrayList<>();
   public final List<NotificationDto> raised = new ArrayList<>();
+  /** Every request to close a run's questions: run id, step (or null for all), reason. */
+  public final List<String[]> closed = new ArrayList<>();
 
   public final WorkflowEntity workflow = new WorkflowEntity();
   /** Every workflow the engine can find, so a test can add ones to run as steps. */
@@ -261,6 +263,11 @@ public final class EngineHarness {
       @Override public void markRead(UUID id) { }
 
       @Override public boolean awaitPermission(UUID id, java.time.Duration timeout) { return false; }
+
+      @Override public int closeForRun(UUID runId, String nodeId, String reason) {
+        closed.add(new String[] {String.valueOf(runId), nodeId, reason});
+        return 0;
+      }
     };
 
     ObjectProvider<NotificationBus> busProvider = mock(ObjectProvider.class);

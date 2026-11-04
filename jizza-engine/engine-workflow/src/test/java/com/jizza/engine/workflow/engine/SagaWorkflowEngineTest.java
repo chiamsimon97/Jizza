@@ -325,6 +325,98 @@ class SagaWorkflowEngineTest {
   }
 
   @Test
+  void aFailedStepQuestionOffersTheAnswersThatActOnTheRun() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+
+    harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    var detail = harness.raised.get(0).context();
+    assertThat(detail.path("failedStep").asBoolean()).isTrue();
+    assertThat(detail.path("choices").toString())
+        .contains("Try again").contains("Skip this step").contains("Stop the run");
+  }
+
+  @Test
+  void stoppingFromAFailedStepCancelsTheRunAndClosesItsQuestions() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    var stopped = harness.engine.resume(run.id(), Json.obj().put("instruction", "Stop the run"));
+
+    assertThat(stopped.status()).isEqualTo(RunStatus.CANCELLED);
+    assertThat(harness.agentStepRuns.get("flaky")).isEqualTo(1);
+    assertThat(harness.closed).anySatisfy(c -> {
+      assertThat(c[0]).isEqualTo(run.id().toString());
+      assertThat(c[1]).isNull();
+    });
+  }
+
+  @Test
+  void theOldStopAndWaitAnswerAlsoStopsTheRun() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    var stopped = harness.engine.resume(run.id(),
+        Json.obj().put("instruction", "Stop and wait for me"));
+
+    assertThat(stopped.status()).isEqualTo(RunStatus.CANCELLED);
+  }
+
+  @Test
+  void skippingAFailedStepCarriesOnWithoutIt() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    var resumed = harness.engine.resume(run.id(), Json.obj().put("instruction", "Skip this step"));
+
+    assertThat(resumed.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.agentStepRuns.get("flaky")).isEqualTo(1);
+    assertThat(harness.step(run.id(), "flaky").orElseThrow().getStatus())
+        .isEqualTo(com.jizza.engine.api.enums.RunStepStatus.SKIPPED);
+  }
+
+  @Test
+  void tryingAgainRunsTheFailedStepAgain() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> harness.agentStepRuns.getOrDefault(nodeId, 0) < 2
+        ? NodeExecutor.Outcome.retryable("site not allowed")
+        : NodeExecutor.Outcome.completed(Json.obj().put("text", "worked"));
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    var resumed = harness.engine.resume(run.id(), Json.obj().put("instruction", "Try again"));
+
+    assertThat(resumed.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.agentStepRuns.get("flaky")).isEqualTo(2);
+  }
+
+  @Test
+  void aRunThatFailsOrFinishesClosesItsOpenQuestions() {
+    EngineHarness harness = failing("dead_letter", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("upstream 503");
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+    assertThat(harness.closed).anySatisfy(c -> assertThat(c[2]).contains("failed"));
+  }
+
+  @Test
+  void cancellingARunThatAlreadyEndedOnlyTidiesItsQuestions() {
+    EngineHarness harness = failing("dead_letter", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("upstream 503");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    harness.engine.cancel(run.id());
+
+    assertThat(harness.engine.get(run.id()).status()).isEqualTo(RunStatus.FAILED);
+    assertThat(harness.closed).anySatisfy(c -> assertThat(c[2]).contains("already ended"));
+  }
+
+  @Test
   void aNodeThatAsksToDeadLetterDoesSoRatherThanBotheringTheUser() {
     EngineHarness harness = failing("dead_letter", 2);
     harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("upstream 503");

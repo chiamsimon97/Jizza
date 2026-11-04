@@ -317,6 +317,22 @@ public class SagaWorkflowEngine implements WorkflowEngine {
 
     context.recordInstruction(node, text);
     clearPause(context, node);
+    // Answered here or from the inbox: either way nothing else should still ask about this step.
+    closeQuestions(runId, node, "Closed: you answered this from the run");
+
+    FailedStepChoice choice = FailedStepChoice.of(text);
+    if (choice == FailedStepChoice.STOP) {
+      context.dequeue(node);
+      run.setContext(context.toJson());
+      audit.record(run.getUserId(), ActorType.USER, null, "run.instruction_submitted",
+          run.getId().toString(), Json.obj().put("node", node).put("choice", "stop"));
+      stop(run, "Stopped by you at step '" + labelOf(run, node) + "'");
+      return toDto(run);
+    }
+    if (choice == FailedStepChoice.SKIP && stepFailed(runId, node)) {
+      return skipStep(run, context, node);
+    }
+
     forgetFailedChildren(context, node);
     run.setContext(context.toJson());
     run.setStatus(RunStatus.RUNNING);
@@ -326,6 +342,53 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     audit.record(run.getUserId(), ActorType.USER, null, "run.instruction_submitted",
         run.getId().toString(), Json.obj().put("node", node));
     return advance(runId);
+  }
+
+  private boolean stepFailed(UUID runId, String nodeId) {
+    return steps.findByRunIdAndNodeId(runId, nodeId)
+        .map(s -> s.getStatus() == RunStepStatus.FAILED).orElse(false);
+  }
+
+  /**
+   * The person chose to carry on without a step that failed: it is marked skipped with no output,
+   * and the run goes on down every path after it, as if it had finished.
+   */
+  private RunDto skipStep(WorkflowRunEntity run, RunContext context, String nodeId) {
+    WorkflowGraph graph = graphFor(workflows.findById(run.getWorkflowId())
+        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
+        run.getVersion());
+    WorkflowNode node = graph.node(nodeId)
+        .orElseThrow(() -> new ValidationException("Step '" + nodeId + "' is not in this run"));
+    int attempts = steps.findByRunIdAndNodeId(run.getId(), nodeId)
+        .map(WorkflowRunStepEntity::getAttempts).orElse(0);
+    context.recordOutput(nodeId, Json.obj());
+    checkpoint(run.getId(), nodeId, RunStepStatus.SKIPPED, null, Json.obj(), attempts,
+        "Skipped by you after it failed", Instant.now());
+    run.setStatus(RunStatus.RUNNING);
+    run.setCurrentNode(nodeId);
+    finishNode(run, graph, node, context);
+    audit.record(run.getUserId(), ActorType.USER, null, "run.step_skipped",
+        run.getId().toString(), Json.obj().put("node", nodeId));
+    return advance(run.getId());
+  }
+
+  private String labelOf(WorkflowRunEntity run, String nodeId) {
+    return workflows.findById(run.getWorkflowId())
+        .map(w -> graphFor(w, run.getVersion()))
+        .flatMap(g -> g.node(nodeId))
+        .map(n -> n.label() == null ? n.id() : n.label())
+        .orElse(nodeId);
+  }
+
+  /** Closes the inbox items that ask about this run (or one step of it), if there is an inbox. */
+  private void closeQuestions(UUID runId, String nodeId, String reason) {
+    NotificationBus bus = notifications.getIfAvailable();
+    if (bus == null) return;
+    try {
+      bus.closeForRun(runId, nodeId, reason);
+    } catch (RuntimeException e) {
+      log.warn("Could not close the questions of run {}", runId, e);
+    }
   }
 
   /**
@@ -417,9 +480,25 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   @Transactional
   public void cancel(UUID runId) {
     WorkflowRunEntity run = requireRun(runId);
+    if (run.getStatus() == RunStatus.DONE || run.getStatus() == RunStatus.FAILED
+        || run.getStatus() == RunStatus.CANCELLED) {
+      // Already over; still tidy away anything that asks about it.
+      closeQuestions(runId, null, "Closed: the run had already ended");
+      return;
+    }
+    stop(run, "Stopped by you");
+  }
+
+  /** Ends a run the person stopped: its devices, browser and child runs are let go too. */
+  private void stop(WorkflowRunEntity run, String why) {
+    UUID runId = run.getId();
     run.setStatus(RunStatus.CANCELLED);
+    run.setError(why);
+    run.setUpdatedAt(Instant.now());
     runs.save(run);
-    audit.record(run.getUserId(), ActorType.USER, null, "run.cancelled", runId.toString(), null);
+    audit.record(run.getUserId(), ActorType.USER, null, "run.cancelled", runId.toString(),
+        Json.obj().put("reason", why));
+    closeQuestions(runId, null, "Closed: the run was stopped");
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
     cancelDeviceCommands(runId, "The run was cancelled");
@@ -672,6 +751,16 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   /** As above; with {@code until}, the recovery sweep runs the step again once that time passes. */
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind, Instant until) {
+    parkForPerson(run, context, nodeId, reason, prompt, kind, until, false);
+  }
+
+  /**
+   * As above. A step that failed for good also lists the answers that act on the run by
+   * themselves (try again, skip this step, stop the run), so the inbox can offer them as buttons.
+   */
+  private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
+                             String reason, String prompt, NotificationKind kind, Instant until,
+                             boolean failedStep) {
     context.park(nodeId, reason, until);
     save(run, context);
 
@@ -679,14 +768,24 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     if (bus != null) {
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
           prompt == null ? "This run needs your input to continue." : prompt,
-          Json.obj().put("node", nodeId).put("workflowId", run.getWorkflowId().toString()),
-          run.getId()));
+          detailFor(run, nodeId, failedStep), run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
           run.getId(), nodeId);
     }
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.paused",
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
+  }
+
+  private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, boolean failedStep) {
+    ObjectNode detail = Json.obj().put("node", nodeId)
+        .put("workflowId", run.getWorkflowId().toString());
+    if (failedStep) {
+      detail.put("failedStep", true);
+      ArrayNode choices = detail.putArray("choices");
+      for (FailedStepChoice choice : FailedStepChoice.values()) choices.add(choice.answer());
+    }
+    return detail;
   }
 
   private void clearPause(RunContext context, String nodeId) {
@@ -736,7 +835,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     parkForPerson(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
         "Step '" + (node.label() == null ? node.id() : node.label()) + "' could not complete: "
             + message + " How would you like to proceed?",
-        NotificationKind.INSTRUCTION_REQUIRED);
+        NotificationKind.INSTRUCTION_REQUIRED, null, true);
     return false;
   }
 
@@ -752,6 +851,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     runs.save(run);
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.completed",
         run.getId().toString(), null);
+    closeQuestions(run.getId(), null, "Closed: the run finished");
     wakeParent(context);
     return toDto(run);
   }
@@ -788,6 +888,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.failed",
         run.getId().toString(), Json.obj().put("node", String.valueOf(nodeId))
             .put("error", String.valueOf(message)));
+    closeQuestions(run.getId(), null, "Closed: the run failed");
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
     cancelDeviceCommands(run.getId(), "The run stopped");

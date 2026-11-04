@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle, ArrowUpRight, CheckCircle2, CircleDashed, Clock, Copy, CornerDownRight, GitFork,
-  Hourglass, Pencil, RotateCw, Wrench, XCircle,
+  Hourglass, Pencil, RotateCw, Square, Wrench, XCircle,
 } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { JsonView } from './JsonView'
 import { RUN_STATUS, TRIGGER_LABEL } from './palette'
@@ -86,6 +87,38 @@ export function RunTraceView({ runId, onOpenRun }: { runId: string; onOpenRun: (
   )
 }
 
+/** Runs that have not ended yet, so a person can still stop them. */
+const STOPPABLE = new Set<RunTrace['run']['status']>(['RUNNING', 'WAITING', 'PAUSED_WAITING_INSTRUCTION'])
+
+/** Stops the run after a second click, so a stray click does not end it. */
+function StopRunButton({ runId }: { runId: string }) {
+  const qc = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const stop = useMutation({
+    mutationFn: () => runsApi.stop(runId),
+    onSuccess: () => {
+      setConfirming(false)
+      void qc.invalidateQueries({ queryKey: ['runs'] })
+      void qc.invalidateQueries({ queryKey: ['notifications'] })
+    },
+  })
+  if (!confirming) {
+    return (
+      <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
+        <Square className="h-3.5 w-3.5" />Stop run
+      </Button>
+    )
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-gray-600 dark:text-gray-300">Stop this run now? Steps already done stay done.</span>
+      <Button size="sm" variant="danger" loading={stop.isPending} onClick={() => stop.mutate()}>Stop it</Button>
+      <Button size="sm" variant="ghost" disabled={stop.isPending} onClick={() => setConfirming(false)}>Keep it running</Button>
+      {stop.error && <span className="text-xs text-red-600 dark:text-red-400">{(stop.error as Error).message}</span>}
+    </span>
+  )
+}
+
 function RunHeader({ trace, onOpenRun }: { trace: RunTrace; onOpenRun: (id: string) => void }) {
   const r = trace.run
   const status = RUN_STATUS[r.status]
@@ -101,6 +134,7 @@ function RunHeader({ trace, onOpenRun }: { trace: RunTrace; onOpenRun: (id: stri
         <span className="text-sm text-gray-500">{TRIGGER_LABEL[r.triggerKind]}</span>
         <span className="text-sm text-gray-400">·</span>
         <span className="text-sm text-gray-500">version {r.version}</span>
+        {STOPPABLE.has(r.status) && <StopRunButton runId={r.id} />}
         <Link to={`/workflows?open=${r.workflowId}`} className="ml-auto inline-flex items-center gap-1 text-sm text-brand-600 hover:underline dark:text-brand-300">
           <Pencil className="h-3.5 w-3.5" />Open workflow
         </Link>

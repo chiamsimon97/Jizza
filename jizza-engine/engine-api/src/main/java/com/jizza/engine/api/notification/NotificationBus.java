@@ -45,6 +45,17 @@ public interface NotificationBus {
   }
 
   /**
+   * Closes the run's items that are still waiting on an answer, because nothing is waiting for
+   * that answer any more: the run ended, or the step was answered another way (from the run view).
+   * With {@code nodeId}, only the items about that step. {@code reason} is shown on each item.
+   *
+   * @return how many items were closed
+   */
+  default int closeForRun(java.util.UUID runId, String nodeId, String reason) {
+    return 0;
+  }
+
+  /**
    * Block until a permission request is answered, or the wait budget elapses.
    *
    * @return true when approved
