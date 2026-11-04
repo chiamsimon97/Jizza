@@ -7,6 +7,7 @@ import com.jizza.engine.api.device.DeviceAgentGateway.Companion;
 import com.jizza.engine.api.device.DeviceDto;
 import com.jizza.engine.api.device.PhoneAccess;
 import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.dto.AutonomyRuleDto;
 import com.jizza.engine.api.dto.AuditEntryDto;
 import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.dto.RunDto;
@@ -14,6 +15,9 @@ import com.jizza.engine.api.dto.RunHistoryDto;
 import com.jizza.engine.api.dto.UsageEntryDto;
 import com.jizza.engine.api.dto.WorkflowDto;
 import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.enums.AutonomyRule;
+import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.api.enums.RunStatus;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
@@ -99,6 +103,8 @@ public class PhoneController {
   public record RunBody(JsonNode input, Integer version) {}
 
   public record PauseBody(Boolean paused) {}
+
+  public record ResumeBody(String instruction, Boolean approved) {}
 
   public record Done(String message) {}
 
@@ -337,6 +343,54 @@ public class PhoneController {
     engine.cancel(id);
     record(phone, "device.phone.run_cancelled", id.toString(), Json.obj());
     return new Done("Run cancelled.");
+  }
+
+  /**
+   * "Always allow" on an approval for an action: saves an allow rule for that agent and tool, as
+   * the web inbox does, then approves this one. Loosening a guardrail needs full access.
+   */
+  @PublicEndpoint
+  @PostMapping("/notifications/{id}/always-allow")
+  public NotificationDto alwaysAllow(@PathVariable UUID id,
+                                     @RequestBody(required = false) byte[] raw,
+                                     HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.FULL);
+    NotificationDto item = notifications.get(phone.userId(), id);
+    String tool = item.context() == null ? null : item.context().path("tool").asText(null);
+    if (item.kind() != NotificationKind.PERMISSION_REQUEST || tool == null || tool.isBlank()) {
+      throw new ValidationException("Only an approval for an action can be always allowed");
+    }
+    if (item.status() != NotificationStatus.UNREAD && item.status() != NotificationStatus.READ) {
+      throw new ValidationException("This item is already answered");
+    }
+    autonomy.upsert(phone.userId(), new AutonomyRuleDto(null, phone.userId(),
+        item.sourceAgentId(), tool, AutonomyRule.ALLOW, null, 20));
+    NotificationDto answered = notifications.answer(phone.userId(), id,
+        new Answer(Answer.Kind.APPROVE, null, null));
+    record(phone, "device.phone.always_allowed", id.toString(), Json.obj().put("tool", tool));
+    return answered;
+  }
+
+  /** Continue a run that is waiting, as the web's run history does. */
+  @PublicEndpoint
+  @PostMapping("/runs/{id}/resume")
+  public RunDto resume(@PathVariable UUID id, @RequestBody(required = false) byte[] raw,
+                       HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.FULL);
+    RunDto run = engine.get(id);
+    if (run == null || !phone.userId().equals(run.userId())) {
+      throw new NotFoundException("Workflow run", id);
+    }
+    ResumeBody body = parse(raw, ResumeBody.class);
+    var payload = Json.obj();
+    if (body != null && body.instruction() != null) {
+      if (body.instruction().length() > 8000) throw new ValidationException("The answer is too long");
+      payload.put("instruction", body.instruction());
+    }
+    if (body != null && body.approved() != null) payload.put("approved", body.approved());
+    RunDto resumed = engine.resume(id, payload);
+    record(phone, "device.phone.run_resumed", id.toString(), Json.obj());
+    return resumed;
   }
 
   /**

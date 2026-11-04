@@ -325,10 +325,12 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | --- | --- | --- |
 | `POST /agent/v1/me/notifications/{id}/answer` | `{"kind","instruction","feedback"}`, kind APPROVE, DENY or SUBMIT_INSTRUCTION | approve |
 | `POST /agent/v1/me/notifications/{id}/snooze` | `{"until"}` (empty brings it back) | approve |
+| `POST /agent/v1/me/notifications/{id}/always-allow` | empty: saves an allow rule for that agent and `context.tool`, then approves (open PERMISSION_REQUEST only) | full |
 | `POST /agent/v1/me/pause` | `{"paused":true}` | approve |
 | `POST /agent/v1/me/pause` | `{"paused":false}` | full |
 | `POST /agent/v1/me/workflows/{id}/run` | `{"input":{…},"version"}` | full |
 | `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
+| `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
 
 ### Phone access
 

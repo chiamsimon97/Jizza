@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.devicesim.SimDevice;
+import com.jizza.engine.api.dto.AgentDto;
+import com.jizza.engine.api.enums.NotificationKind;
+import com.jizza.engine.api.notification.NotificationBus;
+import com.jizza.engine.api.notification.NotificationContext;
+import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.persistence.repository.UserRepository;
 import com.jizza.engine.security.mfa.TotpService;
@@ -37,6 +42,8 @@ class PhoneE2eTest extends E2eSupport {
   @LocalServerPort private int port;
   @Autowired private TotpService totp;
   @Autowired private UserRepository users;
+  @Autowired private NotificationBus bus;
+  @Autowired private AgentDirectory agents;
 
   private ApiClient web;
   private String email;
@@ -202,6 +209,46 @@ class PhoneE2eTest extends E2eSupport {
     var me = get("/agent/v1/me");
     assertThat(me.statusCode()).as(me.body()).isEqualTo(200);
     assertThat(Json.read(me.body()).path("deviceName").asText()).isEqualTo("Phone sign-in");
+  }
+
+  @Test
+  void alwaysAllowSavesARuleAndApprovesButNeedsFullAccess() throws Exception {
+    UUID deviceId = pairPhone();
+    UUID userId = users.findByEmailIgnoreCase(email).orElseThrow().getId();
+    UUID agentId = agents.byKey(userId, "finance").map(AgentDto::id).orElseThrow();
+    UUID itemId = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        new NotificationContext(userId, "Pay Acme?", Json.obj().put("tool", "pay_supplier"),
+            null, null, null, null)).id();
+    String path = "/agent/v1/me/notifications/" + itemId + "/always-allow";
+
+    // Approve access may answer but not loosen a guardrail.
+    var refused = post(path, "{}", signedHeaders("POST", path, "{}"));
+    assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+
+    stepUp();
+    assertThat(web.put("/api/devices/" + deviceId + "/phone-access", Map.of("access", "FULL")).ok())
+        .isTrue();
+    var allowed = post(path, "{}", signedHeaders("POST", path, "{}"));
+    assertThat(allowed.statusCode()).as(allowed.body()).isEqualTo(200);
+    assertThat(Json.read(allowed.body()).path("status").asText()).isEqualTo("APPROVED");
+    assertThat(get("/agent/v1/me/guardrails").body()).contains("pay_supplier").contains("ALLOW");
+
+    // Twice is refused: it is already answered.
+    assertThat(post(path, "{}", signedHeaders("POST", path, "{}")).statusCode()).isEqualTo(400);
+
+    // An information item can't be always allowed.
+    UUID info = bus.raise(NotificationKind.INFO, agentId,
+        new NotificationContext(userId, "FYI", Json.obj().put("tool", "pay_supplier"),
+            null, null, null, null)).id();
+    String infoPath = "/agent/v1/me/notifications/" + info + "/always-allow";
+    assertThat(post(infoPath, "{}", signedHeaders("POST", infoPath, "{}")).statusCode())
+        .isEqualTo(400);
+
+    // Resuming someone else's (or no) run is not found.
+    String resume = Json.write(Map.of("instruction", "go on"));
+    String resumePath = "/agent/v1/me/runs/" + UUID.randomUUID() + "/resume";
+    assertThat(post(resumePath, resume, signedHeaders("POST", resumePath, resume)).statusCode())
+        .isEqualTo(404);
   }
 
   // ---- helpers ----------------------------------------------------------------------------------
