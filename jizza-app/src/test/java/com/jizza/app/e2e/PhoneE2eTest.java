@@ -244,6 +244,15 @@ class PhoneE2eTest extends E2eSupport {
     assertThat(post(infoPath, "{}", signedHeaders("POST", infoPath, "{}")).statusCode())
         .isEqualTo(400);
 
+    // It can be archived, and brought back.
+    String archivePath = "/agent/v1/me/notifications/" + info + "/archive";
+    var archived = post(archivePath, "{}", signedHeaders("POST", archivePath, "{}"));
+    assertThat(archived.statusCode()).as(archived.body()).isEqualTo(200);
+    assertThat(Json.read(archived.body()).path("archivedAt").isNull()).isFalse();
+    String back = Json.write(Map.of("archived", false));
+    var unarchived = post(archivePath, back, signedHeaders("POST", archivePath, back));
+    assertThat(Json.read(unarchived.body()).path("archivedAt").isNull()).isTrue();
+
     // Resuming someone else's (or no) run is not found.
     String resume = Json.write(Map.of("instruction", "go on"));
     String resumePath = "/agent/v1/me/runs/" + UUID.randomUUID() + "/resume";

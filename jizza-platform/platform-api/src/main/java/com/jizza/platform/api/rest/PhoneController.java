@@ -100,6 +100,8 @@ public class PhoneController {
 
   public record SnoozeBody(Instant until) {}
 
+  public record ArchiveBody(Boolean archived) {}
+
   public record RunBody(JsonNode input, Integer version) {}
 
   public record PauseBody(Boolean paused) {}
@@ -312,6 +314,16 @@ public class PhoneController {
     Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
     SnoozeBody body = parse(raw, SnoozeBody.class);
     return notifications.snooze(phone.userId(), id, body == null ? null : body.until());
+  }
+
+  /** Archive an item, or bring it back with {@code archived: false}, as the web inbox's "e". */
+  @PublicEndpoint
+  @PostMapping("/notifications/{id}/archive")
+  public NotificationDto archive(@PathVariable UUID id, @RequestBody(required = false) byte[] raw,
+                                 HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
+    ArchiveBody body = parse(raw, ArchiveBody.class);
+    return notifications.archive(phone.userId(), id, body == null || body.archived() == null || body.archived());
   }
 
   @PublicEndpoint
