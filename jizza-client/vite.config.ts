@@ -17,6 +17,10 @@ export default defineConfig({
     proxy: {
       '/api': { target: api, changeOrigin: true },
       '/ws':  { target: api.replace(/^http/, 'ws'),  ws: true },
+      // The phone app's API, so a phone can pair with the web address (http://<mac-ip>:5173) and
+      // the login page's sign-in QR matches the server the phone is paired with. The trailing slash keeps
+      // the /agents pages in the web app.
+      '/agent/': { target: api, changeOrigin: true, ws: true },
     },
   },
 })
