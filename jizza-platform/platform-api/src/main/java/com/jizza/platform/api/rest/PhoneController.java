@@ -29,6 +29,7 @@ import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.api.util.TimeBuckets;
 import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.platform.usecase.activity.ActivityUseCase;
+import com.jizza.platform.usecase.agent.AgentAdminUseCase;
 import com.jizza.platform.usecase.autonomy.AutonomyUseCase;
 import com.jizza.platform.usecase.autonomy.GuardrailsUseCase;
 import com.jizza.platform.usecase.device.DeviceUseCase;
@@ -111,6 +112,8 @@ public class PhoneController {
 
   public record AskBody(String question, String tz) {}
 
+  public record EnabledBody(Boolean enabled) {}
+
   public record Done(String message) {}
 
   private final PhoneRequests phones;
@@ -126,13 +129,14 @@ public class PhoneController {
   private final AgentDirectory agents;
   private final AuditLog audit;
   private final PhoneAskUseCase asking;
+  private final AgentAdminUseCase agentAdmin;
 
   public PhoneController(PhoneRequests phones, NotificationUseCase notifications,
                          RunHistoryUseCase history, WorkflowUseCase workflows,
                          WorkflowEngine engine, UsageUseCase usage, ActivityUseCase activity,
                          GuardrailsUseCase guardrails, AutonomyUseCase autonomy,
                          DeviceUseCase devices, AgentDirectory agents, AuditLog audit,
-                         PhoneAskUseCase asking) {
+                         PhoneAskUseCase asking, AgentAdminUseCase agentAdmin) {
     this.phones = phones;
     this.notifications = notifications;
     this.history = history;
@@ -146,6 +150,7 @@ public class PhoneController {
     this.agents = agents;
     this.audit = audit;
     this.asking = asking;
+    this.agentAdmin = agentAdmin;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------
@@ -466,6 +471,24 @@ public class PhoneController {
     RunDto resumed = engine.resume(id, payload);
     record(phone, "device.phone.run_resumed", id.toString(), Json.obj());
     return resumed;
+  }
+
+  /**
+   * Turn one agent off or on, as the switch on the web's Agents page. Like Pause all, turning off
+   * needs approve access and turning on needs full access.
+   */
+  @PublicEndpoint
+  @PostMapping("/agents/{id}/enabled")
+  public AgentItem setAgentEnabled(@PathVariable UUID id, @RequestBody(required = false) byte[] raw,
+                                   HttpServletRequest http) {
+    EnabledBody body = parse(raw, EnabledBody.class);
+    if (body == null || body.enabled() == null) throw new ValidationException("enabled is required");
+    Companion phone = phones.signed(http, raw,
+        body.enabled() ? PhoneAccess.FULL : PhoneAccess.APPROVE);
+    AgentDto agent = agentAdmin.setEnabled(phone.userId(), id, body.enabled());
+    record(phone, body.enabled() ? "device.phone.agent_enabled" : "device.phone.agent_disabled",
+        agent.name(), Json.obj().put("agentId", id.toString()));
+    return item(agent);
   }
 
   /**

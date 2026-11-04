@@ -255,6 +255,16 @@ class PhoneE2eTest extends E2eSupport {
     var unarchived = post(archivePath, back, signedHeaders("POST", archivePath, back));
     assertThat(Json.read(unarchived.body()).path("archivedAt").isNull()).isTrue();
 
+    // An agent can be turned off and on from the phone (this phone has full access by now).
+    String off = Json.write(Map.of("enabled", false));
+    String agentPath = "/agent/v1/me/agents/" + agentId + "/enabled";
+    var disabled = post(agentPath, off, signedHeaders("POST", agentPath, off));
+    assertThat(disabled.statusCode()).as(disabled.body()).isEqualTo(200);
+    assertThat(Json.read(disabled.body()).path("enabled").asBoolean()).isFalse();
+    String on = Json.write(Map.of("enabled", true));
+    var enabled = post(agentPath, on, signedHeaders("POST", agentPath, on));
+    assertThat(Json.read(enabled.body()).path("enabled").asBoolean()).isTrue();
+
     // Resuming someone else's (or no) run is not found.
     String resume = Json.write(Map.of("instruction", "go on"));
     String resumePath = "/agent/v1/me/runs/" + UUID.randomUUID() + "/resume";
