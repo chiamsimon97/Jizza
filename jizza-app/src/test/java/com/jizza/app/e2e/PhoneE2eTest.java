@@ -301,6 +301,35 @@ class PhoneE2eTest extends E2eSupport {
     assertThat(empty.statusCode()).isEqualTo(400);
   }
 
+  @Test
+  void helpGuidesAreTheWebsOwnAndOpeningAPushedItemMarksItRead() throws Exception {
+    pairPhone();
+    var list = get("/agent/v1/me/help");
+    assertThat(list.statusCode()).as(list.body()).isEqualTo(200);
+    JsonNode guides = Json.read(list.body());
+    assertThat(guides.isArray()).isTrue();
+    JsonNode signIn = null;
+    for (JsonNode g : guides) if (g.path("slug").asText().equals("smart-sign-in")) signIn = g;
+    assertThat(signIn).as(list.body()).isNotNull();
+    assertThat(signIn.path("title").asText()).isNotBlank();
+    assertThat(signIn.has("body")).isFalse();
+
+    var guide = get("/agent/v1/me/help/smart-sign-in");
+    assertThat(guide.statusCode()).as(guide.body()).isEqualTo(200);
+    assertThat(Json.read(guide.body()).path("body").asText()).contains("## ").doesNotContain("summary:");
+    assertThat(get("/agent/v1/me/help/no-such-guide").statusCode()).isEqualTo(404);
+
+    UUID userId = users.findByEmailIgnoreCase(email).orElseThrow().getId();
+    UUID agentId = agents.byKey(userId, "finance").map(AgentDto::id).orElseThrow();
+    UUID itemId = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        new NotificationContext(userId, "Pay Acme?", Json.obj(), null, null, null, null)).id();
+    String path = "/agent/v1/me/notifications/" + itemId + "/read";
+    assertThat(post(path, "{}", null).statusCode()).isEqualTo(401);
+    var read = post(path, "{}", signedHeaders("POST", path, "{}"));
+    assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+    assertThat(Json.read(read.body()).path("status").asText()).isEqualTo("READ");
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------
 
   private UUID pairPhone() {

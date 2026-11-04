@@ -23,7 +23,9 @@ guide, opened at `/help/<file name>`.
    the day you last checked the guide against the app.
 3. Write the guide in Markdown. Each `##` heading shows in the guide's "On this page" list.
 
-Nothing else needs to change: the page picks the file up when the app is built.
+Nothing else needs to change: the page picks the file up when the app is built. The server copies
+the same files in when it is built (jizza-app/pom.xml), so the phone app's Help shows them too.
+Keep links that start with `/` to pages of the web app: the phone opens them in the browser.
 
 ## What the renderer supports
 

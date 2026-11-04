@@ -197,7 +197,10 @@ A manifest whose tools or items break these rules gets `error` naming what is wr
 ## 8. Push
 
 A phone that is not connected is woken by a push carrying no data beyond
-`{"type":"command"|"inbox"}` and ids; the app then polls. The server has a `PushProvider` seam for
+`{"type":"command"|"inbox"}` and ids; the app then polls. A person's own phones are also sent
+`{"type":"run_failed","runId"}` whenever one of their runs fails (not a sub-workflow's run, whose
+failure reaches them through its parent), connected or not, once the failure is saved; the app
+reads the run and shows the alert. The server has a `PushProvider` seam for
 APNs and FCM; without one configured, a phone picks up work at its next poll. A token the provider
 reports invalid is forgotten.
 
@@ -303,6 +306,8 @@ its `/api` twin for the phone's owner.
 | `/agent/v1/me/guardrails` | As `/api/guardrails` |
 | `/agent/v1/me/devices` | As `/api/devices` |
 | `/agent/v1/me/agents` | id, name, description, status, enabled, modelTier, monthlyCostLimit, parentAgentId (no instructions) |
+| `/agent/v1/me/help` | The web's Help guides (jizza-client/src/help/guides): slug, title, summary, section, order, updated |
+| `/agent/v1/me/help/{slug}` | One guide with its Markdown `body`, header removed |
 
 ### Acting: signed requests
 
@@ -324,6 +329,7 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | Route | Body | Needs |
 | --- | --- | --- |
 | `POST /agent/v1/me/notifications/{id}/answer` | `{"kind","instruction","feedback"}`, kind APPROVE, DENY or SUBMIT_INSTRUCTION | approve |
+| `POST /agent/v1/me/notifications/{id}/read` | empty: marks it read, as opening it on the web does | read |
 | `POST /agent/v1/me/notifications/{id}/snooze` | `{"until"}` (empty brings it back) | approve |
 | `POST /agent/v1/me/notifications/{id}/archive` | `{"archived"}` (default true; false brings it back) | approve |
 | `POST /agent/v1/me/notifications/{id}/always-allow` | empty: saves an allow rule for that agent and `context.tool`, then approves (open PERMISSION_REQUEST only) | full |

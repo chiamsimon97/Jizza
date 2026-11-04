@@ -103,6 +103,7 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   private final StepInputs stepInputs;
   private final Map<NodeType, NodeExecutor> executors = new EnumMap<>(NodeType.class);
   private ObjectProvider<com.jizza.engine.api.device.DeviceCommands> deviceCommands;
+  private org.springframework.context.ApplicationEventPublisher events;
 
   @Autowired
   public SagaWorkflowEngine(WorkflowRepository workflows, WorkflowVersionRepository versions,
@@ -137,6 +138,12 @@ public class SagaWorkflowEngine implements WorkflowEngine {
   public void setDeviceCommands(
       ObjectProvider<com.jizza.engine.api.device.DeviceCommands> deviceCommands) {
     this.deviceCommands = deviceCommands;
+  }
+
+  /** Where a failed run is announced, so the person's phone can alert them. */
+  @Autowired(required = false)
+  public void setEvents(org.springframework.context.ApplicationEventPublisher events) {
+    this.events = events;
   }
 
   @Override
@@ -784,11 +791,16 @@ public class SagaWorkflowEngine implements WorkflowEngine {
     RunContext context = RunContext.of(run.getContext());
     cancelChildren(context);
     cancelDeviceCommands(run.getId(), "The run stopped");
-    cleanupBrowser(run, graphFor(workflows.findById(run.getWorkflowId())
-        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
-        run.getVersion()), context);
+    WorkflowEntity workflow = workflows.findById(run.getWorkflowId())
+        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId()));
+    cleanupBrowser(run, graphFor(workflow, run.getVersion()), context);
     save(run, context);
     wakeParent(context);
+    // A child's failure reaches the person through its parent, so only top-level runs alert.
+    if (events != null && context.parentRunId() == null) {
+      events.publishEvent(new com.jizza.engine.api.event.RunFailed(run.getUserId(), run.getId(),
+          workflow.getId(), workflow.getName(), message));
+    }
   }
 
   private void cleanupBrowser(WorkflowRunEntity run, WorkflowGraph graph, RunContext context) {
