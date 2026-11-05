@@ -193,6 +193,23 @@ The recorder only watches what you allow, and you can stop it at any time.
 - **Your approval.** Steps that change a site (submitting, typing) go through your [guardrails](/guardrails) like any other action. In chat, clicking or typing in your browser always asks first.
 - **Stop everything.** **Pause automation** in the extension popup refuses all commands until you resume. **Stop all** (Alt+Shift+S) ends whatever is running now.
 
+## Advanced web steps and options
+
+Besides recording, you can add web steps by hand from **Web Automation** in the step list. A few
+do more than a recording can:
+
+| Step or option | What it does |
+| --- | --- |
+| **Handle pop-up dialogs** | Answers the page's OK/Cancel and "type a value" pop-ups for you until the page changes. Put it before the step that makes the pop-up appear, otherwise that step waits for a person. |
+| **Drag and drop** | Drags one element onto another (**Drop onto**). Turn on **Trusted input** for sites that only react to a real mouse. |
+| **Wait** for text or an address | Waits until some text shows (or goes away), or until the page address contains a value, for example after a payment page redirects. |
+| **Advanced options › Highlight the element** | Outlines the element for a moment before acting, so you can watch what the run does. |
+| **Advanced options › Tries before giving up** | How many times the step runs before it counts as failed (default 3), and how long to wait between tries. |
+| **Advanced options › When it still fails** | **Ask me what to do** (the default) or **Stop the run**. |
+| **Edit selectors › Inside frames / shadow roots** | For elements inside an iframe or a web component: the iframes or component hosts that lead to it, as CSS selectors. Picking on the page fills these in for you. |
+
+These need the browser extension from 5 Nov 2026 or later.
+
 ## Limits and troubleshooting
 
 ### Limits

@@ -61,7 +61,9 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | 20 | Go forward a page | `browser.forward@1` | READ | `waitUntil` | `{url, title, moved}` |
 | 21 | Go back a page | `browser.back@1` | READ | `waitUntil` | `{url, title, moved}` |
 | 22 | Close browser | `browser.close@1` | READ | `what` | `{closed}` |
-| – | Wait (extra) | `browser.wait@1` | READ | `for`, `ms` | `{waitedMs}` |
+| – | Wait (extra) | `browser.wait@1` | READ | `for` (`element`, `elementGone`, `navigation`, `time`, `text`, `textGone`, `url`), `ms`, `text`, `urlContains` | `{waitedMs}` |
+| – | Handle pop-up dialogs (extra) | `browser.handleDialog@1` | UPDATE | `answer`: `accept`\|`dismiss`\|`off`, `promptText`?, `times`: `always`\|`once`; browser only | `{armed, frames, answered}` |
+| – | Drag and drop (extra) | `browser.dragDrop@1` ● | UPDATE | `to` (locator bundle, same frame), `offset`?; browser only | `{dragged, dropped}` |
 | – | Screenshot (extra) | `browser.screenshot@1` | READ | `element`?, `fullPage` | `{file}` |
 | – | Download (exists, v1) | `browser.download@1` | CREATE | `url`? or `selector` / `element` | `{file, name, size}` |
 | – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, url}` |
@@ -76,6 +78,9 @@ web steps, after every step has passed its own guardrail; it never nests batches
 `browser.record` or `browser.pickElement`, and it checks each step against the device's declared
 versions, blocked actions and allowed sites before sending. Batch steps carry no `session`; the batch's
 own `session` (or the one a `browser.open` step in it opens) is used.
+
+Every action that acts on an `element` also takes `highlight` (boolean, default false): the
+browser outlines the element for a moment before acting, for a person watching the run.
 
 Deadlines: the server's command `deadline` already includes `timeoutMs`; always finish before it.
 Navigation actions wait at most `min(deadline, 60 s)` for `waitUntil`.

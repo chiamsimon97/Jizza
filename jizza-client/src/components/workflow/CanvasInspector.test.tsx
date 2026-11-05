@@ -285,6 +285,108 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  describe('Advanced web options', () => {
+    const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    const specs = [
+      {
+        action: 'browser.dragDrop', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Drag and drop',
+        description: '', defaultTimeoutSec: 60, conditions: [], platforms: ['browser'],
+        input: { type: 'object', required: ['element', 'to'], properties: {
+          element: locator, to: locator, trusted: { type: 'boolean' }, timeoutMs: { type: 'integer' },
+          screenshotOnError: { type: 'boolean' }, highlight: { type: 'boolean' },
+        } },
+        output: { type: 'object' },
+      },
+      {
+        action: 'browser.wait', version: 1, capability: 'browser', actionType: 'READ', title: 'Wait',
+        description: '', defaultTimeoutSec: 60, conditions: [], platforms: ['browser'],
+        input: { type: 'object', required: ['for'], properties: {
+          element: locator, for: { enum: ['element', 'time', 'text', 'url'] }, ms: { type: 'integer' },
+          text: { type: 'string' }, urlContains: { type: 'string' }, timeoutMs: { type: 'integer' },
+        } },
+        output: { type: 'object' },
+      },
+    ]
+
+    function stub() {
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) =>
+        respond(String(input).includes('/api/devices/catalog') ? specs : [])))
+    }
+
+    it('shows Drop onto as an element and saves highlight, retries and what to do on failure', async () => {
+      queryClient.clear()
+      stub()
+      const entry = WEB_PALETTE.find(e => e.config?.action === 'browser.dragDrop')!
+      const made = addAfter(emptyGraph(), 'start', null, entry)
+      const graph = {
+        ...made.graph,
+        nodes: made.graph.nodes.map(n => n.id === made.id
+          ? { ...n, config: { ...n.config, inputs: { element: { strategies: [{ by: 'css', value: '#card' }] }, to: { strategies: [{ by: 'css', value: '#zone' }] } } } } : n),
+      }
+      const { onSave } = open(graph, made.id)
+      expect(await screen.findByText('Drop onto')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Show options' }))
+      fireEvent.click(await screen.findByRole('checkbox', { name: /Highlight the element/ }))
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Tries before giving up' }), { target: { value: '5' } })
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Seconds between tries' }), { target: { value: '2' } })
+      fireEvent.change(screen.getByRole('combobox', { name: 'When it still fails' }), { target: { value: 'dead_letter' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+      expect(saved.config.inputs).toMatchObject({ highlight: true, to: { strategies: [{ by: 'css', value: '#zone' }] } })
+      expect(saved.config.retry).toEqual({ maxAttempts: 5, backoffMillis: 2000 })
+      expect(saved.config.onFailure).toBe('dead_letter')
+      vi.unstubAllGlobals()
+    })
+
+    it('shows only the Wait inputs that matter for what it waits for', async () => {
+      queryClient.clear()
+      stub()
+      const entry = WEB_PALETTE.find(e => e.config?.action === 'browser.wait')!
+      const made = addAfter(emptyGraph(), 'start', null, entry)
+      open(made.graph, made.id)
+      const mode = await screen.findByRole('combobox', { name: 'For' })
+      expect(screen.queryByText('Address contains')).not.toBeInTheDocument()
+      fireEvent.change(mode, { target: { value: 'url' } })
+      expect(await screen.findByText('Address contains')).toBeInTheDocument()
+      expect(screen.queryByText('Ms')).not.toBeInTheDocument()
+      fireEvent.change(mode, { target: { value: 'text' } })
+      expect(await screen.findByText('Text')).toBeInTheDocument()
+      expect(screen.queryByText('Address contains')).not.toBeInTheDocument()
+      vi.unstubAllGlobals()
+    })
+
+    it('edits the frames and shadow roots of an element', async () => {
+      queryClient.clear()
+      stub()
+      const entry = WEB_PALETTE.find(e => e.config?.action === 'browser.dragDrop')!
+      const made = addAfter(emptyGraph(), 'start', null, entry)
+      const graph = {
+        ...made.graph,
+        nodes: made.graph.nodes.map(n => n.id === made.id
+          ? { ...n, config: { ...n.config, inputs: { to: { strategies: [{ by: 'css', value: '#zone' }] }, element: { strategies: [{ by: 'css', value: '#card' }], fingerprint: { tag: 'div' } } } } } : n),
+      }
+      const { onSave } = open(graph, made.id)
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Edit selectors' }))[0])
+      fireEvent.click(screen.getByRole('button', { name: /Add frame/ }))
+      type(screen.getByRole('textbox', { name: 'Frame 1' }), 'iframe#pay')
+      fireEvent.click(screen.getByRole('button', { name: /Add shadow host/ }))
+      type(screen.getByRole('textbox', { name: 'Shadow host 1' }), 'checkout-form')
+      fireEvent.click(screen.getByRole('button', { name: 'Save selectors' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+      expect((saved.config.inputs as Record<string, unknown>).element).toEqual({
+        strategies: [{ by: 'css', value: '#card' }],
+        fingerprint: { tag: 'div' },
+        frames: [{ strategies: [{ by: 'css', value: 'iframe#pay' }] }],
+        shadow: [{ by: 'css', value: 'checkout-form' }],
+      })
+      vi.unstubAllGlobals()
+    })
+  })
+
   describe('Pick on page', () => {
     const clickSpec = {
       action: 'browser.click', version: 2, capability: 'browser', actionType: 'UPDATE', title: 'Click',

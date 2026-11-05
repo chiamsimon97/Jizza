@@ -121,12 +121,15 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Close browser', 'browser.close'),
   web('Wait', 'browser.wait'),
   web('Screenshot', 'browser.screenshot'),
+  web('Handle pop-up dialogs', 'browser.handleDialog'),
+  web('Drag and drop', 'browser.dragDrop'),
 ]
 
 /** Browser actions whose contract requires a concrete element locator. */
 export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.click', 'browser.hover', 'browser.setText', 'browser.getText', 'browser.setCheckbox',
   'browser.getCheckbox', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
+  'browser.dragDrop',
 ])
 
 /** Actions that can use an element, including those where it is an optional targeting mode. */

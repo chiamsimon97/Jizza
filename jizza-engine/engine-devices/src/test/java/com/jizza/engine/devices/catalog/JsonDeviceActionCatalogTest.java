@@ -167,7 +167,8 @@ class JsonDeviceActionCatalogTest {
     JsonNode close = input("browser.close@1");
     assertEnum(close, "what", "tab", "session");
     assertThat(close.path("properties").path("what").path("default").asText()).isEqualTo("session");
-    assertEnum(input("browser.wait@1"), "for", "element", "elementGone", "navigation", "time");
+    assertEnum(input("browser.wait@1"), "for", "element", "elementGone", "navigation", "time",
+        "text", "textGone", "url");
     assertThat(input("browser.screenshot@1").path("properties").path("fullPage")
         .path("type").asText()).isEqualTo("boolean");
     assertRef(input("browser.download@1"), "element", "locatorBundle");
@@ -190,6 +191,23 @@ class JsonDeviceActionCatalogTest {
     assertObjectProperties(output("browser.switchTo@1"), "tabId", "url", "title", "frame");
     assertObjectProperties(output("browser.forward@1"), "url", "title", "moved");
     assertObjectProperties(output("browser.back@1"), "url", "title", "moved");
+  }
+
+  @Test
+  void advancedWebActionsAreBrowserOnlyAndElementActionsTakeHighlight() {
+    assertEnum(input("browser.handleDialog@1"), "answer", "accept", "dismiss", "off");
+    assertObjectProperties(output("browser.handleDialog@1"), "armed", "frames", "answered");
+    assertRef(input("browser.dragDrop@1"), "to", "locatorBundle");
+    assertObjectProperties(output("browser.dragDrop@1"), "dragged", "dropped");
+    for (String ref : List.of("browser.handleDialog@1", "browser.dragDrop@1")) {
+      assertThat(action(ref).platforms()).as(ref).containsExactly("browser");
+      assertThat(action(ref).actionType().name()).as(ref).isEqualTo("UPDATE");
+    }
+    for (String ref : List.of("browser.click@2", "browser.setText@1", "browser.dragDrop@1")) {
+      assertThat(input(ref).path("properties").path("highlight").path("type").asText())
+          .as(ref).isEqualTo("boolean");
+    }
+    assertThat(input("browser.wait@1").path("properties").has("urlContains")).isTrue();
   }
 
   @Test
