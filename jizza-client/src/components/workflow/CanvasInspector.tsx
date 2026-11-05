@@ -7,6 +7,7 @@ import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import { useQuery } from '@tanstack/react-query'
 import type { AgentDto, Device, DeviceActionSpec, DeviceItem, McpServer, RunStepDto, TeamStep } from '@/types'
 import { devicesApi } from '@/api/devices'
+import { ElementPreview } from '@/components/web/PageView'
 import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
   MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
@@ -1503,6 +1504,7 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
   const strategies = Array.isArray(bundle.strategies) ? bundle.strategies as LocatorStrategy[] : []
   const [editing, setEditing] = useState(false)
   const preview = typeof bundle.preview === 'string' ? bundle.preview : undefined
+  const pagePreview = typeof bundle.pagePreview === 'string' ? bundle.pagePreview : undefined
   const online = (browsers ?? []).filter(b => b.online)
   const [chosen, setChosen] = useState('')
   const pickDevice = deviceId ?? (online.length === 1 ? online[0].id : chosen)
@@ -1522,7 +1524,7 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
         if (stop || r.status === 'waiting') return
         setPicking(undefined)
         if (r.status === 'done' && r.element) {
-          latestChange.current({ ...r.element, ...(r.preview ? { preview: r.preview } : {}) })
+          latestChange.current({ ...r.element, ...(r.preview ? { preview: r.preview } : {}), ...(r.pagePreview ? { pagePreview: r.pagePreview } : {}) })
         } else if (r.error?.kind !== 'cancelled_by_person') {
           setPickError(r.error?.detail ?? 'Picking did not finish.')
         }
@@ -1560,7 +1562,10 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
           </span>
           <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit selectors</Button>
         </div>
-        {preview && pickDevice && <img className="mt-2 max-h-32 rounded border border-gray-200" alt="Element preview" src={devicesApi.fileUrl(pickDevice, preview)} />}
+        {(preview || pagePreview) && pickDevice && <div className="mt-2 flex items-start gap-2">
+          <ElementPreview deviceId={pickDevice} preview={preview} pagePreview={pagePreview} className="max-h-32 rounded border border-gray-200" />
+          {pagePreview && <span className="text-[11px] text-gray-500">Click the picture to see it on the page.</span>}
+        </div>}
       </div>
     )}
     {picking ? (

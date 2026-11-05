@@ -19,8 +19,12 @@ public interface DesignTimeService {
 
   record PickStarted(UUID commandId) {}
 
-  /** {@code status} is waiting, done or failed; the element is only ever the person's own pick. */
-  record PickResult(String status, JsonNode element, String preview, String url, Error error) {}
+  /**
+   * {@code status} is waiting, done or failed; the element is only ever the person's own pick.
+   * {@code pagePreview} is the visible page with the element outlined (newer browser agents).
+   */
+  record PickResult(String status, JsonNode element, String preview, String pagePreview, String url,
+      Error error) {}
 
   /** Asks the person's browser to let them click an element; returns at once. */
   PickStarted startPick(Access access, UUID deviceId, String sessionId, String url, String prompt);

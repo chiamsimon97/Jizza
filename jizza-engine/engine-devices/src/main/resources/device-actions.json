@@ -858,7 +858,7 @@
     {
       "action":"browser.getSelectors","version":1,"capability":"browser","actionType":"READ","title":"Get element selectors","description":"Builds robust selectors for an element.",
       "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"highlight":{"type":"boolean","default":false,"description":"Outline the element on the page before acting on it."}}},
-      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"css":{"type":"string"},"xpath":{"type":"string"},"preview":{"type":"string"}},"required":["element","css","xpath"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
+      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"css":{"type":"string"},"xpath":{"type":"string"},"preview":{"type":"string"},"pagePreview":{"type":"string"}},"required":["element","css","xpath"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":60
     },
     {
       "action":"browser.pageInfo","version":1,"capability":"browser","actionType":"READ","title":"Get web page details","description":"Returns requested details and files for the current page.",
@@ -893,7 +893,7 @@
     {
       "action":"browser.pickElement","version":1,"capability":"browser","actionType":"READ","title":"Pick element","description":"Lets the person choose an element while designing a workflow.",
       "input":{"type":"object","properties":{"session":{"type":"string"},"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"timeoutMs":{"type":"integer","default":15000,"minimum":0,"maximum":120000},"trusted":{"type":"boolean","default":false},"screenshotOnError":{"type":"boolean","default":true},"url":{"type":"string","format":"uri","pattern":"^https?://"},"prompt":{"type":"string"}}},
-      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"preview":{"type":"string"},"url":{"type":"string"}},"required":["element","preview","url"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":150
+      "output":{"type":"object","properties":{"element":{"$ref":"device-actions.json#/schemas/locatorBundle"},"preview":{"type":"string"},"pagePreview":{"type":"string"},"url":{"type":"string"}},"required":["element","preview","url"]},"conditions":["site"],"platforms":["browser","windows","macos","linux"],"defaultTimeoutSec":150
     },
     {
       "action":"browser.record","version":1,"capability":"browser","actionType":"READ","title":"Record browser actions","description":"Records browser actions while designing a workflow.",

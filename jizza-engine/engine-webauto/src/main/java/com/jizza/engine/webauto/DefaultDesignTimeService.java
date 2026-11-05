@@ -108,18 +108,18 @@ public class DefaultDesignTimeService implements DesignTimeService {
     DeviceCommandDto command = commands.find(commandId)
         .filter(c -> PICK_ACTION.equals(c.action()) && access.userId().equals(c.userId()))
         .orElseThrow(() -> new NotFoundException("Pick", commandId));
-    if (!command.status().finished()) return new PickResult("waiting", null, null, null, null);
+    if (!command.status().finished()) return new PickResult("waiting", null, null, null, null, null);
     JsonNode output = command.output();
     if (command.status() == DeviceCommandStatus.SUCCEEDED && output != null
         && output.path("element").isObject()) {
       return new PickResult("done", output.get("element"), output.path("preview").asText(null),
-          output.path("url").asText(null), null);
+          output.path("pagePreview").asText(null), output.path("url").asText(null), null);
     }
     Result failed = result(command);
     Error error = failed.error() != null && failed.error().kind() != null ? failed.error()
         : new Error(command.status() == DeviceCommandStatus.CANCELLED ? "cancelled_by_person"
             : "failed", command.error(), null);
-    return new PickResult("failed", null, null, null, error);
+    return new PickResult("failed", null, null, null, null, error);
   }
 
   private void judge(Access access, DeviceDto device, DeviceActionSpec spec, JsonNode inputs) {
