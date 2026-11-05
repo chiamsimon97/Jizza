@@ -44,4 +44,17 @@ describe('RecordingReview', () => {
     fireEvent.blur(login)
     expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 3, secretRef: 'login-7' }])
   })
+
+  it('shows a step on its page when the browser sent a page view', () => {
+    const withViews: Recording = { ...recording, steps: [
+      { seq: 1, position: 1, deleted: false, step: { action: 'browser.click', label: 'Click "Pay"', input: {}, meta: { preview: 'crop-1', pagePreview: 'page-1' } } },
+      { seq: 2, position: 2, deleted: false, step: { action: 'browser.click', label: 'Click "Back"', input: {}, meta: { preview: 'crop-2' } } },
+    ] }
+    render(<RecordingReview recording={withViews} onEdit={vi.fn()} />)
+    const buttons = screen.getAllByRole('button', { name: 'See on page' })
+    expect(buttons).toHaveLength(1)
+    fireEvent.click(buttons[0])
+    const page = screen.getByAltText('The page with the element outlined') as HTMLImageElement
+    expect(page.src).toContain('page-1')
+  })
 })

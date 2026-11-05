@@ -173,7 +173,7 @@ class JsonDeviceActionCatalogTest {
         .path("type").asText()).isEqualTo("boolean");
     assertRef(input("browser.download@1"), "element", "locatorBundle");
     assertObjectProperties(output("browser.download@1"), "file", "name", "size");
-    assertObjectProperties(output("browser.pickElement@1"), "element", "preview", "url");
+    assertObjectProperties(output("browser.pickElement@1"), "element", "preview", "pagePreview", "url");
     assertDefault("browser.record@1", "maxMinutes", 30);
     assertEnum(output("browser.record@1"), "stoppedBy", "person", "timeout", "server");
 

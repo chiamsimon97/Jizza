@@ -30,6 +30,8 @@ export interface PickResult {
   status: 'waiting' | 'done' | 'failed'
   element?: Record<string, unknown>
   preview?: string | null
+  /** The visible page with the element outlined (newer browser agents only). */
+  pagePreview?: string | null
   url?: string | null
   error?: WebTestError | null
 }
@@ -41,7 +43,7 @@ export interface RecordedStepData {
   input?: Record<string, unknown>
   mappings?: Record<string, { name: string; type: string; default?: unknown }>
   secretRef?: string | null
-  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; sensitive?: boolean; truncated?: boolean }
+  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean }
 }
 
 export interface RecordedStep {

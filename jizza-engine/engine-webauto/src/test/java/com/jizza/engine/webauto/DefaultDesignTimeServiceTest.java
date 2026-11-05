@@ -124,13 +124,14 @@ class DefaultDesignTimeServiceTest {
     element.putArray("strategies").addObject().put("by", "css").put("value", "#go");
     var pickOutput = Json.obj();
     pickOutput.set("element", element);
-    pickOutput.put("preview", "f1").put("url", "https://example.com");
+    pickOutput.put("preview", "f1").put("pagePreview", "f2").put("url", "https://example.com");
     when(commands.find(commandId)).thenReturn(Optional.of(pick(commandId, browser,
         access.userId(), DeviceCommandStatus.SUCCEEDED, pickOutput)));
     var done = service.pickResult(access, commandId);
     assertThat(done.status()).isEqualTo("done");
     assertThat(done.element().path("strategies")).hasSize(1);
     assertThat(done.preview()).isEqualTo("f1");
+    assertThat(done.pagePreview()).isEqualTo("f2");
 
     when(commands.find(commandId)).thenReturn(Optional.of(pick(commandId, browser,
         access.userId(), DeviceCommandStatus.CANCELLED, null)));

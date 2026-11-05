@@ -429,7 +429,7 @@ describe('CanvasInspector', () => {
 
     it('fills the element from the pick and keeps its preview', async () => {
       queryClient.clear()
-      stub([{ status: 'waiting' }, { status: 'done', element: { strategies: [{ by: 'css', value: '#go' }], label: 'Go' }, preview: 'file-1', url: 'https://example.com' }])
+      stub([{ status: 'waiting' }, { status: 'done', element: { strategies: [{ by: 'css', value: '#go' }], label: 'Go' }, preview: 'file-1', pagePreview: 'file-2', url: 'https://example.com' }])
       const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
       const { onSave } = open(made.graph, made.id)
       const pick = await screen.findByRole('button', { name: 'Pick on page' })
@@ -438,7 +438,7 @@ describe('CanvasInspector', () => {
       await waitFor(() => expect(screen.getByText('Go')).toBeInTheDocument(), { timeout: 5000 })
       fireEvent.click(screen.getByRole('button', { name: 'Save' }))
       const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
-      expect(saved.config.inputs).toMatchObject({ element: { strategies: [{ by: 'css', value: '#go' }], preview: 'file-1' } })
+      expect(saved.config.inputs).toMatchObject({ element: { strategies: [{ by: 'css', value: '#go' }], preview: 'file-1', pagePreview: 'file-2' } })
       vi.unstubAllGlobals()
     }, 10000)
   })

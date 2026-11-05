@@ -56,7 +56,7 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | 15 | Check if element exists | `browser.exists@1` ● | READ | `visibleOnly`; `timeoutMs` defaults to 3000 | `{exists, count, visible}` |
 | 16 | Switch to | `browser.switchTo@1` | READ | `to`, `match`, `element` | `{tabId, url, title, frame?}` |
 | 17 | Refresh page | `browser.refresh@1` | READ | `hard`, `waitUntil` | `{url, title}` |
-| 18 | Get element selectors | `browser.getSelectors@1` | READ | `element`? | `{element, css, xpath, preview?}` |
+| 18 | Get element selectors | `browser.getSelectors@1` | READ | `element`? | `{element, css, xpath, preview?, pagePreview?}` |
 | 19 | Get web page details | `browser.pageInfo@1` | READ | `include` | page details and requested files |
 | 20 | Go forward a page | `browser.forward@1` | READ | `waitUntil` | `{url, title, moved}` |
 | 21 | Go back a page | `browser.back@1` | READ | `waitUntil` | `{url, title, moved}` |
@@ -66,7 +66,7 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | – | Drag and drop (extra) | `browser.dragDrop@1` ● | UPDATE | `to` (locator bundle, same frame), `offset`?; browser only | `{dragged, dropped}` |
 | – | Screenshot (extra) | `browser.screenshot@1` | READ | `element`?, `fullPage` | `{file}` |
 | – | Download (exists, v1) | `browser.download@1` | CREATE | `url`? or `selector` / `element` | `{file, name, size}` |
-| – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, url}` |
+| – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, pagePreview?, url}` |
 | – | Record (design time) | `browser.record@1` | READ | `recordingId`, `url`?, `session`?, `maxMinutes` | `{stepCount, stoppedBy}` |
 | – | Run steps (fast replay, B9) | `browser.runSteps@1` | UPDATE | `session`?, `steps: [{key, action, version, input}]` (1–100), `stopOnError` (default true) | `{steps: {<key>: output}, failedAt?: key}` |
 
@@ -200,6 +200,11 @@ Recording uses protocol `event` messages named `browser.recording.step`,
 monotonically increasing `seq`, action and version, input, label, and metadata. Sensitive steps
 send `secretRef: null` and never send the value. Events may arrive out of order; sort by `seq` and
 ignore a `seq` already stored.
+
+`meta.preview` is the element cropped (PNG). Newer extensions also send `meta.pagePreview`, the
+visible page with the element outlined (JPEG, at most 1280 px wide), from the same capture with
+sensitive fields blurred; `browser.pickElement@1` and `browser.getSelectors@1` return it as
+`pagePreview`. Neither is sent for a sensitive step.
 
 ```json
 {"name": "browser.recording.step",
