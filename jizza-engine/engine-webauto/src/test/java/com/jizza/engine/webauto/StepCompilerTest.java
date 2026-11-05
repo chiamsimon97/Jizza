@@ -129,4 +129,39 @@ class StepCompilerTest {
     assertThat(graph.path("edges")).hasSize(2);
     assertThat(graph.path("edges").get(0).path("from").asText()).isEqualTo("step_1");
   }
+
+  @Test
+  void aDesktopRecordingTargetsItsPcWithNoBrowserSteps() {
+    var pc = java.util.UUID.randomUUID();
+    JsonNode open = step("""
+        {"seq":0,"action":"ui.openApp","version":1,"label":"Open Notepad","input":{"app":"notepad"},"meta":{}}""");
+    JsonNode type = step("""
+        {"seq":1,"action":"ui.type","version":1,"label":"Type into Text editor",
+         "input":{"app":"notepad","element":"Document:Text editor","text":"Hello"},"meta":{},
+         "mappings":{"text":{"name":"note","type":"text","default":"Hello"}}}""");
+    JsonNode read = step("""
+        {"seq":2,"action":"ui.readWindow","version":1,"label":"Read Notepad","input":{"app":"notepad"},"meta":{}}""");
+
+    var graph = StepCompiler.compileDesktop(pc, List.of(open, type, read), false);
+
+    var nodes = graph.path("nodes");
+    assertThat(nodes.findValuesAsText("label"))
+        .containsExactly("Start", "Open Notepad", "Type into Text editor", "Read Notepad", "End");
+    var typeConfig = nodes.get(2).path("config");
+    assertThat(typeConfig.path("target").asText()).isEqualTo(pc.toString());
+    assertThat(typeConfig.has("preset")).isFalse();
+    assertThat(typeConfig.path("inputs").path("text").asText()).isEqualTo("{{ input.note }}");
+    assertThat(nodes.get(4).path("config").path("outputs").get(0).path("value").asText())
+        .isEqualTo("{{ nodes.step_3.text }}");
+  }
+
+  @Test
+  void aDesktopPasswordNeedsASecretSavedOnThePc() {
+    JsonNode password = step("""
+        {"seq":0,"action":"ui.type","version":1,"label":"Type password",
+         "input":{"app":"sap","element":"Edit:Password"},"meta":{"sensitive":true}}""");
+    var pc = java.util.UUID.randomUUID();
+    assertThatThrownBy(() -> StepCompiler.compileDesktop(pc, List.of(password), false))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("Secrets");
+  }
 }

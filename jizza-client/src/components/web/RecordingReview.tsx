@@ -37,13 +37,13 @@ export function RecordingReview({ recording, busy, onEdit }: {
               : <span className="h-12 w-16 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800" />}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
-              <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url}</p>
+              <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {Object.entries(s.step.mappings ?? {}).map(([field, m]) => <Badge key={field}>input: {m.name}</Badge>)}
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                    <KeyRound className="h-3.5 w-3.5" />Saved login
-                    <input aria-label="Saved login" defaultValue={s.step.secretRef ?? ''} placeholder="Saved login id"
+                    <KeyRound className="h-3.5 w-3.5" />{recording.kind === 'desktop' ? 'Secret on the PC' : 'Saved login'}
+                    <input aria-label="Saved login" defaultValue={s.step.secretRef ?? ''} placeholder={recording.kind === 'desktop' ? 'Secret name' : 'Saved login id'}
                       onBlur={e => { const v = e.target.value.trim(); if (v !== (s.step.secretRef ?? '')) onEdit([{ op: 'secret', seq: s.seq, secretRef: v || null }]) }}
                       className="w-40 rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600" />
                   </label>

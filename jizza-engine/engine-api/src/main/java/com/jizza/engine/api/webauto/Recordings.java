@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Recording what a person does in their browser and turning it into a workflow module. The
+ * Recording what a person does in their browser or in Windows apps and turning it into a workflow module. The
  * captured steps live here only while the person records and reviews them; saving makes an
  * ordinary workflow, so there is no separate replay engine.
  */
@@ -39,11 +39,23 @@ public interface Recordings {
 
   SaveResult save(Access access, UUID id, SaveRequest request);
 
-  /** {@code steps} is null in lists. */
+  /**
+   * {@code steps} is null in lists. {@code kind} is {@code web} (a browser, from {@code startUrl})
+   * or {@code desktop} (Windows apps, started with a hotkey on the PC; {@code app} is the app it
+   * started in, and there is no start URL).
+   */
   @JsonInclude(JsonInclude.Include.NON_NULL)
   record Recording(UUID id, String name, String status, UUID deviceId, String deviceName,
                    String startUrl, int stepCount, UUID workflowId, Instant updatedAt,
-                   List<RecordedStep> steps) {}
+                   List<RecordedStep> steps, String kind, String app) {
+
+    public Recording(UUID id, String name, String status, UUID deviceId, String deviceName,
+                     String startUrl, int stepCount, UUID workflowId, Instant updatedAt,
+                     List<RecordedStep> steps) {
+      this(id, name, status, deviceId, deviceName, startUrl, stepCount, workflowId, updatedAt,
+          steps, "web", null);
+    }
+  }
 
   record RecordedStep(int seq, int position, JsonNode step, boolean deleted) {}
 

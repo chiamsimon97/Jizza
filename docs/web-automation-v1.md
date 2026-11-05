@@ -216,6 +216,35 @@ ignore a `seq` already stored.
 {"name": "browser.recording.stopped", "data": {"recordingId": "9a7c…", "stepCount": 11, "stoppedBy": "person"}}
 ```
 
+### Desktop recordings (Windows agent → server)
+
+The Jizza Windows agent records in Windows apps with a hotkey (Ctrl+Alt+R by default). The PC
+starts these recordings itself, so the events use their own names and the first one creates the
+recording:
+
+```json
+{"name": "desktop.recording.started", "data": {"recordingId": "<uuid chosen by the PC>", "name": "Notepad task 5 Nov 16:59", "app": "Notepad"}}
+{"name": "desktop.recording.step",
+ "data": {"recordingId": "…", "step": {"seq": 1, "action": "ui.type", "version": 1,
+          "input": {"app": "notepad", "element": "Edit:File name", "text": "notes.txt"},
+          "label": "Type into \"File name\"",
+          "meta": {"app": "Notepad", "window": "Save as", "sensitive": false}}}}
+{"name": "desktop.recording.stopped", "data": {"recordingId": "…", "stepCount": 4, "stoppedBy": "person"}}
+```
+
+- `started` is handled before the event is acked, so the recording exists before the PC's first
+  step is read. A repeated `started` (a resend) changes nothing. The device must declare
+  `ui.record`; a second recording on the same PC sends the first one to review.
+- The server then sends a `ui.record` command with `{"recordingId", "attach": true}`. The PC's
+  command waits until the person stops recording; cancelling it (Stop on the Recordings page)
+  stops the recording on the PC. When the command finishes, the recording goes to review as a
+  browser recording would.
+- Steps are `ui.openApp`, `ui.click`, `ui.type` and `ui.sendKeys` (SendKeys notation: `{ENTER}`,
+  `^s`). A password box sends `meta.sensitive: true` and no `text`; before saving, the person names
+  a secret saved on the PC (Credential Manager, `Jizza:<name>`) as its `secretRef`.
+- Recordings keep `kind = desktop` and the starting `app` (V39); there is no start URL. Saving
+  compiles plain `DEVICE_ACTION` steps targeted at that PC: no Open URL or Close browser steps.
+
 ### Guardrail types
 
 `READ` actions never change data on a site; `UPDATE` actions can. The server judges every web step

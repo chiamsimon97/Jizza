@@ -32,4 +32,13 @@ describe('RecordingsPage', () => {
     expect(await screen.findByText('Record a task in Chrome')).toBeInTheDocument()
     expect(get).toHaveBeenCalledWith('r9')
   })
+
+  it('shows a Windows recording by its app and PC', async () => {
+    vi.spyOn(webApi, 'listRecordings').mockResolvedValue([
+      { id: 'r2', name: 'Notepad task', status: 'recording', deviceId: 'd2', deviceName: 'Office PC', kind: 'desktop', app: 'Notepad', startUrl: null, stepCount: 3, updatedAt: '2026-01-01T00:00:00Z' },
+    ])
+    vi.spyOn(workflowsApi, 'list').mockResolvedValue([])
+    renderWithSnapshot(<RecordingsPage />, makeSnapshot())
+    expect(await screen.findByText('Notepad on Office PC, 3 steps')).toBeInTheDocument()
+  })
 })

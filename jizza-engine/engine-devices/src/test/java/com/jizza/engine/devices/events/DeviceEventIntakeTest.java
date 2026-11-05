@@ -54,4 +54,33 @@ class DeviceEventIntakeTest {
     verify(workflows, never()).findByUserIdAndStatus(any(), any(WorkflowStatus.class));
     verify(engine, never()).start(any(), org.mockito.ArgumentMatchers.anyInt(), any(), any());
   }
+
+  @SuppressWarnings("unchecked")
+  @Test
+  void aDesktopRecordingStartIsHandledBeforeTheAckAndItsStepsAreQueued() {
+    UUID deviceId = UUID.randomUUID();
+    UUID owner = UUID.randomUUID();
+    DeviceEntity device = new DeviceEntity();
+    device.setId(deviceId);
+    device.setName("Office PC");
+    device.setStatus("active");
+    device.setOwnerUserId(owner);
+    DeviceRepository devices = mock(DeviceRepository.class);
+    when(devices.findById(deviceId)).thenReturn(Optional.of(device));
+    RecordingIntake recordings = mock(RecordingIntake.class);
+    ObjectProvider<RecordingIntake> intake = mock(ObjectProvider.class);
+    when(intake.getIfAvailable()).thenReturn(recordings);
+    com.jizza.engine.api.queue.JobQueue queue = mock(com.jizza.engine.api.queue.JobQueue.class);
+    ObjectProvider<com.jizza.engine.api.queue.JobQueue> queues = mock(ObjectProvider.class);
+    when(queues.getIfAvailable()).thenReturn(queue);
+    var service = new DeviceEventIntake(queues, devices, mock(WorkflowRepository.class),
+        mock(ObjectProvider.class), mock(AuditLog.class), intake);
+
+    var data = Json.obj().put("recordingId", UUID.randomUUID().toString());
+    service.accept(deviceId, owner, Json.obj().put("name", "desktop.recording.started").set("data", data));
+    service.accept(deviceId, owner, Json.obj().put("name", "desktop.recording.step").set("data", data));
+
+    verify(recordings).accept(deviceId, owner, "desktop.recording.started", data);
+    verify(queue).enqueue(any(), any(), any(com.fasterxml.jackson.databind.JsonNode.class));
+  }
 }

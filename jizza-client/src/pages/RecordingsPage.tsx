@@ -12,7 +12,10 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 
-/** Web tasks recorded in Chrome: the saved modules, and recordings still being made or reviewed. */
+/**
+ * Tasks recorded in Chrome or in Windows apps: the saved modules, and recordings still being made
+ * or reviewed. Windows recordings start on the PC with the agent's hotkey (Ctrl+Alt+R).
+ */
 export function RecordingsPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -33,7 +36,7 @@ export function RecordingsPage() {
       <RecordFlow key={resume ?? 'new'} open={recording} mode="module" recordingId={resume}
         onClose={() => { setRecording(false); setResume(undefined); void drafts.refetch() }}
         onSaved={id => navigate(`/workflows?open=${id}`)} />
-      <PageHeader icon={Video} title="Recordings" description="Tasks you did once in Chrome, kept as modules."
+      <PageHeader icon={Video} title="Recordings" description="Tasks you did once in Chrome or a Windows app, kept as modules. On a PC with the Jizza Windows agent, press Ctrl+Alt+R to record."
         actions={<Button size="sm" onClick={() => setRecording(true)}><Circle className="h-4 w-4 fill-current" />Record</Button>} />
       {loading && <div className="grid place-items-center py-16"><Spinner /></div>}
       {(drafts.isError || modules.isError) && <LoadError what="recordings" onRetry={() => { void drafts.refetch(); void modules.refetch() }} />}
@@ -44,7 +47,7 @@ export function RecordingsPage() {
               <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Drafts</h2>
               {drafts.data!.map(d => (
                 <Card key={d.id} className="flex items-center gap-3 p-3">
-                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{d.name}</p><p className="truncate text-xs text-gray-500">{d.startUrl}, {d.stepCount} steps</p></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{d.name}</p><p className="truncate text-xs text-gray-500">{d.kind === 'desktop' ? `${d.app ?? 'Windows apps'} on ${d.deviceName ?? 'your PC'}` : d.startUrl}, {d.stepCount} steps</p></div>
                   <Badge>{d.status === 'recording' ? 'Recording' : 'Ready to review'}</Badge>
                   <Button size="sm" variant="secondary" onClick={() => { setResume(d.id); setRecording(true) }}>{d.status === 'recording' ? 'Open' : 'Review'}</Button>
                 </Card>
@@ -54,7 +57,7 @@ export function RecordingsPage() {
           <section aria-label="Saved recordings" className="space-y-2">
             <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Saved</h2>
             {saved.length === 0
-              ? <EmptyState icon={Video} title="No recordings yet" description="Press Record, do a task in Chrome, and save it as a module." />
+              ? <EmptyState icon={Video} title="No recordings yet" description="Press Record and do a task in Chrome, or press Ctrl+Alt+R on a Windows PC, then save it as a module." />
               : saved.map(w => (
                 <Card key={w.id} className="flex items-center gap-3 p-3">
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{w.name}</p><p className="truncate text-xs text-gray-500">{w.description}</p></div>
