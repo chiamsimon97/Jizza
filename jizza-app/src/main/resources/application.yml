@@ -301,6 +301,14 @@ jizza:
     push:
       fcm:
         credentials-file: ${JIZZA_FCM_CREDENTIALS:}
+      # Apple push for the iPhone app: the APNs auth key (.p8) from the Apple Developer account,
+      # its key id, the team id and the app's bundle id. Sandbox for apps installed from Xcode.
+      apns:
+        key-file: ${JIZZA_APNS_KEY_FILE:}
+        key-id: ${JIZZA_APNS_KEY_ID:}
+        team-id: ${JIZZA_APNS_TEAM_ID:}
+        topic: ${JIZZA_APNS_TOPIC:com.jizza.ios}
+        sandbox: ${JIZZA_APNS_SANDBOX:false}
 
   # Web automation. Both options are off until turned on; see docs/web-automation.md.
   webauto:

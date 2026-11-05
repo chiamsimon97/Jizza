@@ -209,7 +209,18 @@ service account key file (Firebase console › Project settings › Service acco
 private key), kept outside the repository. The server signs in to Google with it and sends each
 push as a high-priority FCM data message; every data value is a string. The app registers its FCM
 token with `POST /agent/v1/push-token {"provider":"fcm","token":"…"}`. A missing or unreadable key
-file is logged at start-up and push stays off. APNs is not built yet.
+file is logged at start-up and push stays off.
+
+**APNs (iPhone)** is built in too, with token-based sign-in. In the Apple Developer account, create
+an APNs auth key (Certificates, IDs & Profiles › Keys › Apple Push Notifications service) and keep
+the downloaded `AuthKey_XXXX.p8` outside the repository. Set `JIZZA_APNS_KEY_FILE` to its path,
+`JIZZA_APNS_KEY_ID` to its key id, `JIZZA_APNS_TEAM_ID` to the team id and `JIZZA_APNS_TOPIC` to
+the app's bundle id (default `com.jizza.ios`). Apps installed from Xcode get development tokens,
+so set `JIZZA_APNS_SANDBOX=true` for them; TestFlight and App Store builds use production. The app
+registers its token with `{"provider":"apns","token":"<hex>"}`. The ids go under the `jizza` key
+of the APNs payload. `inbox` and `run_failed` show a fixed alert ("Jizza needs your answer", "A
+run failed") collapsed per item, never the item's own text; other types are silent
+`content-available` wakes. A 410, `BadDeviceToken` or `DeviceTokenNotForTopic` forgets the token.
 
 ## 9. Conformance
 
