@@ -1117,6 +1117,20 @@
       "defaultTimeoutSec": 60
     },
     {
+      "action":"ui.sendKeys","version":1,"capability":"ui","actionType":"UPDATE","title":"Press keys in an app",
+      "description":"Presses keys or shortcuts in an app window, such as Enter, Tab or Ctrl+S. Keys use SendKeys notation: {ENTER}, {TAB}, ^s for Ctrl+S, %f for Alt+F.",
+      "input":{"type":"object","properties":{"app":{"type":"string"},"keys":{"type":"string","minLength":1,"maxLength":200}},"required":["app","keys"]},
+      "output":{"type":"object","properties":{"sent":{"type":"boolean"}}},
+      "conditions":["app"],"platforms":["windows"],"defaultTimeoutSec":60
+    },
+    {
+      "action":"ui.record","version":1,"capability":"ui","actionType":"READ","title":"Record app actions",
+      "description":"Records clicks, typing and shortcuts in Windows apps while a person shows a task, for review and saving as a workflow.",
+      "input":{"type":"object","properties":{"recordingId":{"type":"string"},"app":{"type":"string"},"attach":{"type":"boolean","default":false},"maxMinutes":{"type":"integer","minimum":1,"maximum":30,"default":30}},"required":["recordingId"]},
+      "output":{"type":"object","properties":{"stepCount":{"type":"integer"},"stoppedBy":{"enum":["person","timeout","server"]}},"required":["stepCount","stoppedBy"]},
+      "conditions":["app"],"platforms":["windows"],"defaultTimeoutSec":1800
+    },
+    {
       "action": "office.readSheet",
       "version": 1,
       "capability": "office",

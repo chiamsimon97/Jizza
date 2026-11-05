@@ -9,7 +9,10 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** A browser recording while it is captured and reviewed, before it becomes a workflow. */
+/**
+ * A recording while it is captured and reviewed, before it becomes a workflow: in a browser
+ * ({@code web}) or in Windows apps ({@code desktop}).
+ */
 @Entity
 @Table(name = "web_recordings")
 public class WebRecordingEntity {
@@ -26,7 +29,12 @@ public class WebRecordingEntity {
   @Column(nullable = false)
   private String name;
 
-  @Column(nullable = false, columnDefinition = "text")
+  @Column(nullable = false)
+  private String kind = "web";
+
+  private String app;
+
+  @Column(columnDefinition = "text")
   private String startUrl;
 
   @Column(nullable = false)
@@ -59,6 +67,10 @@ public class WebRecordingEntity {
   public void setDeviceId(UUID deviceId) { this.deviceId = deviceId; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
+  public String getKind() { return kind; }
+  public void setKind(String kind) { this.kind = kind; }
+  public String getApp() { return app; }
+  public void setApp(String app) { this.app = app; }
   public String getStartUrl() { return startUrl; }
   public void setStartUrl(String startUrl) { this.startUrl = startUrl; }
   public String getStatus() { return status; }

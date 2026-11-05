@@ -57,7 +57,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
   const canSave = !!r && r.status === 'review' && liveSteps(r.steps).length > 0 && missing === 0
 
   return (
-    <SlideOver open={open} title={mode === 'insert' ? 'Record steps here' : 'Record a task in Chrome'} onClose={close}
+    <SlideOver open={open} title={mode === 'insert' ? 'Record steps here' : r?.kind === 'desktop' ? 'Recorded on your PC' : 'Record a task in Chrome'} onClose={close}
       description="Do the task once in your own Chrome. Jizza turns it into steps you can review."
       footer={r?.status === 'review' ? (
         <div className="flex items-center justify-between gap-2">
@@ -94,7 +94,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
 
       {r?.status === 'recording' && (
         <div className="space-y-3">
-          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />Recording in Chrome on {r.deviceName ?? 'your browser'}</p>
+          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />{r.kind === 'desktop' ? `Recording in Windows apps on ${r.deviceName ?? 'your PC'}. Press Ctrl+Alt+R on the PC to stop.` : `Recording in Chrome on ${r.deviceName ?? 'your browser'}`}</p>
           <ol className="space-y-1 text-sm" aria-label="Captured steps">
             {liveSteps(r.steps).map((s, i) => <li key={s.seq} className="truncate">{i + 1}. {s.step.label ?? s.step.action}</li>)}
           </ol>
@@ -102,7 +102,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
         </div>
       )}
 
-      {r?.status === 'failed' && <p className="text-sm text-gray-600">Nothing was captured. Try again, and check Chrome is open on the page.</p>}
+      {r?.status === 'failed' && <p className="text-sm text-gray-600">{r.kind === 'desktop' ? 'Nothing was captured. Press Ctrl+Alt+R on the PC and try again.' : 'Nothing was captured. Try again, and check Chrome is open on the page.'}</p>}
 
       {r?.status === 'review' && (
         <div className="space-y-4">
@@ -116,7 +116,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
               </label>
             </div>
           )}
-          {missing > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Choose a saved login for each password step before saving.</p>}
+          {missing > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">{r.kind === 'desktop' ? 'Name the secret saved on the PC (Jizza Agent › Secrets) for each password step before saving.' : 'Choose a saved login for each password step before saving.'}</p>}
           <RecordingReview recording={r} busy={edit.isPending} onEdit={ops => edit.mutate(ops)} />
         </div>
       )}

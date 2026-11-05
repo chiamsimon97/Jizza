@@ -104,6 +104,9 @@ class RecordingServiceTest {
     when(commands.find(commandId)).thenAnswer(i -> Optional.of(command(DeviceCommandStatus.DISPATCHED)));
 
     DeviceActionCatalog catalog = mock(DeviceActionCatalog.class);
+    when(catalog.resolve("ui.record", 0)).thenReturn(Optional.of(new DeviceActionSpec(
+        "ui.record", 1, "ui", ActionType.READ, "Record app actions", null, Json.obj(), Json.obj(),
+        List.of("app"), List.of("windows"), 1800)));
     when(catalog.resolve("browser.record", 0)).thenReturn(Optional.of(new DeviceActionSpec(
         "browser.record", 1, "browser", ActionType.READ, "Record", null, Json.obj(), Json.obj(),
         List.of("site"), List.of("browser"), 1800)));
@@ -319,5 +322,88 @@ class RecordingServiceTest {
     var id = started().id();
     assertThatThrownBy(() -> service.edit(access, id, List.of()))
         .isInstanceOf(ConflictException.class);
+  }
+
+  // ---- desktop recordings (hotkey on a Windows PC) -------------------------------------------
+
+  private DeviceDto windowsPc(Devices devices) {
+    DeviceDto pc = new DeviceDto(UUID.randomUUID(), access.workspaceId(), access.userId(), "Office PC",
+        DevicePlatform.WINDOWS, null, null, 1, DeviceStatus.ACTIVE, List.of(), "tpm", true,
+        "idle", Json.obj(), List.of("ui.record@1", "ui.click@1"), false, List.of(), Instant.now(),
+        Instant.now());
+    when(devices.find(pc.id())).thenReturn(Optional.of(pc));
+    return pc;
+  }
+
+  private JsonNode startedEvent(UUID id, String app) {
+    return Json.obj().put("recordingId", id.toString()).put("app", app);
+  }
+
+  @Test
+  void aHotkeyRecordingIsKeptAndFollowedByAnAttachingCommand() throws Exception {
+    var pc = windowsPc(devicesMock());
+    var id = UUID.randomUUID();
+
+    service.accept(pc.id(), access.userId(), "desktop.recording.started", startedEvent(id, "Notepad"));
+    service.accept(pc.id(), access.userId(), "desktop.recording.started", startedEvent(id, "Notepad"));
+    service.accept(pc.id(), access.userId(), "desktop.recording.step", event(id, Json.read(
+        "{\"seq\":0,\"action\":\"ui.openApp\",\"version\":1,\"label\":\"Open Notepad\","
+            + "\"input\":{\"app\":\"notepad\"},\"meta\":{\"window\":\"Untitled - Notepad\"}}")));
+    // A browser step, or a recording event of the other kind, is not part of it.
+    service.accept(pc.id(), access.userId(), "desktop.recording.step",
+        event(id, step(1, "browser.click", "Click", "{}", false)));
+    service.accept(pc.id(), access.userId(), "browser.recording.step",
+        event(id, step(2, "browser.click", "Click", "{}", false)));
+
+    var recording = service.get(access, id);
+    assertThat(recording.kind()).isEqualTo("desktop");
+    assertThat(recording.app()).isEqualTo("Notepad");
+    assertThat(recording.name()).isEqualTo("Notepad task");
+    assertThat(recording.startUrl()).isNull();
+    assertThat(recording.steps()).extracting(Recordings.RecordedStep::seq).containsExactly(0);
+    verify(commands, org.mockito.Mockito.times(1)).submit(org.mockito.ArgumentMatchers.argThat(r ->
+        "ui.record".equals(r.action()) && r.input().path("attach").asBoolean()
+            && r.input().path("recordingId").asText().equals(id.toString())));
+
+    service.accept(pc.id(), access.userId(), "desktop.recording.stopped",
+        Json.obj().put("recordingId", id.toString()));
+    service.save(access, id, new Recordings.SaveRequest("Notes", null, null));
+
+    var graph = savedWorkflows.get(0).graph();
+    assertThat(savedWorkflows.get(0).origin()).isEqualTo(WorkflowOrigin.RECORDED);
+    assertThat(graph.path("nodes").findValuesAsText("label")).containsExactly("Start", "Open Notepad", "End");
+    assertThat(graph.path("nodes").get(1).path("config").path("target").asText()).isEqualTo(pc.id().toString());
+  }
+
+  @Test
+  void aHotkeyRecordingFromAnotherPersonsOrANonRecordingDeviceIsDropped() throws Exception {
+    var devices = devicesMock();
+    var pc = windowsPc(devices);
+    var id = UUID.randomUUID();
+    service.accept(browser.id(), access.userId(), "desktop.recording.started", startedEvent(id, "x"));
+    assertThat(recordingRows).isEmpty();
+
+    service.accept(pc.id(), access.userId(), "desktop.recording.started", startedEvent(id, "x"));
+    service.accept(pc.id(), UUID.randomUUID(), "desktop.recording.step", event(id, Json.read(
+        "{\"seq\":0,\"action\":\"ui.click\",\"version\":1,\"input\":{}}")));
+    assertThat(service.get(access, id).stepCount()).isZero();
+  }
+
+  @Test
+  void aNewHotkeyRecordingSendsAnOldOpenOneToReview() throws Exception {
+    var pc = windowsPc(devicesMock());
+    var first = UUID.randomUUID();
+    var second = UUID.randomUUID();
+    service.accept(pc.id(), access.userId(), "desktop.recording.started", startedEvent(first, "Excel"));
+    service.accept(pc.id(), access.userId(), "desktop.recording.started", startedEvent(second, "Excel"));
+
+    assertThat(recordingRows.get(first).getStatus()).isEqualTo("review");
+    assertThat(recordingRows.get(second).getStatus()).isEqualTo("recording");
+  }
+
+  private Devices devicesMock() throws Exception {
+    var field = RecordingService.class.getDeclaredField("devices");
+    field.setAccessible(true);
+    return (Devices) field.get(service);
   }
 }

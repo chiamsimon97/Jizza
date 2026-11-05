@@ -54,6 +54,11 @@ import org.springframework.transaction.annotation.Transactional;
  * Keeps what a person does in their own browser while they record it, lets them review it, and
  * saves it as an ordinary workflow module.
  *
+ * <p>Recordings come from a browser ({@code browser.recording.*}, started here) or from Windows apps
+ * ({@code desktop.recording.*}, started on the PC with a hotkey, which this then follows with a
+ * {@code ui.record} command so the person can stop it here too). Both are reviewed and saved the
+ * same way.
+ *
  * <p>Events arrive from a device and are trusted only when they come from the device the recording
  * was started on, for its owner, while it is still recording. Typed values can be sensitive, so
  * every step is encrypted at rest, a step marked sensitive never keeps a value, and nothing in
@@ -72,6 +77,11 @@ public class RecordingService implements Recordings, RecordingIntake {
   static final String STATUS_FAILED = "failed";
 
   private static final String RECORD_ACTION = "browser.record";
+  static final String DESKTOP_RECORD_ACTION = "ui.record";
+  static final String KIND_WEB = "web";
+  static final String KIND_DESKTOP = "desktop";
+  static final String WEB_EVENTS = "browser.recording.";
+  static final String DESKTOP_EVENTS = "desktop.recording.";
   private static final int MAX_STEPS = 500;
   private static final int MAX_STEP_CHARS = 32 * 1024;
   private static final int MAX_SITES = 20;
@@ -251,7 +261,7 @@ public class RecordingService implements Recordings, RecordingIntake {
     for (Held h : load(id)) if (!h.entity.isDeleted()) live.add(h.node);
     if (live.isEmpty()) throw new ValidationException("There are no steps to save");
 
-    ObjectNode graph = StepCompiler.compile(recording.getStartUrl(), live);
+    ObjectNode graph = compile(recording, live, false);
     WorkflowDto saved = workflows.save(new WorkflowDto(null, access.userId(), name,
         request == null ? null : request.description(), graph, null, null,
         WorkflowOrigin.RECORDED, WorkflowStatus.DRAFT, null, 1, null, null));
@@ -280,7 +290,7 @@ public class RecordingService implements Recordings, RecordingIntake {
     List<JsonNode> live = new ArrayList<>();
     for (Held h : load(id)) if (!h.entity.isDeleted()) live.add(h.node);
     if (live.isEmpty()) throw new ValidationException("There are no steps to insert");
-    ObjectNode graph = StepCompiler.compile(recording.getStartUrl(), live, true);
+    ObjectNode graph = compile(recording, live, true);
     recording.setStatus(STATUS_SAVED);
     recording.setUpdatedAt(Instant.now());
     recordings.save(recording);
@@ -295,19 +305,26 @@ public class RecordingService implements Recordings, RecordingIntake {
   @Transactional
   public void accept(UUID deviceId, UUID ownerId, String name, JsonNode data) {
     UUID recordingId = uuid(data == null ? null : data.path("recordingId").asText(null));
+    String kind = name.startsWith(DESKTOP_EVENTS) ? KIND_DESKTOP : KIND_WEB;
+    String event = name.substring((KIND_DESKTOP.equals(kind) ? DESKTOP_EVENTS : WEB_EVENTS).length());
+    if (KIND_DESKTOP.equals(kind) && "started".equals(event)) {
+      startedOnDevice(deviceId, ownerId, recordingId, data);
+      return;
+    }
     WebRecordingEntity recording = recordingId == null ? null
         : recordings.lockById(recordingId).orElse(null);
     if (recording == null || !recording.getOwnerId().equals(ownerId)
         || !deviceId.equals(recording.getDeviceId())
-        || !(STATUS_RECORDING.equals(recording.getStatus()) || lateEvent(recording, name))) {
+        || !kind.equals(recording.getKind())
+        || !(STATUS_RECORDING.equals(recording.getStatus()) || lateEvent(recording, event))) {
       log.info("Dropped {} for recording {}: not from its device and owner, or not recording",
           name, recordingId);
       return;
     }
-    switch (name) {
-      case "browser.recording.step" -> addStep(recording, data.path("step"));
-      case "browser.recording.edit" -> deviceEdit(recording, data);
-      case "browser.recording.stopped" -> {
+    switch (event) {
+      case "step" -> addStep(recording, data.path("step"));
+      case "edit" -> deviceEdit(recording, data);
+      case "stopped" -> {
         if (STATUS_RECORDING.equals(recording.getStatus())) toReview(recording);
       }
       default -> log.info("Dropped unknown recording event {}", name);
@@ -319,15 +336,77 @@ public class RecordingService implements Recordings, RecordingIntake {
    * review. Steps (and a repeated stopped) are still taken for a short while, so the last steps
    * are not lost.
    */
-  private boolean lateEvent(WebRecordingEntity recording, String name) {
+  private boolean lateEvent(WebRecordingEntity recording, String event) {
     return STATUS_REVIEW.equals(recording.getStatus()) && recording.getStoppedAt() != null
         && recording.getStoppedAt().isAfter(Instant.now().minus(EVENT_GRACE))
-        && ("browser.recording.step".equals(name) || "browser.recording.stopped".equals(name));
+        && ("step".equals(event) || "stopped".equals(event));
+  }
+
+  /**
+   * A person pressed the record hotkey on their PC. The PC chose the id and is already capturing,
+   * so this keeps the recording and sends a {@code ui.record} command that attaches to it: that
+   * command is how Stop here reaches the PC, and how a PC that goes away ends the recording.
+   * A repeated event (the PC resends until acked) changes nothing.
+   */
+  private void startedOnDevice(UUID deviceId, UUID ownerId, UUID recordingId, JsonNode data) {
+    if (recordingId == null || recordings.findById(recordingId).isPresent()) return;
+    DeviceDto device = devices.find(deviceId).orElse(null);
+    if (device == null || !device.declares(DESKTOP_RECORD_ACTION)) {
+      log.info("Dropped a desktop recording from a device that cannot record");
+      return;
+    }
+    DeviceActionSpec spec = catalog.resolve(DESKTOP_RECORD_ACTION, 0).orElse(null);
+    if (spec == null) return;
+    // One recording per PC: one left open (a lost stop) goes to review.
+    for (WebRecordingEntity open : recordings.findByOwnerIdAndStatusInOrderByUpdatedAtDesc(
+        ownerId, List.of(STATUS_RECORDING))) {
+      if (!deviceId.equals(open.getDeviceId())) continue;
+      if (open.getCommandId() != null) commands.cancel(open.getCommandId(), "A new recording started");
+      toReview(open);
+    }
+
+    String name = data.path("name").asText("").strip();
+    String app = data.path("app").asText("").strip();
+    if (name.isEmpty()) name = app.isEmpty() ? "Recording on " + device.name() : app + " task";
+    if (name.length() > 120) name = name.substring(0, 120);
+    WebRecordingEntity recording = new WebRecordingEntity();
+    recording.setId(recordingId);
+    recording.setOwnerId(ownerId);
+    recording.setWorkspaceId(device.workspaceId());
+    recording.setDeviceId(deviceId);
+    recording.setKind(KIND_DESKTOP);
+    recording.setApp(app.isEmpty() ? null : app.substring(0, Math.min(200, app.length())));
+    recording.setName(name);
+    recording.setStatus(STATUS_RECORDING);
+    recording.setStartedAt(Instant.now());
+    recording.setUpdatedAt(Instant.now());
+    recordings.saveAndFlush(recording);
+
+    ObjectNode input = Json.obj().put("recordingId", recordingId.toString()).put("attach", true)
+        .put("maxMinutes", 30);
+    try {
+      guardrails.judge(new Access(ownerId, device.workspaceId()), device, spec, input, "Recording");
+    } catch (RuntimeException e) {
+      log.info("Desktop recording {} refused by the guardrails", recordingId);
+      recording.setStatus(STATUS_FAILED);
+      recording.setStoppedAt(Instant.now());
+      recordings.save(recording);
+      publish(recording, null);
+      return;
+    }
+    DeviceCommandDto sent = commands.submit(new DeviceCommandRequest(ownerId,
+        device.workspaceId(), DeviceTarget.device(deviceId), spec.action(), spec.version(), input,
+        RECORD_TIMEOUT, null, null, "desktop-record:" + recordingId, true));
+    recording.setCommandId(sent.id());
+    recordings.save(recording);
+    publish(recording, null);
   }
 
   private void addStep(WebRecordingEntity recording, JsonNode raw) {
+    String prefix = KIND_DESKTOP.equals(recording.getKind()) ? "ui." : "browser.";
     if (!raw.isObject() || !raw.path("seq").isInt() || raw.path("seq").asInt() < 0
-        || !raw.path("action").asText("").startsWith("browser.")) {
+        || !raw.path("action").asText("").startsWith(prefix)
+        || DESKTOP_RECORD_ACTION.equals(raw.path("action").asText())) {
       log.info("Dropped a malformed step for recording {}", recording.getId());
       return;
     }
@@ -360,7 +439,7 @@ public class RecordingService implements Recordings, RecordingIntake {
     steps.save(entity);
 
     recording.setStepCount((int) stored.stream().filter(s -> !s.isDeleted()).count() + 1);
-    addSite(recording, step.path("meta").path("url").asText(null));
+    if (KIND_WEB.equals(recording.getKind())) addSite(recording, step.path("meta").path("url").asText(null));
     recording.setUpdatedAt(Instant.now());
     recordings.save(recording);
     publish(recording, Json.obj().put("seq", seq).put("action", step.path("action").asText())
@@ -584,6 +663,19 @@ public class RecordingService implements Recordings, RecordingIntake {
   @Transactional
   public void sweep(Instant now) {
     recordings.findByStatus(STATUS_RECORDING).forEach(this::reconcile);
+    // A desktop recording whose command could not be sent ends when its time is up.
+    for (WebRecordingEntity orphan : recordings.findByStatus(STATUS_RECORDING)) {
+      if (orphan.getCommandId() == null && orphan.getUpdatedAt().isBefore(now.minus(RECORD_TIMEOUT))) {
+        if (orphan.getStepCount() == 0) {
+          orphan.setStatus(STATUS_FAILED);
+          orphan.setStoppedAt(now);
+          orphan.setUpdatedAt(now);
+          recordings.save(orphan);
+        } else {
+          toReview(orphan);
+        }
+      }
+    }
     for (WebRecordingEntity stale : recordings.findByStatusAndUpdatedAtBefore(
         STATUS_REVIEW, now.minus(Duration.ofDays(7)))) {
       stale.setStatus(STATUS_DISCARDED);
@@ -593,6 +685,17 @@ public class RecordingService implements Recordings, RecordingIntake {
     for (WebRecordingEntity discarded : recordings.findByStatus(STATUS_DISCARDED)) {
       steps.deleteAllFor(discarded.getId());
     }
+  }
+
+  private static ObjectNode compile(WebRecordingEntity recording, List<JsonNode> live,
+                                    boolean inline) {
+    if (!KIND_DESKTOP.equals(recording.getKind())) {
+      return StepCompiler.compile(recording.getStartUrl(), live, inline);
+    }
+    if (recording.getDeviceId() == null) {
+      throw new ValidationException("The PC this was recorded on has been removed");
+    }
+    return StepCompiler.compileDesktop(recording.getDeviceId(), live, inline);
   }
 
   private WebRecordingEntity owned(Access access, UUID id) {
@@ -631,7 +734,8 @@ public class RecordingService implements Recordings, RecordingIntake {
 
   private Recording view(WebRecordingEntity r, String deviceName, List<RecordedStep> stepViews) {
     return new Recording(r.getId(), r.getName(), r.getStatus(), r.getDeviceId(), deviceName,
-        r.getStartUrl(), r.getStepCount(), r.getWorkflowId(), r.getUpdatedAt(), stepViews);
+        r.getStartUrl(), r.getStepCount(), r.getWorkflowId(), r.getUpdatedAt(), stepViews,
+        r.getKind(), r.getApp());
   }
 
   private String deviceName(WebRecordingEntity r) {

@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -18,6 +19,9 @@ import java.util.regex.Pattern;
  * becomes an ordinary workflow module: a Start with the inputs the person chose, one web step per
  * kept step, a Close browser step, and an End that returns what the recording read. The browser
  * only closes because of that step: a person who wants the page left open removes it.
+ *
+ * <p>A desktop recording compiles the same way, without the browser steps: each step runs on the
+ * PC it was recorded on.
  *
  * <p>Pure on purpose: the same steps always compile to the same graph, and nothing here talks to a
  * browser, a database or a model. A step that holds a secret never carries its value; it must name
@@ -46,6 +50,20 @@ final class StepCompiler {
    *               there is no module around it to be given one
    */
   static ObjectNode compile(String startUrl, List<JsonNode> steps, boolean inline) {
+    return compile(startUrl, null, steps, inline);
+  }
+
+  /**
+   * A recording made in Windows apps: the same graph, but its steps are plain device steps aimed
+   * at the PC it was recorded on, with no browser to open or close.
+   */
+  static ObjectNode compileDesktop(UUID deviceId, List<JsonNode> steps, boolean inline) {
+    return compile(null, deviceId, steps, inline);
+  }
+
+  private static ObjectNode compile(String startUrl, UUID desktop, List<JsonNode> steps,
+                                    boolean inline) {
+    boolean web = desktop == null;
     ArrayNode nodes = Json.mapper().createArrayNode();
     ArrayNode edges = Json.mapper().createArrayNode();
     ArrayNode inputs = Json.mapper().createArrayNode();
@@ -60,7 +78,7 @@ final class StepCompiler {
     }
     int row = 1;
 
-    if (steps.isEmpty() || !OPEN.equals(steps.get(0).path("action").asText())) {
+    if (web && (steps.isEmpty() || !OPEN.equals(steps.get(0).path("action").asText()))) {
       ObjectNode config = webConfig(OPEN, 2, Json.obj().put("url", startUrl));
       nodes.add(node("open", "DEVICE_ACTION", "Open " + startUrl, config, row++));
       if (previous != null) edges.add(edge(previous, "open"));
@@ -81,7 +99,8 @@ final class StepCompiler {
       if (sensitive) {
         VALUE_FIELDS.forEach(stepInputs::remove);
         if (secretRef.isBlank()) {
-          throw new ValidationException("Choose a saved login for the password step");
+          throw new ValidationException(web ? "Choose a saved login for the password step"
+              : "Name the secret saved on the PC (Jizza Agent › Secrets) for the password step");
         }
       }
       if (!secretRef.isBlank()) {
@@ -107,7 +126,9 @@ final class StepCompiler {
       }
 
       int version = step.path("version").asInt(1);
-      nodes.add(node(id, "DEVICE_ACTION", label, webConfig(action, version, stepInputs), row++));
+      ObjectNode config = web ? webConfig(action, version, stepInputs)
+          : deviceConfig(desktop, action, version, stepInputs);
+      nodes.add(node(id, "DEVICE_ACTION", label, config, row++));
       if (previous != null) edges.add(edge(previous, id));
       previous = id;
 
@@ -122,7 +143,7 @@ final class StepCompiler {
 
     boolean closes = !steps.isEmpty()
         && CLOSE.equals(steps.get(steps.size() - 1).path("action").asText());
-    if (!inline && !closes) {
+    if (web && !inline && !closes) {
       nodes.add(node("close", "DEVICE_ACTION", "Close browser",
           webConfig(CLOSE, 1, Json.obj().put("what", "session")), row++));
       edges.add(edge(previous, "close"));
@@ -151,6 +172,7 @@ final class StepCompiler {
     return switch (action) {
       case "browser.getText" -> "text";
       case "browser.extractTable" -> "rows";
+      case "ui.readWindow" -> "text";
       default -> null;
     };
   }
@@ -187,6 +209,14 @@ final class StepCompiler {
   private static ObjectNode webConfig(String action, int version, ObjectNode inputs) {
     ObjectNode config = Json.obj().put("preset", "web").put("action", action)
         .put("target", "sameBrowser");
+    config.put("version", version);
+    config.set("inputs", inputs);
+    return config;
+  }
+
+  private static ObjectNode deviceConfig(UUID deviceId, String action, int version,
+                                         ObjectNode inputs) {
+    ObjectNode config = Json.obj().put("action", action).put("target", deviceId.toString());
     config.put("version", version);
     config.set("inputs", inputs);
     return config;
