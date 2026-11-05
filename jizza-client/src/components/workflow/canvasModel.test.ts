@@ -243,6 +243,7 @@ describe('palette groups', () => {
       ['Get web page details', 'browser.pageInfo', 1], ['Go forward a page', 'browser.forward', 1],
       ['Go back a page', 'browser.back', 1], ['Close browser', 'browser.close', 1],
       ['Wait', 'browser.wait', 1], ['Screenshot', 'browser.screenshot', 1],
+      ['Handle pop-up dialogs', 'browser.handleDialog', 1], ['Drag and drop', 'browser.dragDrop', 1],
     ])
     const created = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
     expect(created.graph.nodes.find(n => n.id === created.id)).toMatchObject({
