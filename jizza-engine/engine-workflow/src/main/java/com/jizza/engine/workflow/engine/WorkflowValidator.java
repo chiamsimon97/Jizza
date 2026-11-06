@@ -65,6 +65,7 @@ public class WorkflowValidator {
                 + "' needs at least two paths leaving it");
           }
         }
+        case JOIN -> validateJoin(node);
         case WAIT -> validateWait(node);
         case SUB_WORKFLOW -> requireWorkflowId(node);
         case FOR_EACH -> {
@@ -101,7 +102,7 @@ public class WorkflowValidator {
                 + "' has channel '" + channel + "'; use app, email or both");
           }
         }
-        default -> { /* Trigger, intervention, join and end nodes need no extra configuration. */ }
+        default -> { /* Trigger, intervention and end nodes need no extra configuration. */ }
       }
 
       if (!FORKS.contains(node.type()) && graph.outgoing(node.id()).size() > 1) {
@@ -321,6 +322,29 @@ public class WorkflowValidator {
         && node.config().path("valueExpr").asText("").isBlank()) {
       throw new ValidationException("Storage step '" + node.id() + "' needs a valueExpr to "
           + action);
+    }
+  }
+
+  private void validateJoin(WorkflowNode node) {
+    var config = node.config();
+    if (config == null) return;
+    if (config.hasNonNull("timeout") && !"none".equals(config.get("timeout").asText())) {
+      try {
+        java.time.Duration parsed = java.time.Duration.parse(config.get("timeout").asText());
+        if (parsed.isNegative() || parsed.isZero()) {
+          throw new java.time.format.DateTimeParseException("", "", 0);
+        }
+      } catch (java.time.format.DateTimeParseException e) {
+        throw new ValidationException("Join step '" + node.id() + "' has a timeout that is not "
+            + "an ISO-8601 duration such as PT30M or P1D (or \"none\" to wait for ever)");
+      }
+    }
+    if (config.hasNonNull("onTimeout")) {
+      String onTimeout = config.get("onTimeout").asText();
+      if (!"continue".equals(onTimeout) && !"fail".equals(onTimeout)) {
+        throw new ValidationException("Join step '" + node.id()
+            + "' has onTimeout '" + onTimeout + "'; use \"continue\" or \"fail\"");
+      }
     }
   }
 

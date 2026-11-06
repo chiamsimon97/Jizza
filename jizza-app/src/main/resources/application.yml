@@ -284,6 +284,15 @@ jizza:
     poll-interval: 20s
     stale-run-after: 30m
 
+  # Workflow runs. Ready HTTP, connector, MCP, agent and script steps on parallel paths run at the
+  # same time, up to max-concurrent-steps per run (1 runs them one after another). A Join stops
+  # waiting default-timeout after the first path reaches it, unless the step sets its own.
+  workflow:
+    parallel:
+      max-concurrent-steps: ${JIZZA_WORKFLOW_MAX_CONCURRENT_STEPS:8}
+    join:
+      default-timeout: ${JIZZA_WORKFLOW_JOIN_TIMEOUT:PT1H}
+
   notifications:
     permission-expiry: 24h
     review-expiry: 7d
