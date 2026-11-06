@@ -93,6 +93,15 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
   @Transactional(readOnly = true)
   public List<Match> list(UUID userId) {
     return workflows.findByUserIdOrderByCreatedAtDesc(userId).stream()
+        .filter(w -> w.getReuse() != null && !w.getReuse().isNull())
+        .map(w -> match(w, ReuseProfile.from(w.getReuse()), new WorkflowMatcher.Score(0, List.of())))
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Match> runnable(UUID userId) {
+    return workflows.findByUserIdOrderByCreatedAtDesc(userId).stream()
         .filter(w -> !w.isDisabled())
         .map(w -> match(w, profileFor(w, Use.CHAT), new WorkflowMatcher.Score(0, List.of())))
         .toList();

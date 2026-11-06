@@ -109,7 +109,7 @@ class DefaultWorkflowLibraryTest {
         {"type":"object","properties":{"city":{"type":"string","description":"Where"}},
          "required":["city"]}"""));
 
-    assertThat(library.list(userId)).singleElement().satisfies(m ->
+    assertThat(library.runnable(userId)).singleElement().satisfies(m ->
         assertThat(m.profile().inputs()).containsExactly(new ReuseProfile.Input("city", "Where", true)));
     assertThatThrownBy(() -> library.reuse(userId, gold.getId(), Json.obj(), Use.CHAT, "chat:x", true))
         .hasMessageContaining("needs city");
@@ -213,7 +213,8 @@ class DefaultWorkflowLibraryTest {
 
     assertThat(gold.getReuse()).isNull();
     assertThat(library.find(userId, "check the gold rate", Use.SCHEDULE, 3)).isEmpty();
-    assertThat(library.list(userId)).singleElement().satisfies(m ->
+    assertThat(library.list(userId)).as("the library page lists only saved ones").isEmpty();
+    assertThat(library.runnable(userId)).singleElement().satisfies(m ->
         assertThat(m.profile().guardrails()).isEqualTo(ReuseProfile.Guardrails.DEFAULT));
   }
 

@@ -158,7 +158,7 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
     if (matches.isEmpty() || loose) {
       // Words alone did not settle it: let Jizza judge by meaning from everything the user has.
       ArrayNode all = out.putArray("all_workflows");
-      lib.list(userId).stream().limit(CATALOG).forEach(m -> {
+      lib.runnable(userId).stream().limit(CATALOG).forEach(m -> {
         ObjectNode item = all.addObject().put("workflow_id", m.workflowId().toString())
             .put("name", m.name());
         if (m.description() != null && !m.description().isBlank()) {
@@ -190,7 +190,7 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
     } catch (IllegalArgumentException e) {
       return ToolResult.error("'workflow_id' is not a workflow id; take it from find_saved_workflows");
     }
-    Optional<WorkflowLibrary.Match> entry = lib.list(userId).stream()
+    Optional<WorkflowLibrary.Match> entry = lib.runnable(userId).stream()
         .filter(m -> m.workflowId().equals(workflowId)).findFirst();
     if (entry.isEmpty()) return ToolResult.error("That is not one of the user's workflows; look it up with find_saved_workflows");
     WorkflowLibrary.Match match = entry.get();

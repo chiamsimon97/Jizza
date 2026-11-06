@@ -56,7 +56,7 @@ class WorkflowLibraryToolProviderTest {
     when(agents.findById(jizza.getId())).thenReturn(Optional.of(jizza));
     when(agents.findById(kai.getId())).thenReturn(Optional.of(kai));
     library = mock(WorkflowLibrary.class);
-    when(library.list(userId)).thenAnswer(inv -> List.of(match()));
+    when(library.runnable(userId)).thenAnswer(inv -> List.of(match()));
     when(library.find(eq(userId), anyString(), eq(WorkflowLibrary.Use.CHAT), any(Integer.class)))
         .thenAnswer(inv -> List.of(match()));
     when(library.reuse(eq(userId), eq(workflowId), any(), eq(WorkflowLibrary.Use.CHAT), anyString(),

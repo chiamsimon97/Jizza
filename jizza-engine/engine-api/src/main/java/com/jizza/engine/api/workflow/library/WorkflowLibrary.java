@@ -39,11 +39,16 @@ public interface WorkflowLibrary {
     return find(userId, request, Use.CHAT, limit);
   }
 
+  /** Everything in the user's library (the workflows saved for reuse), newest first. */
+  List<Match> list(UUID userId);
+
   /**
    * Every workflow the user could run from a chat, newest first: the ones saved for reuse with
    * their profile, and the others with the strictest one (ask before every run, never scheduled).
    */
-  List<Match> list(UUID userId);
+  default List<Match> runnable(UUID userId) {
+    return list(userId);
+  }
 
   /**
    * Starts a run of a library workflow, after checking its guardrails for this use.
