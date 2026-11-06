@@ -20,6 +20,11 @@ import java.util.UUID;
  * @param tools         the {@code x-} tools it described itself, with their input and output schemas
  * @param items         its saved items by kind, such as {"recordings": [{"id","name"}]}, that
  *                      catalog inputs marked {@code x-items} take
+ * @param hostname      the machine's own host name, as its app reported it; null for older apps
+ * @param autoUpdate    whether the owner wants the agent app to update itself
+ * @param createdBy     who paired it, or who made the enrollment token it joined with
+ * @param createdByEmail that person's email, for showing; null when they were deleted
+ * @param updatedAt     when its record last changed: a setting, a sign-in or a new manifest
  */
 public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name,
                         DevicePlatform platform, String osVersion, String appVersion,
@@ -27,7 +32,8 @@ public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name
                         String keyStorage, boolean online, String state, JsonNode capabilities,
                         List<String> actions, boolean shellEnabled, List<String> blockedActions,
                         Instant lastSeenAt, Instant createdAt, List<DeviceActionSpec> tools,
-                        JsonNode items) {
+                        JsonNode items, String hostname, boolean autoUpdate, UUID createdBy,
+                        String createdByEmail, Instant updatedAt) {
 
   /** A device whose app described no tools or saved items of its own. */
   public DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name,
@@ -38,7 +44,7 @@ public record DeviceDto(UUID id, UUID workspaceId, UUID ownerUserId, String name
                    Instant lastSeenAt, Instant createdAt) {
     this(id, workspaceId, ownerUserId, name, platform, osVersion, appVersion, protocolVersion,
         status, tags, keyStorage, online, state, capabilities, actions, shellEnabled,
-        blockedActions, lastSeenAt, createdAt, List.of(), null);
+        blockedActions, lastSeenAt, createdAt, List.of(), null, null, true, null, null, createdAt);
   }
 
   /** Whether it declared {@code action} in any version. */

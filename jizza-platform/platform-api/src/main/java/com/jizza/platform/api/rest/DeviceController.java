@@ -45,7 +45,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class DeviceController {
 
   public record Changes(String name, List<String> tags, Boolean shellEnabled,
-                        List<String> blockedActions) {}
+                        List<String> blockedActions, Boolean autoUpdate) {}
 
   public record ToolInput(ActionType actionType) {}
 
@@ -87,6 +87,23 @@ public class DeviceController {
     return devices.startPairing(CurrentWorkspace.access(), serverUrl());
   }
 
+  /**
+   * Whether the agent has used a code from {@link #pair()}, so the Create agent dialog can move on
+   * once the app has taken its installation key.
+   */
+  @RequiresPermission(Permissions.DEVICE_PAIR)
+  @GetMapping("/pairings/{pairingId}")
+  public Devices.PairingStatus pairing(@PathVariable UUID pairingId) {
+    return devices.pairingStatus(CurrentWorkspace.access(), pairingId);
+  }
+
+  /** Download links for the agent app, by platform and architecture. */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @GetMapping("/installers")
+  public Map<String, String> installers() {
+    return devices.installers();
+  }
+
   @RequiresPermission(Permissions.DEVICE_VIEW)
   @PatchMapping("/{id}")
   public DeviceDto update(@PathVariable UUID id, @RequestBody Changes changes) {
@@ -96,7 +113,7 @@ public class DeviceController {
     }
     return devices.update(CurrentWorkspace.access(), id,
         new Devices.DeviceChanges(changes.name(), changes.tags(), changes.shellEnabled(),
-            changes.blockedActions(), null));
+            changes.blockedActions(), null, changes.autoUpdate()));
   }
 
   /**
@@ -112,7 +129,7 @@ public class DeviceController {
     Map<String, ActionType> types = new java.util.HashMap<>();
     types.put(tool, input == null ? null : input.actionType());
     return devices.update(CurrentWorkspace.access(), id,
-        new Devices.DeviceChanges(null, null, null, null, types));
+        new Devices.DeviceChanges(null, null, null, null, types, null));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)
@@ -120,7 +137,7 @@ public class DeviceController {
   @StepUpRequired
   public DeviceDto enableShell(@PathVariable UUID id) {
     return devices.update(CurrentWorkspace.access(), id,
-        new Devices.DeviceChanges(null, null, true, null, null));
+        new Devices.DeviceChanges(null, null, true, null, null, null));
   }
 
   public record PhoneAccessBody(com.jizza.engine.api.device.PhoneAccess access) {}

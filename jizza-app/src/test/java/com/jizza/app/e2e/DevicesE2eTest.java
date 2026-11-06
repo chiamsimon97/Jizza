@@ -85,6 +85,40 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void createAgentWatchesTheInstallationKeyAndShowsTheAgentsDetails() {
+    var pairing = api.post("/api/devices/pairings", Map.of());
+    assertThat(pairing.ok()).as(pairing.body()).isTrue();
+    String id = pairing.json().path("id").asText();
+    var waiting = api.get("/api/devices/pairings/" + id);
+    assertThat(waiting.ok()).as(waiting.body()).isTrue();
+    assertThat(waiting.json().path("used").asBoolean()).isFalse();
+    assertThat(waiting.json().path("device").isNull()).isTrue();
+
+    device.hostname("chiam-9790").enrollWithCode(pairing.json().path("code").asText(), "", "macos");
+    var used = api.get("/api/devices/pairings/" + id);
+    assertThat(used.json().path("used").asBoolean()).isTrue();
+    JsonNode agent = used.json().path("device");
+    // With no name given, the agent is named after its host.
+    assertThat(agent.path("name").asText()).isEqualTo("chiam-9790");
+    assertThat(agent.path("hostname").asText()).isEqualTo("chiam-9790");
+    assertThat(agent.path("autoUpdate").asBoolean()).isTrue();
+    assertThat(agent.path("createdByEmail").asText()).contains("@");
+    assertThat(agent.path("updatedAt").asText()).isNotBlank();
+
+    var off = api.patch("/api/devices/" + agent.path("id").asText(), Map.of("autoUpdate", false));
+    assertThat(off.ok()).as(off.body()).isTrue();
+    assertThat(off.json().path("autoUpdate").asBoolean()).isFalse();
+
+    // Someone else's key reads as missing.
+    var other = signedIn("devices-other");
+    assertThat(other.get("/api/devices/pairings/" + id).status()).isEqualTo(404);
+
+    var installers = api.get("/api/devices/installers");
+    assertThat(installers.ok()).as(installers.body()).isTrue();
+    assertThat(installers.json().path("android").asText()).startsWith("https://");
+  }
+
+  @Test
   void aBrowserPairsWithItsPlatformKeyStorageAndWebManifest() {
     new FakeBrowser(device);
     device.keyStorage("browser");

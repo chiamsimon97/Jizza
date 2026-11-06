@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import type {
   ActionType, PhoneAccess, Device, DeviceActionSpec, DeviceCommand, DeviceEnrollmentToken, DeviceLogLine, DevicePairingCode,
+  DevicePairingStatus,
 } from '@/types'
 
 const base = (id: string) => `/api/devices/${id}`
@@ -13,7 +14,11 @@ export const devicesApi = {
   catalog: () => api.get<DeviceActionSpec[]>('/api/devices/catalog'),
   /** Asks for step-up. A six-digit code and QR payload, valid for ten minutes, used once. */
   pair: () => api.post<DevicePairingCode>('/api/devices/pairings'),
-  update: (id: string, body: { name?: string; tags?: string[]; shellEnabled?: false; blockedActions?: string[] }) =>
+  /** Whether an agent has used the key yet. */
+  pairing: (pairingId: string) => api.get<DevicePairingStatus>(`/api/devices/pairings/${pairingId}`),
+  /** Download links by platform and architecture (windows-x64, macos-arm64, android, ...). */
+  installers: () => api.get<Record<string, string>>('/api/devices/installers'),
+  update: (id: string, body: { name?: string; tags?: string[]; shellEnabled?: false; blockedActions?: string[]; autoUpdate?: boolean }) =>
     api.patch<Device>(base(id), body),
   /** Asks for step-up. What a tool the device added itself does; null goes back to moving money. */
   updateTool: (id: string, tool: string, actionType: ActionType | null) =>

@@ -51,6 +51,10 @@ public class DeviceEntity {
 
   private String keyStorage;
 
+  private String hostname;
+
+  private boolean autoUpdate = true;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb")
   private JsonNode manifest;
@@ -106,6 +110,12 @@ public class DeviceEntity {
 
   public UUID getOwnerUserId() { return ownerUserId; }
   public void setOwnerUserId(UUID ownerUserId) { this.ownerUserId = ownerUserId; }
+
+  public String getHostname() { return hostname; }
+  public void setHostname(String hostname) { this.hostname = hostname; }
+
+  public boolean isAutoUpdate() { return autoUpdate; }
+  public void setAutoUpdate(boolean autoUpdate) { this.autoUpdate = autoUpdate; }
 
   public UUID getEnrolledBy() { return enrolledBy; }
   public void setEnrolledBy(UUID enrolledBy) { this.enrolledBy = enrolledBy; }
