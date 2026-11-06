@@ -1,5 +1,6 @@
 package com.jizza.engine.workflow.engine;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Locale;
 import java.util.Set;
 
@@ -29,6 +30,20 @@ enum FailedStepChoice {
   /** The wording the inbox shows and sends for this choice. */
   String answer() {
     return answer;
+  }
+
+  /**
+   * What happens when nobody answers before the question expires: the step's {@code ifNoAnswer}
+   * setting ({@code stop}, {@code skip} or {@code retry}), and otherwise the run is stopped, so a
+   * run never sits waiting on a question nobody can answer any more.
+   */
+  static FailedStepChoice ifNoAnswer(JsonNode config) {
+    String setting = config == null ? "" : config.path("ifNoAnswer").asText("");
+    return switch (setting.trim().toLowerCase(Locale.ROOT)) {
+      case "skip" -> SKIP;
+      case "retry" -> RETRY;
+      default -> STOP;
+    };
   }
 
   /** The choice an answer names, or null for a written answer. */

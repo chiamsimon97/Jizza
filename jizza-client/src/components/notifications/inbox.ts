@@ -56,6 +56,25 @@ export function isFailedStep(n: NotificationDto): boolean {
   return /could not complete:/.test(n.body ?? '')
 }
 
+/**
+ * The answer a failed step's question gives itself when nobody answers before it expires. The step
+ * can set it; questions asked before steps could say stop the run.
+ */
+export function defaultChoiceOf(n: NotificationDto): string | null {
+  if (!isFailedStep(n)) return null
+  const named = n.context?.defaultChoice
+  return typeof named === 'string' && RUN_CHOICES.some(c => c.answer === named) ? named : 'Stop the run'
+}
+
+/** "Jizza stops the run" and so on, for the line that says what happens with no answer. */
+export function defaultEffect(choice: string): string {
+  switch (choice) {
+    case 'Try again': return 'tries the step again'
+    case 'Skip this step': return 'skips this step and carries on'
+    default: return 'stops the run'
+  }
+}
+
 export function isSnoozed(n: NotificationDto, now: number): boolean {
   return !!n.snoozedUntil && Date.parse(n.snoozedUntil) > now
 }
@@ -232,11 +251,13 @@ export function fixLinkOf(n: NotificationDto): string | null {
 }
 
 /** What became of a request, in words. */
-export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' | 'danger' | 'default' } | null {
+export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' | 'warning' | 'danger' | 'default' } | null {
   switch (n.status) {
     case 'APPROVED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You approved this procedure' : 'You approved this', tone: 'success' }
     case 'DENIED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You asked for changes' : 'You declined this', tone: 'danger' }
-    case 'SUBMITTED': return { text: 'You answered', tone: 'success' }
+    case 'SUBMITTED': return n.context?.answeredByDefault === true
+      ? { text: 'No answer in time, so Jizza used the default', tone: 'warning' }
+      : { text: 'You answered', tone: 'success' }
     case 'EXPIRED': return { text: n.responseNote || 'Expired before anyone answered', tone: 'default' }
     default: return null
   }

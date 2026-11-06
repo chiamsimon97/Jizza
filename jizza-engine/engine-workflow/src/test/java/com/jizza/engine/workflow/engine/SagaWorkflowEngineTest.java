@@ -301,10 +301,15 @@ class SagaWorkflowEngineTest {
   // ── retries, dead-letter and intervention on failure ─────────────────────
 
   private EngineHarness failing(String onFailure, int maxAttempts) {
+    return failing(onFailure, null, maxAttempts);
+  }
+
+  private EngineHarness failing(String onFailure, String ifNoAnswer, int maxAttempts) {
     return new EngineHarness(new WorkflowGraph(
         List.of(node("start", NodeType.TRIGGER, null),
             retrying("flaky", NodeType.AGENT_STEP,
                 "{\"agentId\":\"" + UUID.randomUUID() + "\",\"instruction\":\"try\","
+                    + (ifNoAnswer == null ? "" : "\"ifNoAnswer\":\"" + ifNoAnswer + "\",")
                     + "\"onFailure\":\"" + onFailure + "\"}", maxAttempts),
             node("finish", NodeType.END, null)),
         List.of(edge("start", "flaky"), edge("flaky", "finish"))));
@@ -335,6 +340,32 @@ class SagaWorkflowEngineTest {
     assertThat(detail.path("failedStep").asBoolean()).isTrue();
     assertThat(detail.path("choices").toString())
         .contains("Try again").contains("Skip this step").contains("Stop the run");
+  }
+
+  @Test
+  void aFailedStepQuestionStopsTheRunByDefaultWhenNobodyAnswers() {
+    EngineHarness harness = failing("intervene", 1);
+    harness.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+
+    harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(harness.raised.get(0).context().path("defaultChoice").asText())
+        .isEqualTo("Stop the run");
+  }
+
+  @Test
+  void aStepCanSayWhatHappensWhenNobodyAnswers() {
+    EngineHarness skip = failing("intervene", "skip", 1);
+    skip.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+    skip.engine.start(skip.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(skip.raised.get(0).context().path("defaultChoice").asText())
+        .isEqualTo("Skip this step");
+
+    EngineHarness retry = failing("intervene", "retry", 1);
+    retry.agentStepBehaviour = nodeId -> NodeExecutor.Outcome.retryable("site not allowed");
+    retry.engine.start(retry.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(retry.raised.get(0).context().path("defaultChoice").asText())
+        .isEqualTo("Try again");
   }
 
   @Test

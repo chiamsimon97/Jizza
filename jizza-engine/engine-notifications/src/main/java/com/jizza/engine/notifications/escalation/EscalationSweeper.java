@@ -68,6 +68,14 @@ public class EscalationSweeper {
     this.quietHours = quietHours;
   }
 
+  private DefaultNotificationBus bus;
+
+  /** Optional so tests can build the sweeper without the bus; then nothing is answered by default. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setBus(DefaultNotificationBus bus) {
+    this.bus = bus;
+  }
+
   @Scheduled(fixedDelayString = "${jizza.notifications.sweep-interval:PT5M}")
   @Transactional
   public void sweep() {
@@ -86,6 +94,13 @@ public class EscalationSweeper {
   }
 
   private void expire(NotificationEntity item) {
+    // A question with a default answer (a failed step: stop the run, unless the step says
+    // otherwise) gives that answer instead of leaving its run paused for good.
+    if (bus != null && bus.answerByDefault(item)) {
+      log.info("Notification {} expired without an answer; its default answer was used",
+          item.getId());
+      return;
+    }
     item.setStatus(NotificationStatus.EXPIRED);
     item.setEscalationState(EscalationState.AUTO_CANCELLED);
     notifications.save(item);

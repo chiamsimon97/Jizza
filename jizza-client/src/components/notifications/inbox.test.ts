@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NotificationDto } from '@/types'
-import { NO_FILTERS, buildInbox, countsByView, fixLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
+import { NO_FILTERS, buildInbox, countsByView, defaultChoiceOf, fixLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
 
 const NOW = Date.parse('2026-10-23T10:00:00Z')
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString()
@@ -83,6 +83,16 @@ describe('inbox', () => {
     expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: 'Which supplier?' }))).toBe(false)
     expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', context: { failedStep: true } }))).toBe(false)
     expect(isFailedStep(n({ kind: 'PERMISSION_REQUEST', runId: 'r1', context: { failedStep: true } }))).toBe(false)
+  })
+
+  it('knows what a failed step question does when nobody answers', () => {
+    expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true, defaultChoice: 'Skip this step' } }))).toBe('Skip this step')
+    // Older questions, and anything unrecognised, stop the run.
+    expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: "Step 'Open' could not complete: refused." }))).toBe('Stop the run')
+    expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true, defaultChoice: 'Dance' } }))).toBe('Stop the run')
+    expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: 'Which supplier?' }))).toBeNull()
+    const auto = n({ kind: 'INSTRUCTION_REQUIRED', status: 'SUBMITTED', context: { answeredByDefault: true } })
+    expect(outcomeOf(auto)?.text).toBe('No answer in time, so Jizza used the default')
   })
 
   it('says why a question was closed without an answer', () => {

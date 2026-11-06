@@ -1142,16 +1142,19 @@ public class SagaWorkflowEngine implements WorkflowEngine,
   /** As above; with {@code until}, the recovery sweep runs the step again once that time passes. */
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind, Instant until) {
-    parkForPerson(run, context, nodeId, reason, prompt, kind, until, false);
+    parkForPerson(run, context, nodeId, reason, prompt, kind, until, null);
   }
 
   /**
    * As above. A step that failed for good also lists the answers that act on the run by
-   * themselves (try again, skip this step, stop the run), so the inbox can offer them as buttons.
+   * themselves (try again, skip this step, stop the run), so the inbox can offer them as buttons,
+   * and the one applied if nobody answers before the question expires.
+   *
+   * @param ifNoAnswer non-null for a step that failed for good
    */
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind, Instant until,
-                             boolean failedStep) {
+                             FailedStepChoice ifNoAnswer) {
     context.park(nodeId, reason, until);
     save(run, context);
 
@@ -1159,7 +1162,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     if (bus != null) {
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
           prompt == null ? "This run needs your input to continue." : prompt,
-          detailFor(run, nodeId, failedStep), run.getId()));
+          detailFor(run, nodeId, ifNoAnswer), run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
           run.getId(), nodeId);
@@ -1168,13 +1171,15 @@ public class SagaWorkflowEngine implements WorkflowEngine,
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
   }
 
-  private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, boolean failedStep) {
+  private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, FailedStepChoice ifNoAnswer) {
     ObjectNode detail = Json.obj().put("node", nodeId)
         .put("workflowId", run.getWorkflowId().toString());
-    if (failedStep) {
+    if (ifNoAnswer != null) {
       detail.put("failedStep", true);
       ArrayNode choices = detail.putArray("choices");
       for (FailedStepChoice choice : FailedStepChoice.values()) choices.add(choice.answer());
+      // The inbox applies this answer when the question expires unanswered.
+      detail.put("defaultChoice", ifNoAnswer.answer());
     }
     return detail;
   }
@@ -1226,7 +1231,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     parkForPerson(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
         "Step '" + (node.label() == null ? node.id() : node.label()) + "' could not complete: "
             + message + " How would you like to proceed?",
-        NotificationKind.INSTRUCTION_REQUIRED, null, true);
+        NotificationKind.INSTRUCTION_REQUIRED, null, FailedStepChoice.ifNoAnswer(node.config()));
     return false;
   }
 
