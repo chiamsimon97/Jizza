@@ -46,6 +46,7 @@ public class JizzaOrchestrator implements Orchestrator {
   private final UiActionRecorder uiActions;
   private final TurnTierSelector tiers;
   private LibraryHints libraryHints;
+  private com.jizza.engine.orchestrator.workspace.Workspace workspace;
 
   public JizzaOrchestrator(AgentRepository agents, Agent baseAgent, DelegationRecorder recorder,
                            UiActionRecorder uiActions, TurnTierSelector tiers) {
@@ -54,6 +55,12 @@ public class JizzaOrchestrator implements Orchestrator {
     this.recorder = recorder;
     this.uiActions = uiActions;
     this.tiers = tiers;
+  }
+
+  /** Optional: without it Jizza still has the workspace tools, just no summary each turn. */
+  @Autowired(required = false)
+  void setWorkspace(com.jizza.engine.orchestrator.workspace.Workspace workspace) {
+    this.workspace = workspace;
   }
 
   /** Optional: without it Jizza still has find_saved_workflows, just no head start. */
@@ -78,6 +85,7 @@ public class JizzaOrchestrator implements Orchestrator {
     String message = Redaction.scrub(input.message());
     List<Msg> history = scrubbed(input.history());
     ModelTier tier = tiers.tierFor(userId, jizza, message, input.screen(), history);
+    history = withWorkspace(userId, history);
     recorder.beginTurn();
     if (input.screen() != null) uiActions.beginTurn(stepInFocus(input.screen(), input.context()));
     AgentResult result;
@@ -138,6 +146,32 @@ public class JizzaOrchestrator implements Orchestrator {
             .toList(),
         List.of(), result.inputTokens(), result.outputTokens());
   }
+
+  /**
+   * What the user has in the app right now, as a system note ahead of the conversation, so Jizza
+   * knows its workflows, devices and the rest without having to remember to look. A lookup that
+   * fails costs only the note, never the reply.
+   */
+  List<Msg> withWorkspace(UUID userId, List<Msg> history) {
+    if (workspace == null) return history;
+    String digest;
+    try {
+      digest = workspace.digest(userId);
+    } catch (RuntimeException e) {
+      org.slf4j.LoggerFactory.getLogger(JizzaOrchestrator.class)
+          .info("Could not summarise the workspace: {}", e.getMessage());
+      return history;
+    }
+    if (digest == null || digest.isBlank()) return history;
+    List<Msg> out = new java.util.ArrayList<>(history.size() + 1);
+    out.add(Msg.system(WORKSPACE_NOTE + digest));
+    out.addAll(history);
+    return out;
+  }
+
+  static final String WORKSPACE_NOTE = """
+      [What the user has in Jizza right now. Names are theirs; match them loosely to what the user       says (another spelling, a description of what it does). Look anything up with       workspace_search, workspace_list or workspace_get; this list may be cut short.]
+      """;
 
   /** The screen the Workflows page's "Plan with Jizza" panel sends from. */
   static final String WORKFLOW_PLANNER = "workflow_planner";

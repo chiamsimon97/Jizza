@@ -159,7 +159,7 @@ To keep tabs in the same window instead of a window beside Jizza, open the exten
 
 What a step reads, such as a table's rows or an element's text, is available to later steps through data mapping, like any other step output.
 
-By default, a saved recording asks before each run and does not run on a schedule. You can change that in the workflow's reuse settings.
+By default, a saved recording asks before Jizza runs it on its own and does not run on a schedule. When you ask Jizza in chat to run it, your request is the yes, so it runs straight away. You can change that in the workflow's reuse settings.
 
 ## Who runs it and which steps ask
 

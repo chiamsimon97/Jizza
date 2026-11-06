@@ -72,12 +72,47 @@ class DefaultWorkflowLibraryTest {
   }
 
   @Test
-  void aWorkflowNotSavedForReuseIsNeverOffered() {
+  void aWorkflowNotSavedForReuseRunsFromAChatOnlyAfterAskingAndNeverOnASchedule() {
     gold.setReuse(null);
 
-    assertThat(library.find(userId, "check the gold rate", Use.CHAT, 3)).isEmpty();
+    assertThat(library.find(userId, "check the gold rate", Use.CHAT, 3)).singleElement()
+        .satisfies(m -> assertThat(m.profile().guardrails().confirmBeforeRun()).isTrue());
+    assertThatThrownBy(() -> library.reuse(userId, gold.getId(), Json.obj(), Use.CHAT, "chat:x", false))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("once the user says so");
+    assertThat(library.reuse(userId, gold.getId(), Json.obj(), Use.CHAT, "chat:x", true)).isNotNull();
+
+    assertThat(library.find(userId, "check the gold rate", Use.SCHEDULE, 3)).isEmpty();
+    assertThatThrownBy(() -> library.reuse(userId, gold.getId(), Json.obj(), Use.SCHEDULE,
+        "scheduled_task:t", false)).hasMessageContaining("not saved for reuse");
+  }
+
+  @Test
+  void aLooseDescriptionStillFindsTheWorkflowByName() {
+    WorkflowEntity booking = workflow("Ramayanam Ticket Booking", WorkflowStatus.DRAFT, profile(null));
+    booking.setReuse(null);
+    booking.setDescription(null);
+    booking.setGraph(Json.read("""
+        {"nodes":[{"id":"n1","type":"DEVICE_ACTION","label":"Open BookMyShow",
+          "config":{"url":"https://in.bookmyshow.com/movies"}}],"edges":[]}"""));
+    when(workflows.findByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(gold, booking));
+
+    assertThat(library.find(userId, "Can you run a workflow that created to book ramayana movie",
+        Use.CHAT, 3)).extracting(m -> m.name()).containsExactly("Ramayanam Ticket Booking");
+    assertThat(library.search(userId, "the movie one", 5)).extracting(m -> m.name())
+        .containsExactly("Ramayanam Ticket Booking");
+  }
+
+  @Test
+  void declaredInputsBecomeTheRunsInputs() {
+    gold.setReuse(null);
+    gold.setInputSchema(Json.read("""
+        {"type":"object","properties":{"city":{"type":"string","description":"Where"}},
+         "required":["city"]}"""));
+
+    assertThat(library.runnable(userId)).singleElement().satisfies(m ->
+        assertThat(m.profile().inputs()).containsExactly(new ReuseProfile.Input("city", "Where", true)));
     assertThatThrownBy(() -> library.reuse(userId, gold.getId(), Json.obj(), Use.CHAT, "chat:x", true))
-        .isInstanceOf(ValidationException.class).hasMessageContaining("not saved for reuse");
+        .hasMessageContaining("needs city");
   }
 
   @Test
@@ -177,7 +212,10 @@ class DefaultWorkflowLibraryTest {
     library.describe(userId, gold.getId(), null);
 
     assertThat(gold.getReuse()).isNull();
-    assertThat(library.list(userId)).isEmpty();
+    assertThat(library.find(userId, "check the gold rate", Use.SCHEDULE, 3)).isEmpty();
+    assertThat(library.list(userId)).as("the library page lists only saved ones").isEmpty();
+    assertThat(library.runnable(userId)).singleElement().satisfies(m ->
+        assertThat(m.profile().guardrails()).isEqualTo(ReuseProfile.Guardrails.DEFAULT));
   }
 
   private WorkflowEntity workflow(String name, WorkflowStatus status, ReuseProfile profile) {
@@ -191,11 +229,12 @@ class DefaultWorkflowLibraryTest {
     w.setOrigin(WorkflowOrigin.USER_BUILT);
     w.setStatus(status);
     w.setVersion(1);
-    w.setReuse(profile.toJson());
+    w.setReuse(profile == null ? null : profile.toJson());
     return w;
   }
 
   private static ReuseProfile profile(ReuseProfile.Guardrails guardrails) {
+    if (guardrails == null) return null;
     return new ReuseProfile("Check today's gold rate and email it to me",
         List.of("check the gold rate", "what is gold trading at today"), List.of(), guardrails, null);
   }

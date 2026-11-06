@@ -46,7 +46,8 @@ public class AppControlToolProvider implements ToolProvider {
   static final int MAX_STEP_CONFIG_CHARS = 20_000;
 
   static final List<String> PAGES = List.of("chat", "conversations", "notifications", "agents", "memory",
-      "tasks", "connections", "workflows", "procedures", "guardrails", "activity", "runs", "usage", "recordings");
+      "tasks", "connections", "workflows", "procedures", "guardrails", "activity", "runs", "usage", "recordings",
+      "functions", "devices", "help");
   static final List<String> FORMS = List.of("new_workflow", "new_task");
   static final List<String> THEMES = List.of("light", "dark", "sunset");
 

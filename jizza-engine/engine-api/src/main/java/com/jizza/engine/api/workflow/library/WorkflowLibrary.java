@@ -12,7 +12,8 @@ import java.util.UUID;
  * <p>The point is that a job the user already has a workflow for runs that workflow, with its
  * fixed steps, rather than Jizza working it out again: in a chat, and in a scheduled task. Every
  * reuse goes through {@link #reuse}, which enforces the workflow's guardrails, so no caller can
- * start a library run the user did not allow.
+ * start a library run the user did not allow. A workflow the user built without saving it for
+ * reuse is still theirs to run from a chat on request, always asking first; never on a schedule.
  */
 public interface WorkflowLibrary {
 
@@ -30,8 +31,24 @@ public interface WorkflowLibrary {
    */
   List<Match> find(UUID userId, String request, Use use, int limit);
 
-  /** Everything in the user's library, newest first. */
+  /**
+   * Every workflow the user could run from a chat that shares anything with {@code request}, best
+   * first, however loosely: for Jizza to judge when nothing fits well enough for {@link #find}.
+   */
+  default List<Match> search(UUID userId, String request, int limit) {
+    return find(userId, request, Use.CHAT, limit);
+  }
+
+  /** Everything in the user's library (the workflows saved for reuse), newest first. */
   List<Match> list(UUID userId);
+
+  /**
+   * Every workflow the user could run from a chat, newest first: the ones saved for reuse with
+   * their profile, and the others with the strictest one (ask before every run, never scheduled).
+   */
+  default List<Match> runnable(UUID userId) {
+    return list(userId);
+  }
 
   /**
    * Starts a run of a library workflow, after checking its guardrails for this use.

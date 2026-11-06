@@ -56,7 +56,7 @@ class WorkflowLibraryToolProviderTest {
     when(agents.findById(jizza.getId())).thenReturn(Optional.of(jizza));
     when(agents.findById(kai.getId())).thenReturn(Optional.of(kai));
     library = mock(WorkflowLibrary.class);
-    when(library.list(userId)).thenAnswer(inv -> List.of(match()));
+    when(library.runnable(userId)).thenAnswer(inv -> List.of(match()));
     when(library.find(eq(userId), anyString(), eq(WorkflowLibrary.Use.CHAT), any(Integer.class)))
         .thenAnswer(inv -> List.of(match()));
     when(library.reuse(eq(userId), eq(workflowId), any(), eq(WorkflowLibrary.Use.CHAT), anyString(),
@@ -119,6 +119,76 @@ class WorkflowLibraryToolProviderTest {
     ToolResult again = Activity.run(sink("chat"), () -> call(WorkflowLibraryToolProvider.RUN,
         "{\"workflow_id\":\"" + workflowId + "\",\"confirmation\":\"" + code + "\"}"));
     assertThat(again.ok()).as("a confirmation is good for one run").isFalse();
+  }
+
+  @Test
+  void theUsersOwnRequestToRunItIsTheGoAheadEvenForADraftThatAsksFirst() {
+    status = WorkflowStatus.DRAFT;
+
+    ToolResult ran = inTurn("chat", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\",\"user_asked_to_run\":true}"));
+
+    assertThat(ran.ok()).isTrue();
+    assertThat(ran.output().path("needs_confirmation").asBoolean()).isFalse();
+    verify(library).reuse(eq(userId), eq(workflowId), any(), eq(WorkflowLibrary.Use.CHAT),
+        eq("chat:" + conversationId), eq(true));
+  }
+
+  @Test
+  void aTurnNobodyTypedCannotClaimTheUserAskedForTheRun() {
+    ToolResult result = inTurn("signal", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\",\"user_asked_to_run\":true}"));
+
+    assertThat(result.output().path("needs_confirmation").asBoolean()).isTrue();
+    verify(library, never()).reuse(any(), any(), any(), any(), any(), anyBoolean());
+  }
+
+  @Test
+  void theUsersYesRunsTheWorkflowWithoutJizzaCarryingTheCode() {
+    inTurn("chat", () -> call(WorkflowLibraryToolProvider.RUN, "{\"workflow_id\":\"" + workflowId + "\"}"));
+    assertThat(provider.pending(userId, conversationId)).extracting(WorkflowLibraryToolProvider.Pending::name)
+        .containsExactly("Gold rate checker");
+
+    // Chat history keeps no tool results, so the next turn calls again with just the id.
+    ToolResult ran = inTurn("chat", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\"}"));
+
+    assertThat(ran.ok()).isTrue();
+    assertThat(ran.output().path("needs_confirmation").asBoolean()).isFalse();
+    verify(library).reuse(eq(userId), eq(workflowId), any(), eq(WorkflowLibrary.Use.CHAT),
+        eq("chat:" + conversationId), eq(true));
+    assertThat(provider.pending(userId, conversationId)).isEmpty();
+  }
+
+  @Test
+  void anOfferIsNotRedeemedInTheTurnThatMadeItNorByAnEvent() {
+    ActivitySink firstTurn = sink("chat");
+    recorder.beginTurn();
+    Activity.run(firstTurn, () -> call(WorkflowLibraryToolProvider.RUN, "{\"workflow_id\":\"" + workflowId + "\"}"));
+    ToolResult again = Activity.run(firstTurn, () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\"}"));
+    recorder.endTurn();
+    assertThat(again.output().path("needs_confirmation").asBoolean()).isTrue();
+
+    ToolResult fromEvent = inTurn("signal", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\"}"));
+    assertThat(fromEvent.output().path("needs_confirmation").asBoolean()).isTrue();
+    verify(library, never()).reuse(any(), any(), any(), any(), any(), anyBoolean());
+  }
+
+  @Test
+  void whenNoWordsMatchJizzaGetsTheWholeListToJudgeByMeaning() {
+    when(library.find(eq(userId), anyString(), eq(WorkflowLibrary.Use.CHAT), any(Integer.class)))
+        .thenReturn(List.of());
+    when(library.search(eq(userId), anyString(), any(Integer.class))).thenReturn(List.of());
+
+    ToolResult result = inTurn("chat", () -> call(WorkflowLibraryToolProvider.FIND,
+        "{\"request\":\"what does gold cost\"}"));
+
+    assertThat(result.output().path("workflows")).isEmpty();
+    assertThat(result.output().path("all_workflows").get(0).path("name").asText())
+        .isEqualTo("Gold rate checker");
+    assertThat(result.output().path("note").asText()).contains("all_workflows");
   }
 
   @Test
