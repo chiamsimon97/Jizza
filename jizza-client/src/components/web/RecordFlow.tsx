@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Circle, PictureInPicture2, Square } from 'lucide-react'
+import { CheckCircle2, Circle, CircleDashed, PictureInPicture2, Square } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { webApi, type EditOp, type Recording } from '@/api/web'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useFloatingWindow } from '@/hooks/useFloatingWindow'
@@ -9,7 +10,8 @@ import { SlideOver } from '@/components/ui/SlideOver'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { RecordingReview } from './RecordingReview'
-import { liveSteps, missingLogins } from './recordingModel'
+import { hostOf, liveSteps, missingLogins, siteAllowed } from './recordingModel'
+import type { BrowserAgent } from '@/api/web'
 
 /**
  * Record in Chrome, review, then either save as a module or (from the builder) put the steps into
@@ -85,7 +87,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
               {offline.map(b => <option key={b.id} value={b.id} disabled>{b.name}: open Chrome on {b.name}</option>)}
             </select>
           </label>
-          {browsers.isSuccess && online.length === 0 && <p className="text-xs text-gray-500">No browser is online. Open Chrome with the Jizza Browser Agent, or add one in Settings › Agents.</p>}
+          {browsers.isSuccess && <SetupChecklist browsers={browsers.data} chosen={browsers.data.find(b => b.id === browserId)} url={url} />}
           <label className="block">Start page
             <input aria-label="Start page" value={url} onChange={e => setUrl(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 dark:border-gray-600" />
           </label>
@@ -157,5 +159,46 @@ function FloatingControls({ browser, steps, stopping, onStop }: {
       </ol>
       <Button variant="secondary" loading={stopping} onClick={onStop}><Square className="h-4 w-4" />Stop recording</Button>
     </div>
+  )
+}
+
+/**
+ * The one-time setup a browser recording needs, shown until it is all done: the extension, a
+ * paired browser that is online, and the start page's site on that browser's allowed list.
+ */
+export function SetupChecklist({ browsers, chosen, url }: { browsers: BrowserAgent[]; chosen?: BrowserAgent; url: string }) {
+  const paired = browsers.length > 0
+  const online = browsers.some(b => b.online)
+  const host = hostOf(url)
+  const allowed = !!chosen && !!host && siteAllowed(host, chosen.allowedSites ?? [])
+  const items: { done: boolean; title: string; how: React.ReactNode }[] = [
+    { done: paired, title: 'Install the Jizza Browser Agent',
+      how: <>Load the extension in Chrome or another Chromium browser. <Link className="text-brand-600 underline" to="/help/browser-recording">How to install it</Link></> },
+    { done: paired, title: 'Pair the browser',
+      how: <>In <Link className="text-brand-600 underline" to="/settings/devices">Settings › Devices</Link>, press Pair a device, open the Browser tab, and paste the key into the extension.</> },
+    { done: online, title: 'Open the browser', how: 'Jizza can record once the paired browser is open and shows as online.' },
+    { done: allowed, title: host ? `Allow ${host}` : 'Allow the start page’s site',
+      how: chosen
+        ? <>In the extension’s Options on {chosen.name}, add {host ? <code>{host}</code> : 'the site'} under Allowed sites and accept Chrome’s prompt.</>
+        : 'Choose the browser and type the start page, then add its site in the extension’s Options.' },
+  ]
+  if (items.every(i => i.done)) return null
+  return (
+    <section aria-label="Before you record" className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">Before you record</p>
+      <ol className="mt-2 space-y-2">
+        {items.map(item => (
+          <li key={item.title} className="flex gap-2 text-xs">
+            {item.done
+              ? <CheckCircle2 aria-label="Done" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+              : <CircleDashed aria-label="To do" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />}
+            <span className={item.done ? 'text-gray-500 line-through decoration-gray-300' : 'text-gray-800 dark:text-gray-200'}>
+              <span className="font-medium">{item.title}</span>
+              {!item.done && <span className="block text-gray-500 dark:text-gray-400">{item.how}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }

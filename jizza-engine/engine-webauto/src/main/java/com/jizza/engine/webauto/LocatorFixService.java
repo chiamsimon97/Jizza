@@ -151,8 +151,24 @@ public class LocatorFixService implements LocatorFixes {
     if (candidateIndex < 0 || candidateIndex >= candidates.size()) {
       throw new ValidationException("Choose one of the " + candidates.size() + " suggestions");
     }
+    return applyChosen(fix, candidates.get(candidateIndex).path("element"));
+  }
+
+  @Override
+  @Transactional
+  public Applied applyElement(Access access, UUID fixId, JsonNode element) {
+    WebLocatorFixEntity fix = owned(access, fixId);
+    if (!OPEN.equals(fix.getStatus())) throw new ConflictException("This fix was already " + fix.getStatus());
+    if (element == null || !element.path("strategies").isArray() || element.get("strategies").isEmpty()) {
+      throw new ValidationException("Pick the element on the page first");
+    }
+    return applyChosen(fix, element);
+  }
+
+  private Applied applyChosen(WebLocatorFixEntity fix, JsonNode chosen) {
+    UUID fixId = fix.getId();
     WorkflowDto workflow = workflows.find(fix.getWorkflowId())
-        .filter(w -> w.userId().equals(access.userId()))
+        .filter(w -> w.userId().equals(fix.getOwnerId()))
         .orElseThrow(() -> new NotFoundException("Fix", fixId));
     ObjectNode graph = workflow.graph().deepCopy();
     ObjectNode node = (ObjectNode) nodeOf(graph, fix.getNodeId())
@@ -161,8 +177,7 @@ public class LocatorFixService implements LocatorFixes {
         .orElseThrow(() -> new ConflictException("That step is no longer in " + workflow.name()
             + ". Dismiss this fix."));
     ObjectNode inputs = (ObjectNode) node.get("config").get("inputs");
-    inputs.set("element", merge(candidates.get(candidateIndex).path("element"),
-        inputs.path("element")));
+    inputs.set("element", merge(chosen, inputs.path("element")));
 
     WorkflowDto saved;
     if (workflow.status() == WorkflowStatus.DRAFT) {

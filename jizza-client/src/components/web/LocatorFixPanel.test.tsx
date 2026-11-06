@@ -11,6 +11,10 @@ vi.mock('@/api/web', () => ({
     fixes: vi.fn(),
     applyFix: vi.fn(async () => ({ workflowId: 'wf1', version: 2 })),
     dismissFix: vi.fn(async () => undefined),
+    browsers: vi.fn(async () => [{ id: 'b1', name: 'Chromium browser', online: true }]),
+    pick: vi.fn(async () => ({ commandId: 'pick1' })),
+    pickResult: vi.fn(),
+    applyPickedFix: vi.fn(async () => ({ workflowId: 'wf1', version: 3 })),
   },
 }))
 
@@ -36,6 +40,21 @@ function wrap(children: ReactNode) {
 afterEach(() => vi.clearAllMocks())
 
 describe('LocatorFixPanel', () => {
+  it('applies an element the person picked on the page when no suggestion is right', async () => {
+    vi.mocked(webApi.fixes).mockResolvedValue([fix])
+    vi.mocked(webApi.pickResult).mockResolvedValue({ status: 'done', element: { label: 'Confirm button', strategies: [{ by: 'css', value: '#confirm' }] }, preview: 'f1', pagePreview: 'f2' })
+    const onApplied = vi.fn()
+    wrap(<LocatorFixPanel workflowId="wf1" onApplied={onApplied} />)
+    const pick = await screen.findByRole('button', { name: 'Pick on page' })
+    await waitFor(() => expect(pick).toBeEnabled())
+    fireEvent.click(pick)
+    await waitFor(() => expect(webApi.pick).toHaveBeenCalledWith({ deviceId: 'b1', prompt: 'Click the element "Click Submit order" should use' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this element' }, { timeout: 3000 }))
+    await waitFor(() => expect(webApi.applyPickedFix).toHaveBeenCalledWith('fix1', 'pick1'))
+    expect(webApi.applyFix).not.toHaveBeenCalled()
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(fix, 3))
+  })
+
   it('applies only the suggestion the person chose', async () => {
     vi.mocked(webApi.fixes).mockResolvedValue([fix, { ...fix, id: 'other', workflowId: 'wf2' }])
     const onApplied = vi.fn()

@@ -29,6 +29,12 @@ public interface LocatorFixes {
    */
   Applied apply(Access access, UUID fixId, int candidateIndex);
 
+  /**
+   * Like {@link #apply}, with an element the person picked on the page themselves instead of one
+   * of the suggestions (the caller checks it is the person's own pick).
+   */
+  Applied applyElement(Access access, UUID fixId, JsonNode element);
+
   void dismiss(Access access, UUID fixId);
 
   /**

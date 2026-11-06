@@ -291,6 +291,37 @@ class RecordingServiceTest {
   }
 
   @Test
+  void theSidePanelRenamesAndMakesInputsButNeverFromAPassword() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "Invoice", "{\"text\":\"INV-1\"}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(2, "browser.setText", "Password", "{\"text\":\"x\"}", true)));
+    var relabel = Json.obj().put("recordingId", id.toString()).put("op", "relabel").put("seq", 1)
+        .put("label", "Invoice number");
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "text");
+    map.putObject("input").put("name", "invoiceNo").put("type", "text");
+    var mapPassword = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 2)
+        .put("field", "text");
+    mapPassword.putObject("input").put("name", "pw").put("type", "text");
+    var secret = Json.obj().put("recordingId", id.toString()).put("op", "secret").put("seq", 2)
+        .put("secretRef", "login-1");
+    for (var edit : List.of(relabel, map, mapPassword, secret)) {
+      service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+    }
+
+    var steps = service.get(access, id).steps();
+    var invoice = steps.stream().filter(s -> s.seq() == 1).findFirst().orElseThrow().step();
+    assertThat(invoice.path("label").asText()).isEqualTo("Invoice number");
+    assertThat(invoice.path("mappings").path("text").path("name").asText()).isEqualTo("invoiceNo");
+    assertThat(invoice.path("mappings").path("text").path("default").asText()).isEqualTo("INV-1");
+    var password = steps.stream().filter(s -> s.seq() == 2).findFirst().orElseThrow().step();
+    assertThat(password.has("mappings")).isFalse();
+    assertThat(password.path("secretRef").isNull()).isTrue();
+  }
+
+  @Test
   void insertsACheckBuiltFromAnEarlierElement() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

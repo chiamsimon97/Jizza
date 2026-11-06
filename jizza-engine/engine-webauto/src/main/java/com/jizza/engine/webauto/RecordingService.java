@@ -448,15 +448,27 @@ public class RecordingService implements Recordings, RecordingIntake {
 
   private void deviceEdit(WebRecordingEntity recording, JsonNode data) {
     String op = data.path("op").asText("");
-    if (!Set.of("delete", "move", "relabel").contains(op) || !data.path("seq").isInt()) {
+    // The side panel may delete, move, rename, and turn a typed value into an input (never a
+    // password: map refuses those). Choosing a saved login stays with the person in Jizza.
+    if (!Set.of("delete", "move", "relabel", "map").contains(op) || !data.path("seq").isInt()) {
       log.info("Dropped an unsupported recording edit for {}", recording.getId());
       return;
+    }
+    Recordings.Input input = null;
+    if ("map".equals(op)) {
+      JsonNode in = data.path("input");
+      if (!in.isObject() || !data.path("field").isTextual()) {
+        log.info("Dropped a recording edit for {}: map needs a field and an input", recording.getId());
+        return;
+      }
+      input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null), null);
     }
     List<Held> held = load(recording.getId());
     try {
       apply(held, new EditOp(op, data.get("seq").asInt(),
           data.path("toIndex").isInt() ? data.get("toIndex").asInt() : null,
-          data.path("label").asText(null), null, null, null, null), false);
+          data.path("label").asText(null), data.path("field").asText(null), input, null, null),
+          false);
     } catch (RuntimeException e) {
       log.info("Dropped a recording edit for {}: {}", recording.getId(), e.getMessage());
       return;
@@ -501,10 +513,7 @@ public class RecordingService implements Recordings, RecordingIntake {
         target.node.put("label", label);
         target.changed = true;
       }
-      case "map" -> {
-        if (!person) throw new ValidationException("Only the person maps inputs");
-        map(target, op);
-      }
+      case "map" -> map(target, op);
       case "secret" -> {
         if (!person) throw new ValidationException("Only the person chooses a saved login");
         secret(target, op.secretRef());

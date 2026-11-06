@@ -33,3 +33,22 @@ export const moveOp = (s: RecordedStep, toIndex: number): EditOp => ({ op: 'move
 /** Password steps that still have no saved login: the recording can't be saved until each has one. */
 export const missingLogins = (steps: RecordedStep[] | undefined): RecordedStep[] =>
   liveSteps(steps).filter(s => isPassword(s) && !s.step.secretRef)
+
+/** The host of a start page, or null while the address is not a full http(s) URL yet. */
+export function hostOf(url: string): string | null {
+  try {
+    const parsed = new URL(url.trim())
+    return /^https?:$/.test(parsed.protocol) && parsed.hostname ? parsed.hostname.toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+/** Whether a host is on a browser's allowed-sites list (`example.com` or `*.example.com`), as the extension checks it. */
+export function siteAllowed(host: string, patterns: string[]): boolean {
+  return patterns.some(raw => {
+    const pattern = raw.trim().toLowerCase()
+    if (pattern.startsWith('*.')) return host.endsWith(pattern.slice(1))
+    return host === pattern
+  })
+}

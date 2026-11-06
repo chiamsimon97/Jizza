@@ -218,8 +218,14 @@ sensitive fields blurred; `browser.pickElement@1` and `browser.getSelectors@1` r
 ```json
 {"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "delete", "seq": 4}}
 {"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "move", "seq": 6, "toIndex": 2}}
+{"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "relabel", "seq": 4, "label": "Invoice number"}}
+{"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "map", "seq": 4, "field": "text", "input": {"name": "invoiceNo", "type": "text"}}}
 {"name": "browser.recording.stopped", "data": {"recordingId": "9a7c…", "stepCount": 11, "stoppedBy": "person"}}
 ```
+
+The side panel may send `delete`, `move`, `relabel` and `map` (turn a typed value into a module
+input; the value becomes its default). The server refuses `map` on a sensitive step, and choosing
+a saved login (`secret`) is only done by the person in Jizza.
 
 ### Desktop recordings (Windows agent → server)
 

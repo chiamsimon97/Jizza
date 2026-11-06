@@ -26,6 +26,7 @@ import com.jizza.engine.api.llm.LlmResponse;
 import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.procedure.ProcedureService;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
@@ -218,6 +219,35 @@ class LocatorFixServiceTest {
     assertThat(service.list(access, "open")).isEmpty();
     assertThat(service.list(access, "applied")).hasSize(1);
     assertThatThrownBy(() -> service.apply(access, fixId, 0)).isInstanceOf(ConflictException.class);
+  }
+
+  @Test
+  void aPickedElementIsAppliedLikeASuggestionAndTheOldStrategiesStayAsFallbacks() {
+    fail(error("Place order"));
+    UUID fixId = service.list(access, "open").get(0).id();
+    ObjectNode picked = Json.obj().put("label", "Confirm button")
+        .put("preview", "p1").put("pagePreview", "p2");
+    picked.putArray("strategies").addObject().put("by", "testid").put("value", "confirm");
+
+    LocatorFixes.Applied applied = service.applyElement(access, fixId, picked);
+
+    assertThat(applied.version()).isEqualTo(2);
+    JsonNode element = LocatorFixService.nodeOf(workflow.graph(), "submit").orElseThrow()
+        .path("config").path("inputs").path("element");
+    assertThat(element.path("strategies").get(0).path("value").asText()).isEqualTo("confirm");
+    assertThat(element.path("strategies").findValuesAsText("value")).contains("#submit");
+    assertThat(element.has("preview")).isFalse();
+    assertThat(element.has("pagePreview")).isFalse();
+    assertThatThrownBy(() -> service.applyElement(access, fixId, picked))
+        .isInstanceOf(ConflictException.class);
+  }
+
+  @Test
+  void aPickWithoutSelectorsIsRefused() {
+    fail(error("Place order"));
+    UUID fixId = service.list(access, "open").get(0).id();
+    assertThatThrownBy(() -> service.applyElement(access, fixId, Json.obj()))
+        .isInstanceOf(ValidationException.class);
   }
 
   @Test

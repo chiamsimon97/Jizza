@@ -37,7 +37,8 @@ public class WebAutomationController {
 
   public record EditStepsRequest(List<Recordings.EditOp> ops) {}
 
-  public record ApplyFixRequest(Integer candidateIndex) {}
+  /** One of the suggestions by index, or the person's own pick on the page. */
+  public record ApplyFixRequest(Integer candidateIndex, UUID pickCommandId) {}
 
   private final WebAutomationUseCase web;
 
@@ -133,6 +134,9 @@ public class WebAutomationController {
   @PostMapping("/fixes/{id}/apply")
   public LocatorFixes.Applied applyFix(@PathVariable UUID id,
                                        @RequestBody(required = false) ApplyFixRequest request) {
+    if (request != null && request.pickCommandId() != null) {
+      return web.applyPickedFix(CurrentWorkspace.access(), id, request.pickCommandId());
+    }
     if (request == null || request.candidateIndex() == null) {
       throw new ValidationException("Choose which suggestion to use");
     }
