@@ -33,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * answer: only a workflow the user saved for reuse is ever reused; one awaiting review or rejected
  * never is; a chat run asks first unless the user said it need not (a draft always asks); a
  * scheduled run needs the user to have allowed it for the steps as they are now; and the daily
- * limit counts every reuse, whoever started it.
+ * limit counts every reuse, whoever started it. A workflow the user built but never saved for
+ * reuse can still be run from a chat when they ask for it, always asking first.
  */
 @Service
 public class DefaultWorkflowLibrary implements WorkflowLibrary {
@@ -66,11 +67,22 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
   @Transactional(readOnly = true)
   public List<Match> find(UUID userId, String request, Use use, int limit) {
     double floor = use == Use.SCHEDULE ? WorkflowMatcher.STRONG : WorkflowMatcher.PLAUSIBLE;
+    return scored(userId, request, use, floor, limit);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Match> search(UUID userId, String request, int limit) {
+    return scored(userId, request, Use.CHAT, Double.MIN_VALUE, limit);
+  }
+
+  private List<Match> scored(UUID userId, String request, Use use, double floor, int limit) {
     List<Match> matches = new ArrayList<>();
     for (WorkflowEntity workflow : workflows.findByUserIdOrderByCreatedAtDesc(userId)) {
-      ReuseProfile profile = ReuseProfile.from(workflow.getReuse());
+      ReuseProfile profile = profileFor(workflow, use);
       if (profile == null || !usable(workflow, profile, use)) continue;
-      var score = WorkflowMatcher.score(request, workflow.getName(), workflow.getDescription(), profile);
+      var score = WorkflowMatcher.score(request, workflow.getName(), workflow.getDescription(),
+          profile, stepsText(workflow.getGraph()));
       if (score.value() >= floor) matches.add(match(workflow, profile, score));
     }
     matches.sort(Comparator.comparingDouble(Match::score).reversed());
@@ -81,9 +93,48 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
   @Transactional(readOnly = true)
   public List<Match> list(UUID userId) {
     return workflows.findByUserIdOrderByCreatedAtDesc(userId).stream()
-        .filter(w -> w.getReuse() != null && !w.getReuse().isNull())
-        .map(w -> match(w, ReuseProfile.from(w.getReuse()), new WorkflowMatcher.Score(0, List.of())))
+        .filter(w -> !w.isDisabled())
+        .map(w -> match(w, profileFor(w, Use.CHAT), new WorkflowMatcher.Score(0, List.of())))
         .toList();
+  }
+
+  /**
+   * What the library knows about a workflow for this use. One the user built but never saved for
+   * reuse is still theirs to run from a chat, on the strictest terms (ask every time, never on a
+   * schedule); a scheduled task only ever gets workflows the user saved for reuse.
+   */
+  static ReuseProfile profileFor(WorkflowEntity workflow, Use use) {
+    ReuseProfile saved = ReuseProfile.from(workflow.getReuse());
+    if (saved != null || use == Use.SCHEDULE) return saved;
+    return new ReuseProfile(workflow.getDescription(), List.of(), declaredInputs(workflow),
+        ReuseProfile.Guardrails.DEFAULT, null);
+  }
+
+  /** The inputs a workflow's start step declares, from its saved input schema. */
+  static List<ReuseProfile.Input> declaredInputs(WorkflowEntity workflow) {
+    JsonNode schema = workflow.getInputSchema();
+    if (schema == null || !schema.path("properties").isObject()) return List.of();
+    java.util.Set<String> required = new java.util.HashSet<>();
+    schema.path("required").forEach(r -> required.add(r.asText()));
+    List<ReuseProfile.Input> inputs = new ArrayList<>();
+    schema.path("properties").fields().forEachRemaining(e -> inputs.add(new ReuseProfile.Input(
+        e.getKey(), e.getValue().path("description").asText(null), required.contains(e.getKey()))));
+    return inputs;
+  }
+
+  /** What the steps say about themselves: their labels and the sites they open or call. */
+  static String stepsText(JsonNode graph) {
+    if (graph == null) return null;
+    StringBuilder text = new StringBuilder();
+    for (JsonNode node : graph.path("nodes")) {
+      text.append(' ').append(node.path("label").asText(""));
+      JsonNode config = node.path("config");
+      for (String key : List.of("url", "startUrl", "title", "description")) {
+        if (config.path(key).isTextual()) text.append(' ').append(config.path(key).asText());
+      }
+      if (text.length() > 4000) break;
+    }
+    return text.toString();
   }
 
   /**
@@ -95,7 +146,7 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
   public RunDto reuse(UUID userId, UUID workflowId, JsonNode input, Use use, String source,
                       boolean confirmed) {
     WorkflowEntity workflow = owned(userId, workflowId);
-    ReuseProfile profile = ReuseProfile.from(workflow.getReuse());
+    ReuseProfile profile = profileFor(workflow, use);
     if (profile == null) {
       throw new ValidationException("'" + workflow.getName() + "' is not saved for reuse");
     }

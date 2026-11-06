@@ -50,4 +50,13 @@ class WorkflowMatcherTest {
     assertThat(WorkflowMatcher.stem("emailed")).isEqualTo("email");
     assertThat(WorkflowMatcher.stem("replies")).isEqualTo("reply");
   }
+
+  @Test
+  void nearSpellingsAndHowPeoplePointAtAWorkflowStillMatch() {
+    var score = WorkflowMatcher.score("Can you run a workflow that created to book ramayana movie",
+        "Ramayanam Ticket Booking", null, null);
+
+    assertThat(score.value()).isGreaterThanOrEqualTo(WorkflowMatcher.PLAUSIBLE);
+    assertThat(score.shared()).contains("book", "ramayana");
+  }
 }

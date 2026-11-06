@@ -24,15 +24,25 @@ public class LibraryHints {
   static final int MAX = 3;
 
   private final ObjectProvider<WorkflowLibrary> library;
+  private final ObjectProvider<WorkflowLibraryToolProvider> tools;
 
   public LibraryHints(ObjectProvider<WorkflowLibrary> library) {
+    this(library, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public LibraryHints(ObjectProvider<WorkflowLibrary> library,
+                      ObjectProvider<WorkflowLibraryToolProvider> tools) {
     this.library = library;
+    this.tools = tools;
   }
 
   /** {@code message} with a note of the saved workflows that may fit it, or unchanged when none do. */
   public String annotate(UUID userId, String message) {
     WorkflowLibrary lib = library.getIfAvailable();
     if (lib == null || message == null || message.isBlank()) return message;
+    String waiting = waitingOn(userId);
+    if (!waiting.isEmpty()) return message + waiting;
     List<WorkflowLibrary.Match> matches;
     try {
       matches = lib.find(userId, message, WorkflowLibrary.Use.CHAT, MAX);
@@ -54,5 +64,28 @@ public class LibraryHints {
         + "building or working out a new one, and tell the user you are using it. Check its "
         + "inputs and rules with find_saved_workflows first. If none really fits, ignore this.]");
     return message + note;
+  }
+
+  /**
+   * A note of the run Jizza asked the user about earlier in this conversation, so that "yes"
+   * actually runs it instead of Jizza looking it up and asking all over again.
+   */
+  private String waitingOn(UUID userId) {
+    WorkflowLibraryToolProvider provider = tools == null ? null : tools.getIfAvailable();
+    if (provider == null) return "";
+    UUID conversationId = com.jizza.engine.api.activity.Activity.current()
+        .map(com.jizza.engine.api.activity.ActivitySink::conversationId).orElse(null);
+    List<WorkflowLibraryToolProvider.Pending> pending = provider.pending(userId, conversationId);
+    if (pending.isEmpty()) return "";
+    StringBuilder note = new StringBuilder("\n\n[Waiting on the user's answer: you asked whether "
+        + "to run");
+    for (WorkflowLibraryToolProvider.Pending p : pending) {
+      note.append(" \"").append(p.name()).append("\" (workflow_id ").append(p.workflowId())
+          .append(")");
+    }
+    note.append(". If this message agrees, call run_saved_workflow with that workflow_id now, "
+        + "with any inputs the user gave; do not look it up or ask again, and do not just say you "
+        + "will run it. If they decline or ask for something else, do what they ask instead.]");
+    return note.toString();
   }
 }

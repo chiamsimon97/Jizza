@@ -58,4 +58,32 @@ class LibraryHintsTest {
 
     assertThat(hints(library).annotate(userId, "check the gold rate")).isEqualTo("check the gold rate");
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void aRunJizzaAskedAboutIsNamedOnTheUsersReply() {
+    WorkflowLibrary library = mock(WorkflowLibrary.class);
+    ObjectProvider<WorkflowLibrary> libraries = mock(ObjectProvider.class);
+    when(libraries.getIfAvailable()).thenReturn(library);
+    WorkflowLibraryToolProvider tools = mock(WorkflowLibraryToolProvider.class);
+    ObjectProvider<WorkflowLibraryToolProvider> toolProvider = mock(ObjectProvider.class);
+    when(toolProvider.getIfAvailable()).thenReturn(tools);
+    UUID conversationId = UUID.randomUUID();
+    UUID workflowId = UUID.randomUUID();
+    when(tools.pending(userId, conversationId)).thenReturn(List.of(
+        new WorkflowLibraryToolProvider.Pending(workflowId, "Ramayanam Ticket Booking")));
+    com.jizza.engine.api.activity.ActivitySink sink = new com.jizza.engine.api.activity.ActivitySink() {
+      @Override public void emit(com.jizza.engine.api.activity.ActivityEvent event) {}
+      @Override public boolean cancelled() { return false; }
+      @Override public String origin() { return "chat"; }
+      @Override public UUID conversationId() { return conversationId; }
+    };
+
+    String message = com.jizza.engine.api.activity.Activity.run(sink,
+        () -> new LibraryHints(libraries, toolProvider).annotate(userId, "Yes, run it"));
+
+    assertThat(message).startsWith("Yes, run it\n\n[Waiting on the user's answer")
+        .contains("\"Ramayanam Ticket Booking\" (workflow_id " + workflowId + ")")
+        .contains("call run_saved_workflow with that workflow_id now");
+  }
 }

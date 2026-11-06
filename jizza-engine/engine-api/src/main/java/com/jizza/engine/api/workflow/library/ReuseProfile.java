@@ -14,7 +14,8 @@ import java.util.UUID;
  * on reusing it.
  *
  * <p>Stored on the workflow ({@code workflows.reuse}). A workflow without one is not in the
- * library: Jizza never reuses something the user did not agree to keep for reuse.
+ * library: a scheduled task never reuses it, and a chat runs it only when the user asks, with the
+ * strictest guardrails ({@link Guardrails#DEFAULT}).
  *
  * @param summary     when this workflow is the right one, in the user's terms
  * @param examples    requests it handles, as the user might phrase them
