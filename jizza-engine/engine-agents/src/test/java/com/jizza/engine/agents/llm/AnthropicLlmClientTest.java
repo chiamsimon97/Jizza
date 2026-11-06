@@ -67,6 +67,23 @@ class AnthropicLlmClientTest {
   }
 
   @Test
+  void flattensATopLevelAnyOfSoOneToolCannotBreakTheWholeRequest() {
+    var spec = new ToolSpec("mcp_quote", "Get a quote", Json.read("""
+        {"type":"object","anyOf":[
+          {"properties":{"symbol":{"type":"string"}},"required":["symbol"]},
+          {"properties":{"token":{"type":"integer"}},"required":["token"]}]}"""));
+
+    var schema = client.buildRequest("m", List.of(Msg.user("hi")), List.of(spec))
+        .path("tools").get(0).path("input_schema");
+
+    assertThat(schema.has("anyOf")).isFalse();
+    assertThat(schema.path("type").asText()).isEqualTo("object");
+    assertThat(schema.path("properties").has("symbol")).isTrue();
+    assertThat(schema.path("properties").has("token")).isTrue();
+    assertThat(spec.inputSchema().has("anyOf")).as("the tool's own schema is kept for checks").isTrue();
+  }
+
+  @Test
   void sendsToolSchemasAndNothingElseAboutATool() {
     var spec = new ToolSpec("send_email", "Send an email",
         JsonSchemas.object(Map.of("to", JsonSchemas.string("recipient")), List.of("to")), true);

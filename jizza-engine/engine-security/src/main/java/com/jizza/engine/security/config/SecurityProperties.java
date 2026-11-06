@@ -27,13 +27,14 @@ public class SecurityProperties {
   private final Totp totp = new Totp();
   private final Cors cors = new Cors();
   private final Mfa mfa = new Mfa();
+  private final SmartSignIn smartSignIn = new SmartSignIn();
   private final Registration registration = new Registration();
   private final SuperAdmin superAdmin = new SuperAdmin();
   private final Invitations invitations = new Invitations();
 
   public static class Session {
-    private Duration idleTimeout = Duration.ofMinutes(30);
-    private Duration absoluteTimeout = Duration.ofHours(12);
+    private Duration idleTimeout = Duration.ofDays(3);
+    private Duration absoluteTimeout = Duration.ofDays(15);
     private String cookieName = "JIZZA_SESSION";
     private boolean cookieSecure = true;
     /** Strict: the session cookie is never sent on a request another site started. */
@@ -53,7 +54,7 @@ public class SecurityProperties {
 
   public static class StepUp {
     /** How recently the user must have re-authenticated for a high-risk route to proceed. */
-    private Duration freshness = Duration.ofMinutes(5);
+    private Duration freshness = Duration.ofMinutes(15);
     /**
      * Wrong step-up answers a session may give in a row before it is revoked. Someone holding a
      * stolen session cookie cannot sit and guess the password behind it.
@@ -77,6 +78,21 @@ public class SecurityProperties {
     public void setRequired(boolean v) { this.required = v; }
     public int getRecoveryCodes() { return recoveryCodes; }
     public void setRecoveryCodes(int v) { this.recoveryCodes = v; }
+  }
+
+  /** Signing a browser in by scanning its QR code with a phone that is already signed in. */
+  public static class SmartSignIn {
+    private boolean enabled = true;
+    /** How long one QR code can be scanned and approved. */
+    private Duration lifetime = Duration.ofMinutes(2);
+    /** Codes waiting at once across the whole server, so the public start endpoint cannot fill memory. */
+    private int maxPending = 10_000;
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public Duration getLifetime() { return lifetime; }
+    public void setLifetime(Duration v) { this.lifetime = v; }
+    public int getMaxPending() { return maxPending; }
+    public void setMaxPending(int v) { this.maxPending = v; }
   }
 
   public static class Registration {
@@ -149,6 +165,17 @@ public class SecurityProperties {
         java.util.List.of("http://localhost:5173"));
     public java.util.List<String> getAllowedOrigins() { return allowedOrigins; }
     public void setAllowedOrigins(java.util.List<String> v) { this.allowedOrigins = v; }
+
+    /**
+     * Origin patterns allowed to call the device endpoints ({@code /agent/v1/**}) and open the
+     * device WebSocket, on top of {@link #allowedOrigins}. Browser-extension agents send their
+     * extension's origin, such as {@code chrome-extension://<id>}. These calls never carry
+     * cookies: each is signed with the device's key or its short-lived token.
+     */
+    private java.util.List<String> agentOriginPatterns = new java.util.ArrayList<>(
+        java.util.List.of("chrome-extension://*"));
+    public java.util.List<String> getAgentOriginPatterns() { return agentOriginPatterns; }
+    public void setAgentOriginPatterns(java.util.List<String> v) { this.agentOriginPatterns = v; }
   }
 
   public String getMasterKeyFile() { return masterKeyFile; }
@@ -169,6 +196,7 @@ public class SecurityProperties {
   public Totp getTotp() { return totp; }
   public Cors getCors() { return cors; }
   public Mfa getMfa() { return mfa; }
+  public SmartSignIn getSmartSignIn() { return smartSignIn; }
   public Registration getRegistration() { return registration; }
   public SuperAdmin getSuperAdmin() { return superAdmin; }
   public Invitations getInvitations() { return invitations; }

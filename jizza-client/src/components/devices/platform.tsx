@@ -1,8 +1,9 @@
-import { Apple, Laptop, Smartphone } from 'lucide-react'
+import { Apple, Globe2, Laptop, Smartphone } from 'lucide-react'
 import type { Device, DevicePlatform } from '@/types'
 
 export const PLATFORM_LABEL: Record<DevicePlatform, string> = {
-  WINDOWS: 'Windows', MACOS: 'macOS', LINUX: 'Linux', ANDROID: 'Android', IOS: 'iPhone', OTHER: 'Other',
+  WINDOWS: 'Windows', MACOS: 'macOS', LINUX: 'Linux', ANDROID: 'Android', IOS: 'iPhone',
+  BROWSER: 'Browser', OTHER: 'Other',
 }
 
 type IconProps = { className?: string }
@@ -35,6 +36,7 @@ export function PlatformIcon({ platform, className = 'h-5 w-5' }: { platform: De
     case 'MACOS': return <Apple className={className} aria-hidden="true" />
     case 'LINUX': return <LinuxIcon className={className} />
     case 'ANDROID': case 'IOS': return <Smartphone className={className} aria-hidden="true" />
+    case 'BROWSER': return <Globe2 className={className} aria-hidden="true" />
     default: return <Laptop className={className} aria-hidden="true" />
   }
 }
@@ -42,6 +44,7 @@ export function PlatformIcon({ platform, className = 'h-5 w-5' }: { platform: De
 /** What kind of agent it is, shown as a tag under its name. */
 export function agentKind(d: Pick<Device, 'platform' | 'ownerUserId'>): string {
   if (d.ownerUserId === null) return 'Shared agent'
+  if (d.platform === 'BROWSER') return 'Browser agent'
   return d.platform === 'ANDROID' || d.platform === 'IOS' ? 'Phone agent' : 'Desktop agent'
 }
 
@@ -50,7 +53,7 @@ export function hostOf(d: Pick<Device, 'hostname' | 'name'>): string {
   return d.hostname?.trim() || d.name
 }
 
-export type InstallOs = 'windows' | 'macos' | 'linux' | 'android'
+export type InstallOs = 'windows' | 'macos' | 'linux' | 'android' | 'browser'
 
 /** The operating system this browser runs on, to open the right tab first. */
 export function detectOs(nav: Pick<Navigator, 'userAgent'> & { userAgentData?: { platform?: string } } = navigator): InstallOs {

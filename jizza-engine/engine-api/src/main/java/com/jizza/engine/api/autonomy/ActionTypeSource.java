@@ -15,4 +15,13 @@ import java.util.UUID;
 public interface ActionTypeSource {
 
   Optional<ActionType> actionTypeOf(UUID agentId, String toolRef);
+
+  /**
+   * True when a call to this tool must always be approved by the person, whatever their rules
+   * allow, such as an action that changes a page in their own browser. A rule that denies still
+   * denies.
+   */
+  default boolean alwaysAsks(UUID agentId, String toolRef) {
+    return false;
+  }
 }

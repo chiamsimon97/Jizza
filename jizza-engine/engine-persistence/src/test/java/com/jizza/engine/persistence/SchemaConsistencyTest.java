@@ -100,7 +100,8 @@ class SchemaConsistencyTest {
     while (create.find()) {
       schema.put(create.group(1).toLowerCase(Locale.ROOT), columnsOf(create.group(2)));
     }
-    Matcher alter = Pattern.compile("alter\\s+table\\s+(\\w+)\\s+add\\s+column\\s+(\\w+)",
+    Matcher alter = Pattern.compile(
+        "alter\\s+table\\s+(\\w+)\\s+add\\s+column\\s+(?:if\\s+not\\s+exists\\s+)?(\\w+)",
         Pattern.CASE_INSENSITIVE).matcher(sql);
     while (alter.find()) {
       schema.computeIfAbsent(alter.group(1).toLowerCase(Locale.ROOT), k -> new HashSet<>())

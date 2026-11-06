@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { MfaPage } from '@/pages/MfaPage'
 import { RecoverPage } from '@/pages/RecoverPage'
+import { SmartSignInApprovePage } from '@/pages/SmartSignInApprovePage'
 import { ChatPage } from '@/pages/ChatPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { CosmosView } from '@/pages/memory/CosmosView'
@@ -17,6 +18,8 @@ import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { McpServerPage } from '@/pages/connectors/McpServers'
 import { FunctionsPage } from '@/pages/FunctionsPage'
+import { RecordingsPage } from '@/pages/RecordingsPage'
+import { HelpPage } from '@/pages/HelpPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProceduresPage } from '@/pages/ProceduresPage'
 import { GuardrailsPage } from '@/pages/GuardrailsPage'
@@ -45,6 +48,8 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/mfa" element={<MfaPage />} />
       <Route path="/recover" element={<RecoverPage />} />
+      {/* Opened by a phone that scanned the login page's QR; it checks the sign-in itself. */}
+      <Route path="/smart-sign-in" element={<SmartSignInApprovePage />} />
 
       <Route element={<EnrollmentRoute />}>
         <Route path="/setup-2fa" element={<SetupTwoStepPage />} />
@@ -65,6 +70,7 @@ export default function App() {
             <Route path="/memory/:agentId" element={<CosmosView />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/workflows" element={<WorkflowsPage />} />
+            <Route path="/recordings" element={<RecordingsPage />} />
             <Route path="/procedures" element={<ProceduresPage />} />
             <Route path="/functions/:functionId?" element={<FunctionsPage />} />
             <Route path="/guardrails" element={<GuardrailsPage />} />
@@ -75,6 +81,7 @@ export default function App() {
           </Route>
 
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/help/:slug?" element={<HelpPage />} />
           <Route path="/invitations" element={<InvitationsPage />} />
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/discover/:orgId" element={<DiscoverProfilePage />} />

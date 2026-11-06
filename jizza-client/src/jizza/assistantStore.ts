@@ -146,6 +146,14 @@ interface AssistantState {
 
 let nextId = 1
 
+const RECORDING_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Chat's "Open review" opens one recording's review; any other value is ignored. */
+export function reviewQuery(payload: { page: string; review?: string }): string {
+  return payload.page === 'recordings' && payload.review && RECORDING_ID.test(payload.review)
+    ? `?review=${payload.review}` : ''
+}
+
 function describe(action: UiAction): string {
   switch (action.type) {
     case 'navigate': return `Opened ${PAGES[action.payload.page]?.label ?? action.payload.page}`
@@ -187,7 +195,7 @@ function execute(actions: UiAction[], run = true): Executed {
         const page = PAGES[action.payload.page]
         // Never open a page this role can't read or that isn't part of the active account.
         if (!page || !canOpenPage(action.payload.page, getCachedSnapshot())) continue
-        if (run) navigator?.go(page.path)
+        if (run) navigator?.go(page.path + reviewQuery(action.payload))
         break
       }
       case 'open_form': {

@@ -57,6 +57,17 @@ public class ProposeWorkflowToolProvider implements ToolProvider {
           case id, plus an optional "else" edge.
         APPROVAL {"prompt":"what to approve"} with edges branch "approved" and "rejected".
         HUMAN_INTERVENTION {"prompt":"what to ask"} when only the user can decide.
+      Web (in the user's own Chrome, through a browser agent):
+        DEVICE_ACTION {"preset":"web","action":"browser.click","version":2,"target":"sameBrowser",
+          "inputs":{"element":{"strategies":[{"by":"role","role":"button","name":"Submit"}],
+          "label":"Submit button"}}} -- one step per action: browser.open (inputs.url), click, hover, setText,
+          getText, setCheckbox, getCheckbox, selectItem, extractTable, selectRadio, getRadio,
+          scroll, sendKeys, typeInto, exists, switchTo, refresh, getSelectors, pageInfo, forward,
+          back, close, wait, screenshot (each as "browser.<name>"). The page element is inputs.element, never
+          config.target (that picks the browser agent).
+          Prefer a saved recording (find_saved_workflows) and run it as a SUB_WORKFLOW. NEVER invent
+          selectors or elements: they come only from the user's Pick on page or a recording. If a
+          step needs an element you do not have, leave the step out and say so.
       Data:
         SET_VARIABLE {"variables":[{"name":"total","expr":"<expression>"}]}
         STORAGE {"action":"get|set|increment|append|delete","key":"...","valueExpr":"..."}

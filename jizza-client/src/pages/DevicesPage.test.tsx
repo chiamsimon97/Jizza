@@ -12,6 +12,7 @@ const laptop: Device = {
   shellEnabled: false, blockedActions: [], lastSeenAt: new Date().toISOString(), createdAt: '2026-10-28T12:03:00Z',
   hostname: 'chiam-9790', autoUpdate: true, createdBy: 'user-1', createdByEmail: 'chiam@example.com',
   updatedAt: '2026-10-28T12:03:00Z',
+  tools: [], items: {},
 }
 
 const command = (over: Partial<DeviceCommand>): DeviceCommand => ({
@@ -44,6 +45,45 @@ describe('Devices', () => {
     fireEvent.change(screen.getByLabelText('Search agents'), { target: { value: 'chiam' } })
     expect(screen.queryByText('Phone agent')).toBeNull()
     expect(screen.getByText('Work laptop')).toBeInTheDocument()
+  })
+
+  it('offers the browser extension as a tab of Create agent', async () => {
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    vi.spyOn(devicesApi, 'installers').mockResolvedValue({})
+    vi.spyOn(devicesApi, 'pairing').mockResolvedValue({ id: 'p1', expiresAt: '', used: false, expired: false, device: null })
+    vi.spyOn(devicesApi, 'pair').mockResolvedValue({
+      id: 'p1', code: '482913', expiresAt: new Date(Date.now() + 600_000).toISOString(), qrPayload: 'jizza://pair?code=482913&server=x',
+    })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click((await screen.findAllByRole('button', { name: /Create agent/ }))[0])
+    fireEvent.click(await screen.findByRole('tab', { name: /Browser/ }))
+    expect(screen.getByText(/Load unpacked/)).toBeInTheDocument()
+    expect(await screen.findByText(/browser extension is not published yet/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('Installation key')).toHaveValue('jizza://pair?code=482913&server=x')
+  })
+
+  it('lets the person who paired a phone choose what the Jizza app on it may do', async () => {
+    const pixel: Device = { ...laptop, id: 'p1', name: 'Pixel', platform: 'ANDROID', keyStorage: 'keystore' }
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([pixel])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    vi.spyOn(devicesApi, 'phoneAccess').mockResolvedValue({ access: 'APPROVE' })
+    const set = vi.spyOn(devicesApi, 'setPhoneAccess').mockResolvedValue({ access: 'FULL' })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Read and approve/ })).toBeChecked())
+    fireEvent.click(screen.getByRole('radio', { name: /Full/ }))
+    await waitFor(() => expect(set).toHaveBeenCalledWith('p1', 'FULL'))
+  })
+
+  it('shows no phone access for a computer', async () => {
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([laptop])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    const read = vi.spyOn(devicesApi, 'phoneAccess').mockResolvedValue({ access: 'APPROVE' })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }))
+    expect(screen.queryByRole('radiogroup', { name: 'Phone access' })).not.toBeInTheDocument()
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('opens Create agent with an installation key to copy', async () => {
@@ -103,10 +143,27 @@ describe('Devices', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agent details' })
     expect(dialog).toHaveTextContent('chiam@example.com')
     expect(dialog).toHaveTextContent('0.1.0')
-    expect(dialog).toHaveTextContent(/kept in a file rather than secure hardware/)
+    expect(dialog).toHaveTextContent(/kept outside secure hardware/)
     expect(dialog).toHaveTextContent('Unregister will disconnect the agent permanently')
     fireEvent.click(screen.getByRole('switch', { name: 'Auto-update' }))
     await waitFor(() => expect(update).toHaveBeenCalledWith('d1', { autoUpdate: false }))
+  })
+
+  it('lets the owner say what a tool the app added does', async () => {
+    const tool = {
+      action: 'x-acme.export', version: 1, capability: 'x-acme', actionType: 'MONEY' as const, title: 'Export ledger',
+      description: 'Exports the ledger', input: { type: 'object' }, output: null, conditions: [], platforms: [], defaultTimeoutSec: 120,
+    }
+    const withTool: Device = { ...laptop, actions: [...laptop.actions, 'x-acme.export@1'], tools: [tool], items: { recordings: [{ id: 'r1', name: 'Invoices' }] } }
+    vi.spyOn(devicesApi, 'list').mockResolvedValue([withTool])
+    vi.spyOn(devicesApi, 'enrollmentTokens').mockResolvedValue([])
+    const update = vi.spyOn(devicesApi, 'updateTool').mockResolvedValue({ ...withTool, tools: [{ ...tool, actionType: 'READ' }] })
+    renderWithSnapshot(<DevicesPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }))
+    expect(screen.getByText('Tools its app added')).toBeInTheDocument()
+    expect(screen.getByText(/Saved on it: 1 recordings/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('What Export ledger does'), { target: { value: 'READ' } })
+    await waitFor(() => expect(update).toHaveBeenCalledWith('d1', 'x-acme.export', 'READ'))
   })
 
   it('hides creating agents and tokens without the permissions', async () => {

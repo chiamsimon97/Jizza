@@ -41,7 +41,15 @@ public interface AuthService {
 
   SecurityStatus status(UUID userId, UUID sessionId);
 
-  void stepUp(UUID userId, UUID sessionId, String password, String code);
+  default void stepUp(UUID userId, UUID sessionId, String password) {
+    stepUp(userId, sessionId, password, null);
+  }
+
+  /**
+   * @param window how long the confirmation unlocks sensitive actions; null for the configured
+   *     freshness
+   */
+  void stepUp(UUID userId, UUID sessionId, String password, java.time.Duration window);
 
   void logout(UUID userId, UUID sessionId);
 

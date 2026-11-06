@@ -367,7 +367,7 @@ export interface AssistantReply {
 
 /** A step Jizza asks the app to take alongside its reply. */
 export type UiAction =
-  | { type: 'navigate'; payload: { page: string; reason?: string } }
+  | { type: 'navigate'; payload: { page: string; reason?: string; review?: string } }
   | { type: 'open_form'; payload: { form: JizzaForm; fields?: Record<string, unknown> } }
   | { type: 'ask_user'; payload: { question: string; options?: string[]; multiple?: boolean } }
   | { type: 'set_theme'; payload: { theme: string } }
@@ -982,6 +982,8 @@ export interface GuardrailStep {
   toolName?: string | null
   actionType?: ActionType | null
   decision?: GuardrailDecision | null
+  /** The same step under each agent that maintains the workflow; the first one leads. */
+  perAgent?: { agentId: string; agentName?: string | null; decision: GuardrailDecision }[]
 }
 
 export interface WorkflowGuardrails {
@@ -991,6 +993,8 @@ export interface WorkflowGuardrails {
   owningAgentId?: string | null
   steps: GuardrailStep[]
   rules: AutonomyRuleDto[]
+  /** The agents chosen to maintain it, lead first; empty means its owner, else Jizza. */
+  maintainers?: { id: string; name?: string | null }[]
 }
 
 // ── Activity / Audit ──────────────────────────────────────────────────────────
@@ -1114,6 +1118,8 @@ export interface TraceStep {
   startedAt?: string
   finishedAt?: string
   durationMs?: number
+  /** For a failed device step: what the device said went wrong. */
+  failure?: { kind: string; detail?: string; url?: string; files?: string[]; deviceId?: string; candidates: number } | null
 }
 
 export interface RunTrace {
@@ -1441,8 +1447,10 @@ export interface DirectoryProfile extends DirectoryEntry {
 
 // ── Devices (the Jizza Agent app on computers and phones) ─────────────────────
 
-export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'OTHER'
+export type DevicePlatform = 'WINDOWS' | 'MACOS' | 'LINUX' | 'ANDROID' | 'IOS' | 'BROWSER' | 'OTHER'
 export type DeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
+/** What the Jizza app on a person's own phone may do with their account; each includes the ones before. */
+export type PhoneAccess = 'READ' | 'APPROVE' | 'FULL'
 export type DeviceCommandStatus = 'QUEUED' | 'DISPATCHED' | 'ACCEPTED' | 'RUNNING' | 'SUCCEEDED'
   | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
 
@@ -1458,7 +1466,7 @@ export interface Device {
   protocolVersion: number | null
   status: DeviceStatus
   tags: string[]
-  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, dpapi or file. */
+  /** Where the device keeps its key: tpm, secure_enclave, keystore, keychain, browser or file. */
   keyStorage: string
   online: boolean
   /** idle, busy or locked, while online. */
@@ -1470,6 +1478,10 @@ export interface Device {
   blockedActions: string[]
   lastSeenAt: string | null
   createdAt: string
+  /** Tools its app added itself (x-…), with their own input and output schemas. */
+  tools: DeviceActionSpec[]
+  /** Its saved items by kind (recordings, shortcuts, apps), for inputs marked x-items. */
+  items: Record<string, DeviceItem[]>
   /** The machine's own host name; null when its app is too old to send one. */
   hostname: string | null
   /** Whether the owner wants the agent app to update itself. */
@@ -1479,6 +1491,8 @@ export interface Device {
   createdByEmail: string | null
   updatedAt: string
 }
+
+export interface DeviceItem { id: string; name: string; description?: string }
 
 export interface DeviceActionSpec {
   action: string

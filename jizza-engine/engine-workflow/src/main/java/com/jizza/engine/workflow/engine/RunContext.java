@@ -33,8 +33,13 @@ import java.util.Map;
  *   "arrivals": { "nodeId": { "fromId": true } }, // which incoming paths reached a step
  *                                                 // (false: a branch went the other way)
  *   "state":    { "nodeId": { ... } },            // a step's own bookkeeping between attempts
+ *   "joinDeadlines": { "joinId": "..." },         // when a join stops waiting (its timer runs
+ *                                                 // from the first path that reaches it)
+ *   "abandoned": { "nodeId": "joinId" },          // steps a timed-out join stopped waiting for
  *   "result":   { ... },                          // what the run produced, for a parent run
  *   "parent":   { "runId": "...", "nodeId": "..." },
+ *   "browser":  { "deviceId": "...", "sessionId": "...", "opened": true },
+ *                                                 // browser affinity; inherited sessions are not owned
  *   "depth":    0,                                // how deep in sub-workflows this run is
  *   "legacy":   true                              // started before parallel paths existed
  * }
@@ -44,6 +49,13 @@ import java.util.Map;
  * once: a path parked on a wait or a question does not hold up the others.
  */
 public final class RunContext {
+
+  public record Browser(java.util.UUID deviceId, java.util.UUID workspaceId, String sessionId,
+                        boolean opened) {
+    public Browser(java.util.UUID deviceId, String sessionId, boolean opened) {
+      this(deviceId, null, sessionId, opened);
+    }
+  }
 
   private final ObjectNode root;
 
@@ -231,6 +243,49 @@ public final class RunContext {
         .map(Map.Entry::getKey).toList();
   }
 
+  // ── join timeouts: when a join stops waiting, and the work it left behind ─
+
+  /** When the join gives up on the paths still missing; null while its timer has not started. */
+  public Instant joinDeadline(String joinId) {
+    JsonNode value = root.path("joinDeadlines").path(joinId);
+    return value.isTextual() ? Instant.parse(value.asText()) : null;
+  }
+
+  /** Every join whose timer is running, by id. */
+  public Map<String, Instant> joinDeadlines() {
+    Map<String, Instant> out = new LinkedHashMap<>();
+    root.path("joinDeadlines").fields().forEachRemaining(e -> {
+      if (e.getValue().isTextual()) out.put(e.getKey(), Instant.parse(e.getValue().asText()));
+    });
+    return out;
+  }
+
+  public void startJoinTimer(String joinId, Instant deadline) {
+    ObjectNode deadlines = root.has("joinDeadlines") && root.get("joinDeadlines").isObject()
+        ? (ObjectNode) root.get("joinDeadlines") : root.putObject("joinDeadlines");
+    deadlines.put(joinId, deadline.toString());
+  }
+
+  public void stopJoinTimer(String joinId) {
+    if (root.path("joinDeadlines").isObject()) ((ObjectNode) root.get("joinDeadlines")).remove(joinId);
+  }
+
+  /** Records that {@code nodeId} was dropped because {@code joinId} stopped waiting for it. */
+  public void abandon(String nodeId, String joinId) {
+    ObjectNode abandoned = root.has("abandoned") && root.get("abandoned").isObject()
+        ? (ObjectNode) root.get("abandoned") : root.putObject("abandoned");
+    abandoned.put(nodeId, joinId);
+  }
+
+  /** The join that dropped this step, or null when it was not dropped. */
+  public String abandonedBy(String nodeId) {
+    JsonNode value = root.path("abandoned").path(nodeId);
+    return value.isTextual() ? value.asText() : null;
+  }
+
+  /** Removes a step from the waiting list without making it ready again. */
+  public void forgetParked(String nodeId) { parkedObject().remove(nodeId); }
+
   // ── a step's own bookkeeping, and what the run produced ──────────────────
 
   /** Scratch space a step keeps between its attempts, such as the child runs it started. */
@@ -242,6 +297,9 @@ public final class RunContext {
   }
 
   public boolean hasState(String nodeId) { return root.path("state").has(nodeId); }
+
+  /** A step's state, read without creating it; a missing node when it has none. */
+  public JsonNode peekState(String nodeId) { return root.path("state").path(nodeId); }
 
   /** Every run a step of this run started, as recorded in the steps' {@code children} lists. */
   public List<java.util.UUID> childRunIds() {
@@ -285,6 +343,102 @@ public final class RunContext {
   }
 
   public JsonNode vars() { return root.path("vars"); }
+
+  public Browser browser() {
+    JsonNode value = root.path("browser");
+    if (!value.isObject() || !value.path("deviceId").isTextual()
+        || !value.path("sessionId").isTextual()) return null;
+    try {
+      return new Browser(java.util.UUID.fromString(value.get("deviceId").asText()),
+          uuid(value.path("workspaceId")), value.get("sessionId").asText(),
+          value.path("opened").asBoolean(false));
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  public void setBrowser(Browser browser) {
+    if (browser == null) {
+      root.remove("browser");
+      return;
+    }
+
+    ObjectNode value = root.putObject("browser").put("deviceId", browser.deviceId().toString())
+        .put("sessionId", browser.sessionId()).put("opened", browser.opened());
+    if (browser.workspaceId() != null) value.put("workspaceId", browser.workspaceId().toString());
+  }
+
+  public boolean needsNewBrowserSession() {
+    return root.path("_browserNeedsNewSession").asBoolean(false);
+  }
+
+  public void requireNewBrowserSession() {
+    root.put("_browserNeedsNewSession", true);
+  }
+
+  void browserSessionStarted() {
+    root.remove("_browserNeedsNewSession");
+  }
+
+  void rememberOwnedBrowser(Browser browser) {
+    if (browser == null || !browser.opened()) return;
+    var owned = root.withArray("_browserOwned");
+    for (JsonNode value : owned) {
+      if (sameBrowser(value, browser.deviceId(), browser.sessionId())) return;
+    }
+    ObjectNode value = owned.addObject().put("deviceId", browser.deviceId().toString())
+        .put("sessionId", browser.sessionId());
+    if (browser.workspaceId() != null) value.put("workspaceId", browser.workspaceId().toString());
+  }
+
+  void forgetOwnedBrowser(java.util.UUID deviceId, String sessionId) {
+    var owned = root.withArray("_browserOwned");
+    for (int i = owned.size() - 1; i >= 0; i--) {
+      if (sameBrowser(owned.get(i), deviceId, sessionId)) owned.remove(i);
+    }
+  }
+
+  java.util.List<Browser> ownedBrowsers() {
+    java.util.LinkedHashMap<String, Browser> browsers = new java.util.LinkedHashMap<>();
+    for (JsonNode value : root.withArray("_browserOwned")) {
+      java.util.UUID deviceId = uuid(value.path("deviceId"));
+      if (deviceId != null && value.path("sessionId").isTextual()) {
+        Browser browser = new Browser(deviceId, uuid(value.path("workspaceId")),
+            value.get("sessionId").asText(), true);
+        browsers.put(deviceId + ":" + browser.sessionId(), browser);
+      }
+    }
+    Browser current = browser();
+    if (current != null && current.opened()) {
+      browsers.put(current.deviceId() + ":" + current.sessionId(), current);
+    }
+    return java.util.List.copyOf(browsers.values());
+  }
+
+  private boolean sameBrowser(JsonNode value, java.util.UUID deviceId, String sessionId) {
+    return value.path("deviceId").asText().equals(deviceId.toString())
+        && value.path("sessionId").asText().equals(sessionId);
+  }
+
+  private java.util.UUID uuid(JsonNode value) {
+    if (!value.isTextual()) return null;
+    try {
+      return java.util.UUID.fromString(value.asText());
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  void recordBrowserAction(String action) { root.put("_browserLastAction", action); }
+
+  String lastBrowserAction() {
+    return root.path("_browserLastAction").isTextual()
+        ? root.get("_browserLastAction").asText() : null;
+  }
+
+  boolean browserCleanupDone() { return root.path("_browserCleanupDone").asBoolean(false); }
+
+  void recordBrowserCleanup() { root.put("_browserCleanupDone", true); }
 
   /** The variable bindings every expression and template in a run is evaluated against. */
   public Map<String, Object> variables() {

@@ -36,9 +36,16 @@ public interface Devices {
   record EnrollmentToken(UUID id, String name, String token, int usesLeft, Instant expiresAt,
                          List<String> tags, UUID createdBy, Instant createdAt, boolean revoked) {}
 
-  /** Null fields are left as they are. */
+  /**
+   * Null fields are left as they are.
+   *
+   * @param toolTypes what each tool the device added itself does, for the guardrails; a tool left
+   *                  out keeps its type, and a tool never set is judged as moving money
+   */
   record DeviceChanges(String name, List<String> tags, Boolean shellEnabled,
-                       List<String> blockedActions, Boolean autoUpdate) {}
+                       List<String> blockedActions,
+                       java.util.Map<String, com.jizza.engine.api.enums.ActionType> toolTypes,
+                       Boolean autoUpdate) {}
 
   /** The person's own devices and the workspace's shared ones. */
   List<DeviceDto> list(UUID workspaceId, UUID userId);
@@ -89,4 +96,13 @@ public interface Devices {
 
   record DeviceFile(UUID id, UUID deviceId, UUID commandId, String name, String contentType,
                     long size, byte[] content) {}
+
+  /** What the Jizza app on this person's phone may do with their account. */
+  default PhoneAccess phoneAccess(UUID deviceId) {
+    return PhoneAccess.APPROVE;
+  }
+
+  default PhoneAccess setPhoneAccess(UUID deviceId, PhoneAccess access) {
+    throw new UnsupportedOperationException("Phone access is not stored here");
+  }
 }

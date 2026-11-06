@@ -379,24 +379,24 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
         user.isMfaEnabled() ? recoveryCodes.remaining(userId) : 0);
   }
 
-  /** Re-authenticate inside an existing session to unlock a high-risk route (R4). */
+  /**
+   * Re-authenticate inside an existing session to unlock a high-risk route (R4). The password alone
+   * is asked for: the session was already opened with the second factor, so asking for the
+   * authenticator code again on every sensitive action added friction without much more safety.
+   */
   @Override
   @Transactional
-  public void stepUp(UUID userId, UUID sessionId, String password, String code) {
+  public void stepUp(UUID userId, UUID sessionId, String password, java.time.Duration window) {
     throttle.check("step-up:" + sessionId);
     UserEntity user = users.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
     if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
       stepUpFailed(user, sessionId);
       throw new AuthException("Password is not correct");
     }
-    boolean usedRecoveryCode = user.isMfaEnabled() && RecoveryCodes.looksLikeRecoveryCode(code);
-    if (user.isMfaEnabled() && !secondFactorOk(user, code)) {
-      stepUpFailed(user, sessionId);
-      throw new AuthException("That verification code is not valid");
-    }
-    sessions.markStepUp(sessionId);
-    audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(), null);
-    if (usedRecoveryCode) recoveryCodeSpent(user);
+    if (window == null) sessions.markStepUp(sessionId);
+    else sessions.markStepUp(sessionId, window);
+    audit.record(userId, ActorType.USER, userId, "auth.step_up.ok", user.getEmail(),
+        window == null ? null : Json.obj().put("rememberMinutes", window.toMinutes()));
   }
 
   /**

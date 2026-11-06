@@ -37,6 +37,9 @@ public class SecurityConfig {
   public static final String[] PUBLIC_ENDPOINTS = {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
       "/api/auth/recover", "/api/auth/recover/**", "/api/auth/invitations/*",
+      // Smart sign-in: the login page asks for a QR code and waits for a phone to approve it.
+      "/api/auth/smart-sign-in/config", "/api/auth/smart-sign-in/start",
+      "/api/auth/smart-sign-in/attempts/**",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/**",
       // Paired devices sign in with their own key and short-lived token, never a session.
       "/agent/v1/**",
@@ -131,13 +134,26 @@ public class SecurityConfig {
         detail == null ? "" : detail.replace("\"", "'")));
   }
 
-  private CorsConfigurationSource corsSource(SecurityProperties props) {
+  static CorsConfigurationSource corsSource(SecurityProperties props) {
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    // Registered first, so it wins for device paths. A browser-extension agent sends its own
+    // origin (chrome-extension://<id>), which the app's origin list never holds; without this the
+    // CORS filter refuses its sign-in and its WebSocket handshake with 403. No credentials: device
+    // calls are signed with the device key or its bearer token, never a session cookie.
+    CorsConfiguration agent = new CorsConfiguration();
+    List<String> agentOrigins = new java.util.ArrayList<>(props.getCors().getAgentOriginPatterns());
+    agentOrigins.addAll(props.getCors().getAllowedOrigins());
+    agent.setAllowedOriginPatterns(agentOrigins);
+    agent.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
+    agent.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+    agent.setAllowCredentials(false);
+    source.registerCorsConfiguration("/agent/v1/**", agent);
+
     CorsConfiguration config = new CorsConfiguration();
     config.setAllowedOrigins(props.getCors().getAllowedOrigins());
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(List.of("Content-Type", "X-XSRF-TOKEN", "Accept"));
     config.setAllowCredentials(true);
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", config);
     return source;
   }

@@ -11,8 +11,8 @@ function renderSidebar(snapshot = makeSnapshot()) {
 describe('Sidebar', () => {
   it('shows the personal sections, with Connectors, for a Personal account', () => {
     const nav = renderSidebar(makeSnapshot('PERSONAL'))
-    for (const label of ['Chat', 'Notifications', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Functions', 'Procedures',
-      'Connectors', 'Guardrails', 'Activity', 'Usage', 'Security']) {
+    for (const label of ['Chat', 'Notifications', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Recordings', 'Functions', 'Procedures',
+      'Connectors', 'Guardrails', 'Activity', 'Usage', 'Security', 'Help']) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }
     expect(nav.queryByRole('link', { name: 'Members' })).not.toBeInTheDocument()
@@ -28,7 +28,7 @@ describe('Sidebar', () => {
   it('shows only the Organization section, Notifications and Security for an Organization Owner', () => {
     const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER'))
     expect(nav.getByText('Organization')).toBeInTheDocument()
-    for (const label of ['Members', 'Connectors', 'Guardrails', 'Notifications', 'Security']) {
+    for (const label of ['Members', 'Connectors', 'Guardrails', 'Notifications', 'Security', 'Help']) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }
     for (const label of ['Chat', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Procedures', 'Activity', 'Usage']) {

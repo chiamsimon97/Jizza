@@ -65,10 +65,22 @@ public final class ApiClient {
     return send(method, path, body == null ? null : Json.write(body), false);
   }
 
+  /** As {@link #send}, with extra request headers. */
+  public Result sendWithHeaders(String method, String path, Object body,
+                                java.util.Map<String, String> headers) {
+    return send(method, path, body == null ? null : Json.write(body), true, headers);
+  }
+
   private Result send(String method, String path, String body, boolean withCsrf) {
+    return send(method, path, body, withCsrf, java.util.Map.of());
+  }
+
+  private Result send(String method, String path, String body, boolean withCsrf,
+                      java.util.Map<String, String> headers) {
     HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
         .timeout(Duration.ofSeconds(60))
         .header("accept", "application/json");
+    headers.forEach(request::header);
 
     if (body != null) {
       request.header("content-type", "application/json");

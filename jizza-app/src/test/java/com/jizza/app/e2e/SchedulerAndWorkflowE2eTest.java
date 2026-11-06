@@ -392,6 +392,106 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
   }
 
   @Test
+  void answeringAFailedStepWithStopEndsTheRunAndClearsTheQuestion() {
+    model.fallback = messages -> {
+      throw new IllegalStateException("upstream unavailable");
+    };
+    WorkflowGraph graph = new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            retrying("flaky", NodeType.AGENT_STEP, Json.obj()
+                .put("agentId", agentId("professional").toString())
+                .put("instruction", "try"), 1),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "flaky", null),
+            new WorkflowEdge("flaky", "finish", null)));
+    UUID workflowId = approvedWorkflow("Stoppable", graph);
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+    assertThat(run.json().path("status").asText()).isEqualTo("PAUSED_WAITING_INSTRUCTION");
+    var question = questionFor(runId);
+    assertThat(question.path("context").path("failedStep").asBoolean()).isTrue();
+
+    var answered = api.post("/api/notifications/" + question.path("id").asText() + "/answer",
+        Map.of("kind", "SUBMIT_INSTRUCTION", "instruction", "Stop the run"));
+
+    assertThat(answered.ok()).as(answered.body()).isTrue();
+    assertThat(answered.json().path("status").asText()).isEqualTo("SUBMITTED");
+    assertThat(api.get("/api/runs/" + runId).json().path("status").asText()).isEqualTo("CANCELLED");
+    assertThat(api.get("/api/notifications/" + question.path("id").asText()).json()
+        .path("status").asText()).isEqualTo("SUBMITTED");
+  }
+
+  @Test
+  void stoppingARunFromTheRunViewClosesWhatItAsked() {
+    model.fallback = messages -> {
+      throw new IllegalStateException("upstream unavailable");
+    };
+    WorkflowGraph graph = new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            retrying("flaky", NodeType.AGENT_STEP, Json.obj()
+                .put("agentId", agentId("professional").toString())
+                .put("instruction", "try"), 1),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "flaky", null),
+            new WorkflowEdge("flaky", "finish", null)));
+    UUID workflowId = approvedWorkflow("Stopped from the run", graph);
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+    var question = questionFor(runId);
+
+    var stopped = api.post("/api/runs/" + runId + "/cancel", Map.of());
+    assertThat(stopped.ok()).as(stopped.body()).isTrue();
+
+    var closed = api.get("/api/notifications/" + question.path("id").asText()).json();
+    assertThat(closed.path("status").asText()).isEqualTo("EXPIRED");
+    assertThat(closed.path("responseNote").asText()).contains("stopped");
+
+    // A stale screen that still shows the question gets a plain refusal; the item stays closed.
+    var late = api.post("/api/notifications/" + question.path("id").asText() + "/answer",
+        Map.of("kind", "SUBMIT_INSTRUCTION", "instruction", "Try again"));
+    assertThat(late.status()).isEqualTo(400);
+  }
+
+  @Test
+  void aQuestionLeftOpenByARunThatAlreadyEndedCanStillBeClearedByAnsweringIt() {
+    model.fallback = messages -> {
+      throw new IllegalStateException("upstream unavailable");
+    };
+    WorkflowGraph graph = new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            retrying("flaky", NodeType.AGENT_STEP, Json.obj()
+                .put("agentId", agentId("professional").toString())
+                .put("instruction", "try"), 1),
+            node("finish", NodeType.END, null)),
+        List.of(new WorkflowEdge("start", "flaky", null),
+            new WorkflowEdge("flaky", "finish", null)));
+    UUID workflowId = approvedWorkflow("Ended behind its question", graph);
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    UUID runId = UUID.fromString(run.json().path("id").asText());
+    var question = questionFor(runId);
+    // As runs ended before questions were closed with them: the run is over, the item still open.
+    var row = runs.findById(runId).orElseThrow();
+    row.setStatus(com.jizza.engine.api.enums.RunStatus.CANCELLED);
+    runs.save(row);
+
+    var answered = api.post("/api/notifications/" + question.path("id").asText() + "/answer",
+        Map.of("kind", "SUBMIT_INSTRUCTION", "instruction", "Stop and wait for me"));
+
+    assertThat(answered.ok()).as(answered.body()).isTrue();
+    assertThat(answered.json().path("status").asText()).isEqualTo("EXPIRED");
+    assertThat(api.get("/api/notifications/" + question.path("id").asText()).json()
+        .path("responseNote").asText()).contains("already ended");
+  }
+
+  private com.fasterxml.jackson.databind.JsonNode questionFor(UUID runId) {
+    var pending = api.get("/api/notifications");
+    return java.util.stream.StreamSupport.stream(pending.json().spliterator(), false)
+        .filter(n -> n.path("kind").asText().equals(NotificationKind.INSTRUCTION_REQUIRED.name()))
+        .filter(n -> n.path("runId").asText().equals(runId.toString()))
+        .findFirst().orElseThrow();
+  }
+
+  @Test
   void anInterventionPausesTheRunAndItSurvivesARestartBeforeResuming() {
     WorkflowGraph graph = new WorkflowGraph(
         List.of(node("start", NodeType.TRIGGER, null),
@@ -566,6 +666,42 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
       assertThat(steps.findByRunIdAndNodeId(runId, "count").orElseThrow().getOutput()
           .path("value").asLong()).isEqualTo(1);
       assertThat(api.get("/api/notifications").json().toString()).contains("Added pet-1, 1 so far");
+    }
+  }
+
+  @Test
+  void parallelWebhookCallsRunOnTheirOwnThreadsAndJoin() {
+    try (StubService service = new StubService()) {
+      WorkflowGraph graph = new WorkflowGraph(
+          List.of(node("start", NodeType.TRIGGER, null),
+              node("split", NodeType.PARALLEL, null),
+              node("rex", NodeType.HTTP_REQUEST, Json.obj().put("method", "POST")
+                  .put("url", service.baseUrl() + "/v1/pets").put("bodyExpr", "{'name': 'Rex'}")
+                  .set("headers", Json.obj().put("Authorization", "Bearer t-1"))),
+              node("tom", NodeType.HTTP_REQUEST, Json.obj().put("method", "POST")
+                  .put("url", service.baseUrl() + "/v1/pets").put("bodyExpr", "{'name': 'Tom'}")
+                  .set("headers", Json.obj().put("Authorization", "Bearer t-1"))),
+              node("join", NodeType.JOIN, Json.obj().put("timeout", "PT5M")),
+              node("count", NodeType.STORAGE, Json.obj().put("action", "increment")
+                  .put("key", "parallel-pets")),
+              node("finish", NodeType.END, null)),
+          List.of(new WorkflowEdge("start", "split", null),
+              new WorkflowEdge("split", "rex", "a"), new WorkflowEdge("split", "tom", "b"),
+              new WorkflowEdge("rex", "join", null), new WorkflowEdge("tom", "join", null),
+              new WorkflowEdge("join", "count", null), new WorkflowEdge("count", "finish", null)));
+      UUID workflowId = approvedWorkflow("Two pets at once", graph);
+
+      var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+      assertThat(run.ok()).as(run.body()).isTrue();
+      UUID runId = UUID.fromString(run.json().path("id").asText());
+
+      assertThat(run.json().path("status").asText()).isEqualTo("DONE");
+      assertThat(service.petsCreated.get()).isEqualTo(2);
+      var joined = steps.findByRunIdAndNodeId(runId, "join").orElseThrow().getOutput();
+      assertThat(joined.path("rex").path("status").asInt()).isBetween(200, 299);
+      assertThat(joined.path("tom").path("status").asInt()).isBetween(200, 299);
+      assertThat(steps.findByRunIdAndNodeId(runId, "count").orElseThrow().getStatus())
+          .isEqualTo(RunStepStatus.DONE);
     }
   }
 

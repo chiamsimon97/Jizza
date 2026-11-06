@@ -86,6 +86,8 @@ public abstract class E2eSupport {
     // trip on cross-test traffic rather than on anything the tests are asserting. Per-account
     // lockout is left at its real value, which is what the lockout test exercises.
     registry.add("jizza.security.lockout.auth-requests-per-minute", () -> "10000");
+    // The same holds for device enrollment and token sign-in, also limited per address.
+    registry.add("jizza.devices.auth-attempts-per-minute", () -> "10000");
     registry.add("jizza.security.master-key", () -> "F1jkQFbz3rMzsz6qKZDe1oI08Kj0jZ7t1v8sMoyGZ8Y=");
     registry.add("jizza.security.master-key-file", () -> "");
 

@@ -22,6 +22,8 @@ In code the apps are called **devices**, so they never clash with Jizza's AI age
 | `POST /agent/v1/push-token` | `{"provider":"apns"\|"fcm","token"}` so the server can wake a phone. |
 | `POST /agent/v1/keys/rotate` | `{"publicKey","signature"}`: the new key, signed by the current one. |
 | `GET /agent/v1/catalog` | The action catalog, to check a manifest before sending it. |
+| `POST /agent/v1/smart-sign-in/scan` | `{"code"}` from a scanned login QR → what to show before approving (section 11). |
+| `POST /agent/v1/smart-sign-in/decide` | `{"code","approve","signature"}`: approve or deny that sign-in (section 11). |
 
 Everything after sign-in carries `Authorization: Bearer jzd_…`. The token lasts 15 minutes; sign in
 again before it runs out. Over the WebSocket the token goes in the `Authorization` header of the
@@ -94,7 +96,7 @@ Every message, both directions, on both channels:
 | type | body | server answers |
 | --- | --- | --- |
 | `hello` | `{"protocol":[1], "appVersion", "osVersion", "token"?}` | `welcome` |
-| `manifest` | `{"actions":["browser.open@1",…], "capabilities":{"browser":{"allowedSites":[…]},…}, "limits"?}` | `ack` |
+| `manifest` | `{"actions":["browser.open@1",…], "capabilities":{"browser":{"allowedSites":[…]},…}, "limits"?, "tools"?, "items"?}` (§6.1) | `ack` |
 | `heartbeat` | `{"state":"idle"\|"busy"\|"locked"}` every `heartbeatSec` | nothing |
 | `accepted` | `{"commandId"}` | nothing |
 | `rejected` | `{"commandId","code","message"}` | nothing |
@@ -157,6 +159,40 @@ for the guardrails until the catalog adds them. The server only routes an action
 declared it (except `system.ping`, which every app answers), and checks inputs against the schema
 before sending.
 
+Browser devices and every `browser.*` action follow the shared
+[Web Automation Contract v1](web-automation-v1.md).
+
+### 6.1 The app's own tools and saved items
+
+Beyond the catalog, a manifest can describe **tools** the app adds itself and the **saved items**
+catalog actions take by id. Both show in the workflow builder's Device action step.
+
+```json
+"tools": [{"action": "x-acme.exportLedger", "version": 2, "title": "Export the ledger",
+           "description": "Writes the ledger to a CSV file",
+           "input": {"type": "object", "properties": {"ledger": {"type": "string"}}, "required": ["ledger"]},
+           "output": {"type": "object", "properties": {"rows": {"type": "integer"}}},
+           "timeoutSec": 60}],
+"items": {"shortcuts": [{"id": "Log water", "name": "Log water"}],
+          "apps": [{"id": "com.microsoft.Excel", "name": "Excel"}]}
+```
+
+* A tool's name is `x-<vendor>.<name>`; it needs no separate entry in `actions`. At most 50 tools,
+  each schema at most 16 KB. `input` defaults to any object; `timeoutSec` to 120 (1 to 86400).
+* The server checks a command's input against the tool's own `input` schema before sending it, and
+  the builder shows one field per property and offers `output` fields to later steps.
+* The server cannot check what a tool does, so the guardrails count it as moving money until the
+  device's owner says what it does (Settings › Devices, `PATCH /api/devices/{id}/tools/{action}`
+  `{"actionType":"READ"}`, step-up guarded). By default that never runs on its own.
+* `items` maps a kind (`[a-z][a-z0-9_]*`, at most 10 kinds) to at most 500 `{id, name,
+  description?}`. A catalog input that takes one says so with `"x-items": "<kind>"`:
+  `phone.shortcut.name` takes `shortcuts` and `ui.openApp.app` takes `apps`. The builder then
+  offers the device's list. (Browser recordings live on the server; see the Web Automation
+  Contract.)
+* Send a new manifest whenever tools or items change; each manifest replaces the last.
+
+A manifest whose tools or items break these rules gets `error` naming what is wrong.
+
 ## 7. Error codes
 
 `bad_message`, `unsupported_type`, `unsupported_version`, `unauthorized`, `not_found`,
@@ -166,9 +202,30 @@ before sending.
 ## 8. Push
 
 A phone that is not connected is woken by a push carrying no data beyond
-`{"type":"command"|"inbox"}`; the app then polls. The server has a `PushProvider` seam for APNs and
-FCM; without one configured, a phone picks up work at its next poll. A token the provider reports
-invalid is forgotten.
+`{"type":"command"|"inbox"}` and ids; the app then polls. A person's own phones are also sent
+`{"type":"run_failed","runId"}` whenever one of their runs fails (not a sub-workflow's run, whose
+failure reaches them through its parent), connected or not, once the failure is saved; the app
+reads the run and shows the alert. The server has a `PushProvider` seam for
+APNs and FCM; without one configured, a phone picks up work at its next poll. A token the provider
+reports invalid is forgotten.
+
+**FCM (Android)** is built in. Set `JIZZA_FCM_CREDENTIALS` to the path of the Firebase project's
+service account key file (Firebase console › Project settings › Service accounts › Generate new
+private key), kept outside the repository. The server signs in to Google with it and sends each
+push as a high-priority FCM data message; every data value is a string. The app registers its FCM
+token with `POST /agent/v1/push-token {"provider":"fcm","token":"…"}`. A missing or unreadable key
+file is logged at start-up and push stays off.
+
+**APNs (iPhone)** is built in too, with token-based sign-in. In the Apple Developer account, create
+an APNs auth key (Certificates, IDs & Profiles › Keys › Apple Push Notifications service) and keep
+the downloaded `AuthKey_XXXX.p8` outside the repository. Set `JIZZA_APNS_KEY_FILE` to its path,
+`JIZZA_APNS_KEY_ID` to its key id, `JIZZA_APNS_TEAM_ID` to the team id and `JIZZA_APNS_TOPIC` to
+the app's bundle id (default `com.jizza.ios`). Apps installed from Xcode get development tokens,
+so set `JIZZA_APNS_SANDBOX=true` for them; TestFlight and App Store builds use production. The app
+registers its token with `{"provider":"apns","token":"<hex>"}`. The ids go under the `jizza` key
+of the APNs payload. `inbox` and `run_failed` show a fixed alert ("Jizza needs your answer", "A
+run failed") collapsed per item, never the item's own text; other types are silent
+`content-available` wakes. A 410, `BadDeviceToken` or `DeviceTokenNotForTopic` forgets the token.
 
 ## 9. Conformance
 
@@ -179,6 +236,8 @@ An app conforms when it does what `SimDevice` does in each `DevicesE2eTest` scen
 2. answers a test connection (`system.ping`) over HTTPS long-polling;
 3. runs a Device action workflow step over the WebSocket and the run finishes with its output;
 4. an action it did not declare is refused before it is sent;
+   a tool it describes itself runs in a workflow once its owner types it, inputs that break its
+   schema are refused, and a manifest with a badly named tool gets `error`;
 5. refuses a command whose body was changed after signing (`bad_signature`);
 6. enrolls with an enrollment token and carries its tags;
 7. once revoked, can neither sign in nor poll;
@@ -199,3 +258,119 @@ java -cp jizza-device-sim/target/classes:$(mvn -q -pl jizza-device-sim dependenc
 ```
 
 The simulator answers `system.ping`, `system.info` and `notify.show`.
+
+## 11. Smart sign-in
+
+The Jizza login page can show a QR code instead of asking for a password. A phone paired by a
+person (not a shared machine enrolled with a token) can approve it, and the browser is then signed
+in to **that person's** account.
+
+1. The QR holds a URL: `https://<jizza>/smart-sign-in#<code>`. The code is everything after `#`.
+   Accept only URLs whose origin is the server the app is paired with, and whose path is
+   `/smart-sign-in`; ignore anything else.
+2. `POST /agent/v1/smart-sign-in/scan {"code"}` with the device token. The answer:
+   `{"id","browser","ip","createdAt","expiresAt","sameNetwork","state"}`. `browser` reads like
+   "Chrome on Windows". Scanning claims the code for this person: no other account can approve it.
+3. Show the browser, the IP and the time, and the warning "Only approve if you are signing in on a
+   screen in front of you right now." Ask for the phone's fingerprint, face or PIN (Android
+   `BiometricPrompt` with `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`) before an approval: the server
+   counts an approval from a paired phone as the second factor, so the app must check that the
+   phone's owner is holding it.
+4. Sign `jizza-smart-sign-in:v1:<code>:approve` (or `:deny`) with the device key, the same way as a
+   challenge nonce, and `POST /agent/v1/smart-sign-in/decide {"code","approve":true|false,
+   "signature"}`. The answer is `{"state":"APPROVED"|"DENIED"}`.
+
+Errors are problem details: 404 `smart-sign-in-unknown` (bad code), 410 `smart-sign-in-expired`
+(codes last 2 minutes), 409 `smart-sign-in-used` (already answered, or claimed by another account),
+401 `bad_signature`, 401 `device_not_personal`.
+
+## 12. The Jizza app on your phone
+
+The Jizza app is a hands-on companion, not a copy of the web app: it shows a person their runs,
+approvals, usage, activity, devices, agents and guardrails, and lets them approve, run, cancel and
+Pause all from the phone. It uses the same pairing and device key as everything above.
+
+### Signing in on the phone
+
+Besides scanning the pairing QR from Settings › Devices, the app can sign in by itself:
+
+1. `POST /agent/v1/login {"email","password"}` → `{"mfaRequired":true,"mfaToken":"…"}`.
+2. `POST /agent/v1/login/mfa {"mfaToken","code"}` → `{"pairingCode":"482913","expiresAt","pairUrl"}`.
+3. Enroll with that code (`POST /agent/v1/enroll`, section 2), check `fp` from `pairUrl` as usual,
+   then sign in with the device key.
+
+The login opens no session for the phone: the one it creates is closed again at once. Two-step
+sign-in must be on, because a paired phone can approve a browser sign-in as the second factor
+(section 11). Without it the first call answers 403 `two-step-required`. Wrong passwords count
+towards the same lockouts as the web login.
+
+### Reading: `GET /agent/v1/me/…`
+
+Every call takes the device token, and only a phone a person paired gets an answer; a shared
+machine enrolled with a token gets 401 `device_not_personal`. Each route returns the same data as
+its `/api` twin for the phone's owner.
+
+| Route | What it returns |
+| --- | --- |
+| `/agent/v1/me` | `userId`, `workspaceId`, `deviceId`, `deviceName`, `access` |
+| `/agent/v1/me/today?tz=` | The Today screen: `waiting` (needsYou, urgent, unread), `runs` since local midnight (total, done, failed, running, waiting, `active` list), `spend`, `devices` (total, online, offline names), `paused` |
+| `/agent/v1/me/notifications[?unreadOnly=]`, `/notifications/summary`, `/notifications/{id}` | The inbox, as `/api/notifications` |
+| `/agent/v1/me/runs?status=&workflowId=&from=&to=&q=&limit=&offset=&tz=`, `/runs/{id}/trace` | Run history, as `/api/runs` (limit at most 100) |
+| `/agent/v1/me/workflows` | id, name, description, status, version, inputSchema |
+| `/agent/v1/me/usage`, `/usage/entries?limit=` | As `/api/usage/summary` and `/entries` |
+| `/agent/v1/me/activity?limit=&action=` | As `/api/activity` |
+| `/agent/v1/me/guardrails` | As `/api/guardrails` |
+| `/agent/v1/me/devices` | As `/api/devices` |
+| `/agent/v1/me/agents` | id, name, description, status, enabled, modelTier, monthlyCostLimit, parentAgentId (no instructions) |
+| `/agent/v1/me/help` | The web's Help guides (jizza-client/src/help/guides): slug, title, summary, section, order, updated |
+| `/agent/v1/me/help/{slug}` | One guide with its Markdown `body`, header removed |
+
+### Acting: signed requests
+
+A call that changes something must be signed with the device key, which the app unlocks with the
+person's fingerprint, face or PIN (Android `BiometricPrompt` with `BIOMETRIC_STRONG or
+DEVICE_CREDENTIAL`). The app signs
+
+```
+jizza-mobile:v1:<METHOD>:<path>:<signedAt>:<nonce>:<base64url SHA-256 of the exact body bytes, no padding>
+```
+
+where `path` is the request path without the query, `signedAt` is milliseconds since 1970 and
+`nonce` is fresh random text (at most 100 characters), and sends the three as headers
+`X-Jizza-Signature` (base64 signature, as for a challenge), `X-Jizza-Signed-At` and
+`X-Jizza-Nonce`. An empty body hashes the empty string. The server refuses a signature more than
+two minutes from its clock (401 `signature_expired`), one it has already seen from that phone
+(401 `replayed`) and one that does not match (401 `bad_signature`).
+
+| Route | Body | Needs |
+| --- | --- | --- |
+| `POST /agent/v1/me/notifications/{id}/answer` | `{"kind","instruction","feedback"}`, kind APPROVE, DENY or SUBMIT_INSTRUCTION | approve |
+| `POST /agent/v1/me/notifications/{id}/read` | empty: marks it read, as opening it on the web does | read |
+| `POST /agent/v1/me/notifications/{id}/snooze` | `{"until"}` (empty brings it back) | approve |
+| `POST /agent/v1/me/notifications/{id}/archive` | `{"archived"}` (default true; false brings it back) | approve |
+| `POST /agent/v1/me/notifications/{id}/always-allow` | empty: saves an allow rule for that agent and `context.tool`, then approves (open PERMISSION_REQUEST only) | full |
+| `POST /agent/v1/me/pause` | `{"paused":true}` | approve |
+| `POST /agent/v1/me/pause` | `{"paused":false}` | full |
+| `POST /agent/v1/me/agents/{id}/enabled` | `{"enabled":false}` | approve |
+| `POST /agent/v1/me/agents/{id}/enabled` | `{"enabled":true}` | full |
+| `POST /agent/v1/me/workflows/{id}/run` | `{"input":{…},"version"}` | full |
+| `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
+| `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
+
+### Ask
+
+`POST /agent/v1/me/ask {"question","tz"}` (device token, not signed, read only) answers a question
+about the person's own Jizza in a few sentences, on the cheap model, from facts the server gathers:
+today's numbers, the last 7 days of runs, workflows, active runs and what waits for them. It
+answers `{"answer", "command"}`. `command` is null or one of `RUN_WORKFLOW` (with `workflowId`, only a
+workflow that runs without input), `CANCEL_RUN` (with `runId`, only an active run), `PAUSE_ALL` or
+`RESUME_ALL`, each with a `label`. The app shows it as a card to confirm with the fingerprint and
+then calls that action's signed route above; asking itself changes nothing. Spend is recorded as
+`phone-ask` and the budget applies.
+
+### Phone access
+
+The owner chooses what the app may do in Settings › Devices › Details on that phone (or
+`PUT /api/devices/{id}/phone-access {"access":"FULL"}` with READ, APPROVE or FULL, step-up guarded): read
+only; read and approve (the default); or full. A call beyond it answers 403 `phone-access`. Every
+change from a phone is in the activity log as `device.phone.*` with the phone's id and name.

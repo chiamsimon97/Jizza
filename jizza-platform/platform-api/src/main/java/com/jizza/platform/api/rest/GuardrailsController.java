@@ -54,6 +54,9 @@ public class GuardrailsController {
   public record Simulation(@NotNull UUID agentId, @NotBlank String toolRef, JsonNode args,
                            UUID workflowId, String nodeId) {}
 
+  /** The agents that maintain a workflow, lead first; empty goes back to the owner or Jizza. */
+  public record MaintainersRequest(List<UUID> agentIds) {}
+
   public record QuietHoursRequest(LocalTime start, LocalTime end, String timeZone) {}
 
   private final GuardrailsUseCase guardrails;
@@ -75,6 +78,15 @@ public class GuardrailsController {
   @GetMapping("/workflows/{workflowId}")
   public GuardrailsUseCase.WorkflowGuardrails workflow(@PathVariable UUID workflowId) {
     return guardrails.workflow(CurrentUser.userId(), workflowId);
+  }
+
+  /** Changing whose guardrails judge a workflow's runs can loosen them, so it needs a fresh sign-in. */
+  @AuthenticatedOnly
+  @StepUpRequired
+  @PutMapping("/workflows/{workflowId}/maintainers")
+  public GuardrailsUseCase.WorkflowGuardrails maintainers(@PathVariable UUID workflowId,
+                                                          @RequestBody MaintainersRequest request) {
+    return guardrails.setMaintainers(CurrentUser.userId(), workflowId, request.agentIds());
   }
 
   /** What would happen if this call were made now. Nothing runs and nothing is spent. */

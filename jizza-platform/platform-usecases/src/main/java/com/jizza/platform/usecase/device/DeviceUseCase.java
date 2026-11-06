@@ -84,7 +84,8 @@ public class DeviceUseCase {
     DeviceDto updated = devices.update(device.id(), changes);
     audit.record(access.userId(), ActorType.USER, null, "device.updated", updated.name(),
         Json.obj().put("deviceId", device.id().toString())
-            .put("shellEnabled", updated.shellEnabled()).put("autoUpdate", updated.autoUpdate()));
+            .put("shellEnabled", updated.shellEnabled()).put("autoUpdate", updated.autoUpdate())
+            .set("toolTypes", changes.toolTypes() == null ? null : Json.toNode(changes.toolTypes())));
     return updated;
   }
 
@@ -95,6 +96,25 @@ public class DeviceUseCase {
         enabled ? "device.enabled" : "device.disabled", device.name(),
         Json.obj().put("deviceId", device.id().toString()));
     return changed;
+  }
+
+  /** What the Jizza app on the caller's own phone may do. Only the person who paired it sees it. */
+  public com.jizza.engine.api.device.PhoneAccess phoneAccess(Access access, UUID deviceId) {
+    return devices.phoneAccess(ownPhone(access, deviceId).id());
+  }
+
+  public com.jizza.engine.api.device.PhoneAccess setPhoneAccess(
+      Access access, UUID deviceId, com.jizza.engine.api.device.PhoneAccess level) {
+    return devices.setPhoneAccess(ownPhone(access, deviceId).id(), level);
+  }
+
+  private DeviceDto ownPhone(Access access, UUID deviceId) {
+    DeviceDto device = visible(access, deviceId);
+    if (!access.userId().equals(device.ownerUserId())) {
+      throw new ValidationException("Only the person who paired this device can change what it "
+          + "may do with their account");
+    }
+    return device;
   }
 
   public void revoke(Access access, UUID deviceId) {
@@ -159,7 +179,10 @@ public class DeviceUseCase {
   }
 
   public List<DeviceActionSpec> catalog() {
-    return catalog.all();
+    return catalog.all().stream()
+        .filter(action -> action.description() == null
+            || !action.description().startsWith("Deprecated:"))
+        .toList();
   }
 
   private boolean manager(Access access) {

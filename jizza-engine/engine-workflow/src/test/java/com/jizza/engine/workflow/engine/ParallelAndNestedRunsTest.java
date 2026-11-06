@@ -547,4 +547,179 @@ class ParallelAndNestedRunsTest {
         List.of(edge("start", "a"), edge("start", "b")))))
         .hasMessageContaining("may fork");
   }
+
+  // ── paths running at the same time, and join timeouts ────────────────────
+
+  /** start → split → (a, b) → join → finish, with each path and the join set by the test. */
+  private static WorkflowGraph split(WorkflowNode a, WorkflowNode b, String joinConfig) {
+    return new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            node("split", NodeType.PARALLEL, null), a, b,
+            node("join", NodeType.JOIN, joinConfig),
+            node("finish", NodeType.END, null)),
+        List.of(edge("start", "split"), new WorkflowEdge("split", "a", "a"),
+            new WorkflowEdge("split", "b", "b"), edge("a", "join"), edge("b", "join"),
+            edge("join", "finish")));
+  }
+
+  @Test
+  void parallelPathsRunAtTheSameTime() {
+    EngineHarness harness = new EngineHarness(split(node("a", NodeType.AGENT_STEP, agentStep()),
+        node("b", NodeType.AGENT_STEP, agentStep()), null));
+    // Each step waits until the other has started too: run one after the other, the first
+    // would give up waiting.
+    java.util.concurrent.CountDownLatch bothStarted = new java.util.concurrent.CountDownLatch(2);
+    harness.agentStepBehaviour = nodeId -> {
+      bothStarted.countDown();
+      try {
+        return bothStarted.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            ? NodeExecutor.Outcome.completed(Json.obj().put("text", "done " + nodeId))
+            : NodeExecutor.Outcome.permanentFailure("ran alone");
+      } catch (InterruptedException e) {
+        throw new IllegalStateException(e);
+      }
+    };
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    var joined = harness.step(run.id(), "join").orElseThrow().getOutput();
+    assertThat(joined.path("a").path("text").asText()).isEqualTo("done a");
+    assertThat(joined.path("b").path("text").asText()).isEqualTo("done b");
+  }
+
+  @Test
+  void aRetryingPathDoesNotHoldUpTheOtherAndStillJoinsOnce() {
+    EngineHarness harness = new EngineHarness(split(
+        new WorkflowNode("a", NodeType.AGENT_STEP, "a", Json.read(agentStep()),
+            new WorkflowNode.RetryPolicy(3, 1, 1.0, 10)),
+        node("b", NodeType.AGENT_STEP, agentStep()), null));
+    AtomicInteger aTries = new AtomicInteger();
+    harness.agentStepBehaviour = nodeId -> "a".equals(nodeId) && aTries.incrementAndGet() < 3
+        ? NodeExecutor.Outcome.retryable("flaky")
+        : NodeExecutor.Outcome.completed(Json.obj().put("text", "done " + nodeId));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(aTries.get()).isEqualTo(3);
+    assertThat(harness.step(run.id(), "a").orElseThrow().getAttempts()).isEqualTo(3);
+    assertThat(harness.agentStepRuns.get("b")).isEqualTo(1);
+    assertThat(harness.step(run.id(), "finish")).isPresent();
+  }
+
+  @Test
+  void oneStepAtATimeWhenParallelismIsTurnedDown() {
+    EngineHarness harness = new EngineHarness(split(node("a", NodeType.AGENT_STEP, agentStep()),
+        node("b", NodeType.AGENT_STEP, agentStep()), null));
+    harness.engine.setMaxConcurrentSteps(1);
+    AtomicInteger running = new AtomicInteger();
+    AtomicInteger most = new AtomicInteger();
+    harness.agentStepBehaviour = nodeId -> {
+      most.accumulateAndGet(running.incrementAndGet(), Math::max);
+      running.decrementAndGet();
+      return NodeExecutor.Outcome.completed(Json.obj());
+    };
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(most.get()).isEqualTo(1);
+  }
+
+  @Test
+  void aJoinStopsWaitingAnHourAfterTheFirstPathArrivesAndCarriesOn() {
+    EngineHarness harness = new EngineHarness(split(
+        node("a", NodeType.TRANSFORM, "{\"expression\":\"'from a'\"}"),
+        node("b", NodeType.HUMAN_INTERVENTION, "{\"prompt\":\"Which account?\"}"), null));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(RunContext.of(harness.run(run.id()).getContext()).joinDeadline("join"))
+        .isEqualTo(java.time.Instant.parse("2026-10-21T09:00:00Z"));
+
+    harness.clock.advance(Duration.ofMinutes(59));
+    assertThat(harness.engine.wake(run.id()).status())
+        .isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+
+    harness.clock.advance(Duration.ofMinutes(2));
+    var woken = harness.engine.wake(run.id());
+
+    assertThat(woken.status()).isEqualTo(RunStatus.DONE);
+    var joined = harness.step(run.id(), "join").orElseThrow().getOutput();
+    assertThat(joined.path("a").asText()).isEqualTo("from a");
+    assertThat(joined.has("b")).isFalse();
+    assertThat(joined.path("_timedOut").get(0).asText()).isEqualTo("b");
+    var dropped = harness.step(run.id(), "b").orElseThrow();
+    assertThat(dropped.getStatus()).isEqualTo(RunStepStatus.SKIPPED);
+    assertThat(dropped.getError()).contains("stopped waiting after 1 hour");
+  }
+
+  @Test
+  void aJoinCanFailTheRunWhenItsTimeRunsOut() {
+    EngineHarness harness = new EngineHarness(split(
+        node("a", NodeType.TRANSFORM, "{\"expression\":\"1\"}"),
+        node("b", NodeType.WAIT, "{\"duration\":\"PT1H\"}"),
+        "{\"timeout\":\"PT10M\",\"onTimeout\":\"fail\"}"));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(run.status()).isEqualTo(RunStatus.WAITING);
+
+    harness.clock.advance(Duration.ofMinutes(11));
+    var woken = harness.engine.wake(run.id());
+
+    assertThat(woken.status()).isEqualTo(RunStatus.FAILED);
+    assertThat(harness.run(run.id()).getError())
+        .contains("Join 'join' stopped waiting after 10 minutes").contains("b");
+  }
+
+  @Test
+  void theJoinTimerStartsWhenTheFirstPathArrivesNotWhenTheRunStarts() {
+    EngineHarness harness = new EngineHarness(split(
+        node("a", NodeType.WAIT, "{\"duration\":\"PT2H\"}"),
+        node("b", NodeType.WAIT, "{\"duration\":\"PT2H50M\"}"), null));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    harness.clock.advance(Duration.ofHours(2));
+    assertThat(harness.engine.wake(run.id()).status()).isEqualTo(RunStatus.WAITING);
+    // Three hours after the run started, but only 50 minutes after the first path arrived.
+    harness.clock.advance(Duration.ofMinutes(50));
+    var woken = harness.engine.wake(run.id());
+
+    assertThat(woken.status()).isEqualTo(RunStatus.DONE);
+    var joined = harness.step(run.id(), "join").orElseThrow().getOutput();
+    assertThat(joined.has("a")).isTrue();
+    assertThat(joined.has("b")).isTrue();
+    assertThat(joined.has("_timedOut")).isFalse();
+  }
+
+  @Test
+  void aJoinSetToNoTimeoutWaitsForEver() {
+    EngineHarness harness = new EngineHarness(split(
+        node("a", NodeType.TRANSFORM, "{\"expression\":\"1\"}"),
+        node("b", NodeType.HUMAN_INTERVENTION, "{\"prompt\":\"Which account?\"}"),
+        "{\"timeout\":\"none\"}"));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    harness.clock.advance(Duration.ofDays(3));
+
+    assertThat(harness.engine.wake(run.id()).status())
+        .isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(harness.engine.resume(run.id(), Json.obj().put("instruction", "savings")).status())
+        .isEqualTo(RunStatus.DONE);
+  }
+
+  @Test
+  void aJoinTimeoutMustBeADuration() {
+    assertThatThrownBy(() -> new WorkflowValidator().validate(split(
+        node("a", NodeType.TRANSFORM, "{\"expression\":\"1\"}"),
+        node("b", NodeType.TRANSFORM, "{\"expression\":\"2\"}"),
+        "{\"timeout\":\"an hour\"}")))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("ISO-8601");
+    assertThatThrownBy(() -> new WorkflowValidator().validate(split(
+        node("a", NodeType.TRANSFORM, "{\"expression\":\"1\"}"),
+        node("b", NodeType.TRANSFORM, "{\"expression\":\"2\"}"),
+        "{\"onTimeout\":\"skip\"}")))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("onTimeout");
+  }
 }

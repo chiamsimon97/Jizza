@@ -100,19 +100,24 @@ jizza:
     master-key: ${JIZZA_MASTER_KEY:}
     allow-env-master-key: true
     session:
-      idle-timeout: 30m
-      absolute-timeout: 12h
+      idle-timeout: 3d                # signed out after 3 days with no activity
+      absolute-timeout: 15d           # and always asked to sign in again after 15 days
       cookie-name: JIZZA_SESSION
       cookie-secure: ${JIZZA_COOKIE_SECURE:false}   # true wherever TLS terminates in front
       same-site: Strict
     step-up:
-      freshness: 5m
+      freshness: 15m                  # how long one password confirmation unlocks sensitive actions
       max-failures: 5                 # wrong step-up answers in a row before the session is revoked
     mfa:
       # Jizza holds memory, personal data and live credentials, so every account must use an
       # authenticator app. Until it is set up, a signed-in session can only reach the setup screens.
       required: ${JIZZA_MFA_REQUIRED:true}
       recovery-codes: 8
+    smart-sign-in:
+      # Sign a browser in by scanning the QR on the login page with a phone already signed in to
+      # Jizza (its browser, or the Jizza Agent app). Each code works once.
+      enabled: ${JIZZA_SMART_SIGN_IN:true}
+      lifetime: 2m
     registration:
       # Single-user: once the owner's account exists, nobody else can register.
       allow-additional-users: ${JIZZA_ALLOW_ADDITIONAL_USERS:false}
@@ -136,6 +141,8 @@ jizza:
       skew-steps: 1
     cors:
       allowed-origins: ${JIZZA_CORS_ORIGINS:http://localhost:5173}
+      # Browser-extension agents (Chrome, Edge, Ulaa...) call /agent/v1/** from their own origin.
+      agent-origin-patterns: ${JIZZA_AGENT_ORIGIN_PATTERNS:chrome-extension://*}
 
   agents:
     anthropic:
@@ -277,6 +284,15 @@ jizza:
     poll-interval: 20s
     stale-run-after: 30m
 
+  # Workflow runs. Ready HTTP, connector, MCP, agent and script steps on parallel paths run at the
+  # same time, up to max-concurrent-steps per run (1 runs them one after another). A Join stops
+  # waiting default-timeout after the first path reaches it, unless the step sets its own.
+  workflow:
+    parallel:
+      max-concurrent-steps: ${JIZZA_WORKFLOW_MAX_CONCURRENT_STEPS:8}
+    join:
+      default-timeout: ${JIZZA_WORKFLOW_JOIN_TIMEOUT:PT1H}
+
   notifications:
     permission-expiry: 24h
     review-expiry: 7d
@@ -286,6 +302,27 @@ jizza:
     max-reminders: 3
     email-escalation: true
     sweep-interval: 5m
+
+  # Paired devices. Push wakes a phone whose app is closed; without it phones pick up work when
+  # they next check in. JIZZA_FCM_CREDENTIALS is the path to the Firebase service account key
+  # (a JSON file kept outside the repository). See docs/agent-protocol-v1.md section 8.
+  devices:
+    push:
+      fcm:
+        credentials-file: ${JIZZA_FCM_CREDENTIALS:}
+      # Apple push for the iPhone app: the APNs auth key (.p8) from the Apple Developer account,
+      # its key id, the team id and the app's bundle id. Sandbox for apps installed from Xcode.
+      apns:
+        key-file: ${JIZZA_APNS_KEY_FILE:}
+        key-id: ${JIZZA_APNS_KEY_ID:}
+        team-id: ${JIZZA_APNS_TEAM_ID:}
+        topic: ${JIZZA_APNS_TOPIC:com.jizza.ios}
+        sandbox: ${JIZZA_APNS_SANDBOX:false}
+
+  # Web automation. Both options are off until turned on; see docs/web-automation.md.
+  webauto:
+    ai-fix-ranking: ${JIZZA_WEBAUTO_AI_FIX_RANKING:false}
+    fast-replay: ${JIZZA_WEBAUTO_FAST_REPLAY:false}
 
   platform:
     queue:

@@ -57,10 +57,16 @@ public final class SimDevice implements AutoCloseable {
   /** What a handler does when the command should fail rather than succeed. */
   public static final class Failure extends RuntimeException {
     public final String code;
+    public final JsonNode output;
 
     public Failure(String code, String message) {
+      this(code, message, null);
+    }
+
+    public Failure(String code, String message, JsonNode output) {
       super(message);
       this.code = code;
+      this.output = output;
     }
   }
 
@@ -71,6 +77,8 @@ public final class SimDevice implements AutoCloseable {
   private final boolean p256;
   private final Map<String, Function<JsonNode, JsonNode>> handlers = new LinkedHashMap<>();
   private final ObjectNode capabilities = json.createObjectNode();
+  private final ArrayNode tools = json.createArrayNode();
+  private final ObjectNode items = json.createObjectNode();
   private final List<JsonNode> received = new CopyOnWriteArrayList<>();
   private final List<String> seenNonces = Collections.synchronizedList(new ArrayList<>());
 
@@ -81,6 +89,8 @@ public final class SimDevice implements AutoCloseable {
   private String token;
   private WebSocket socket;
   private boolean autoRun = true;
+  private String keyStorage;
+  private String origin;
 
   public SimDevice(String baseUrl) {
     this(baseUrl, false);
@@ -122,6 +132,21 @@ public final class SimDevice implements AutoCloseable {
     return this;
   }
 
+  /** Uses the key-storage name a real platform sends during enrollment. */
+  public SimDevice keyStorage(String storage) {
+    this.keyStorage = storage;
+    return this;
+  }
+
+  /**
+   * Sends this {@code Origin} header on every request and on the WebSocket handshake, as a
+   * browser extension does (for example {@code chrome-extension://<id>}).
+   */
+  public SimDevice origin(String origin) {
+    this.origin = origin;
+    return this;
+  }
+
   /** Declares an action (as {@code name} or {@code name@version}) and what running it returns. */
   public SimDevice handle(String action, Function<JsonNode, JsonNode> handler) {
     handlers.put(action, handler);
@@ -131,6 +156,22 @@ public final class SimDevice implements AutoCloseable {
   /** A capability and its local limits, sent in the manifest. */
   public SimDevice capability(String name, ObjectNode limits) {
     capabilities.set(name, limits == null ? json.createObjectNode() : limits);
+    return this;
+  }
+
+  /**
+   * A tool of the app's own, described in the manifest so workflows and chat can use it:
+   * {@code {"action":"x-acme.export","version":1,"title","input":{JSON Schema},"output"?}}.
+   */
+  public SimDevice tool(ObjectNode declaration, Function<JsonNode, JsonNode> handler) {
+    tools.add(declaration);
+    handlers.put(declaration.path("action").asText(), handler);
+    return this;
+  }
+
+  /** Saved items of one kind (recordings, shortcuts, apps), as {@code [{"id","name"}]}. */
+  public SimDevice items(String kind, ArrayNode list) {
+    items.set(kind, list);
     return this;
   }
 
@@ -155,7 +196,7 @@ public final class SimDevice implements AutoCloseable {
     body.put(field, secret);
     body.put("publicKey", (p256 ? "p256:" : "ed25519:")
         + Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()));
-    body.put("keyStorage", p256 ? "secure_enclave" : "file");
+    body.put("keyStorage", keyStorage == null ? (p256 ? "secure_enclave" : "file") : keyStorage);
     body.put("name", name);
     body.put("platform", platform);
     body.put("osVersion", "sim-1");
@@ -218,6 +259,8 @@ public final class SimDevice implements AutoCloseable {
     ArrayNode actions = body.putArray("actions");
     handlers.keySet().forEach(actions::add);
     body.set("capabilities", capabilities);
+    if (!tools.isEmpty()) body.set("tools", tools);
+    if (!items.isEmpty()) body.set("items", items);
     return send("manifest", body);
   }
 
@@ -238,12 +281,13 @@ public final class SimDevice implements AutoCloseable {
 
   /** Uploads a result file for a command and returns its id. */
   public String upload(UUID commandId, String name, byte[] content) {
-    HttpRequest req = HttpRequest.newBuilder(base.resolve("agent/v1/files?commandId=" + commandId
+    HttpRequest.Builder req = HttpRequest.newBuilder(base.resolve("agent/v1/files?commandId=" + commandId
             + "&name=" + java.net.URLEncoder.encode(name, StandardCharsets.UTF_8)))
         .header("Authorization", "Bearer " + token)
         .header("Content-Type", "application/octet-stream")
-        .PUT(HttpRequest.BodyPublishers.ofByteArray(content)).build();
-    return read(exchange(req)).path("fileId").asText();
+        .PUT(HttpRequest.BodyPublishers.ofByteArray(content));
+    if (origin != null) req.header("Origin", origin);
+    return read(exchange(req.build())).path("fileId").asText();
   }
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
@@ -251,9 +295,10 @@ public final class SimDevice implements AutoCloseable {
   /** Opens the socket with the token in the header, then says hello and sends the manifest. */
   public void connect() {
     String ws = base.toString().replaceFirst("^http", "ws") + "agent/v1/ws";
-    socket = http.newWebSocketBuilder()
-        .header("Authorization", "Bearer " + token)
-        .buildAsync(URI.create(ws), new Listener()).join();
+    WebSocket.Builder builder = http.newWebSocketBuilder()
+        .header("Authorization", "Bearer " + token);
+    if (origin != null) builder.header("Origin", origin);
+    socket = builder.buildAsync(URI.create(ws), new Listener()).join();
     hello();
     sendManifest();
   }
@@ -336,6 +381,7 @@ public final class SimDevice implements AutoCloseable {
       result.set("output", output == null ? json.createObjectNode() : output);
     } catch (Failure f) {
       result.put("status", "failed").put("code", f.code).put("message", f.getMessage());
+      if (f.output != null) result.set("output", f.output);
     } catch (RuntimeException e) {
       result.put("status", "failed").put("code", "failed").put("message", String.valueOf(e.getMessage()));
     }
@@ -423,6 +469,7 @@ public final class SimDevice implements AutoCloseable {
     HttpRequest.Builder req = HttpRequest.newBuilder(base.resolve(path))
         .timeout(Duration.ofSeconds(60))
         .header("Accept", "application/json");
+    if (origin != null) req.header("Origin", origin);
     if (authenticated) req.header("Authorization", "Bearer " + token);
     if (body != null) {
       req.header("Content-Type", "application/json");
@@ -487,15 +534,20 @@ public final class SimDevice implements AutoCloseable {
    */
   public static void main(String[] args) throws Exception {
     if (args.length < 2) {
-      System.err.println("usage: SimDevice <server-url> <pairing-code> [name]");
+      System.err.println("usage: SimDevice <server-url> <pairing-code> [name] [--browser]");
       System.exit(2);
     }
+    boolean browser = java.util.Arrays.asList(args).contains("--browser");
     SimDevice device = new SimDevice(args[0]);
     device.handle("system.info", input -> device.json().createObjectNode()
         .put("os", "Simulator").put("hostname", "sim").put("user", System.getProperty("user.name")));
     device.handle("notify.show", input -> device.json().createObjectNode().put("shown", true));
     device.capability("system", null).capability("notify", null);
-    device.enrollWithCode(args[1], args.length > 2 ? args[2] : "Simulated device", "linux");
+    if (browser) new FakeBrowser(device);
+    String name = args.length > 2 && !args[2].startsWith("--") ? args[2]
+        : browser ? "Simulated browser" : "Simulated device";
+    device.keyStorage(browser ? "browser" : "file");
+    device.enrollWithCode(args[1], name, browser ? "browser" : "linux");
     System.out.println("Paired as " + device.deviceId());
     device.signIn();
     device.connect();

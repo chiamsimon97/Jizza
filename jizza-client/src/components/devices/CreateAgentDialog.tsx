@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import QRCode from 'qrcode'
-import { Apple, CheckCircle2, Copy, Info, MonitorCog, Smartphone, X } from 'lucide-react'
+import { Apple, CheckCircle2, Copy, Globe2, Info, MonitorCog, Smartphone, X } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -21,6 +21,7 @@ const TABS: { os: InstallOs; label: string; icon: ReactNode }[] = [
   { os: 'macos', label: 'macOS', icon: <Apple className="h-5 w-5" aria-hidden="true" /> },
   { os: 'linux', label: 'Linux', icon: <LinuxIcon className="h-5 w-5" /> },
   { os: 'android', label: 'Android', icon: <Smartphone className="h-5 w-5" aria-hidden="true" /> },
+  { os: 'browser', label: 'Browser', icon: <Globe2 className="h-5 w-5" aria-hidden="true" /> },
 ]
 
 /** The installer links each tab offers, by the keys the server's installer map uses. */
@@ -29,6 +30,7 @@ const DOWNLOADS: Record<InstallOs, { key: string; label: string }[]> = {
   macos: [{ key: 'macos-arm64', label: 'ARM 64 bit (Apple silicon)' }, { key: 'macos-x64', label: 'x86 64 bit (Intel)' }],
   linux: [{ key: 'linux-x64', label: '64 bit' }],
   android: [{ key: 'android', label: 'Jizza Agent for Android' }],
+  browser: [{ key: 'browser-chromium', label: 'Extension for Chrome, Edge and other Chromium browsers' }],
 }
 
 const STEPS: Record<InstallOs, ReactNode[]> = {
@@ -60,6 +62,12 @@ const STEPS: Record<InstallOs, ReactNode[]> = {
     <>Open it and tap <b>Scan QR code</b>, then scan the code here. Or copy the key to the phone and tap <b>Paste installation key</b>.</>,
     'Allow the permissions it asks for, such as notifications.',
     <>Once it says it is paired, return to this browser window, then click <b>Next</b>.</>,
+  ],
+  browser: [
+    <>Until the extension is in the store, load it unpacked for testing: open <b className="font-mono">chrome://extensions</b>, turn on Developer mode, click <b>Load unpacked</b> and pick the extension folder.</>,
+    'Open the Jizza extension from the toolbar.',
+    'Copy the key and paste it into the extension when it asks for one.',
+    <>Once the key is submitted, return to this window, then click <b>Next</b>.</>,
   ],
 }
 
@@ -194,6 +202,7 @@ function Downloads({ os, links, loading }: { os: InstallOs; links?: Record<strin
     <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
       {os === 'macos' ? 'Download and run the installer: '
         : os === 'android' ? 'Install the app: '
+        : os === 'browser' ? 'Add the extension: '
         : "Download and run the installer for your system's architecture: "}
       {options.map((o, i) => (
         <span key={o.key}>
@@ -205,7 +214,7 @@ function Downloads({ os, links, loading }: { os: InstallOs; links?: Record<strin
       ))}
       {available.length === 0 && (
         <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-          The {os === 'android' ? 'Android' : 'desktop'} installer is not published yet. Your server admin can set its link with
+          The {os === 'android' ? 'Android app' : os === 'browser' ? 'browser extension' : 'desktop installer'} is not published yet. Your server admin can set its link with
           {' '}<code className="font-mono">jizza.devices.installers.{options[0].key}</code>.
         </p>
       )}

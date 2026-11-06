@@ -64,7 +64,34 @@ describe('api client', () => {
   it('an expired session signs the app out', async () => {
     fetchMock.mockResolvedValue(reply(401, { type: 'x/authentication', title: 'Authentication failed', status: 401 }))
     await expect(api.get('/api/agents')).rejects.toBeInstanceOf(ApiError)
-    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    await vi.waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false))
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/auth/me', expect.anything())
+  })
+
+  it('a refused call does not sign out while the session is still good', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(401, { type: 'x/authentication', title: 'Authentication failed', status: 401 }))
+      .mockResolvedValueOnce(reply(200, { userId: 'user-1' }))
+    await expect(api.get('/api/agents')).rejects.toBeInstanceOf(ApiError)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    await new Promise(r => setTimeout(r, 0))
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+  })
+
+  it('an unreachable server does not sign anyone out', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(401, { type: 'x/authentication', title: 'Authentication failed', status: 401 }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(api.get('/api/agents')).rejects.toBeInstanceOf(ApiError)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    await new Promise(r => setTimeout(r, 0))
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+  })
+
+  it('a connected app whose sign-in expired does not sign the person out', async () => {
+    fetchMock.mockResolvedValue(reply(401, { type: 'x/connection-expired', title: 'Authentication failed', status: 401 }))
+    await expect(api.get('/api/connections/1/test')).rejects.toBeInstanceOf(ApiError)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
   })
 
   it('a wrong password on sign-in does not sign anyone out', async () => {

@@ -113,16 +113,28 @@ public class SessionService {
       if (s.isRevoked() || now.isAfter(s.getIdleExpiresAt()) || now.isAfter(s.getAbsoluteExpiresAt())) {
         return Optional.empty();
       }
-      s.setLastSeenAt(now);
-      s.setIdleExpiresAt(now.plus(props.getSession().getIdleTimeout()));
-      return Optional.of(sessions.save(s));
+      // Only the two touched columns are written: a whole-row save here raced with other requests
+      // on the same session and could undo a step-up window or a revocation they had just saved.
+      sessions.touch(s.getId(), now, now.plus(props.getSession().getIdleTimeout()));
+      return Optional.of(s);
     });
   }
 
   @Transactional
   public void markStepUp(UUID sessionId) {
+    markStepUp(sessionId, null);
+  }
+
+  /**
+   * Records a step-up that unlocks sensitive actions for {@code window}, or for the configured
+   * freshness when it is null.
+   */
+  @Transactional
+  public void markStepUp(UUID sessionId, java.time.Duration window) {
     sessions.findById(sessionId).ifPresent(s -> {
-      s.setStepUpAt(Instant.now());
+      Instant now = Instant.now();
+      s.setStepUpAt(now);
+      s.setStepUpUntil(window == null ? null : now.plus(window));
       s.setStepUpFailures(0);
       sessions.save(s);
     });
@@ -162,9 +174,12 @@ public class SessionService {
 
   /** True when this session re-authenticated recently enough for a high-risk route (R4). */
   public boolean stepUpFresh(UUID sessionId) {
+    Instant now = Instant.now();
     return sessions.findById(sessionId)
-        .map(SessionEntity::getStepUpAt)
-        .filter(at -> at.isAfter(Instant.now().minus(props.getStepUp().getFreshness())))
+        .filter(s -> s.getStepUpAt() != null)
+        .filter(s -> s.getStepUpUntil() != null
+            ? now.isBefore(s.getStepUpUntil())
+            : s.getStepUpAt().isAfter(now.minus(props.getStepUp().getFreshness())))
         .isPresent();
   }
 

@@ -2,6 +2,8 @@ import { type FormEvent, type ReactNode, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, MonitorSmartphone, Plus, Search, Terminal } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
+import { useAuthStore } from '@/store/authStore'
+import { ACTION_LABELS, ACTION_TYPES } from '@/components/guardrails/labels'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -15,14 +17,14 @@ import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { Switch } from '@/components/ui/Switch'
 import { CreateAgentDialog } from '@/components/devices/CreateAgentDialog'
 import { PLATFORM_LABEL, PlatformIcon, agentKind, hostOf, stamp } from '@/components/devices/platform'
-import type { Device, DeviceCommand, DeviceEnrollmentToken } from '@/types'
+import type { ActionType, Device, DeviceCommand, DeviceEnrollmentToken, PhoneAccess } from '@/types'
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : 'That did not work'
 }
 
 /** Keys kept outside secure hardware are easier to copy off the machine. */
-const WEAK_KEY_STORAGE = new Set(['file'])
+const WEAK_KEY_STORAGE = new Set(['file', 'browser'])
 
 export function ago(iso: string | null, now = Date.now()): string {
   if (!iso) return 'never'
@@ -178,6 +180,7 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 
 function AgentDetailsDialog({ device, onClose }: { device: Device; onClose: () => void }) {
   const qc = useQueryClient()
+  const canUse = usePermission(PERMISSIONS.DEVICE_USE)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(device.name)
   const [tags, setTags] = useState(device.tags.join(', '))
@@ -231,7 +234,7 @@ function AgentDetailsDialog({ device, onClose }: { device: Device; onClose: () =
       </dl>
       {WEAK_KEY_STORAGE.has(device.keyStorage) && (
         <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-          Its key is kept in a file rather than secure hardware, so it is easier to copy off the machine.
+          Its key is kept outside secure hardware, so it is easier to copy off the machine.
         </p>
       )}
       {message && <p className="mt-3 text-sm text-gray-600 dark:text-gray-300" role="status">{message}</p>}
@@ -260,9 +263,39 @@ function AgentDetailsDialog({ device, onClose }: { device: Device; onClose: () =
           <div>
             <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">What it can do</h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              {device.actions.length ? device.actions.map(a => a.replace(/@\d+$/, '')).join(', ') : 'Nothing yet: its app has not sent what it can do.'}
+              {device.actions.length ? device.actions.filter(a => !a.startsWith('x-')).map(a => a.replace(/@\d+$/, '')).join(', ') : 'Nothing yet: its app has not sent what it can do.'}
             </p>
+            {Object.entries(device.items ?? {}).some(([, list]) => list.length > 0) && (
+              <p className="mt-1 text-xs text-gray-500">
+                Saved on it: {Object.entries(device.items).filter(([, list]) => list.length > 0).map(([kind, list]) => `${list.length} ${kind}`).join(', ')}. Workflow steps can pick from these.
+              </p>
+            )}
           </div>
+          {(device.tools ?? []).length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Tools its app added</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Jizza can't check what these do, so each counts as moving money until you say otherwise. By default your guardrails never let that run on its own.
+              </p>
+              <ul className="mt-2 flex flex-col gap-2">
+                {device.tools.map(t => (
+                  <li key={t.action} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{t.title}</span>
+                      <span className="ml-2 font-mono text-xs text-gray-500">{t.action}</span>
+                      {t.description && <span className="block text-xs text-gray-500">{t.description}</span>}
+                    </span>
+                    <select aria-label={`What ${t.title} does`} className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
+                      value={t.actionType} disabled={!canUse}
+                      onChange={e => run(() => devicesApi.updateTool(device.id, t.action, e.target.value as ActionType), `${t.title} now counts as: ${ACTION_LABELS[e.target.value as ActionType].label.toLowerCase()}.`)}>
+                      {ACTION_TYPES.map(a => <option key={a} value={a}>{ACTION_LABELS[a].label}</option>)}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <PhoneAccessSection device={device} />
           <CommandsList deviceId={device.id} />
           <LogsList deviceId={device.id} />
         </div>
@@ -272,6 +305,52 @@ function AgentDetailsDialog({ device, onClose }: { device: Device; onClose: () =
         <Button onClick={onClose}>Done</Button>
       </div>
     </Dialog>
+  )
+}
+
+const PHONE_ACCESS: { value: PhoneAccess; label: string; hint: string }[] = [
+  { value: 'READ', label: 'Read only', hint: 'See runs, usage, activity, devices and what is waiting.' },
+  { value: 'APPROVE', label: 'Read and approve', hint: 'Also answer approvals and questions, and Pause all.' },
+  { value: 'FULL', label: 'Full', hint: 'Also run workflows, cancel runs and resume after Pause all.' },
+]
+
+/** Only on a phone you paired yourself: what the Jizza app on it may do with your account. */
+function PhoneAccessSection({ device }: { device: Device }) {
+  const qc = useQueryClient()
+  const userId = useAuthStore(s => s.userId)
+  const mine = (device.platform === 'ANDROID' || device.platform === 'IOS') && device.ownerUserId !== null
+    && device.ownerUserId === userId
+  const access = useQuery({
+    queryKey: ['devices', device.id, 'phone-access'],
+    queryFn: () => devicesApi.phoneAccess(device.id),
+    enabled: mine,
+  })
+  const change = useMutation({
+    mutationFn: (value: PhoneAccess) => devicesApi.setPhoneAccess(device.id, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['devices', device.id, 'phone-access'] }),
+  })
+  if (!mine) return null
+  const current = access.data?.access
+  return (
+    <div>
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">What the Jizza app on it may do</h3>
+      <p className="mt-1 text-xs text-gray-500">
+        Every approval or command from the phone is signed with its key, which opens only with your fingerprint, face or PIN.
+      </p>
+      <div role="radiogroup" aria-label="Phone access" className="mt-2 grid gap-2 sm:grid-cols-3">
+        {PHONE_ACCESS.map(o => (
+          <label key={o.value} className={`flex cursor-pointer flex-col rounded-md border px-3 py-2 text-sm ${current === o.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40' : 'border-gray-200 dark:border-gray-700'}`}>
+            <span className="flex items-center gap-2 font-medium text-gray-900 dark:text-gray-100">
+              <input type="radio" name={`${device.id}-phone-access`} value={o.value} checked={current === o.value}
+                disabled={access.isLoading || change.isPending} onChange={() => change.mutate(o.value)} />
+              {o.label}
+            </span>
+            <span className="mt-0.5 text-xs text-gray-500">{o.hint}</span>
+          </label>
+        ))}
+      </div>
+      {change.isError && <p className="mt-2 text-sm text-red-600" role="alert">{errorText(change.error)}</p>}
+    </div>
   )
 }
 

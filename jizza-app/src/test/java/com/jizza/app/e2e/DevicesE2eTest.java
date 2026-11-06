@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.devicesim.FakeBrowser;
 import com.jizza.devicesim.SimDevice;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.enums.WorkflowStatus;
@@ -118,6 +119,24 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void aBrowserPairsWithItsPlatformKeyStorageAndWebManifest() {
+    new FakeBrowser(device);
+    device.keyStorage("browser");
+    device.enrollWithCode(pairingCode(), "Chrome on MacBook", "browser");
+    device.signIn();
+    assertThat(device.hello().path("type").asText()).isEqualTo("welcome");
+    assertThat(device.sendManifest().path("type").asText()).isEqualTo("ack");
+
+    JsonNode browser = api.get("/api/devices").json().get(0);
+    assertThat(browser.path("platform").asText()).isEqualTo("BROWSER");
+    assertThat(browser.path("keyStorage").asText()).isEqualTo("browser");
+    assertThat(browser.path("actions").toString())
+        .contains("browser.open@2", "browser.click@2", "browser.record@1");
+    assertThat(browser.path("capabilities").path("browser").path("family").asText())
+        .isEqualTo("chrome");
+  }
+
+  @Test
   void aPhoneWithAP256HardwareKeyPairsAndChecksTheServerKeyFingerprint() {
     var pairing = api.post("/api/devices/pairings", Map.of());
     String qr = pairing.json().path("qrPayload").asText();
@@ -153,6 +172,49 @@ class DevicesE2eTest extends E2eSupport {
   }
 
   @Test
+  void testConnectionRoundTripsOverTheWebSocket() {
+    pairAndSignIn();
+    device.connect();
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("SUCCEEDED");
+  }
+
+  @Test
+  void aBrowserExtensionPairsSignsInAndConnectsFromItsOwnOrigin() {
+    // A Chromium extension sends Origin: chrome-extension://<id> on every call, including the
+    // WebSocket handshake. The CORS filter used to refuse that origin with 403.
+    device.origin("chrome-extension://abcdefghijklmnopabcdefghijklmnop").keyStorage("browser");
+    device.enrollWithCode(pairingCode(), "Chromium browser", "browser");
+    device.signIn();
+    device.connect();
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("SUCCEEDED");
+  }
+
+  @Test
+  void aWebPageOriginStillCannotCallTheDeviceEndpoints() {
+    device.origin("https://evil.example");
+    assertThatThrownBy(() -> device.enrollWithCode(pairingCode(), "Page", "browser"))
+        .isInstanceOf(SimDevice.SimException.class)
+        .satisfies(e -> assertThat(((SimDevice.SimException) e).status).isEqualTo(403));
+  }
+
+  @Test
+  void aCommandSentOverTheWebSocketIsNotReportedAsWaitingForTheDevice() {
+    pairAndSignIn();
+    device.autoRun(false);
+    device.connect();
+    // Sent at once over the open socket, but nobody answers: the page must not say the device
+    // is not connected. The "dispatched" mark is written after the submit commits.
+    var tested = api.post("/api/devices/" + device.deviceId() + "/test", Map.of());
+    assertThat(tested.ok()).as(tested.body()).isTrue();
+    assertThat(tested.json().path("status").asText()).as(tested.body()).isEqualTo("DISPATCHED");
+    assertThat(device.received()).anyMatch(m -> "command".equals(m.path("type").asText()));
+  }
+
+  @Test
   void aWorkflowStepRunsOnTheDeviceOverTheWebSocket() throws Exception {
     pairAndSignIn();
     device.connect();
@@ -171,6 +233,78 @@ class DevicesE2eTest extends E2eSupport {
         .filter(m -> "command".equals(m.path("type").asText())).findFirst().orElseThrow();
     assertThat(command.path("sig").asText()).isNotBlank();
     assertThat(command.path("body").path("input").path("message").asText()).isEqualTo("Report is ready");
+  }
+
+  @Test
+  void aToolTheDeviceAddedRunsInAWorkflowWithItsOwnInputsChecked() throws Exception {
+    ObjectNode input = Json.obj().put("type", "object");
+    input.putArray("required").add("ledger");
+    input.putObject("properties").putObject("ledger").put("type", "string");
+    ObjectNode tool = Json.obj().put("action", "x-acme.exportLedger").put("version", 2)
+        .put("title", "Export the ledger").put("timeoutSec", 60);
+    tool.set("input", input);
+    tool.set("output", Json.obj().put("type", "object").set("properties",
+        Json.obj().set("rows", Json.obj().put("type", "integer"))));
+    device.tool(tool, in -> device.json().createObjectNode()
+        .put("rows", 42).put("ledger", in.path("ledger").asText()));
+    device.items("shortcuts", device.json().createArrayNode()
+        .add(device.json().createObjectNode().put("id", "Log water").put("name", "Log water")));
+    pairAndSignIn();
+    device.connect();
+
+    // The builder sees the tool with its schemas, and the saved items, on the device.
+    var shown = api.get("/api/devices/" + device.deviceId());
+    assertThat(shown.json().path("actions").toString()).contains("x-acme.exportLedger@2");
+    JsonNode described = shown.json().path("tools").get(0);
+    assertThat(described.path("title").asText()).isEqualTo("Export the ledger");
+    assertThat(described.path("input").path("required").get(0).asText()).isEqualTo("ledger");
+    assertThat(described.path("actionType").asText()).isEqualTo("MONEY");
+    assertThat(shown.json().path("items").path("shortcuts").get(0).path("name").asText())
+        .isEqualTo("Log water");
+    // The catalog says which input takes a saved Shortcut.
+    assertThat(api.get("/api/devices/catalog").body()).contains("\"x-items\":\"shortcuts\"");
+
+    UUID workflowId = approvedWorkflow(Json.obj().put("action", "x-acme.exportLedger")
+        .put("target", device.deviceId().toString())
+        .set("inputs", Json.obj().put("ledger", "2026-Q3")));
+    // Until the owner says what the tool does, it counts as moving money, which never runs alone.
+    var held = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    assertThat(held.json().path("status").asText()).as(held.body())
+        .isEqualTo("PAUSED_WAITING_INSTRUCTION");
+    assertThat(api.get("/api/runs/" + held.json().path("id").asText() + "/trace").body())
+        .contains("guardrails");
+    var typed = api.patch("/api/devices/" + device.deviceId() + "/tools/x-acme.exportLedger",
+        Map.of("actionType", "READ"));
+    assertThat(typed.json().path("tools").get(0).path("actionType").asText()).as(typed.body())
+        .isEqualTo("READ");
+
+    var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+    assertThat(run.ok()).as(run.body()).isTrue();
+    JsonNode finished = awaitRun(run.json().path("id").asText(), Duration.ofSeconds(20));
+    assertThat(finished.path("status").asText())
+        .as(api.get("/api/runs/" + run.json().path("id").asText() + "/trace").body()).isEqualTo("DONE");
+    assertThat(finished.toString()).contains("2026-Q3");
+
+    // Inputs that do not fit the device's own schema are refused before anything is sent.
+    UUID wrong = approvedWorkflow(Json.obj().put("action", "x-acme.exportLedger")
+        .put("target", device.deviceId().toString())
+        .set("inputs", Json.obj().put("year", 2026)));
+    var refused = api.post("/api/workflows/" + wrong + "/run", Map.of("version", 1));
+    assertThat(refused.json().path("status").asText()).as(refused.body())
+        .isEqualTo("PAUSED_WAITING_INSTRUCTION");
+    assertThat(api.get("/api/runs/" + refused.json().path("id").asText() + "/trace").body())
+        .contains("ledger");
+  }
+
+  @Test
+  void aManifestWithABadToolIsRefused() {
+    device.tool(Json.obj().put("action", "acme.notPrefixed"), in -> in);
+    device.enrollWithCode(pairingCode(), "Sim laptop", "windows");
+    device.signIn();
+    device.hello();
+    JsonNode answer = device.sendManifest();
+    assertThat(answer.path("type").asText()).as(answer.toString()).isEqualTo("error");
+    assertThat(answer.toString()).contains("x-acme.export");
   }
 
   @Test

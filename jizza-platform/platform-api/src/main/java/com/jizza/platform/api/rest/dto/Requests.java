@@ -51,7 +51,11 @@ public final class Requests {
 
   public record MfaCode(@NotBlank @Size(max = 32) String code) {}
 
-  public record StepUp(@NotBlank @Size(max = 256) String password, @Size(max = 32) String code) {}
+  /**
+   * {@code rememberMinutes}: 15, 60 or 180 to skip asking again for that long ("Auto-approve");
+   * 0 for this action only; absent for the server's configured freshness.
+   */
+  public record StepUp(@NotBlank @Size(max = 256) String password, Integer rememberMinutes) {}
 
   public record RecoverRequest(@Email @NotBlank @Size(max = 320) String email) {}
 

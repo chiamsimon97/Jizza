@@ -9,6 +9,7 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.queue.JobQueue;
 import com.jizza.engine.api.queue.JobTypes;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.webauto.RecordingIntake;
 import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.api.workflow.graph.WorkflowNode;
@@ -38,6 +39,10 @@ public class DeviceEventIntake {
 
   private static final Logger log = LoggerFactory.getLogger(DeviceEventIntake.class);
   private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9._-]{0,63}");
+  private static final String RECORDING_PREFIX = "browser.recording.";
+  private static final String DESKTOP_RECORDING_PREFIX = "desktop.recording.";
+  /** Handled before the ack, so the recording exists before the PC's first step is read. */
+  private static final String DESKTOP_STARTED = "desktop.recording.started";
   private static final int MAX_DATA = 64 * 1024;
 
   private final ObjectProvider<JobQueue> queue;
@@ -45,15 +50,17 @@ public class DeviceEventIntake {
   private final WorkflowRepository workflows;
   private final ObjectProvider<WorkflowEngine> engine;
   private final AuditLog audit;
+  private final ObjectProvider<RecordingIntake> recordingIntake;
 
   public DeviceEventIntake(ObjectProvider<JobQueue> queue, DeviceRepository devices,
                            WorkflowRepository workflows, ObjectProvider<WorkflowEngine> engine,
-                           AuditLog audit) {
+                           AuditLog audit, ObjectProvider<RecordingIntake> recordingIntake) {
     this.queue = queue;
     this.devices = devices;
     this.workflows = workflows;
     this.engine = engine;
     this.audit = audit;
+    this.recordingIntake = recordingIntake;
   }
 
   @PostConstruct
@@ -76,7 +83,7 @@ public class DeviceEventIntake {
     if (userId != null) payload.put("userId", userId.toString());
     payload.set("data", data);
     JobQueue q = queue.getIfAvailable();
-    if (q == null) {
+    if (q == null || DESKTOP_STARTED.equals(name)) {
       handle(payload);
     } else {
       q.enqueue(userId, JobTypes.DEVICE_EVENT, payload);
@@ -91,6 +98,12 @@ public class DeviceEventIntake {
     UUID owner = device.getOwnerUserId() != null ? device.getOwnerUserId() : device.getEnrolledBy();
     if (owner == null) return 0;
     String name = payload.path("name").asText();
+    if (name.startsWith(RECORDING_PREFIX) || name.startsWith(DESKTOP_RECORDING_PREFIX)) {
+      // A recording is a person working in their browser; its events never start workflows.
+      RecordingIntake recordings = recordingIntake.getIfAvailable();
+      if (recordings != null) recordings.accept(deviceId, owner, name, payload.path("data"));
+      return 0;
+    }
     WorkflowEngine runner = engine.getIfAvailable();
     if (runner == null) return 0;
     ObjectNode input = Json.obj().put("event", name).put("deviceId", deviceId.toString())

@@ -53,6 +53,11 @@ public class WorkflowEntity {
 
   private UUID owningAgentId;
 
+  /** The agents that maintain it, lead first, as a JSON array of ids; null when none chosen. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "maintainer_agent_ids", columnDefinition = "jsonb")
+  private JsonNode maintainerAgentIds;
+
   @Column(nullable = false)
   private int version;
 
@@ -105,6 +110,21 @@ public class WorkflowEntity {
 
   public UUID getOwningAgentId() { return owningAgentId; }
   public void setOwningAgentId(UUID owningAgentId) { this.owningAgentId = owningAgentId; }
+
+  public JsonNode getMaintainerAgentIds() { return maintainerAgentIds; }
+  public void setMaintainerAgentIds(JsonNode ids) { this.maintainerAgentIds = ids; }
+
+  /** The lead maintainer when one is chosen, else the owning agent (which may be null). */
+  public UUID getActingAgentId() {
+    if (maintainerAgentIds != null && maintainerAgentIds.isArray() && !maintainerAgentIds.isEmpty()) {
+      try {
+        return UUID.fromString(maintainerAgentIds.get(0).asText());
+      } catch (IllegalArgumentException ignored) {
+        // fall through to the owner
+      }
+    }
+    return owningAgentId;
+  }
 
   public int getVersion() { return version; }
   public void setVersion(int version) { this.version = version; }

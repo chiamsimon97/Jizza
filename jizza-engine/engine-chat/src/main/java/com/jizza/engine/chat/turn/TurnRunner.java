@@ -13,6 +13,7 @@ import com.jizza.engine.api.chat.JobEventDto;
 import com.jizza.engine.api.chat.TurnRef;
 import com.jizza.engine.api.chat.TurnSubmission;
 import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.error.FriendlyErrors;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
@@ -339,10 +340,18 @@ public class TurnRunner implements ChatService {
       reply.completeExceptionally(new JizzaException(org.springframework.http.HttpStatus.CONFLICT,
           "turn-cancelled", "Stopped", "The turn was stopped before it finished"));
     } catch (RuntimeException e) {
-      log.warn("Chat turn {} failed", ref.jobId(), e);
-      String title = e instanceof JizzaException je ? je.title() : "Something went wrong";
-      String detail = e.getMessage() == null ? "The turn failed" : e.getMessage();
-      String type = e instanceof JizzaException je ? je.type() : "turn-failed";
+      // Our own failures (the model provider, a bug) are logged in full with a reference, and the
+      // person sees a plain message quoting it; errors about what they did pass through as they are.
+      String reference = FriendlyErrors.isInternal(e) ? FriendlyErrors.newReference() : null;
+      if (reference != null) {
+        log.error("Chat turn {} failed (reference {})", ref.jobId(), reference, e);
+      } else {
+        log.warn("Chat turn {} failed: {}", ref.jobId(), e.getMessage());
+      }
+      JizzaException shown = FriendlyErrors.forPerson(e, reference);
+      String title = shown.title();
+      String detail = shown.getMessage() == null ? "The turn failed" : shown.getMessage();
+      String type = e instanceof JizzaException ? shown.type() : "turn-failed";
       String summary = JobSummaries.summarize(recorder.all()) + " Stopped: " + detail;
       recorder.emit(event(ActivityTypes.JOB_FAILED, p -> p.put("title", title).put("detail", detail)
           .put("problemType", type)));
@@ -353,7 +362,7 @@ public class TurnRunner implements ChatService {
           log.warn("Could not record the failure of turn {}", ref.jobId(), inner);
         }
       }
-      reply.completeExceptionally(e);
+      reply.completeExceptionally(shown);
     } finally {
       if (persist) active.remove(ref.jobId());
     }

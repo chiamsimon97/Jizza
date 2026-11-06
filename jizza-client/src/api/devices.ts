@@ -1,6 +1,6 @@
 import { api } from '@/lib/api'
 import type {
-  Device, DeviceActionSpec, DeviceCommand, DeviceEnrollmentToken, DeviceLogLine, DevicePairingCode,
+  ActionType, PhoneAccess, Device, DeviceActionSpec, DeviceCommand, DeviceEnrollmentToken, DeviceLogLine, DevicePairingCode,
   DevicePairingStatus,
 } from '@/types'
 
@@ -20,6 +20,9 @@ export const devicesApi = {
   installers: () => api.get<Record<string, string>>('/api/devices/installers'),
   update: (id: string, body: { name?: string; tags?: string[]; shellEnabled?: false; blockedActions?: string[]; autoUpdate?: boolean }) =>
     api.patch<Device>(base(id), body),
+  /** Asks for step-up. What a tool the device added itself does; null goes back to moving money. */
+  updateTool: (id: string, tool: string, actionType: ActionType | null) =>
+    api.patch<Device>(`${base(id)}/tools/${encodeURIComponent(tool)}`, { actionType }),
   /** Asks for step-up: shell widens what the device can be told to do. */
   enableShell: (id: string) => api.post<Device>(`${base(id)}/shell`),
   disable: (id: string) => api.post<Device>(`${base(id)}/disable`),
@@ -35,5 +38,10 @@ export const devicesApi = {
   /** Asks for step-up. The token is in this answer only. */
   createEnrollmentToken: (body: { name: string; uses: number; validDays: number; tags: string[] }) =>
     api.post<DeviceEnrollmentToken>('/api/devices/enrollment-tokens', body),
+  /** What the Jizza app on your own phone may do with your account. */
+  phoneAccess: (id: string) => api.get<{ access: PhoneAccess }>(`${base(id)}/phone-access`),
+  /** Asks for step-up. */
+  setPhoneAccess: (id: string, access: PhoneAccess) =>
+    api.put<{ access: PhoneAccess }>(`${base(id)}/phone-access`, { access }),
   revokeEnrollmentToken: (tokenId: string) => api.delete<void>(`/api/devices/enrollment-tokens/${tokenId}`),
 }

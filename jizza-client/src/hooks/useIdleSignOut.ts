@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { authApi } from '@/api/auth'
 import { endLocalSession } from '@/lib/session'
 
-const IDLE_MINUTES = Number(import.meta.env.VITE_IDLE_SIGN_OUT_MINUTES ?? 15)
+// Off unless a deployment asks for it: the server already ends a session after 3 days without
+// activity, and a 15-minute browser timer signed people out while they worked in another window.
+const IDLE_MINUTES = Number(import.meta.env.VITE_IDLE_SIGN_OUT_MINUTES ?? 0)
 const WARNING_SECONDS = 60
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
 const LAST_ACTIVE_KEY = 'jizza-last-active'
 
 /**
- * Signs out after a stretch of no activity, shorter than the server's own idle timeout, so an
+ * When VITE_IDLE_SIGN_OUT_MINUTES is set above 0, signs out after that stretch of no activity, so an
  * unattended screen does not stay open on the user's memory and data. A minute before, it warns
  * and offers to stay. Activity in any tab counts, through a shared timestamp.
  */

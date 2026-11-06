@@ -5,6 +5,7 @@ import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.device.DeviceCommandDto;
 import com.jizza.engine.api.device.DeviceDto;
 import com.jizza.engine.api.device.Devices;
+import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.RequiresPermission;
 import com.jizza.engine.api.util.StepUpRequired;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,6 +46,8 @@ public class DeviceController {
 
   public record Changes(String name, List<String> tags, Boolean shellEnabled,
                         List<String> blockedActions, Boolean autoUpdate) {}
+
+  public record ToolInput(ActionType actionType) {}
 
   public record TokenInput(String name, Integer uses, Integer validDays, List<String> tags) {}
 
@@ -109,7 +113,23 @@ public class DeviceController {
     }
     return devices.update(CurrentWorkspace.access(), id,
         new Devices.DeviceChanges(changes.name(), changes.tags(), changes.shellEnabled(),
-            changes.blockedActions(), changes.autoUpdate()));
+            changes.blockedActions(), null, changes.autoUpdate()));
+  }
+
+  /**
+   * Says what a tool the device added itself does, so the guardrails judge it by that rather than
+   * as moving money. A null type goes back to moving money. Like an MCP tool's type, it loosens
+   * what runs without asking, so it needs step-up.
+   */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @PatchMapping("/{id}/tools/{tool}")
+  @StepUpRequired
+  public DeviceDto updateTool(@PathVariable UUID id, @PathVariable String tool,
+                              @RequestBody ToolInput input) {
+    Map<String, ActionType> types = new java.util.HashMap<>();
+    types.put(tool, input == null ? null : input.actionType());
+    return devices.update(CurrentWorkspace.access(), id,
+        new Devices.DeviceChanges(null, null, null, null, types, null));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)
@@ -117,7 +137,27 @@ public class DeviceController {
   @StepUpRequired
   public DeviceDto enableShell(@PathVariable UUID id) {
     return devices.update(CurrentWorkspace.access(), id,
-        new Devices.DeviceChanges(null, null, true, null, null));
+        new Devices.DeviceChanges(null, null, true, null, null, null));
+  }
+
+  public record PhoneAccessBody(com.jizza.engine.api.device.PhoneAccess access) {}
+
+  /** What the Jizza app on this phone may do with your account: read, approve or full. */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @GetMapping("/{id}/phone-access")
+  public PhoneAccessBody phoneAccess(@PathVariable UUID id) {
+    return new PhoneAccessBody(devices.phoneAccess(CurrentWorkspace.access(), id));
+  }
+
+  /** Widening what a phone may do with the account is sensitive, so it needs step-up. */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @PutMapping("/{id}/phone-access")
+  @StepUpRequired
+  public PhoneAccessBody setPhoneAccess(@PathVariable UUID id, @RequestBody PhoneAccessBody body) {
+    if (body == null || body.access() == null) {
+      throw new com.jizza.engine.api.error.ValidationException("Choose read, approve or full");
+    }
+    return new PhoneAccessBody(devices.setPhoneAccess(CurrentWorkspace.access(), id, body.access()));
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)

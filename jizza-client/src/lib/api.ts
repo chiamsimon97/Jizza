@@ -26,6 +26,27 @@ export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
   stepUpHandler = handler
 }
 
+/**
+ * A 401 on one call is not proof the session is gone. Switching accounts replaces the session
+ * cookie, so a call already in flight with the old cookie is refused even though the person is
+ * still signed in. Before signing out, ask the server once whether this browser's session is
+ * really over; several refused calls at once share that one check.
+ */
+let sessionCheck: Promise<void> | null = null
+function signOutIfSessionGone(): Promise<void> {
+  sessionCheck ??= (async () => {
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
+      if (res.status === 401 && useAuthStore.getState().isAuthenticated) endLocalSession()
+    } catch {
+      // The server could not be reached (a restart, a lost connection): that is not a sign-out.
+    } finally {
+      sessionCheck = null
+    }
+  })()
+  return sessionCheck
+}
+
 async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'blob' = 'json', retried = false): Promise<T> {
   // Only ever this app's own API: the session cookie and CSRF token must never ride along to
   // another origin, whatever string ends up in `path`.
@@ -66,8 +87,12 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
   }
   // The session expired or was revoked. Forget the stale login so the app goes back to sign-in,
   // instead of every page showing its own "couldn't load" error. Auth calls report their own 401s.
-  if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated) {
-    endLocalSession()
+  // Only a 401 about the session itself counts: a connected app whose sign-in expired (an OAuth
+  // token, an MCP server, a device token) also answers 401, with its own problem type, and must not
+  // sign the person out of Jizza.
+  if (res.status === 401 && !path.startsWith('/api/auth/') && useAuthStore.getState().isAuthenticated
+      && /\/authentication$/.test(String(problem.type ?? ''))) {
+    void signOutIfSessionGone()
   }
   // Two-step sign-in is required and this session has not set it up: the app routes to setup.
   if (res.status === 403 && String(problem.type ?? '').endsWith('mfa-enrollment-required')) {
@@ -85,11 +110,11 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'bl
 }
 
 export const api = {
-  get:    <T>(path: string) => request<T>(path, { method: 'GET' }),
+  get:    <T>(path: string, headers?: HeadersInit) => request<T>(path, { method: 'GET', headers }),
   post:   <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST',   body: body != null ? JSON.stringify(body) : undefined }),
   put:    <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT',    body: body != null ? JSON.stringify(body) : undefined }),
   patch:  <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH',  body: body != null ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string, headers?: HeadersInit) => request<T>(path, { method: 'DELETE', headers }),
   upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
   /** Raw bytes, for files shown back to the user. */
   blob:   (path: string) => request<Blob>(path, { method: 'GET' }, 'blob'),

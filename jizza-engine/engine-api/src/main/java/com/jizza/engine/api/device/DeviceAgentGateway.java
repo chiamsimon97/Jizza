@@ -66,4 +66,35 @@ public interface DeviceAgentGateway {
   void rotateKey(Caller caller, String newPublicKey, String signature);
 
   List<DeviceActionSpec> catalog();
+
+  /** A personal device as smart sign-in sees it: who owns it and what it is called. */
+  record Owned(UUID userId, String name) {}
+
+  /**
+   * The person who paired this device, when a person did. Empty for a shared machine enrolled with a
+   * token, which belongs to no one and so can approve no one's sign-in.
+   */
+  default java.util.Optional<Owned> personalOwner(Caller caller) {
+    return java.util.Optional.empty();
+  }
+
+  /**
+   * Whether {@code signature} (base64) is the device's current key signing {@code text}'s UTF-8
+   * bytes.
+   */
+  default boolean verifySignature(Caller caller, String text, String signature) {
+    return false;
+  }
+
+  /**
+   * A person's own phone as the Jizza app's account screens see it: whose it is, which account it
+   * acts in, and what it may do there.
+   */
+  record Companion(UUID userId, UUID workspaceId, UUID deviceId, String deviceName,
+                   PhoneAccess access) {}
+
+  /** Empty for a shared machine enrolled with a token, which has no person behind it. */
+  default java.util.Optional<Companion> companion(Caller caller) {
+    return java.util.Optional.empty();
+  }
 }
