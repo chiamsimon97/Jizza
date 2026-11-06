@@ -36,7 +36,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import com.jizza.engine.api.enums.RunStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -60,6 +66,7 @@ public class DefaultNotificationBus implements NotificationBus {
   private final ApplicationEventPublisher events;
   private final AuditLog audit;
   private final NotificationProperties props;
+  private PlatformTransactionManager transactionManager;
 
   public DefaultNotificationBus(NotificationRepository notifications, AgentDirectory agents,
                                 ObjectProvider<WorkflowEngine> workflowEngine,
@@ -75,6 +82,12 @@ public class DefaultNotificationBus implements NotificationBus {
     this.events = events;
     this.audit = audit;
     this.props = props;
+  }
+
+  /** Optional so tests can build the bus without a database. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setTransactionManager(PlatformTransactionManager transactionManager) {
+    this.transactionManager = transactionManager;
   }
 
   /**
@@ -204,6 +217,12 @@ public class DefaultNotificationBus implements NotificationBus {
         || answer.instruction() == null || answer.instruction().isBlank()) {
       throw new ValidationException("This item needs a written instruction to continue");
     }
+    // A question about a run that already ended has nothing left to answer: say so on the item
+    // and file it, rather than refuse the answer and leave it in the inbox for good.
+    if (entity.getRunId() != null && runHasEnded(entity.getRunId())) {
+      close(entity, RUN_ALREADY_ENDED);
+      return toDto(entity);
+    }
     entity.setStatus(NotificationStatus.SUBMITTED);
     entity.setSubmittedInstruction(answer.instruction());
     entity.setAnsweredAt(Instant.now());
@@ -221,7 +240,41 @@ public class DefaultNotificationBus implements NotificationBus {
     return toDto(entity);
   }
 
+  /**
+   * Hands the answer to the run once the answer itself is saved, in a transaction of its own.
+   * Resuming inside the answer's transaction meant any failure while the run carried on (a run
+   * that had ended, a step that threw) rolled the answer back too, so the item stayed in the inbox
+   * however many times it was answered.
+   */
   private void resumeRun(NotificationEntity entity, com.fasterxml.jackson.databind.JsonNode payload) {
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+          inOwnTransaction(() -> resumeNow(entity, payload));
+        }
+      });
+    } else {
+      resumeNow(entity, payload);
+    }
+  }
+
+  private void inOwnTransaction(Runnable work) {
+    PlatformTransactionManager manager = transactionManager;
+    if (manager == null) {
+      work.run();
+      return;
+    }
+    TransactionTemplate template = new TransactionTemplate(manager);
+    template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    try {
+      template.executeWithoutResult(status -> work.run());
+    } catch (RuntimeException e) {
+      log.warn("Could not resume run after answering a notification", e);
+    }
+  }
+
+  private void resumeNow(NotificationEntity entity, com.fasterxml.jackson.databind.JsonNode payload) {
     WorkflowEngine engine = workflowEngine.getIfAvailable();
     if (engine == null) {
       log.warn("Notification {} answered but the workflow engine is unavailable, so run {} is "
@@ -241,6 +294,57 @@ public class DefaultNotificationBus implements NotificationBus {
       log.warn("Could not resume run {} after answering notification {}", entity.getRunId(),
           entity.getId(), e);
     }
+  }
+
+  static final String RUN_ALREADY_ENDED = "Closed: the run had already ended";
+
+  private boolean runHasEnded(UUID runId) {
+    WorkflowEngine engine = workflowEngine.getIfAvailable();
+    if (engine == null) return false;
+    try {
+      var run = engine.get(runId);
+      if (run == null || run.status() == null) return false;
+      RunStatus status = run.status();
+      return status == RunStatus.DONE || status == RunStatus.FAILED
+          || status == RunStatus.CANCELLED;
+    } catch (RuntimeException e) {
+      // A run that is gone has ended as far as this item is concerned.
+      return e instanceof NotFoundException;
+    }
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRED)
+  public int closeForRun(UUID runId, String nodeId, String reason) {
+    if (runId == null) return 0;
+    int closed = 0;
+    for (NotificationEntity item : notifications.findByRunId(runId)) {
+      boolean open = item.getStatus() == NotificationStatus.UNREAD
+          || item.getStatus() == NotificationStatus.READ;
+      if (!open || !item.getKind().blocking()) continue;
+      if (nodeId != null && (item.getContext() == null
+          || !nodeId.equals(item.getContext().path("node").asText(null)))) {
+        continue;
+      }
+      close(item, reason);
+      closed++;
+    }
+    return closed;
+  }
+
+  /** Files an item that no longer needs an answer, saying why on the item itself. */
+  private void close(NotificationEntity item, String reason) {
+    item.setStatus(NotificationStatus.EXPIRED);
+    item.setEscalationState(EscalationState.AUTO_CANCELLED);
+    item.setResponseNote(blankToNull(reason));
+    item.setAnsweredAt(Instant.now());
+    item.setSnoozedUntil(null);
+    notifications.save(item);
+    audit.record(item.getUserId(), ActorType.SYSTEM, item.getSourceAgentId(),
+        "notification.closed", item.getId().toString(),
+        Json.obj().put("reason", String.valueOf(reason)));
+    NotificationDto dto = toDto(item);
+    realtime.ifAvailable(gateway -> gateway.publish(item.getUserId(), "notifications", dto));
   }
 
   @Override

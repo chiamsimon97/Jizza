@@ -38,6 +38,24 @@ export function isOpen(n: NotificationDto): boolean {
   return n.kind !== 'INFO' && (n.status === 'UNREAD' || n.status === 'READ')
 }
 
+/**
+ * The answers to a failed step that act on the run by themselves. The server recognises these exact
+ * words, from the inbox, the phone app or the run view alike.
+ */
+export const RUN_CHOICES: { answer: string; explain: string; tone: 'primary' | 'secondary' | 'danger' }[] = [
+  { answer: 'Try again', explain: 'Try again runs the step once more.', tone: 'primary' },
+  { answer: 'Skip this step', explain: 'Skip this step carries on without it.', tone: 'secondary' },
+  { answer: 'Stop the run', explain: 'Stop the run ends it now; steps already done stay done.', tone: 'danger' },
+]
+
+/** A question raised because a workflow step failed, which the run choices can answer. */
+export function isFailedStep(n: NotificationDto): boolean {
+  if (n.kind !== 'INSTRUCTION_REQUIRED' || !n.runId) return false
+  if (n.context?.failedStep === true) return true
+  // Asked before the server marked these questions.
+  return /could not complete:/.test(n.body ?? '')
+}
+
 export function isSnoozed(n: NotificationDto, now: number): boolean {
   return !!n.snoozedUntil && Date.parse(n.snoozedUntil) > now
 }
@@ -219,7 +237,7 @@ export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' |
     case 'APPROVED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You approved this procedure' : 'You approved this', tone: 'success' }
     case 'DENIED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You asked for changes' : 'You declined this', tone: 'danger' }
     case 'SUBMITTED': return { text: 'You answered', tone: 'success' }
-    case 'EXPIRED': return { text: 'Expired before anyone answered', tone: 'default' }
+    case 'EXPIRED': return { text: n.responseNote || 'Expired before anyone answered', tone: 'default' }
     default: return null
   }
 }

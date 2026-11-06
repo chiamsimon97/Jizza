@@ -21,4 +21,7 @@ export const runsApi = {
     })}`),
 
   trace: (runId: string) => api.get<RunTrace>(`/api/runs/${runId}/trace`),
+
+  /** Stops a run that is still going or waiting; anything it asked you about is closed too. */
+  stop: (runId: string) => api.post<{ message: string }>(`/api/runs/${runId}/cancel`),
 }

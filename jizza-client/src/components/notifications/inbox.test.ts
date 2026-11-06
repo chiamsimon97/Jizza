@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NotificationDto } from '@/types'
-import { NO_FILTERS, buildInbox, countsByView, fixLinkOf, matches, snoozeOptions, timeLeft, viewOf } from './inbox'
+import { NO_FILTERS, buildInbox, countsByView, fixLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
 
 const NOW = Date.parse('2026-10-23T10:00:00Z')
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString()
@@ -74,5 +74,21 @@ describe('inbox', () => {
     expect(fixLinkOf(n({ kind: 'INFO', context: { source: 'webauto', kind: 'locator_fix', link: 'https://evil.test' } }))).toBeNull()
     expect(fixLinkOf(n({ kind: 'INFO', context: { source: 'device', link } }))).toBeNull()
     expect(fixLinkOf(n({ kind: 'INFO' }))).toBeNull()
+  })
+
+  it('offers the run choices only on questions about a failed workflow step', () => {
+    expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true } }))).toBe(true)
+    // Raised before the server marked them, so read from the wording.
+    expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: "Step 'Open' could not complete: refused. How would you like to proceed?" }))).toBe(true)
+    expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: 'Which supplier?' }))).toBe(false)
+    expect(isFailedStep(n({ kind: 'INSTRUCTION_REQUIRED', context: { failedStep: true } }))).toBe(false)
+    expect(isFailedStep(n({ kind: 'PERMISSION_REQUEST', runId: 'r1', context: { failedStep: true } }))).toBe(false)
+  })
+
+  it('says why a question was closed without an answer', () => {
+    const closed = n({ kind: 'INSTRUCTION_REQUIRED', status: 'EXPIRED', responseNote: 'Closed: the run was stopped' })
+    expect(outcomeOf(closed)?.text).toBe('Closed: the run was stopped')
+    expect(viewOf(closed, NOW)).toBe('done')
+    expect(outcomeOf(n({ status: 'EXPIRED' }))?.text).toBe('Expired before anyone answered')
   })
 })

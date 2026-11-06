@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
-  KIND_META, agentOf, ago, argsOf, detailsOf, fixLinkOf, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
+  KIND_META, agentOf, ago, argsOf, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
+  RUN_CHOICES,
 } from './inbox'
 
 const KIND_ICON: Record<NotificationKind, LucideIcon> = {
@@ -18,8 +19,6 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
   INFO: Info,
 }
 
-/** Ready-made answers to a question, which the user can still edit before sending. */
-const QUICK_REPLIES = ['Try again', 'Skip it this time', 'Stop and wait for me']
 
 /** What the inbox can do to an item. Each returns once the server has answered. */
 export interface InboxActions {
@@ -67,6 +66,8 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const fixLink = fixLinkOf(n)
   const unread = n.status === 'UNREAD'
   const tool = typeof n.context?.tool === 'string' ? n.context.tool : null
+  const failedStep = open && n.kind === 'INSTRUCTION_REQUIRED' && isFailedStep(n)
+  const canStopRun = open && n.kind === 'INSTRUCTION_REQUIRED' && !!n.runId
   const canAlwaysAllow = open && n.kind === 'PERMISSION_REQUEST' && !!tool && !!n.sourceAgentId
 
   async function run(key: string, action: () => Promise<unknown>) {
@@ -188,29 +189,38 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <Badge variant={outcome.tone}>{outcome.text}</Badge>
               {n.answeredAt && <span className="text-gray-500 dark:text-gray-400">{ago(n.answeredAt, now)}</span>}
-              {n.responseNote && <span className="text-gray-600 dark:text-gray-300">“{n.responseNote}”</span>}
+              {n.responseNote && n.status !== 'EXPIRED' && <span className="text-gray-600 dark:text-gray-300">“{n.responseNote}”</span>}
               {n.submittedInstruction && <span className="text-gray-600 dark:text-gray-300">“{n.submittedInstruction}”</span>}
             </div>
           )}
 
           {/* Answering */}
           <div onClick={e => e.stopPropagation()}>
-            {open && n.kind === 'INSTRUCTION_REQUIRED' && (
+            {failedStep && mode === 'idle' && (
               <div className="mt-3 space-y-2">
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_REPLIES.map(q => (
-                    <button key={q} onClick={() => setText(q)}
-                      className="rounded-full border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:border-brand-300 hover:text-brand-700 dark:border-gray-700 dark:text-gray-300 dark:hover:border-brand-700 dark:hover:text-brand-300">
-                      {q}
-                    </button>
+                <div className="flex flex-wrap gap-2">
+                  {RUN_CHOICES.map(c => (
+                    <Button key={c.answer} size="sm" variant={c.tone === 'danger' ? 'danger' : c.tone === 'primary' ? 'primary' : 'secondary'}
+                      loading={busy === c.answer} disabled={busy !== null}
+                      onClick={() => void run(c.answer, () => actions.reply(n, c.answer))}>
+                      {c.answer}
+                    </Button>
                   ))}
                 </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {RUN_CHOICES.map(c => c.explain).join(' ')}
+                </p>
+              </div>
+            )}
+            {open && n.kind === 'INSTRUCTION_REQUIRED' && (
+              <div className="mt-3 space-y-2">
+                {failedStep && <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Or tell Jizza what to change, and it tries the step again with that:</p>}
                 <textarea
                   value={text}
                   onChange={e => setText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) void run('reply', () => actions.reply(n, text.trim())) }}
                   rows={2}
-                  placeholder="Tell Jizza how to carry on…"
+                  placeholder={failedStep ? 'e.g. Use the Chennai page instead' : 'Tell Jizza how to carry on…'}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                 />
               </div>
@@ -259,8 +269,14 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
 
             {mode === 'idle' && <div className="mt-3 flex flex-wrap items-center gap-2">
               {open && n.kind === 'INSTRUCTION_REQUIRED' && (
-                <Button size="sm" disabled={!text.trim()} loading={busy === 'reply'} onClick={() => void run('reply', () => actions.reply(n, text.trim()))}>
+                <Button size="sm" variant={failedStep ? 'secondary' : 'primary'} disabled={!text.trim() || busy !== null} loading={busy === 'reply'} onClick={() => void run('reply', () => actions.reply(n, text.trim()))}>
                   Send answer
+                </Button>
+              )}
+              {canStopRun && !failedStep && (
+                <Button size="sm" variant="ghost" disabled={busy !== null} loading={busy === 'stop'}
+                  onClick={() => void run('stop', () => actions.reply(n, 'Stop the run'))}>
+                  Stop the run
                 </Button>
               )}
               {open && n.kind !== 'INSTRUCTION_REQUIRED' && (

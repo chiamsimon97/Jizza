@@ -84,6 +84,8 @@ class NotificationBusTest {
     });
     when(notifications.findById(any())).thenAnswer(inv ->
         rows.stream().filter(r -> r.getId().equals(inv.getArgument(0))).findFirst());
+    when(notifications.findByRunId(any())).thenAnswer(inv ->
+        rows.stream().filter(r -> inv.getArgument(0).equals(r.getRunId())).toList());
     when(notifications.findByUserIdOrderByCreatedAtDesc(any())).thenAnswer(inv ->
         rows.stream().filter(r -> r.getUserId().equals(inv.<UUID>getArgument(0))).toList());
     when(notifications.findOpenBlockingDueBy(any())).thenAnswer(inv -> {
@@ -248,6 +250,45 @@ class NotificationBusTest {
     var answered = bus.answer(raised.id(), Answer.instruction("Use Acme Ltd"));
 
     assertThat(answered.status()).isEqualTo(NotificationStatus.SUBMITTED);
+  }
+
+  @Test
+  void answeringAQuestionAboutARunThatAlreadyEndedFilesItInsteadOfFailing() {
+    UUID runId = UUID.randomUUID();
+    when(engine.get(runId)).thenReturn(new com.jizza.engine.api.dto.RunDto(runId, userId,
+        UUID.randomUUID(), 1, "manual", com.jizza.engine.api.enums.RunStatus.CANCELLED, "open",
+        null, null, null, null));
+    var raised = bus.raise(NotificationKind.INSTRUCTION_REQUIRED, agentId,
+        NotificationContext.forRun(userId, "Step failed. How would you like to proceed?", null,
+            runId));
+
+    var answered = bus.answer(raised.id(), Answer.instruction("Try again"));
+
+    assertThat(answered.status()).isEqualTo(NotificationStatus.EXPIRED);
+    assertThat(answered.responseNote()).contains("already ended");
+    verify(engine, org.mockito.Mockito.never()).resume(any(), any());
+  }
+
+  @Test
+  void closingARunsQuestionsFilesOnlyTheOpenOnesForThatStep() {
+    UUID runId = UUID.randomUUID();
+    var other = com.jizza.engine.api.util.Json.obj().put("node", "send");
+    var mine = com.jizza.engine.api.util.Json.obj().put("node", "open");
+    var forOpen = bus.raise(NotificationKind.INSTRUCTION_REQUIRED, agentId,
+        NotificationContext.forRun(userId, "open failed", mine, runId));
+    var forSend = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.forRun(userId, "send?", other, runId));
+    var update = bus.raise(NotificationKind.INFO, agentId,
+        NotificationContext.forRun(userId, "fyi", mine, runId));
+
+    assertThat(bus.closeForRun(runId, "open", "Closed: answered from the run")).isEqualTo(1);
+    assertThat(bus.get(forOpen.id()).status()).isEqualTo(NotificationStatus.EXPIRED);
+    assertThat(bus.get(forOpen.id()).responseNote()).isEqualTo("Closed: answered from the run");
+    assertThat(bus.get(forSend.id()).status()).isEqualTo(NotificationStatus.UNREAD);
+    assertThat(bus.get(update.id()).status()).isEqualTo(NotificationStatus.UNREAD);
+
+    assertThat(bus.closeForRun(runId, null, "Closed: the run was stopped")).isEqualTo(1);
+    assertThat(bus.get(forSend.id()).status()).isEqualTo(NotificationStatus.EXPIRED);
   }
 
   // ── expiry and escalation ────────────────────────────────────────────────
