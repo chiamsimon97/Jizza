@@ -33,6 +33,9 @@ import java.util.Map;
  *   "arrivals": { "nodeId": { "fromId": true } }, // which incoming paths reached a step
  *                                                 // (false: a branch went the other way)
  *   "state":    { "nodeId": { ... } },            // a step's own bookkeeping between attempts
+ *   "joinDeadlines": { "joinId": "..." },         // when a join stops waiting (its timer runs
+ *                                                 // from the first path that reaches it)
+ *   "abandoned": { "nodeId": "joinId" },          // steps a timed-out join stopped waiting for
  *   "result":   { ... },                          // what the run produced, for a parent run
  *   "parent":   { "runId": "...", "nodeId": "..." },
  *   "browser":  { "deviceId": "...", "sessionId": "...", "opened": true },
@@ -240,6 +243,49 @@ public final class RunContext {
         .map(Map.Entry::getKey).toList();
   }
 
+  // ── join timeouts: when a join stops waiting, and the work it left behind ─
+
+  /** When the join gives up on the paths still missing; null while its timer has not started. */
+  public Instant joinDeadline(String joinId) {
+    JsonNode value = root.path("joinDeadlines").path(joinId);
+    return value.isTextual() ? Instant.parse(value.asText()) : null;
+  }
+
+  /** Every join whose timer is running, by id. */
+  public Map<String, Instant> joinDeadlines() {
+    Map<String, Instant> out = new LinkedHashMap<>();
+    root.path("joinDeadlines").fields().forEachRemaining(e -> {
+      if (e.getValue().isTextual()) out.put(e.getKey(), Instant.parse(e.getValue().asText()));
+    });
+    return out;
+  }
+
+  public void startJoinTimer(String joinId, Instant deadline) {
+    ObjectNode deadlines = root.has("joinDeadlines") && root.get("joinDeadlines").isObject()
+        ? (ObjectNode) root.get("joinDeadlines") : root.putObject("joinDeadlines");
+    deadlines.put(joinId, deadline.toString());
+  }
+
+  public void stopJoinTimer(String joinId) {
+    if (root.path("joinDeadlines").isObject()) ((ObjectNode) root.get("joinDeadlines")).remove(joinId);
+  }
+
+  /** Records that {@code nodeId} was dropped because {@code joinId} stopped waiting for it. */
+  public void abandon(String nodeId, String joinId) {
+    ObjectNode abandoned = root.has("abandoned") && root.get("abandoned").isObject()
+        ? (ObjectNode) root.get("abandoned") : root.putObject("abandoned");
+    abandoned.put(nodeId, joinId);
+  }
+
+  /** The join that dropped this step, or null when it was not dropped. */
+  public String abandonedBy(String nodeId) {
+    JsonNode value = root.path("abandoned").path(nodeId);
+    return value.isTextual() ? value.asText() : null;
+  }
+
+  /** Removes a step from the waiting list without making it ready again. */
+  public void forgetParked(String nodeId) { parkedObject().remove(nodeId); }
+
   // ── a step's own bookkeeping, and what the run produced ──────────────────
 
   /** Scratch space a step keeps between its attempts, such as the child runs it started. */
@@ -251,6 +297,9 @@ public final class RunContext {
   }
 
   public boolean hasState(String nodeId) { return root.path("state").has(nodeId); }
+
+  /** A step's state, read without creating it; a missing node when it has none. */
+  public JsonNode peekState(String nodeId) { return root.path("state").path(nodeId); }
 
   /** Every run a step of this run started, as recorded in the steps' {@code children} lists. */
   public List<java.util.UUID> childRunIds() {

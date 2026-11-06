@@ -207,8 +207,9 @@ function describe(node: CanvasNode, agent?: AgentDto): string {
       return !c.script.trim() ? 'Write a script' : outs.length ? `Gives ${outs.join(', ')}` : 'Runs a script'
     }
     case 'BRANCH': return String(c.condition ?? 'Set a condition')
-    case 'PARALLEL': return 'Every connected path runs'
-    case 'JOIN': return 'Waits for every path that leads here'
+    case 'PARALLEL': return 'Every connected path runs at once'
+    case 'JOIN': return c.timeout === 'none' ? 'Waits for every path that leads here'
+      : `Waits up to ${describeDuration(String(c.timeout ?? 'PT1H'))} for every path${c.onTimeout === 'fail' ? ', then fails' : ''}`
     case 'WAIT': return c.duration ? `Waits ${describeDuration(String(c.duration))}` : c.until ? `Waits until ${String(c.until).replace('T', ' ')}` : 'Set how long to wait'
     case 'SUB_WORKFLOW': return c.workflowName ? `Runs "${String(c.workflowName)}"` : 'Choose a workflow'
     case 'FOR_EACH': return c.workflowName ? `Runs "${String(c.workflowName)}" for each of ${String(c.items ?? 'a list')}` : 'Choose a workflow and a list'

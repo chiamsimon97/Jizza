@@ -305,8 +305,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
           </Labelled>
         )}
 
-        {node.type === 'PARALLEL' && <p className="text-[11px] text-gray-500">Every connected path runs. A step that several paths lead to waits for all of them.</p>}
-        {node.type === 'JOIN' && <p className="text-[11px] text-gray-500">Carries on once every path leading here has finished (or was skipped by a branch). Later steps read each path's result as nodes.{node.id}.&lt;step id&gt;.</p>}
+        {node.type === 'PARALLEL' && <p className="text-[11px] text-gray-500">Every connected path runs at the same time. A step that several paths lead to waits for all of them.</p>}
+        {node.type === 'JOIN' && <JoinFields node={node} setConfig={setConfig} />}
 
         {node.type === 'WAIT' && <WaitFields node={node} setConfig={setConfig} />}
 
@@ -635,6 +635,33 @@ function WaitFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfi
         <input type="datetime-local" className={fieldClass} value={until.slice(0, 16)} onChange={e => setConfig({ until: e.target.value ? `${e.target.value}:00` : '' })} />
       </Labelled>
     )}
+  </>
+}
+
+/** How long a join waits for the paths still on their way, and what it does when time runs out. */
+function JoinFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfig }) {
+  const raw = typeof node.config.timeout === 'string' ? node.config.timeout : ''
+  const waitsForever = raw === 'none'
+  const timeout = waitsForever || !raw ? 'PT1H' : raw
+  return <>
+    <p className="text-[11px] text-gray-500">Carries on once every path leading here has finished (or was skipped by a branch). Later steps read each path's result as nodes.{node.id}.&lt;step id&gt;.</p>
+    <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+      <input type="checkbox" checked={!waitsForever} onChange={e => setConfig({ timeout: e.target.checked ? undefined : 'none' })} />
+      Stop waiting after a while
+    </label>
+    {!waitsForever && <>
+      <Labelled group label="Wait at most" hint="The timer starts when the first path gets here. An hour unless you change it.">
+        <DurationInput value={timeout} onChange={d => setConfig({ timeout: d === 'PT1H' ? undefined : d })} />
+      </Labelled>
+      <Labelled label="If some paths have not arrived by then">
+        <select className={fieldClass} value={node.config.onTimeout === 'fail' ? 'fail' : 'continue'}
+          onChange={e => setConfig({ onTimeout: e.target.value === 'fail' ? 'fail' : undefined })}>
+          <option value="continue">carry on with the paths that arrived</option>
+          <option value="fail">stop the run as failed</option>
+        </select>
+      </Labelled>
+      {node.config.onTimeout !== 'fail' && <p className="text-[11px] text-gray-500">Steps still running or waiting on the way here are dropped. nodes.{node.id}._timedOut lists the steps it gave up on.</p>}
+    </>}
   </>
 }
 
