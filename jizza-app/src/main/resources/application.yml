@@ -284,6 +284,15 @@ jizza:
     poll-interval: 20s
     stale-run-after: 30m
 
+  # Workflow runs. Ready HTTP, connector, MCP, agent and script steps on parallel paths run at the
+  # same time, up to max-concurrent-steps per run (1 runs them one after another). A Join stops
+  # waiting default-timeout after the first path reaches it, unless the step sets its own.
+  workflow:
+    parallel:
+      max-concurrent-steps: ${JIZZA_WORKFLOW_MAX_CONCURRENT_STEPS:8}
+    join:
+      default-timeout: ${JIZZA_WORKFLOW_JOIN_TIMEOUT:PT1H}
+
   notifications:
     permission-expiry: 24h
     review-expiry: 7d
@@ -301,6 +310,14 @@ jizza:
     push:
       fcm:
         credentials-file: ${JIZZA_FCM_CREDENTIALS:}
+      # Apple push for the iPhone app: the APNs auth key (.p8) from the Apple Developer account,
+      # its key id, the team id and the app's bundle id. Sandbox for apps installed from Xcode.
+      apns:
+        key-file: ${JIZZA_APNS_KEY_FILE:}
+        key-id: ${JIZZA_APNS_KEY_ID:}
+        team-id: ${JIZZA_APNS_TEAM_ID:}
+        topic: ${JIZZA_APNS_TOPIC:com.jizza.ios}
+        sandbox: ${JIZZA_APNS_SANDBOX:false}
 
   # Web automation. Both options are off until turned on; see docs/web-automation.md.
   webauto:

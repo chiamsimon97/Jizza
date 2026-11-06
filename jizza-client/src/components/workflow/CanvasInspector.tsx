@@ -7,6 +7,7 @@ import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
 import { useQuery } from '@tanstack/react-query'
 import type { AgentDto, Device, DeviceActionSpec, DeviceItem, McpServer, RunStepDto, TeamStep } from '@/types'
 import { devicesApi } from '@/api/devices'
+import { ElementPreview } from '@/components/web/PageView'
 import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
   MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
@@ -304,8 +305,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
           </Labelled>
         )}
 
-        {node.type === 'PARALLEL' && <p className="text-[11px] text-gray-500">Every connected path runs. A step that several paths lead to waits for all of them.</p>}
-        {node.type === 'JOIN' && <p className="text-[11px] text-gray-500">Carries on once every path leading here has finished (or was skipped by a branch). Later steps read each path's result as nodes.{node.id}.&lt;step id&gt;.</p>}
+        {node.type === 'PARALLEL' && <p className="text-[11px] text-gray-500">Every connected path runs at the same time. A step that several paths lead to waits for all of them.</p>}
+        {node.type === 'JOIN' && <JoinFields node={node} setConfig={setConfig} />}
 
         {node.type === 'WAIT' && <WaitFields node={node} setConfig={setConfig} />}
 
@@ -634,6 +635,33 @@ function WaitFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfi
         <input type="datetime-local" className={fieldClass} value={until.slice(0, 16)} onChange={e => setConfig({ until: e.target.value ? `${e.target.value}:00` : '' })} />
       </Labelled>
     )}
+  </>
+}
+
+/** How long a join waits for the paths still on their way, and what it does when time runs out. */
+function JoinFields({ node, setConfig }: { node: CanvasNode; setConfig: SetConfig }) {
+  const raw = typeof node.config.timeout === 'string' ? node.config.timeout : ''
+  const waitsForever = raw === 'none'
+  const timeout = waitsForever || !raw ? 'PT1H' : raw
+  return <>
+    <p className="text-[11px] text-gray-500">Carries on once every path leading here has finished (or was skipped by a branch). Later steps read each path's result as nodes.{node.id}.&lt;step id&gt;.</p>
+    <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+      <input type="checkbox" checked={!waitsForever} onChange={e => setConfig({ timeout: e.target.checked ? undefined : 'none' })} />
+      Stop waiting after a while
+    </label>
+    {!waitsForever && <>
+      <Labelled group label="Wait at most" hint="The timer starts when the first path gets here. An hour unless you change it.">
+        <DurationInput value={timeout} onChange={d => setConfig({ timeout: d === 'PT1H' ? undefined : d })} />
+      </Labelled>
+      <Labelled label="If some paths have not arrived by then">
+        <select className={fieldClass} value={node.config.onTimeout === 'fail' ? 'fail' : 'continue'}
+          onChange={e => setConfig({ onTimeout: e.target.value === 'fail' ? 'fail' : undefined })}>
+          <option value="continue">carry on with the paths that arrived</option>
+          <option value="fail">stop the run as failed</option>
+        </select>
+      </Labelled>
+      {node.config.onTimeout !== 'fail' && <p className="text-[11px] text-gray-500">Steps still running or waiting on the way here are dropped. nodes.{node.id}._timedOut lists the steps it gave up on.</p>}
+    </>}
   </>
 }
 
@@ -1329,7 +1357,15 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
     }
   }
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
-    key !== 'session' && key !== 'element' && key !== 'trusted' && key !== 'timeoutMs' && key !== 'screenshotOnError')
+    !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs))
+  const retry = asInputs(node.config.retry)
+  const setRetry = (patch: Record<string, unknown>) => {
+    const next = { ...retry, ...patch }
+    for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k]
+    setConfig({ retry: Object.keys(next).length ? next : undefined })
+  }
+  const hasHighlight = Boolean(schema.properties?.highlight)
+  const hasTrusted = Boolean(schema.properties?.trusted)
 
   return <>
     <Labelled label="Browser" hint="Same browser continues the browser used by the previous web step.">
@@ -1361,20 +1397,27 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
         required={WEB_ELEMENT_ACTIONS.has(action)} missing={isMissing('inputs.element')} onChange={value => setInput('element', value)} />
     )}
 
-    {ordinary.map(([key, property]) => (
-      <WebSchemaField key={key} name={key} property={property} value={inputs[key]} required={required.has(key)}
-        mapping={mapping} onChange={value => setInput(key, value)} />
-    ))}
+    {ordinary.map(([key, property]) => isLocatorProperty(property)
+      ? <ElementField key={key} label={webInputLabel(key)} value={inputs[key]} deviceId={concrete?.id} browsers={browsers}
+          hasEarlierOpen mapping={mapping} required={required.has(key)} missing={isMissing(`inputs.${key}`)}
+          onChange={value => setInput(key, value)} />
+      : <WebSchemaField key={key} name={key} property={property} value={inputs[key]} required={required.has(key)}
+          mapping={mapping} onChange={value => setInput(key, value)} />
+    )}
 
-    <Section title="More options">
+    <Section title="Advanced options">
       <button type="button" aria-expanded={more} onClick={() => setMore(v => !v)}
         className="inline-flex items-center gap-1 self-start text-xs text-brand-600 dark:text-brand-300">
         {more ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} {more ? 'Hide options' : 'Show options'}
       </button>
       {more && <>
-        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+        {hasHighlight && <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input type="checkbox" checked={inputs.highlight === true} onChange={e => setInput('highlight', e.target.checked || undefined)} /> Highlight the element while the step runs
+        </label>}
+        {hasTrusted && <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
           <input type="checkbox" checked={inputs.trusted === true} onChange={e => setInput('trusted', e.target.checked || undefined)} /> Trusted input
-        </label>
+        </label>}
+        {hasTrusted && <p className="text-[11px] text-gray-500">Trusted input types and clicks like a real keyboard and mouse. Use it when a site ignores the step otherwise; Chrome shows a debugging bar while it runs.</p>}
         <Labelled group label="Timeout (milliseconds)">
           <MappedField aria-label="Timeout (milliseconds)" mode="template" context={mapping} mono
             value={inputs.timeoutMs == null ? '' : String(inputs.timeoutMs)}
@@ -1383,6 +1426,25 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
         <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
           <input type="checkbox" checked={inputs.screenshotOnError !== false} onChange={e => setInput('screenshotOnError', e.target.checked)} /> Screenshot on error
         </label>
+        <div className="grid grid-cols-2 gap-2">
+          <Labelled label="Tries before giving up" hint="1 means no retry.">
+            <input type="number" aria-label="Tries before giving up" min={1} max={10} className={fieldClass}
+              value={typeof retry.maxAttempts === 'number' ? retry.maxAttempts : 3}
+              onChange={e => setRetry({ maxAttempts: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })} />
+          </Labelled>
+          <Labelled label="Seconds between tries" hint="Doubles after each try.">
+            <input type="number" aria-label="Seconds between tries" min={0} max={600} className={fieldClass}
+              value={typeof retry.backoffMillis === 'number' ? retry.backoffMillis / 1000 : 1}
+              onChange={e => setRetry({ backoffMillis: Math.round(Math.max(0, Math.min(600, Number(e.target.value) || 0)) * 1000) })} />
+          </Labelled>
+        </div>
+        <Labelled label="When it still fails">
+          <select aria-label="When it still fails" className={fieldClass} value={node.config.onFailure === 'dead_letter' ? 'dead_letter' : 'intervene'}
+            onChange={e => setConfig({ onFailure: e.target.value === 'dead_letter' ? 'dead_letter' : undefined })}>
+            <option value="intervene">Ask me what to do</option>
+            <option value="dead_letter">Stop the run</option>
+          </select>
+        </Labelled>
       </>}
     </Section>
 
@@ -1398,11 +1460,40 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   </>
 }
 
+/** Inputs shown under Advanced options instead of with the step's own fields. */
+const ADVANCED_WEB_INPUTS = new Set(['session', 'element', 'trusted', 'timeoutMs', 'screenshotOnError', 'highlight'])
+
+/** Which of Wait's inputs matter for what it waits for; other steps show every input. */
+const WAIT_INPUTS: Record<string, string[]> = {
+  time: ['ms'], text: ['text'], textGone: ['text'], url: ['urlContains'],
+  element: [], elementGone: [], navigation: [],
+}
+
+function webInputShown(action: string, key: string, inputs: Record<string, unknown>): boolean {
+  if (action !== 'browser.wait' || key === 'for') return true
+  const mode = typeof inputs.for === 'string' ? inputs.for : ''
+  return (WAIT_INPUTS[mode] ?? []).includes(key)
+}
+
+/** A schema input that takes an element (a locator bundle), such as Drag and drop's "to". */
+function isLocatorProperty(property: WebProperty): boolean {
+  return typeof property.$ref === 'string' && property.$ref.endsWith('locatorBundle')
+}
+
+const WEB_INPUT_LABELS: Record<string, string> = {
+  to: 'Drop onto', waitElement: 'Wait for element', nextPage: 'Next page button', urlContains: 'Address contains',
+  promptText: 'Text for prompt dialogs',
+}
+
+function webInputLabel(name: string): string {
+  return WEB_INPUT_LABELS[name] ?? name.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
+}
+
 function WebSchemaField({ name, property, value, required, mapping, onChange }: {
   name: string; property: WebProperty; value: unknown; required: boolean
   mapping: MappingContext; onChange: (value: unknown) => void
 }) {
-  const label = name.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())
+  const label = webInputLabel(name)
   const hint = property.description
   if (property.enum) {
     return <Labelled label={label} required={required} hint={hint}>
@@ -1431,8 +1522,8 @@ function WebSchemaField({ name, property, value, required, mapping, onChange }: 
 
 type LocatorStrategy = { by: string; value?: string; role?: string; name?: string; exact?: boolean }
 
-export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mapping, required, missing, onChange }: {
-  value: unknown; deviceId?: string; browsers?: BrowserAgent[]; hasEarlierOpen?: boolean
+export function ElementField({ label: fieldLabel = 'Element', value, deviceId, browsers, hasEarlierOpen, mapping, required, missing, onChange }: {
+  label?: string; value: unknown; deviceId?: string; browsers?: BrowserAgent[]; hasEarlierOpen?: boolean
   mapping: MappingContext; required?: boolean; missing?: boolean; onChange: (value: unknown) => void
 }) {
   const template = typeof value === 'string' ? value : ''
@@ -1440,6 +1531,7 @@ export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mappin
   const strategies = Array.isArray(bundle.strategies) ? bundle.strategies as LocatorStrategy[] : []
   const [editing, setEditing] = useState(false)
   const preview = typeof bundle.preview === 'string' ? bundle.preview : undefined
+  const pagePreview = typeof bundle.pagePreview === 'string' ? bundle.pagePreview : undefined
   const online = (browsers ?? []).filter(b => b.online)
   const [chosen, setChosen] = useState('')
   const pickDevice = deviceId ?? (online.length === 1 ? online[0].id : chosen)
@@ -1459,7 +1551,7 @@ export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mappin
         if (stop || r.status === 'waiting') return
         setPicking(undefined)
         if (r.status === 'done' && r.element) {
-          latestChange.current({ ...r.element, ...(r.preview ? { preview: r.preview } : {}) })
+          latestChange.current({ ...r.element, ...(r.preview ? { preview: r.preview } : {}), ...(r.pagePreview ? { pagePreview: r.pagePreview } : {}) })
         } else if (r.error?.kind !== 'cancelled_by_person') {
           setPickError(r.error?.detail ?? 'Picking did not finish.')
         }
@@ -1486,9 +1578,9 @@ export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mappin
     setPicking(undefined)
     if (id && pickDevice) devicesApi.cancelCommand(pickDevice, id).catch(() => {})
   }
-  return <Labelled group label="Element" required={required} missing={missing}>
+  return <Labelled group label={fieldLabel} required={required} missing={missing}>
     {template ? (
-      <MappedField aria-label="Element" mode="template" context={mapping} mono value={template} onChange={onChange} />
+      <MappedField aria-label={fieldLabel} mode="template" context={mapping} mono value={template} onChange={onChange} />
     ) : (
       <div className="rounded-lg border border-gray-200 p-2 dark:border-gray-700">
         <div className="flex items-center gap-2">
@@ -1497,7 +1589,10 @@ export function ElementField({ value, deviceId, browsers, hasEarlierOpen, mappin
           </span>
           <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit selectors</Button>
         </div>
-        {preview && pickDevice && <img className="mt-2 max-h-32 rounded border border-gray-200" alt="Element preview" src={devicesApi.fileUrl(pickDevice, preview)} />}
+        {(preview || pagePreview) && pickDevice && <div className="mt-2 flex items-start gap-2">
+          <ElementPreview deviceId={pickDevice} preview={preview} pagePreview={pagePreview} className="max-h-32 rounded border border-gray-200" />
+          {pagePreview && <span className="text-[11px] text-gray-500">Click the picture to see it on the page.</span>}
+        </div>}
       </div>
     )}
     {picking ? (
@@ -1533,7 +1628,24 @@ function SelectorDialog({ bundle, mapping, onClose, onSave }: {
   const [label, setLabel] = useState(typeof bundle.label === 'string' ? bundle.label : '')
   const [rows, setRows] = useState<LocatorStrategy[]>(() =>
     Array.isArray(bundle.strategies) ? structuredClone(bundle.strategies as LocatorStrategy[]) : [])
+  type FrameLevel = { strategies: LocatorStrategy[] }
+  const [frames, setFrames] = useState<FrameLevel[]>(() =>
+    Array.isArray(bundle.frames) ? structuredClone(bundle.frames as FrameLevel[]) : [])
+  const [shadow, setShadow] = useState<LocatorStrategy[]>(() =>
+    Array.isArray(bundle.shadow) ? structuredClone(bundle.shadow as LocatorStrategy[]) : [])
   const update = (i: number, patch: Partial<LocatorStrategy>) => setRows(r => r.map((row, j) => j === i ? { ...row, ...patch } : row))
+  const setFrame = (i: number, value: string) => setFrames(f => f.map((level, j) => j === i
+    ? { strategies: [{ ...(level.strategies[0] ?? { by: 'css' }), by: level.strategies[0]?.by ?? 'css', value }, ...level.strategies.slice(1)] } : level))
+  const save = () => {
+    const next: Record<string, unknown> = { ...bundle, label: label || undefined, strategies: rows }
+    const keptFrames = frames.filter(level => level.strategies[0]?.value?.trim())
+    const keptShadow = shadow.filter(host => host.value?.trim())
+    if (keptFrames.length) next.frames = keptFrames
+    else delete next.frames
+    if (keptShadow.length) next.shadow = keptShadow
+    else delete next.shadow
+    onSave(next)
+  }
   const move = (i: number, by: number) => setRows(r => {
     const next = [...r]
     const [row] = next.splice(i, 1)
@@ -1563,8 +1675,28 @@ function SelectorDialog({ bundle, mapping, onClose, onSave }: {
         </label>}
       </div>)}
       <button type="button" className="inline-flex items-center gap-1 self-start text-xs text-brand-600" onClick={() => setRows(r => [...r, { by: 'css', value: '' }])}><Plus className="h-3.5 w-3.5" /> Add selector</button>
+
+      <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+        <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300">Inside frames</h4>
+        <p className="text-[11px] text-gray-500">When the element is inside an iframe, list the iframes from the page down, as CSS selectors.</p>
+        {frames.map((level, i) => <div key={i} className="flex gap-1">
+          <MappedField aria-label={`Frame ${i + 1}`} mode="template" context={mapping} mono value={level.strategies[0]?.value ?? ''} onChange={v => setFrame(i, v)} />
+          <button aria-label={`Remove frame ${i + 1}`} onClick={() => setFrames(f => f.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></button>
+        </div>)}
+        <button type="button" className="inline-flex items-center gap-1 self-start text-xs text-brand-600" onClick={() => setFrames(f => [...f, { strategies: [{ by: 'css', value: '' }] }])}><Plus className="h-3.5 w-3.5" /> Add frame</button>
+
+        <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300">Inside shadow roots</h4>
+        <p className="text-[11px] text-gray-500">For web components: the host elements, outermost first, as CSS selectors.</p>
+        {shadow.map((host, i) => <div key={i} className="flex gap-1">
+          <MappedField aria-label={`Shadow host ${i + 1}`} mode="template" context={mapping} mono value={host.value ?? ''} onChange={v => setShadow(h => h.map((x, j) => j === i ? { ...x, by: x.by || 'css', value: v } : x))} />
+          <button aria-label={`Remove shadow host ${i + 1}`} onClick={() => setShadow(h => h.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></button>
+        </div>)}
+        <button type="button" className="inline-flex items-center gap-1 self-start text-xs text-brand-600" onClick={() => setShadow(h => [...h, { by: 'css', value: '' }])}><Plus className="h-3.5 w-3.5" /> Add shadow host</button>
+
+      </div>
+
       <div className="flex justify-end gap-2"><Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" onClick={() => onSave({ ...bundle, label: label || undefined, strategies: rows })}>Save selectors</Button></div>
+        <Button size="sm" onClick={save}>Save selectors</Button></div>
     </div>
   </div>
 }

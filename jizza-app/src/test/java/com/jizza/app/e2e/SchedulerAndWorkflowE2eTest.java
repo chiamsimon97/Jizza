@@ -670,6 +670,42 @@ class SchedulerAndWorkflowE2eTest extends E2eSupport {
   }
 
   @Test
+  void parallelWebhookCallsRunOnTheirOwnThreadsAndJoin() {
+    try (StubService service = new StubService()) {
+      WorkflowGraph graph = new WorkflowGraph(
+          List.of(node("start", NodeType.TRIGGER, null),
+              node("split", NodeType.PARALLEL, null),
+              node("rex", NodeType.HTTP_REQUEST, Json.obj().put("method", "POST")
+                  .put("url", service.baseUrl() + "/v1/pets").put("bodyExpr", "{'name': 'Rex'}")
+                  .set("headers", Json.obj().put("Authorization", "Bearer t-1"))),
+              node("tom", NodeType.HTTP_REQUEST, Json.obj().put("method", "POST")
+                  .put("url", service.baseUrl() + "/v1/pets").put("bodyExpr", "{'name': 'Tom'}")
+                  .set("headers", Json.obj().put("Authorization", "Bearer t-1"))),
+              node("join", NodeType.JOIN, Json.obj().put("timeout", "PT5M")),
+              node("count", NodeType.STORAGE, Json.obj().put("action", "increment")
+                  .put("key", "parallel-pets")),
+              node("finish", NodeType.END, null)),
+          List.of(new WorkflowEdge("start", "split", null),
+              new WorkflowEdge("split", "rex", "a"), new WorkflowEdge("split", "tom", "b"),
+              new WorkflowEdge("rex", "join", null), new WorkflowEdge("tom", "join", null),
+              new WorkflowEdge("join", "count", null), new WorkflowEdge("count", "finish", null)));
+      UUID workflowId = approvedWorkflow("Two pets at once", graph);
+
+      var run = api.post("/api/workflows/" + workflowId + "/run", Map.of("version", 1));
+      assertThat(run.ok()).as(run.body()).isTrue();
+      UUID runId = UUID.fromString(run.json().path("id").asText());
+
+      assertThat(run.json().path("status").asText()).isEqualTo("DONE");
+      assertThat(service.petsCreated.get()).isEqualTo(2);
+      var joined = steps.findByRunIdAndNodeId(runId, "join").orElseThrow().getOutput();
+      assertThat(joined.path("rex").path("status").asInt()).isBetween(200, 299);
+      assertThat(joined.path("tom").path("status").asInt()).isBetween(200, 299);
+      assertThat(steps.findByRunIdAndNodeId(runId, "count").orElseThrow().getStatus())
+          .isEqualTo(RunStepStatus.DONE);
+    }
+  }
+
+  @Test
   void aTransformCannotEscapeItsSandboxAndTheRunSaysSo() {
     WorkflowGraph graph = new WorkflowGraph(
         List.of(node("start", NodeType.TRIGGER, null),

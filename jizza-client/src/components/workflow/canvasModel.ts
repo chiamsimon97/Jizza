@@ -74,7 +74,7 @@ export const NODE_META: Record<NodeType, { label: string; desc: string; tone: st
   BRANCH: { label: 'Branch', desc: 'Splits on a yes/no condition.', tone: 'bg-emerald-600 text-white' },
   END: { label: 'End', desc: 'Finishes the run.', tone: 'bg-gray-400 text-white dark:bg-gray-600' },
   PARALLEL: { label: 'Parallel', desc: 'Runs several paths at once.', tone: 'bg-teal-600 text-white' },
-  JOIN: { label: 'Join', desc: 'Waits for every path, then carries on.', tone: 'bg-teal-700 text-white' },
+  JOIN: { label: 'Join', desc: 'Waits for every path (an hour at most, unless you change it), then carries on.', tone: 'bg-teal-700 text-white' },
   WAIT: { label: 'Wait', desc: 'Pauses for a while or until a time.', tone: 'bg-orange-500 text-white' },
   SUB_WORKFLOW: { label: 'Run a module', desc: 'Runs another workflow as one step: give it inputs, map its outputs.', tone: 'bg-indigo-600 text-white' },
   FOR_EACH: { label: 'For each', desc: 'Runs a workflow once per item in a list.', tone: 'bg-fuchsia-600 text-white' },
@@ -121,12 +121,15 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Close browser', 'browser.close'),
   web('Wait', 'browser.wait'),
   web('Screenshot', 'browser.screenshot'),
+  web('Handle pop-up dialogs', 'browser.handleDialog'),
+  web('Drag and drop', 'browser.dragDrop'),
 ]
 
 /** Browser actions whose contract requires a concrete element locator. */
 export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.click', 'browser.hover', 'browser.setText', 'browser.getText', 'browser.setCheckbox',
   'browser.getCheckbox', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
+  'browser.dragDrop',
 ])
 
 /** Actions that can use an element, including those where it is an optional targeting mode. */

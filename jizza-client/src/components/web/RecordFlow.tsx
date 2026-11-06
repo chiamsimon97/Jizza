@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Circle, Square } from 'lucide-react'
+import { Circle, PictureInPicture2, Square } from 'lucide-react'
 import { webApi, type EditOp, type Recording } from '@/api/web'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useFloatingWindow } from '@/hooks/useFloatingWindow'
 import { SlideOver } from '@/components/ui/SlideOver'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -49,15 +51,19 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
   const insert = useMutation({ mutationFn: () => webApi.insertRecording(id!),
     onSuccess: graph => { onInsert?.(graph); close() }, onError: fail })
 
-  const close = () => { setId(recordingId); setError(null); onClose() }
+  const close = () => { setId(recordingId); setError(null); float.close(); onClose() }
   const r = recording.data
+  const float = useFloatingWindow()
+  const recordingNow = r?.status === 'recording'
+  // The floating controls are only for while it records: they close once it stops.
+  useEffect(() => { if (!recordingNow) float.close() }, [recordingNow, float.close])
   const online = (browsers.data ?? []).filter(b => b.online)
   const offline = (browsers.data ?? []).filter(b => !b.online)
   const missing = missingLogins(r?.steps).length
   const canSave = !!r && r.status === 'review' && liveSteps(r.steps).length > 0 && missing === 0
 
   return (
-    <SlideOver open={open} title={mode === 'insert' ? 'Record steps here' : 'Record a task in Chrome'} onClose={close}
+    <SlideOver open={open} title={mode === 'insert' ? 'Record steps here' : r?.kind === 'desktop' ? 'Recorded on your PC' : 'Record a task in Chrome'} onClose={close}
       description="Do the task once in your own Chrome. Jizza turns it into steps you can review."
       footer={r?.status === 'review' ? (
         <div className="flex items-center justify-between gap-2">
@@ -94,15 +100,27 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
 
       {r?.status === 'recording' && (
         <div className="space-y-3">
-          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />Recording in Chrome on {r.deviceName ?? 'your browser'}</p>
+          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />{r.kind === 'desktop' ? `Recording in Windows apps on ${r.deviceName ?? 'your PC'}. Press Ctrl+Alt+R on the PC to stop.` : `Recording in Chrome on ${r.deviceName ?? 'your browser'}`}</p>
           <ol className="space-y-1 text-sm" aria-label="Captured steps">
             {liveSteps(r.steps).map((s, i) => <li key={s.seq} className="truncate">{i + 1}. {s.step.label ?? s.step.action}</li>)}
           </ol>
-          <Button variant="secondary" loading={stop.isPending} onClick={() => stop.mutate()}><Square className="h-4 w-4" />Stop</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" loading={stop.isPending} onClick={() => stop.mutate()}><Square className="h-4 w-4" />Stop</Button>
+            {r.kind !== 'desktop' && float.supported && !float.floating && (
+              <Button variant="ghost" onClick={() => { float.open({ width: 340, height: 420 }).catch(() => undefined) }}>
+                <PictureInPicture2 className="h-4 w-4" />Float controls over the site
+              </Button>
+            )}
+          </div>
+          {float.floating && <p className="text-xs text-gray-500">The controls float in a small window that stays on top. Close it any time.</p>}
+          {float.floating && createPortal(
+            <FloatingControls browser={r.deviceName ?? 'your browser'} steps={liveSteps(r.steps).map(s => s.step.label ?? s.step.action)}
+              stopping={stop.isPending} onStop={() => stop.mutate()} />,
+            float.floating.document.body)}
         </div>
       )}
 
-      {r?.status === 'failed' && <p className="text-sm text-gray-600">Nothing was captured. Try again, and check Chrome is open on the page.</p>}
+      {r?.status === 'failed' && <p className="text-sm text-gray-600">{r.kind === 'desktop' ? 'Nothing was captured. Press Ctrl+Alt+R on the PC and try again.' : 'Nothing was captured. Try again, and check Chrome is open on the page.'}</p>}
 
       {r?.status === 'review' && (
         <div className="space-y-4">
@@ -116,10 +134,28 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
               </label>
             </div>
           )}
-          {missing > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Choose a saved login for each password step before saving.</p>}
+          {missing > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">{r.kind === 'desktop' ? 'Name the secret saved on the PC (Jizza Agent › Secrets) for each password step before saving.' : 'Choose a saved login for each password step before saving.'}</p>}
           <RecordingReview recording={r} busy={edit.isPending} onEdit={ops => edit.mutate(ops)} />
         </div>
       )}
     </SlideOver>
+  )
+}
+
+/** What the floating window shows while Chrome records: the live steps and Stop. */
+function FloatingControls({ browser, steps, stopping, onStop }: {
+  browser: string; steps: string[]; stopping: boolean; onStop: () => void
+}) {
+  const end = useRef<HTMLLIElement>(null)
+  useEffect(() => { end.current?.scrollIntoView?.({ block: 'end' }) }, [steps.length])
+  return (
+    <div className="flex h-screen flex-col gap-3 p-4 text-sm">
+      <p className="flex items-center gap-2 font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />Recording in {browser}</p>
+      <ol className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label="Captured steps">
+        {steps.length === 0 && <li className="text-gray-500">Do the task in the site's window. Each step shows up here.</li>}
+        {steps.map((label, i) => <li key={i} ref={i === steps.length - 1 ? end : undefined} className="truncate">{i + 1}. {label}</li>)}
+      </ol>
+      <Button variant="secondary" loading={stopping} onClick={onStop}><Square className="h-4 w-4" />Stop recording</Button>
+    </div>
   )
 }

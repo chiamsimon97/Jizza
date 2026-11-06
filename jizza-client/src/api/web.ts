@@ -30,6 +30,8 @@ export interface PickResult {
   status: 'waiting' | 'done' | 'failed'
   element?: Record<string, unknown>
   preview?: string | null
+  /** The visible page with the element outlined (newer browser agents only). */
+  pagePreview?: string | null
   url?: string | null
   error?: WebTestError | null
 }
@@ -41,7 +43,7 @@ export interface RecordedStepData {
   input?: Record<string, unknown>
   mappings?: Record<string, { name: string; type: string; default?: unknown }>
   secretRef?: string | null
-  meta?: { url?: string; title?: string; preview?: string; sensitive?: boolean; truncated?: boolean }
+  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean }
 }
 
 export interface RecordedStep {
@@ -57,11 +59,16 @@ export interface Recording {
   status: 'recording' | 'review' | 'saved' | 'discarded' | 'failed' | string
   deviceId: string
   deviceName?: string
-  startUrl: string
+  /** Empty for a recording made in Windows apps. */
+  startUrl?: string | null
   stepCount: number
   workflowId?: string
   updatedAt: string
   steps?: RecordedStep[]
+  /** web: in Chrome; desktop: in Windows apps, started with the hotkey on the PC. */
+  kind?: 'web' | 'desktop'
+  /** The app a desktop recording started in. */
+  app?: string | null
 }
 
 export interface RecordingEvent { recordingId: string; status: string; stepCount: number; lastStep?: RecordedStep }

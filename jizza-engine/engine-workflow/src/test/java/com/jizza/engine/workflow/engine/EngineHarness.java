@@ -115,13 +115,13 @@ public final class EngineHarness {
   /** What the storage step keeps, by key, for this harness's user. */
   public final java.util.Map<String, WorkflowStorageEntity> stored = new java.util.LinkedHashMap<>();
   /** Calls the webhook step made: method, url, headers and body. */
-  public final List<Object[]> httpCalls = new ArrayList<>();
+  public final List<Object[]> httpCalls = java.util.Collections.synchronizedList(new ArrayList<>());
   public GuardedHttpClient.Response nextHttpResponse =
       new GuardedHttpClient.Response(200, "{\"ok\":true}", java.util.Map.of("content-type", "application/json"));
   /** Emails the notify step sent: to, subject, body. */
   public final List<String[]> emails = new ArrayList<>();
   /** Calls the MCP tool step made, as "tool args". */
-  public final List<String> mcpCalls = new ArrayList<>();
+  public final List<String> mcpCalls = java.util.Collections.synchronizedList(new ArrayList<>());
   public final UUID mcpServerId = UUID.randomUUID();
   /** One added MCP server with two tools; replace it to change what the step finds. */
   public com.jizza.engine.api.mcp.McpServerDto mcpServer = new com.jizza.engine.api.mcp.McpServerDto(
@@ -209,7 +209,8 @@ public final class EngineHarness {
       private final java.util.Map<String, ToolResult> completed = new java.util.HashMap<>();
 
       @Override
-      public ToolResult execute(GeneratedToolDto tool, JsonNode args, IdempotencyKey key) {
+      public synchronized ToolResult execute(GeneratedToolDto tool, JsonNode args,
+                                             IdempotencyKey key) {
         // Mirrors the real executor's contract: a repeated key replays rather than re-sending.
         if (key != null && completed.containsKey(key.key())) return completed.get(key.key());
         toolInvocations++;
@@ -466,7 +467,7 @@ public final class EngineHarness {
 
   /** A clock a test can move forward. */
   public static final class MutableClock extends java.time.Clock {
-    private Instant now = Instant.parse("2026-10-21T08:00:00Z");
+    private volatile Instant now = Instant.parse("2026-10-21T08:00:00Z");
 
     public void advance(java.time.Duration by) { now = now.plus(by); }
 
@@ -478,7 +479,8 @@ public final class EngineHarness {
   }
 
   /** Counts how often an agent step ran, so re-execution after a resume is detectable. */
-  public final java.util.Map<String, Integer> agentStepRuns = new java.util.HashMap<>();
+  public final java.util.Map<String, Integer> agentStepRuns =
+      new java.util.concurrent.ConcurrentHashMap<>();
   public java.util.function.Function<String, NodeExecutor.Outcome> agentStepBehaviour =
       nodeId -> NodeExecutor.Outcome.completed(Json.obj().put("text", "done " + nodeId));
 

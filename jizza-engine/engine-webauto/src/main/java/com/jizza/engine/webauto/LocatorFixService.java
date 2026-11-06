@@ -206,6 +206,7 @@ public class LocatorFixService implements LocatorFixes {
   static ObjectNode merge(JsonNode chosen, JsonNode old) {
     ObjectNode element = chosen.deepCopy();
     element.remove("preview");
+    element.remove("pagePreview");
     ArrayNode strategies = element.path("strategies").isArray()
         ? (ArrayNode) element.get("strategies") : element.putArray("strategies");
     for (JsonNode strategy : old.path("strategies")) {

@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-02
+updated: 2026-11-05
 ---
 
 ## What it is
@@ -55,10 +55,12 @@ This is the full procedure, checked end to end against a running Jizza server an
 
 4. In Jizza, open [Recordings](/recordings) and press **Record**.
 5. Choose your browser under **Browser agent**, type the full **Start page** address starting with `https://` (or `http://`), give the recording a **Name**, and press **Record**.
-6. A new tab opens on the start page in the browser. Jizza shows "Recording in Chrome on …" with a red dot. Wait for the page to finish loading before you start.
+6. The start page opens in its own window beside Jizza: Jizza moves to the left half of the screen and the site takes the right half, so you can see both. (If Jizza is open in a different browser, or you turned this off in the extension's Options, it opens as a new tab instead.) Jizza shows "Recording in Chrome on …" with a red dot. Wait for the page to finish loading before you start.
 7. Do the task at a normal pace. Click into a field, type, then click the next thing or press Tab: the typed value is saved as a step when you leave the field. Click buttons and links, tick boxes, choose from lists.
 8. Watch the **Captured steps** list in Jizza (or the extension's side panel, from the browser's side panel button). Each action appears within a second or two. If nothing appears after your first click, see the last part of this section.
 9. When the task is done, press **Stop** in Jizza.
+
+Tip: press **Float controls over the site** while it records. A small Jizza window with the captured steps and **Stop recording** stays on top of every other window, so you can keep the site full screen. Close it any time; it also closes when the recording stops. It needs Chrome, Edge or another Chromium browser, version 116 or newer.
 
 ### C. Review and save
 
@@ -85,7 +87,7 @@ A recording runs from **Record** to **Stop**, and gives you a list of steps to r
 
 1. In Jizza, open [Recordings](/recordings) and press **Record**.
 2. Choose the **browser agent**, a **start page** (for example `https://portal.example.com/invoices`) and a **name** for the recording.
-3. Chrome opens the start page in its own tab group, and the extension's side panel lists each step as you go.
+3. Chrome opens the start page in its own tab group, in a window placed beside Jizza, and the extension's side panel lists each step as you go. Later recordings and picks reuse that window while it stays open.
 4. Do the task the way you normally would: click, type, pick from lists, tick boxes, switch tabs.
 5. To capture something the page shows rather than something you do, use the side panel:
    - **Add check**: pick an element to check that it is there, or to read its text.
@@ -125,6 +127,7 @@ Each step stores several ways to find its element (its label, text, role and pos
 
 After you press **Stop**, the recording waits for you in review. Nothing runs until you save it.
 
+- **See on page**: click a step's picture to see the whole page with the element outlined, so you can tell which of two similar buttons it used. (Recordings made with extension versions before 5 Nov 2026 have the small picture only.)
 - **Rename** a step so it reads like an instruction, such as "Open the invoice search".
 - **Move up / Move down** to change the order, and **Delete** steps you don't need.
 - **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
@@ -147,7 +150,9 @@ A saved recording is a workflow with the **Recorded** origin, so it works anywhe
 | Schedule | First turn on scheduled runs in the workflow's reuse settings | Daily or weekly jobs |
 | Workflow builder | **Open in builder** | Adding steps, conditions or data mapping |
 
-In the builder, the **Web Automation** group has the same steps the recorder makes, so you can also add steps by hand. Each step that needs an element has **Pick on page** (click the element in Chrome) and **Test step** (run that one step).
+In the builder, the **Web Automation** group has the same steps the recorder makes, so you can also add steps by hand. Each step that needs an element has **Pick on page** (click the element in Chrome) and **Test step** (run that one step). Pick on page opens the page beside Jizza too, and afterwards the step shows the element's picture: click it to see the element outlined on the page.
+
+To keep tabs in the same window instead of a window beside Jizza, open the extension's **Options** and turn off **Open recording and picking next to Jizza**.
 
 What a step reads, such as a table's rows or an element's text, is available to later steps through data mapping, like any other step output.
 
@@ -192,6 +197,23 @@ The recorder only watches what you allow, and you can stop it at any time.
 - **No secrets stored.** Password, one-time-code and card fields are never read. They are blurred in every screenshot and step picture, and if the server ever receives one of their values, it removes it.
 - **Your approval.** Steps that change a site (submitting, typing) go through your [guardrails](/guardrails) like any other action. In chat, clicking or typing in your browser always asks first.
 - **Stop everything.** **Pause automation** in the extension popup refuses all commands until you resume. **Stop all** (Alt+Shift+S) ends whatever is running now.
+
+## Advanced web steps and options
+
+Besides recording, you can add web steps by hand from **Web Automation** in the step list. A few
+do more than a recording can:
+
+| Step or option | What it does |
+| --- | --- |
+| **Handle pop-up dialogs** | Answers the page's OK/Cancel and "type a value" pop-ups for you until the page changes. Put it before the step that makes the pop-up appear, otherwise that step waits for a person. |
+| **Drag and drop** | Drags one element onto another (**Drop onto**). Turn on **Trusted input** for sites that only react to a real mouse. |
+| **Wait** for text or an address | Waits until some text shows (or goes away), or until the page address contains a value, for example after a payment page redirects. |
+| **Advanced options › Highlight the element** | Outlines the element for a moment before acting, so you can watch what the run does. |
+| **Advanced options › Tries before giving up** | How many times the step runs before it counts as failed (default 3), and how long to wait between tries. |
+| **Advanced options › When it still fails** | **Ask me what to do** (the default) or **Stop the run**. |
+| **Edit selectors › Inside frames / shadow roots** | For elements inside an iframe or a web component: the iframes or component hosts that lead to it, as CSS selectors. Picking on the page fills these in for you. |
+
+These need the browser extension from 5 Nov 2026 or later.
 
 ## Limits and troubleshooting
 

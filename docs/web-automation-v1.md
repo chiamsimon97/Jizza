@@ -56,15 +56,17 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | 15 | Check if element exists | `browser.exists@1` ● | READ | `visibleOnly`; `timeoutMs` defaults to 3000 | `{exists, count, visible}` |
 | 16 | Switch to | `browser.switchTo@1` | READ | `to`, `match`, `element` | `{tabId, url, title, frame?}` |
 | 17 | Refresh page | `browser.refresh@1` | READ | `hard`, `waitUntil` | `{url, title}` |
-| 18 | Get element selectors | `browser.getSelectors@1` | READ | `element`? | `{element, css, xpath, preview?}` |
+| 18 | Get element selectors | `browser.getSelectors@1` | READ | `element`? | `{element, css, xpath, preview?, pagePreview?}` |
 | 19 | Get web page details | `browser.pageInfo@1` | READ | `include` | page details and requested files |
 | 20 | Go forward a page | `browser.forward@1` | READ | `waitUntil` | `{url, title, moved}` |
 | 21 | Go back a page | `browser.back@1` | READ | `waitUntil` | `{url, title, moved}` |
 | 22 | Close browser | `browser.close@1` | READ | `what` | `{closed}` |
-| – | Wait (extra) | `browser.wait@1` | READ | `for`, `ms` | `{waitedMs}` |
+| – | Wait (extra) | `browser.wait@1` | READ | `for` (`element`, `elementGone`, `navigation`, `time`, `text`, `textGone`, `url`), `ms`, `text`, `urlContains` | `{waitedMs}` |
+| – | Handle pop-up dialogs (extra) | `browser.handleDialog@1` | UPDATE | `answer`: `accept`\|`dismiss`\|`off`, `promptText`?, `times`: `always`\|`once`; browser only | `{armed, frames, answered}` |
+| – | Drag and drop (extra) | `browser.dragDrop@1` ● | UPDATE | `to` (locator bundle, same frame), `offset`?; browser only | `{dragged, dropped}` |
 | – | Screenshot (extra) | `browser.screenshot@1` | READ | `element`?, `fullPage` | `{file}` |
 | – | Download (exists, v1) | `browser.download@1` | CREATE | `url`? or `selector` / `element` | `{file, name, size}` |
-| – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, url}` |
+| – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, pagePreview?, url}` |
 | – | Record (design time) | `browser.record@1` | READ | `recordingId`, `url`?, `session`?, `maxMinutes` | `{stepCount, stoppedBy}` |
 | – | Run steps (fast replay, B9) | `browser.runSteps@1` | UPDATE | `session`?, `steps: [{key, action, version, input}]` (1–100), `stopOnError` (default true) | `{steps: {<key>: output}, failedAt?: key}` |
 
@@ -76,6 +78,9 @@ web steps, after every step has passed its own guardrail; it never nests batches
 `browser.record` or `browser.pickElement`, and it checks each step against the device's declared
 versions, blocked actions and allowed sites before sending. Batch steps carry no `session`; the batch's
 own `session` (or the one a `browser.open` step in it opens) is used.
+
+Every action that acts on an `element` also takes `highlight` (boolean, default false): the
+browser outlines the element for a moment before acting, for a person watching the run.
 
 Deadlines: the server's command `deadline` already includes `timeoutMs`; always finish before it.
 Navigation actions wait at most `min(deadline, 60 s)` for `waitUntil`.
@@ -196,6 +201,11 @@ monotonically increasing `seq`, action and version, input, label, and metadata. 
 send `secretRef: null` and never send the value. Events may arrive out of order; sort by `seq` and
 ignore a `seq` already stored.
 
+`meta.preview` is the element cropped (PNG). Newer extensions also send `meta.pagePreview`, the
+visible page with the element outlined (JPEG, at most 1280 px wide), from the same capture with
+sensitive fields blurred; `browser.pickElement@1` and `browser.getSelectors@1` return it as
+`pagePreview`. Neither is sent for a sensitive step.
+
 ```json
 {"name": "browser.recording.step",
  "data": {"recordingId": "9a7c…", "step": {"seq": 4, "action": "browser.setText", "version": 1,
@@ -210,6 +220,35 @@ ignore a `seq` already stored.
 {"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "move", "seq": 6, "toIndex": 2}}
 {"name": "browser.recording.stopped", "data": {"recordingId": "9a7c…", "stepCount": 11, "stoppedBy": "person"}}
 ```
+
+### Desktop recordings (Windows agent → server)
+
+The Jizza Windows agent records in Windows apps with a hotkey (Ctrl+Alt+R by default). The PC
+starts these recordings itself, so the events use their own names and the first one creates the
+recording:
+
+```json
+{"name": "desktop.recording.started", "data": {"recordingId": "<uuid chosen by the PC>", "name": "Notepad task 5 Nov 16:59", "app": "Notepad"}}
+{"name": "desktop.recording.step",
+ "data": {"recordingId": "…", "step": {"seq": 1, "action": "ui.type", "version": 1,
+          "input": {"app": "notepad", "element": "Edit:File name", "text": "notes.txt"},
+          "label": "Type into \"File name\"",
+          "meta": {"app": "Notepad", "window": "Save as", "sensitive": false}}}}
+{"name": "desktop.recording.stopped", "data": {"recordingId": "…", "stepCount": 4, "stoppedBy": "person"}}
+```
+
+- `started` is handled before the event is acked, so the recording exists before the PC's first
+  step is read. A repeated `started` (a resend) changes nothing. The device must declare
+  `ui.record`; a second recording on the same PC sends the first one to review.
+- The server then sends a `ui.record` command with `{"recordingId", "attach": true}`. The PC's
+  command waits until the person stops recording; cancelling it (Stop on the Recordings page)
+  stops the recording on the PC. When the command finishes, the recording goes to review as a
+  browser recording would.
+- Steps are `ui.openApp`, `ui.click`, `ui.type` and `ui.sendKeys` (SendKeys notation: `{ENTER}`,
+  `^s`). A password box sends `meta.sensitive: true` and no `text`; before saving, the person names
+  a secret saved on the PC (Credential Manager, `Jizza:<name>`) as its `secretRef`.
+- Recordings keep `kind = desktop` and the starting `app` (V39); there is no start URL. Saving
+  compiles plain `DEVICE_ACTION` steps targeted at that PC: no Open URL or Close browser steps.
 
 ### Guardrail types
 
