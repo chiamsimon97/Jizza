@@ -296,6 +296,64 @@ public class DefaultNotificationBus implements NotificationBus {
     }
   }
 
+  /** What a failed step's question falls back to when the step did not say. */
+  static final String DEFAULT_FAILED_STEP_CHOICE = "Stop the run";
+
+  /**
+   * The answer a question about a run gives itself when nobody answered in time, or null when it
+   * has none and simply expires. A failed step's question names one ({@code defaultChoice}); one
+   * raised before steps could set it is stopped, so the run does not wait on it for good.
+   */
+  public static String defaultAnswerOf(NotificationEntity item) {
+    if (item.getKind() != NotificationKind.INSTRUCTION_REQUIRED || item.getRunId() == null) {
+      return null;
+    }
+    var context = item.getContext();
+    if (context != null && context.path("defaultChoice").isTextual()
+        && !context.get("defaultChoice").asText().isBlank()) {
+      return context.get("defaultChoice").asText();
+    }
+    boolean failedStep = (context != null && context.path("failedStep").asBoolean(false))
+        || (item.getBody() != null && item.getBody().contains("could not complete:"));
+    return failedStep ? DEFAULT_FAILED_STEP_CHOICE : null;
+  }
+
+  /**
+   * Answers a question that expired unanswered with its default answer and hands that to the run,
+   * as if the person had picked it. The item says so, so nobody thinks they answered it.
+   *
+   * @return false when the question has no default answer and should simply expire
+   */
+  @Transactional(propagation = Propagation.REQUIRED)
+  public boolean answerByDefault(NotificationEntity item) {
+    String answer = defaultAnswerOf(item);
+    if (answer == null) return false;
+    if (runHasEnded(item.getRunId())) {
+      close(item, RUN_ALREADY_ENDED);
+      return true;
+    }
+    item.setStatus(NotificationStatus.SUBMITTED);
+    item.setSubmittedInstruction(answer);
+    item.setResponseNote("No answer in time, so Jizza chose the default");
+    item.setEscalationState(EscalationState.AUTO_CANCELLED);
+    item.setAnsweredAt(Instant.now());
+    item.setSnoozedUntil(null);
+    var context = item.getContext() instanceof com.fasterxml.jackson.databind.node.ObjectNode o
+        ? o.deepCopy() : Json.obj();
+    context.put("answeredByDefault", true);
+    item.setContext(context);
+    notifications.save(item);
+
+    audit.record(item.getUserId(), ActorType.SYSTEM, item.getSourceAgentId(),
+        "notification.default_answer", item.getId().toString(), Json.obj().put("answer", answer));
+    events.publishEvent(new InstructionSubmitted(item.getUserId(), item.getId(),
+        item.getRunId(), answer));
+    NotificationDto dto = toDto(item);
+    realtime.ifAvailable(gateway -> gateway.publish(item.getUserId(), "notifications", dto));
+    resumeRun(item, Json.obj().put("instruction", answer));
+    return true;
+  }
+
   static final String RUN_ALREADY_ENDED = "Closed: the run had already ended";
 
   private boolean runHasEnded(UUID runId) {

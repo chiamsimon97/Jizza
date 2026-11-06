@@ -1445,6 +1445,17 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
             <option value="dead_letter">Stop the run</option>
           </select>
         </Labelled>
+        {node.config.onFailure !== 'dead_letter' && (
+          <Labelled label="If I don't answer in time" hint="Applied when the question in your inbox expires unanswered.">
+            <select aria-label="If I don't answer in time" className={fieldClass}
+              value={node.config.ifNoAnswer === 'skip' || node.config.ifNoAnswer === 'retry' ? node.config.ifNoAnswer : 'stop'}
+              onChange={e => setConfig({ ifNoAnswer: e.target.value === 'stop' ? undefined : e.target.value })}>
+              <option value="stop">Stop the run</option>
+              <option value="skip">Skip this step</option>
+              <option value="retry">Try again</option>
+            </select>
+          </Labelled>
+        )}
       </>}
     </Section>
 

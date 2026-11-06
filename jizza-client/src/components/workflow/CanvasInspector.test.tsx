@@ -330,13 +330,17 @@ describe('CanvasInspector', () => {
       fireEvent.click(await screen.findByRole('checkbox', { name: /Highlight the element/ }))
       fireEvent.change(screen.getByRole('spinbutton', { name: 'Tries before giving up' }), { target: { value: '5' } })
       fireEvent.change(screen.getByRole('spinbutton', { name: 'Seconds between tries' }), { target: { value: '2' } })
+      fireEvent.change(screen.getByRole('combobox', { name: "If I don't answer in time" }), { target: { value: 'skip' } })
       fireEvent.change(screen.getByRole('combobox', { name: 'When it still fails' }), { target: { value: 'dead_letter' } })
+      // Stopping straight away asks nobody, so there is no question to time out.
+      expect(screen.queryByRole('combobox', { name: "If I don't answer in time" })).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: 'Save' }))
       await waitFor(() => expect(onSave).toHaveBeenCalled())
       const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
       expect(saved.config.inputs).toMatchObject({ highlight: true, to: { strategies: [{ by: 'css', value: '#zone' }] } })
       expect(saved.config.retry).toEqual({ maxAttempts: 5, backoffMillis: 2000 })
       expect(saved.config.onFailure).toBe('dead_letter')
+      expect(saved.config.ifNoAnswer).toBe('skip')
       vi.unstubAllGlobals()
     })
 

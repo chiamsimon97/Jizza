@@ -122,6 +122,7 @@ class NotificationBusTest {
         provider(realtime), events, audit, props);
     sweeper = new EscalationSweeper(notifications, users, agents, provider(mail), provider(realtime),
         audit, props);
+    sweeper.setBus(bus);
   }
 
   @Test
@@ -344,6 +345,56 @@ class NotificationBusTest {
     var stored = rows.stream().filter(r -> r.getId().equals(raised.id())).findFirst().orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(NotificationStatus.EXPIRED);
     assertThat(stored.getEscalationState()).isEqualTo(EscalationState.AUTO_CANCELLED);
+  }
+
+  @Test
+  void aFailedStepQuestionNobodyAnsweredGivesItsDefaultAnswerToTheRun() {
+    UUID runId = UUID.randomUUID();
+    var detail = com.jizza.engine.api.util.Json.obj().put("node", "open")
+        .put("failedStep", true).put("defaultChoice", "Skip this step");
+    var raised = bus.raise(NotificationKind.INSTRUCTION_REQUIRED, agentId,
+        NotificationContext.forRun(userId, "Step 'open' could not complete: refused.", detail, runId));
+    expireNow(raised.id());
+
+    sweeper.sweep();
+
+    var stored = bus.get(raised.id());
+    assertThat(stored.status()).isEqualTo(NotificationStatus.SUBMITTED);
+    assertThat(stored.submittedInstruction()).isEqualTo("Skip this step");
+    assertThat(stored.responseNote()).contains("No answer in time");
+    var payload = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+    verify(engine).resume(eq(runId), payload.capture());
+    assertThat(payload.getValue().path("instruction").asText()).isEqualTo("Skip this step");
+    assertThat(payload.getValue().path("node").asText()).isEqualTo("open");
+  }
+
+  @Test
+  void aFailedStepQuestionRaisedBeforeDefaultsStopsTheRunWhenItExpires() {
+    UUID runId = UUID.randomUUID();
+    var raised = bus.raise(NotificationKind.INSTRUCTION_REQUIRED, agentId,
+        NotificationContext.forRun(userId,
+            "Step 'Open' could not complete: refused. How would you like to proceed?", null, runId));
+    expireNow(raised.id());
+
+    sweeper.sweep();
+
+    assertThat(bus.get(raised.id()).submittedInstruction()).isEqualTo("Stop the run");
+    var payload = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+    verify(engine).resume(eq(runId), payload.capture());
+    assertThat(payload.getValue().path("instruction").asText()).isEqualTo("Stop the run");
+  }
+
+  @Test
+  void anOrdinaryRunQuestionStillJustExpires() {
+    UUID runId = UUID.randomUUID();
+    var raised = bus.raise(NotificationKind.INSTRUCTION_REQUIRED, agentId,
+        NotificationContext.forRun(userId, "Which supplier?", null, runId));
+    expireNow(raised.id());
+
+    sweeper.sweep();
+
+    assertThat(bus.get(raised.id()).status()).isEqualTo(NotificationStatus.EXPIRED);
+    verify(engine, never()).resume(any(), any());
   }
 
   @Test

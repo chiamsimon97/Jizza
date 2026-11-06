@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
-  KIND_META, agentOf, ago, argsOf, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
+  KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
   RUN_CHOICES,
 } from './inbox'
 
@@ -67,6 +67,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const unread = n.status === 'UNREAD'
   const tool = typeof n.context?.tool === 'string' ? n.context.tool : null
   const failedStep = open && n.kind === 'INSTRUCTION_REQUIRED' && isFailedStep(n)
+  const defaultChoice = failedStep ? defaultChoiceOf(n) : null
   const canStopRun = open && n.kind === 'INSTRUCTION_REQUIRED' && !!n.runId
   const canAlwaysAllow = open && n.kind === 'PERMISSION_REQUEST' && !!tool && !!n.sourceAgentId
 
@@ -109,8 +110,8 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
       ref={ref}
       tabIndex={-1}
       onClick={() => { onFocus(); if (unread && n.kind === 'INFO') void actions.markRead(n) }}
-      className={`relative overflow-hidden rounded-xl border bg-white p-4 pl-5 shadow-sm transition-all duration-150 outline-none dark:bg-gray-900
-        before:absolute before:inset-y-0 before:left-0 before:w-1 ${accent}
+      className={`relative rounded-xl border bg-white p-4 pl-5 shadow-sm transition-all duration-150 outline-none dark:bg-gray-900
+        before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-xl ${accent}
         ${focused ? 'border-brand-400 ring-2 ring-brand-500/20 dark:border-brand-600' : 'border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700'}
         ${!open && !unread ? 'opacity-80' : ''}`}
     >
@@ -204,12 +205,21 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                       loading={busy === c.answer} disabled={busy !== null}
                       onClick={() => void run(c.answer, () => actions.reply(n, c.answer))}>
                       {c.answer}
+                      {c.answer === defaultChoice && <span className="ml-1 rounded bg-black/10 px-1 text-[10px] font-semibold uppercase tracking-wide dark:bg-white/15">Default</span>}
                     </Button>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {RUN_CHOICES.map(c => c.explain).join(' ')}
                 </p>
+                {defaultChoice && (
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                    {n.expiresAt
+                      ? <>No answer by {new Date(n.expiresAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}? Jizza {defaultEffect(defaultChoice)}.</>
+                      : <>With no answer, Jizza {defaultEffect(defaultChoice)}.</>}
+                    {n.workflowId && <> You can change this in the step's Advanced options.</>}
+                  </p>
+                )}
               </div>
             )}
             {open && n.kind === 'INSTRUCTION_REQUIRED' && (
@@ -327,6 +337,8 @@ function ItemMenu({ n, now, disabled, onSnooze, onToggleRead }: {
   onSnooze: (until: Date | null) => void; onToggleRead: () => void
 }) {
   const [open, setOpen] = useState(false)
+  // The button sits at the bottom of the card, so near the bottom of the window the menu opens upwards.
+  const [up, setUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -345,14 +357,19 @@ function ItemMenu({ n, now, disabled, onSnooze, onToggleRead }: {
     <div ref={ref} className="relative">
       <button
         disabled={disabled}
-        onClick={() => setOpen(o => !o)}
+        onClick={e => {
+          const below = window.innerHeight - e.currentTarget.getBoundingClientRect().bottom
+          setUp(below < 280)
+          setOpen(o => !o)
+        }}
         aria-label="More actions"
+        aria-expanded={open}
         className="grid h-8 w-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-800 dark:bg-gray-900">
+        <div role="menu" className={`absolute right-0 z-30 w-56 ${up ? 'bottom-full mb-1' : 'top-full mt-1'} overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-800 dark:bg-gray-900`}>
           {(unread || n.status === 'READ') && (
             <button className={item} onClick={() => { setOpen(false); onToggleRead() }}>
               {unread ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
