@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Bot, Hand, List, Network, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Cable, Hand, List, Network, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { WorkflowCanvas } from '@/components/workflow/WorkflowCanvas'
+import { WiresBoard } from '@/components/workflow/WiresBoard'
 import { LocatorFixPanel } from '@/components/web/LocatorFixPanel'
 import type { LocatorFix } from '@/api/web'
 import { emptyGraph, fromGraph, problems as canvasProblems, toGraph as canvasToGraph, type CanvasGraph } from '@/components/workflow/canvasModel'
@@ -104,6 +105,8 @@ export function WorkflowForm() {
   const [notice, setNotice] = useState('')
   const [mode, setMode] = useState<EditorMode>(preferredMode)
   const [canvas, setCanvas] = useState<CanvasGraph>(emptyGraph)
+  // Canvas and Wires are two views of the same graph; only the step list is separate.
+  const graphMode = mode !== 'steps'
 
   // Opened from a saved row: editing that workflow rather than starting a new one.
   const workflowId = str(request?.fields.id) || undefined
@@ -116,28 +119,29 @@ export function WorkflowForm() {
   const { data: runs } = useQuery({
     queryKey: ['workflow-runs', workflowId],
     queryFn: () => workflowsApi.latestRuns(workflowId!),
-    enabled: !!workflowId && mode === 'canvas',
+    enabled: !!workflowId && graphMode,
   })
   const latestRunId = runId ?? runs?.[0]?.id ?? null
   const { data: shownRun } = useQuery({
     queryKey: ['run', latestRunId],
     queryFn: () => workflowsApi.getRun(latestRunId!),
-    enabled: !!latestRunId && mode === 'canvas',
+    enabled: !!latestRunId && graphMode,
     refetchInterval: q => (q.state.data?.status === 'RUNNING' ? 1500 : false),
   })
-  const canvasSteps = mode === 'canvas' ? stepsFromGraph(canvasToGraph(canvas)) : null
+  const canvasSteps = graphMode ? stepsFromGraph(canvasToGraph(canvas)) : null
   const stepsAvailable = mode === 'steps' || canvasSteps !== null
 
   function switchMode(next: EditorMode) {
     if (next === mode) return
-    if (next === 'canvas') {
+    if (next === 'steps') {
+      if (!canvasSteps) return
+      setSteps(stepsFrom(canvasSteps, agents))
+    } else if (!graphMode) {
       // Keep the canvas layout when the steps haven't changed since it was last shown.
+      // Between Canvas and Wires nothing converts: both show the same graph.
       const current = stepsFromGraph(canvasToGraph(canvas))
       const same = current !== null && JSON.stringify(current.map(plain)) === JSON.stringify(steps.map(plain))
       if (!same) setCanvas(fromGraph(toGraph(steps)))
-    } else {
-      if (!canvasSteps) return
-      setSteps(stepsFrom(canvasSteps, agents))
     }
     setMode(next)
     rememberMode(next)
@@ -162,7 +166,7 @@ export function WorkflowForm() {
     if (!request) return
     const saved = request.fields.graph
     setCanvas(saved ? fromGraph(saved) : emptyGraph())
-    if (saved && !Array.isArray(request.fields.steps)) setMode('canvas')
+    if (saved && !Array.isArray(request.fields.steps)) setMode(preferredMode() === 'wires' ? 'wires' : 'canvas')
     else if (request.byJizza) setMode('steps')
     else setMode(preferredMode())
   }, [request?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -185,7 +189,7 @@ export function WorkflowForm() {
   const save = useMutation({
     mutationFn: () => workflowsApi.save({
       id: workflowId, name: name.trim(), description: description.trim() || undefined,
-      graph: mode === 'canvas' ? canvasToGraph(canvas) : toGraph(steps),
+      graph: graphMode ? canvasToGraph(canvas) : toGraph(steps),
     }),
     onSuccess: (wf) => {
       void qc.invalidateQueries({ queryKey: ['workflows'] })
@@ -196,7 +200,7 @@ export function WorkflowForm() {
   })
 
   // A workflow that declares inputs asks for them before a run, as a module's caller would give them.
-  const declaredInputs = mode === 'canvas' ? moduleInputs(canvasToGraph(canvas)) : []
+  const declaredInputs = graphMode ? moduleInputs(canvasToGraph(canvas)) : []
   const [askInputs, setAskInputs] = useState(false)
   const [runInput, setRunInput] = useState<Record<string, string>>({})
   useEffect(() => { setAskInputs(false); setRunInput({}) }, [request?.nonce])
@@ -208,7 +212,7 @@ export function WorkflowForm() {
     onSuccess: (r) => {
       setAskInputs(false)
       if (r?.id) setRunId(r.id)
-      setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). ${mode === 'canvas' ? 'Its progress shows on the canvas.' : "You'll see it in Activity and Notifications."}`)
+      setNotice(`Run started (${String(r?.status ?? 'running').toLowerCase().replace(/_/g, ' ')}). ${mode === 'canvas' ? 'Its progress shows on the canvas.' : mode === 'wires' ? 'Arrows follow it along the wires.' : "You'll see it in Activity and Notifications."}`)
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not start the run'),
   })
@@ -217,7 +221,7 @@ export function WorkflowForm() {
     e.preventDefault()
     if (readOnly) return
     if (!name.trim()) return setError('Give the workflow a name.')
-    if (mode === 'canvas') {
+    if (graphMode) {
       const issues = canvasProblems(canvas)
       if (issues.length) return setError(issues.slice(0, 3).join(' '))
       setError('')
@@ -245,7 +249,7 @@ export function WorkflowForm() {
   const hi = !!request?.byJizza
 
   // While the form is open Jizza works on this workflow, whichever editor shows it.
-  const shownGraph = request ? (mode === 'canvas' ? canvas : fromGraph(toGraph(steps))) : null
+  const shownGraph = request ? (graphMode ? canvas : fromGraph(toGraph(steps))) : null
   useJizzaContext(request && shownGraph ? builderContext(name.trim(), shownGraph, canvasProblems(shownGraph)) : null)
 
   return (
@@ -256,9 +260,11 @@ export function WorkflowForm() {
         ? `This workflow is ${status.toLowerCase().replace(/_/g, ' ')}, so it is shown read-only here.`
         : mode === 'canvas'
           ? 'Drag steps onto the canvas and connect them. A draft does nothing until you run it.'
+          : mode === 'wires'
+            ? 'Drag steps onto a step or a wire and they wire themselves in. Steps run top to bottom. A draft does nothing until you run it.'
           : 'Steps run in order. A draft does nothing until you run it.'}
       onClose={close}
-      wide={mode === 'canvas'}
+      wide={graphMode}
       headerExtra={<ModeToggle mode={mode} onChange={switchMode} stepsDisabled={!stepsAvailable} />}
       footer={<>
         {/* Jizza works on whatever is open here: the workflow, or a step's settings. */}
@@ -283,12 +289,12 @@ export function WorkflowForm() {
             <span>Jizza drafted this for you. Check it over and save, or ask Jizza to change something.</span>
           </div>
         )}
-        <div className={mode === 'canvas' ? 'grid gap-4 sm:grid-cols-2' : 'contents'}>
+        <div className={graphMode ? 'grid gap-4 sm:grid-cols-2' : 'contents'}>
           <div className={hi && name ? 'rounded-lg animate-jizza-filled' : ''}>
             <Input label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Weekly report" />
           </div>
           <Field label="Description" highlight={hi && !!description}>
-            <textarea className={fieldClass} rows={mode === 'canvas' ? 1 : 2} value={description} onChange={e => setDescription(e.target.value)} placeholder="What this workflow is for" />
+            <textarea className={fieldClass} rows={graphMode ? 1 : 2} value={description} onChange={e => setDescription(e.target.value)} placeholder="What this workflow is for" />
           </Field>
         </div>
 
@@ -331,11 +337,12 @@ export function WorkflowForm() {
             <Button type="button" size="sm" variant="secondary" onClick={() => add('agent')}><Plus className="h-4 w-4" />Agent step</Button>
             <Button type="button" size="sm" variant="secondary" onClick={() => add('ask')}><Hand className="h-4 w-4" />Ask me</Button>
           </div>
-          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Need branches or service actions? Switch to Canvas at the top.</p>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Need branches or service actions? Switch to Canvas or Wires at the top.</p>
         </div>}
         </fieldset>
         {workflowId && <LocatorFixPanel workflowId={workflowId} focusNode={focusNode} onApplied={reopenFixed} />}
         {mode === 'canvas' && <WorkflowCanvas graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} focusNode={focusNode} />}
+        {mode === 'wires' && <WiresBoard graph={canvas} onChange={setCanvas} readOnly={readOnly} run={shownRun} focusNode={focusNode} />}
         {askInputs && declaredInputs.length > 0 && (
           <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 animate-fade-in dark:border-gray-800 dark:bg-gray-950">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Inputs for this run</p>
@@ -362,12 +369,15 @@ export function WorkflowForm() {
   )
 }
 
-type EditorMode = 'steps' | 'canvas'
+type EditorMode = 'steps' | 'canvas' | 'wires'
 const MODE_KEY = 'jizza.workflowEditor'
 
 /** The editor the user picked last time, so each person keeps the one they're comfortable with. */
 function preferredMode(): EditorMode {
-  try { return localStorage.getItem(MODE_KEY) === 'canvas' ? 'canvas' : 'steps' } catch { return 'steps' }
+  try {
+    const saved = localStorage.getItem(MODE_KEY)
+    return saved === 'canvas' || saved === 'wires' ? saved : 'steps'
+  } catch { return 'steps' }
 }
 
 function rememberMode(mode: EditorMode) {
@@ -386,8 +396,9 @@ function ModeToggle({ mode, onChange, stepsDisabled }: { mode: EditorMode; onCha
   )
   return (
     <div role="tablist" aria-label="Editor" className="flex shrink-0 items-center gap-0.5 self-center rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
-      {item('steps', 'Steps', List, stepsDisabled, stepsDisabled ? 'This workflow uses branches or service actions, so it can only be edited on the canvas.' : undefined)}
+      {item('steps', 'Steps', List, stepsDisabled, stepsDisabled ? 'This workflow uses branches or service actions, so it can only be edited on the canvas or wires.' : undefined)}
       {item('canvas', 'Canvas', Network)}
+      {item('wires', 'Wires', Cable)}
     </div>
   )
 }

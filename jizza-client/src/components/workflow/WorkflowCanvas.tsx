@@ -774,12 +774,12 @@ const MINIMAP: Record<NodeType, string> = {
   MCP_TOOL: '#6d28d9', SCRIPT: '#5b21b6', DEVICE_ACTION: '#44403c',
 }
 
-const RUN_LABEL: Record<string, string> = {
+export const RUN_LABEL: Record<string, string> = {
   RUNNING: 'Running', PAUSED_WAITING_INSTRUCTION: 'Waiting for you', WAITING: 'Waiting', DONE: 'Last run done', FAILED: 'Last run failed', CANCELLED: 'Last run cancelled',
 }
 
 /** Turns a run into what the canvas shows: each step's state, its output, and which steps ran. */
-function runState(run: RunDto, startId?: string) {
+export function runState(run: RunDto, startId?: string) {
   const steps = new Map<string, RunStepDto>()
   for (const s of run.steps ?? []) steps.set(s.nodeId, s)
   const nodes = new Map<string, StepRun>()
@@ -820,7 +820,7 @@ function Shortcuts() {
 }
 
 /** Every service action the user can put in a workflow. Without connector access the list is empty. */
-async function loadTools(): Promise<ToolOption[]> {
+export async function loadTools(): Promise<ToolOption[]> {
   try {
     const connections = await api.get<ConnectionDto[]>('/api/connections')
     const lists = await Promise.all(connections.map(c =>
