@@ -36,9 +36,11 @@ import org.springframework.stereotype.Component;
  * {@code find_saved_workflows} and {@code run_saved_workflow}: Jizza looks a request up in the
  * user's workflows and, when one does the job, runs it instead of working the job out again.
  *
- * <p>"With the user's knowledge" is enforced here rather than left to the prompt. A workflow whose
- * guardrails say to ask first (and every draft) runs only with a confirmation this tool handed out
- * on an earlier turn of the same conversation, redeemed on a later turn the user started by typing.
+ * <p>"With the user's knowledge" is enforced here rather than left to the prompt. A turn the user
+ * started by typing a request to run a workflow is their go-ahead ({@code user_asked_to_run}), as
+ * pressing Run would be. Otherwise a workflow whose guardrails say to ask first (and every draft)
+ * runs only with a confirmation this tool handed out on an earlier turn of the same conversation,
+ * redeemed on a later turn the user started by typing.
  * Jizza cannot ask and answer in the same turn, and an event-started turn cannot redeem one. The
  * question is remembered per workflow and conversation, so when the user agrees Jizza only has to
  * call again: chat history keeps what was said, not tool results, and a code Jizza had to carry
@@ -97,16 +99,21 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
                     + "mean, in their words"))),
                 List.of("request"))),
         new ToolSpec(RUN,
-            "Run one of the user's workflows for this request, with its fixed steps. The first call "
-                + "on a workflow that asks before running puts the question to the user; end your "
-                + "turn. When the user agrees (they type yes or press the button), call this "
-                + "again with the same workflow_id: the agreement is remembered for this "
-                + "conversation, so no confirmation needs to be passed. Never tell the user you "
-                + "are running a workflow without calling this tool in the same turn. Tell the "
-                + "user which workflow you used.",
+            "Run one of the user's workflows, with its fixed steps. You own the user's workflows "
+                + "and may run them. When the user's own message asks you to run this workflow "
+                + "(by name or by a description that clearly means it), set user_asked_to_run: "
+                + "their request is the go-ahead and it runs at once; its step guardrails still "
+                + "apply during the run. When you picked the workflow yourself for a job the "
+                + "user did not tie to it, leave user_asked_to_run out: if its guardrails say to "
+                + "ask, the question goes to the user; end your turn, and when they agree call "
+                + "again with the same workflow_id (the agreement is remembered). Never tell the "
+                + "user you are running a workflow without calling this tool in the same turn. "
+                + "Tell the user which workflow you used.",
             JsonSchemas.object(new LinkedHashMap<>(Map.of(
                 "workflow_id", JsonSchemas.string("From find_saved_workflows"),
                 "input", JsonSchemas.objectSchema("Values for the workflow's inputs, by name"),
+                "user_asked_to_run", JsonSchemas.bool("True when the user's message in this turn "
+                    + "asks to run this workflow; it then counts as their go-ahead"),
                 "confirmation", JsonSchemas.string("Optional: the confirmation an earlier call "
                     + "returned, once the user has agreed"))),
                 List.of("workflow_id"))));
@@ -197,7 +204,11 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
     boolean confirmed = false;
     String code = args.path("confirmation").asText("").strip();
     if (code.isEmpty()) code = askedEarlier(userId, workflowId, conversationId, sink.orElse(null));
-    if (!code.isEmpty()) {
+    boolean requested = args.path("user_asked_to_run").asBoolean(false) && Activity.fromUser();
+    if (code.isEmpty() && requested) {
+      // The user typed the request to run it: that is the yes. An event-started turn never is.
+      confirmed = true;
+    } else if (!code.isEmpty()) {
       String problem = redeem(code, userId, workflowId, conversationId, sink.orElse(null));
       if (problem != null) return ToolResult.error(problem);
       confirmed = true;

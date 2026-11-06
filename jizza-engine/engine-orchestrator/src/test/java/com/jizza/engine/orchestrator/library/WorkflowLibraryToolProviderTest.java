@@ -122,6 +122,28 @@ class WorkflowLibraryToolProviderTest {
   }
 
   @Test
+  void theUsersOwnRequestToRunItIsTheGoAheadEvenForADraftThatAsksFirst() {
+    status = WorkflowStatus.DRAFT;
+
+    ToolResult ran = inTurn("chat", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\",\"user_asked_to_run\":true}"));
+
+    assertThat(ran.ok()).isTrue();
+    assertThat(ran.output().path("needs_confirmation").asBoolean()).isFalse();
+    verify(library).reuse(eq(userId), eq(workflowId), any(), eq(WorkflowLibrary.Use.CHAT),
+        eq("chat:" + conversationId), eq(true));
+  }
+
+  @Test
+  void aTurnNobodyTypedCannotClaimTheUserAskedForTheRun() {
+    ToolResult result = inTurn("signal", () -> call(WorkflowLibraryToolProvider.RUN,
+        "{\"workflow_id\":\"" + workflowId + "\",\"user_asked_to_run\":true}"));
+
+    assertThat(result.output().path("needs_confirmation").asBoolean()).isTrue();
+    verify(library, never()).reuse(any(), any(), any(), any(), any(), anyBoolean());
+  }
+
+  @Test
   void theUsersYesRunsTheWorkflowWithoutJizzaCarryingTheCode() {
     inTurn("chat", () -> call(WorkflowLibraryToolProvider.RUN, "{\"workflow_id\":\"" + workflowId + "\"}"));
     assertThat(provider.pending(userId, conversationId)).extracting(WorkflowLibraryToolProvider.Pending::name)

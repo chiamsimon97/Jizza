@@ -182,7 +182,7 @@ function ReuseSection({ reuse, keep, onKeep, guardrails, onChange, locked }: {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={guardrails.confirmBeforeRun} disabled={locked}
               onChange={e => onChange({ ...guardrails, confirmBeforeRun: e.target.checked })} />
-            Ask me before each run
+            Ask me before Jizza runs it on its own (asking Jizza to run it is a yes)
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={guardrails.allowScheduled} disabled={locked}

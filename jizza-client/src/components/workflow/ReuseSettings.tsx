@@ -48,7 +48,7 @@ export function ReuseSettings({ workflow }: { workflow: WorkflowDto }) {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={current.confirmBeforeRun} disabled={busy}
               onChange={e => update.mutate({ ...current, confirmBeforeRun: e.target.checked })} />
-            Ask me before each run
+            Ask me before Jizza runs it on its own (asking Jizza to run it is a yes)
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={current.allowScheduled} disabled={busy}

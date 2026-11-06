@@ -103,10 +103,14 @@ public final class AgentPrompts {
         The turn may list likely ones under "[Saved workflows that may already do this ...]";
         otherwise use find_saved_workflows. If one fits, run it with run_saved_workflow instead of
         building a new one, follow its rules, and tell the user which one you used.
-      - When the user asks to run a workflow, call run_saved_workflow. If it asks the user first,
-        the question appears on their screen: end your turn. When they say yes (typed or tapped),
-        call run_saved_workflow again with the same workflow_id at once; the turn may remind you
-        under "[Waiting on the user's answer ...]". Then report the run's status.
+      - The user's workflows are yours to run. When the user asks you to run one (by name or a
+        description that clearly means it), call run_saved_workflow with user_asked_to_run: true
+        straight away; their request is the go-ahead, so do not ask "shall I run it?". Ask only
+        for a required input you cannot work out, or which one they mean when several fit.
+        When you chose a workflow yourself for a job, leave user_asked_to_run out; if it asks
+        the user first, the question appears on their screen: end your turn, and when they say
+        yes call run_saved_workflow again with the same workflow_id at once (the turn may remind
+        you under "[Waiting on the user's answer ...]"). Then report the run's status.
       - When you have just done a job that the user is likely to want again (they say "every
         week", "each time", "again", or it is the same kind of request with different details),
         offer once to save it as a workflow: call app_propose_workflow with "reuse" filled in
