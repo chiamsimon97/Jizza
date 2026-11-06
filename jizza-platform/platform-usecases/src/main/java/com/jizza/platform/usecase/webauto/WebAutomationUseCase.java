@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.authz.Access;
 import com.jizza.engine.api.enums.ActorType;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.webauto.BrowserAgents;
 import com.jizza.engine.api.webauto.DesignTimeService;
@@ -108,6 +109,19 @@ public class WebAutomationUseCase {
   }
 
   /** Only ever on the person's word: the fix changes the workflow the step belongs to. */
+  /** Applies the element the person picked on the page with {@code pickCommandId}. */
+  public LocatorFixes.Applied applyPickedFix(Access access, UUID id, UUID pickCommandId) {
+    DesignTimeService.PickResult picked = designTime.pickResult(access, pickCommandId);
+    if (!"done".equals(picked.status()) || picked.element() == null) {
+      throw new ValidationException("Pick the element on the page first");
+    }
+    LocatorFixes.Applied applied = fixes.applyElement(access, id, picked.element());
+    audit.record(access.userId(), ActorType.USER, null, "web.fix_applied", id.toString(),
+        Json.obj().put("fixId", id.toString()).put("workflowId", applied.workflowId().toString())
+            .put("version", applied.version()).put("picked", pickCommandId.toString()));
+    return applied;
+  }
+
   public LocatorFixes.Applied applyFix(Access access, UUID id, int candidateIndex) {
     LocatorFixes.Applied applied = fixes.apply(access, id, candidateIndex);
     audit.record(access.userId(), ActorType.USER, null, "web.fix_applied", id.toString(),

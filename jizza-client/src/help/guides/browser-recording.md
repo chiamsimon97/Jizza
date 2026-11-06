@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 ## What it is
@@ -31,6 +31,9 @@ Nothing is decided on the fly. You can see and change every step, and a run stop
 A run pauses when a page needs a person and goes on after **Done, continue**. When a step can't find its element, the run waits for you to apply a fix, and applying it saves a new version.
 
 ## Before you start
+
+The Record screen shows a **Before you record** checklist until these are done, and ticks each one off as it finds it done.
+
 
 You set up three things once: the extension, a paired browser, and the sites it may work on.
 
@@ -93,7 +96,7 @@ A recording runs from **Record** to **Stop**, and gives you a list of steps to r
    - **Add check**: pick an element to check that it is there, or to read its text.
    - **Add table**: pick a table to extract its rows.
    - **Mark hover**: pick an element the run should hover over, such as a menu.
-6. If you make a stray click, delete it in the side panel. You can also drag steps into a different order there.
+6. If you make a stray click, delete it in the side panel (×). You can also drag steps into a different order, rename a step (✎), and turn a typed value into an input (⇄) there, without waiting for the review. A step that became an input shows "input: name". Choosing a saved login for a password still happens in Jizza's review.
 7. Press **Stop**, in the side panel or in Jizza. Closing the last tab of the recording also stops it.
 
 You can also start a recording in two other ways:
@@ -228,7 +231,7 @@ These need the browser extension from 5 Nov 2026 or later.
 
 ### When a page changes
 
-Sites change, and a step may no longer find its element. When that happens, the run stops at that step and Chrome looks for similar elements (same kind, similar text and position). You get a notification such as "Step 4 of Supplier invoices could not find Submit order. Review a fix". **Review fix** opens the workflow on that step. Choose the right element and press **Apply fix**, or press **Dismiss**. Jizza never picks one for you. Applying saves a new version, and the old ways of finding the element stay as fallbacks.
+Sites change, and a step may no longer find its element. When that happens, the run stops at that step and Chrome looks for similar elements (same kind, similar text and position). You get a notification such as "Step 4 of Supplier invoices could not find Submit order. Review a fix". **Review fix** opens the workflow on that step. Choose the right element and press **Apply fix**, or press **Dismiss**. Jizza never picks one for you. If none of the suggestions is right, press **Pick on page** under "None of these?" and click the right element in the browser (the run's page is usually still open). Check the picture of what you picked, then press **Use this element**. Applying saves a new version, and the old ways of finding the element stay as fallbacks.
 
 ### Common problems
 

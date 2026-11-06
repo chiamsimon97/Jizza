@@ -123,6 +123,9 @@ export const webApi = {
   fixes: (status?: string) => api.get<LocatorFix[]>(`/api/web/fixes${status ? `?status=${status}` : ''}`),
   applyFix: (id: string, candidateIndex: number) =>
     api.post<{ workflowId: string; version: number }>(`/api/web/fixes/${id}/apply`, { candidateIndex }),
+  /** Applies the element the person picked on the page (the pick's command id) instead of a suggestion. */
+  applyPickedFix: (id: string, pickCommandId: string) =>
+    api.post<{ workflowId: string; version: number }>(`/api/web/fixes/${id}/apply`, { pickCommandId }),
   dismissFix: (id: string) => api.post<void>(`/api/web/fixes/${id}/dismiss`, {}),
   testStep: (body: { deviceId: string; action: string; version: number; inputs: Record<string, unknown> }) =>
     api.post<WebTestResult>('/api/web/test-step', body),
