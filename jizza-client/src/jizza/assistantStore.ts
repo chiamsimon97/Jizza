@@ -15,6 +15,9 @@ import { splitAttachments } from './attachments'
 
 export interface Step {
   label: string
+  /** Where the user can follow up on it, such as the log of a run Jizza started. */
+  href?: string
+  hrefLabel?: string
 }
 
 export interface AssistantMessage {
@@ -154,6 +157,11 @@ export function reviewQuery(payload: { page: string; review?: string }): string 
     ? `?review=${payload.review}` : ''
 }
 
+/** The Run history page with this run's execution log open. */
+export function runLogPath(runId: string): string {
+  return `/runs?run=${encodeURIComponent(runId)}`
+}
+
 function describe(action: UiAction): string {
   switch (action.type) {
     case 'navigate': return `Opened ${PAGES[action.payload.page]?.label ?? action.payload.page}`
@@ -181,7 +189,7 @@ interface Executed {
   userSteps?: UserSteps[]
 }
 
-function execute(actions: UiAction[], run = true): Executed {
+export function execute(actions: UiAction[], run = true): Executed {
   const steps: Step[] = []
   let question: AssistantMessage['question']
   let plan: WorkflowPlan | undefined
@@ -251,7 +259,9 @@ function execute(actions: UiAction[], run = true): Executed {
         userSteps.push(action.payload)
         continue
     }
-    steps.push({ label: describe(action) })
+    steps.push(action.type === 'reused_workflow' && action.payload?.runId
+      ? { label: describe(action), href: runLogPath(action.payload.runId), hrefLabel: 'View run log' }
+      : { label: describe(action) })
   }
   return { steps, question, plan, proposal, thread, handback, ...(userSteps.length ? { userSteps } : {}) }
 }

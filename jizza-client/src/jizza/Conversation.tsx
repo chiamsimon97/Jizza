@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, SquareSlash, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
 import { queryClient } from '@/lib/queryClient'
@@ -432,6 +433,11 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
               <li key={i} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-500/20 animate-fade-in dark:bg-brand-500/10 dark:text-brand-300" style={{ animationDelay: `${i * 120}ms` }}>
                 <Check className="h-3 w-3" />
                 {step.label}
+                {step.href && (
+                  <Link to={step.href} className="ml-1 inline-flex items-center gap-0.5 underline decoration-brand-500/40 underline-offset-2 hover:decoration-current">
+                    {step.hrefLabel ?? 'Open'} <ArrowUpRight className="h-3 w-3" aria-hidden />
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

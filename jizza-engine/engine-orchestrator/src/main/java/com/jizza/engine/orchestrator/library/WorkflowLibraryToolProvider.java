@@ -232,8 +232,10 @@ public class WorkflowLibraryToolProvider implements ToolProvider {
         .put("runId", run.id().toString()).put("status", status)));
     ObjectNode out = Json.obj().put("run_id", run.id().toString()).put("status", status);
     if (run.currentNode() != null) out.put("current_step", run.currentNode());
-    out.put("note", "Started the saved workflow '" + match.name() + "'. Tell the user you used it "
-        + "rather than building something new, and what happened; the run is on the Runs page.");
+    out.put("run_log", "/runs?run=" + run.id());
+    out.put("note", "The run of '" + match.name() + "' has started (status: " + status + "). Tell "
+        + "the user it has started, not that you will run it, and what happened so far. A link to "
+        + "the run's execution log is shown with your reply, so do not paste one.");
     return ToolResult.ok(out);
   }
 
