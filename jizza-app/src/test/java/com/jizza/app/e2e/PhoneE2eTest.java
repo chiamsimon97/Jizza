@@ -165,6 +165,11 @@ class PhoneE2eTest extends E2eSupport {
     String run = Json.write(Map.of("input", Map.of()));
     String runPath = "/agent/v1/me/workflows/" + UUID.randomUUID() + "/run";
     assertThat(post(runPath, run, signedHeaders("POST", runPath, run)).statusCode()).isEqualTo(404);
+    // Turning someone else's (or no) workflow off is not found either.
+    String off = Json.write(Map.of("enabled", false));
+    String enabledPath = "/agent/v1/me/workflows/" + UUID.randomUUID() + "/enabled";
+    assertThat(post(enabledPath, off, signedHeaders("POST", enabledPath, off)).statusCode())
+        .isEqualTo(404);
   }
 
   @Test

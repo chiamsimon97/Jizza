@@ -125,6 +125,8 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Drag and drop', 'browser.dragDrop'),
   web('Fill form', 'browser.fillForm'),
   web('Set date', 'browser.setDate'),
+  web('Pick a date in a calendar', 'browser.pickDate'),
+  web('Type and choose', 'browser.chooseOption'),
   web('Check items', 'browser.checkItems'),
   web('Choose from a list', 'browser.clickItem'),
   web('List items', 'browser.listItems'),
@@ -135,6 +137,7 @@ export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.click', 'browser.hover', 'browser.setText', 'browser.getText', 'browser.setCheckbox',
   'browser.getCheckbox', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
   'browser.dragDrop', 'browser.setDate', 'browser.checkItems', 'browser.clickItem', 'browser.listItems',
+  'browser.pickDate', 'browser.chooseOption',
 ])
 
 /** Actions that can use an element, including those where it is an optional targeting mode. */

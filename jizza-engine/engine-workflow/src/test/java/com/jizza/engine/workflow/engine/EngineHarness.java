@@ -106,6 +106,11 @@ public final class EngineHarness {
       com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED;
   public JsonNode nextDeviceOutput = Json.obj();
   public final java.util.Map<String, JsonNode> deviceOutputs = new java.util.HashMap<>();
+  /** Outputs given in turn, one per command of that action, before {@link #deviceOutputs}. */
+  public final java.util.Map<String, java.util.ArrayDeque<JsonNode>> deviceOutputQueues =
+      new java.util.HashMap<>();
+  /** A failure for the next command of that action only: its output, with an error object. */
+  public final java.util.Map<String, JsonNode> deviceFailures = new java.util.HashMap<>();
   /** Input schemas for browser actions a test needs as the catalog has them. */
   public final java.util.Map<String, JsonNode> deviceInputSchemas = new java.util.HashMap<>();
   /** Actions the fake device did not declare: sending one is refused, as the broker refuses it. */
@@ -305,7 +310,7 @@ public final class EngineHarness {
         new StorageNodeExecutor(sandbox, storageRepository(), clock),
         new HttpRequestNodeExecutor(sandbox, httpClient()),
         deviceActions = new DeviceActionNodeExecutor(deviceCommands, deviceCatalog, gate, sandbox,
-            mock(com.jizza.engine.persistence.repository.AgentRepository.class), locatorFixes()),
+            mock(com.jizza.engine.persistence.repository.AgentRepository.class), locatorFixes(), storageProvider()),
         new NotifyNodeExecutor(sandbox, busProvider, mailProvider(), userRepository()),
         new com.jizza.engine.workflow.nodes.McpToolNodeExecutor(mcpServers(), gate, sandbox,
             mock(com.jizza.engine.persistence.repository.AgentRepository.class),
@@ -375,10 +380,16 @@ public final class EngineHarness {
       UUID deviceId = request.target().deviceId() == null
           ? UUID.nameUUIDFromBytes("browser-device".getBytes(java.nio.charset.StandardCharsets.UTF_8))
           : request.target().deviceId();
-      JsonNode output = deviceOutputs.getOrDefault(request.action(), nextDeviceOutput).deepCopy();
+      var queue = deviceOutputQueues.get(request.action());
+      JsonNode failure = deviceFailures.remove(request.action());
+      JsonNode output = failure != null ? failure.deepCopy()
+          : queue != null && !queue.isEmpty() ? queue.poll().deepCopy()
+          : deviceOutputs.getOrDefault(request.action(), nextDeviceOutput).deepCopy();
+      var status = failure != null ? com.jizza.engine.api.device.DeviceCommandStatus.FAILED
+          : nextDeviceStatus;
       var command = new com.jizza.engine.api.device.DeviceCommandDto(id, deviceId, "Browser",
           request.userId(), request.runId(), request.nodeId(), request.action(), request.version(),
-          request.input(), nextDeviceStatus, output, nextDeviceErrorCode, nextDeviceError, null,
+          request.input(), status, output, nextDeviceErrorCode, nextDeviceError, null,
           nextDeviceFiles, Instant.now().plusSeconds(30), Instant.now(), Instant.now(),
           Instant.now(), Instant.now());
       commands.put(id, command);
@@ -406,6 +417,14 @@ public final class EngineHarness {
     });
     ObjectProvider<com.jizza.engine.api.mcp.McpServers> provider = mock(ObjectProvider.class);
     when(provider.getIfAvailable()).thenReturn(store);
+    return provider;
+  }
+
+  @SuppressWarnings("unchecked")
+  private ObjectProvider<WorkflowStorageRepository> storageProvider() {
+    ObjectProvider<WorkflowStorageRepository> provider = mock(ObjectProvider.class);
+    WorkflowStorageRepository repo = storageRepository();
+    when(provider.getIfAvailable()).thenReturn(repo);
     return provider;
   }
 

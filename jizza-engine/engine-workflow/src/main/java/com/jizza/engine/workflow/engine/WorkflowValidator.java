@@ -128,7 +128,8 @@ public class WorkflowValidator {
       "browser.click", "browser.hover", "browser.setText", "browser.getText",
       "browser.setCheckbox", "browser.getCheckbox", "browser.selectItem",
       "browser.extractTable", "browser.typeInto", "browser.exists", "browser.setDate",
-      "browser.checkItems", "browser.listItems", "browser.clickItem");
+      "browser.checkItems", "browser.listItems", "browser.clickItem", "browser.pickDate",
+      "browser.chooseOption");
 
   private void validateWebAction(WorkflowNode node) {
     String action = node.config().path("action").asText();

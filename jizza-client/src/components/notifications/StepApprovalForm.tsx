@@ -43,7 +43,7 @@ function FieldRow({ field, value, data, missing, choicesAt, readOnly, onChange }
   const id = `step-field-${field.key}`
   const required = field.required || missing
   const canMap = !readOnly && data.length > 0 && field.type !== 'checkbox' && !(field.type === 'select' && field.options)
-  const border = missing ? 'border-red-400 dark:border-red-700' : ''
+  const border = missing || field.error ? 'border-red-400 dark:border-red-700' : ''
 
   if (field.type === 'checkbox') {
     return (
@@ -86,6 +86,12 @@ function FieldRow({ field, value, data, missing, choicesAt, readOnly, onChange }
           placeholder={field.type === 'date' ? 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30' : undefined}
           value={typeof value === 'string' ? value : value == null ? '' : String(value)}
           onChange={e => onChange(e.target.value)} />
+      )}
+
+      {field.error && (
+        <p className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+          <AlertCircle className="h-3 w-3" />The site said: {field.error}
+        </p>
       )}
 
       {missing && (

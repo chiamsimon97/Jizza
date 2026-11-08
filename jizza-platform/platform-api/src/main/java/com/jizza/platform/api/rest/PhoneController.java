@@ -90,16 +90,23 @@ public class PhoneController {
 
   public record DeviceCount(int total, int online, List<String> offline) {}
 
-  /** A workflow as the "Run a workflow" list shows it. */
+  /**
+   * A workflow as the "Run a workflow" list shows it: whether it is on for its triggers (a form,
+   * a schedule), and the form whose submissions start it, if any.
+   */
   public record WorkflowItem(UUID id, String name, String description, String status, int version,
-                             JsonNode inputSchema) {}
+                             JsonNode inputSchema, boolean enabled, UUID formId, String formName) {}
 
   /** An agent as the Agents screen shows it; its instructions stay on the web. */
   public record AgentItem(UUID id, String name, String description, String status,
                           boolean enabled, String modelTier, Double monthlyCostLimit,
                           UUID parentAgentId) {}
 
-  public record AnswerBody(Answer.Kind kind, String instruction, String feedback) {}
+  /** {@code inputs}: the approval card's values the person changed or filled in. */
+  public record AnswerBody(Answer.Kind kind, String instruction, String feedback,
+                           com.fasterxml.jackson.databind.JsonNode inputs) {}
+
+  public record AlwaysAllowBody(com.fasterxml.jackson.databind.JsonNode inputs) {}
 
   public record SnoozeBody(Instant until) {}
 
@@ -132,6 +139,7 @@ public class PhoneController {
   private final PhoneAskUseCase asking;
   private final AgentAdminUseCase agentAdmin;
   private final HelpGuidesUseCase help;
+  private final com.jizza.engine.api.form.Forms forms;
 
   public PhoneController(PhoneRequests phones, NotificationUseCase notifications,
                          RunHistoryUseCase history, WorkflowUseCase workflows,
@@ -139,7 +147,7 @@ public class PhoneController {
                          GuardrailsUseCase guardrails, AutonomyUseCase autonomy,
                          DeviceUseCase devices, AgentDirectory agents, AuditLog audit,
                          PhoneAskUseCase asking, AgentAdminUseCase agentAdmin,
-                         HelpGuidesUseCase help) {
+                         HelpGuidesUseCase help, com.jizza.engine.api.form.Forms forms) {
     this.phones = phones;
     this.notifications = notifications;
     this.history = history;
@@ -155,6 +163,7 @@ public class PhoneController {
     this.asking = asking;
     this.agentAdmin = agentAdmin;
     this.help = help;
+    this.forms = forms;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------
@@ -247,10 +256,19 @@ public class PhoneController {
   @PublicEndpoint
   @GetMapping("/workflows")
   public List<WorkflowItem> workflows(HttpServletRequest http) {
-    return workflows.list(phones.read(http).userId()).stream()
-        .map(w -> new WorkflowItem(w.id(), w.name(), w.description(),
-            w.status() == null ? null : w.status().name(), w.version(), w.inputSchema()))
-        .toList();
+    UUID userId = phones.read(http).userId();
+    List<WorkflowDto> all = workflows.list(userId);
+    java.util.Map<UUID, String> formNames = new java.util.HashMap<>();
+    if (all.stream().anyMatch(w -> w.formId() != null)) {
+      forms.list(userId).forEach(f -> formNames.put(f.id(), f.name()));
+    }
+    return all.stream().map(w -> item(w, formNames.get(w.formId()))).toList();
+  }
+
+  private static WorkflowItem item(WorkflowDto w, String formName) {
+    return new WorkflowItem(w.id(), w.name(), w.description(),
+        w.status() == null ? null : w.status().name(), w.version(), w.inputSchema(),
+        w.enabled(), w.formId(), formName);
   }
 
   @PublicEndpoint
@@ -387,7 +405,8 @@ public class PhoneController {
       throw new ValidationException("The reason is too long");
     }
     NotificationDto answered = notifications.answer(phone.userId(), id,
-        new Answer(body.kind(), body.instruction(), body.feedback()));
+        new Answer(body.kind(), body.instruction(), body.feedback(),
+            NotificationController.boundedInputs(body.inputs())));
     record(phone, "device.phone.answered", id.toString(),
         Json.obj().put("kind", body.kind().name()));
     return answered;
@@ -475,10 +494,13 @@ public class PhoneController {
     if (item.status() != NotificationStatus.UNREAD && item.status() != NotificationStatus.READ) {
       throw new ValidationException("This item is already answered");
     }
+    AlwaysAllowBody body = raw == null || raw.length == 0 ? null : parse(raw, AlwaysAllowBody.class);
+    var inputs = NotificationController.boundedInputs(body == null ? null : body.inputs());
+    // Answered first: an answer refused for an empty mandatory value saves no rule.
+    NotificationDto answered = notifications.answer(phone.userId(), id,
+        new Answer(Answer.Kind.APPROVE, null, null, inputs));
     autonomy.upsert(phone.userId(), new AutonomyRuleDto(null, phone.userId(),
         item.sourceAgentId(), tool, AutonomyRule.ALLOW, null, 20));
-    NotificationDto answered = notifications.answer(phone.userId(), id,
-        new Answer(Answer.Kind.APPROVE, null, null));
     record(phone, "device.phone.always_allowed", id.toString(), Json.obj().put("tool", tool));
     return answered;
   }
@@ -521,6 +543,29 @@ public class PhoneController {
     record(phone, body.enabled() ? "device.phone.agent_enabled" : "device.phone.agent_disabled",
         agent.name(), Json.obj().put("agentId", id.toString()));
     return item(agent);
+  }
+
+  /**
+   * Turn one workflow on or off for its triggers (a form, a schedule), as the switch in the web's
+   * workflow list. Like an agent, turning off needs approve access and turning on needs full
+   * access. Running it by hand is not affected.
+   */
+  @PublicEndpoint
+  @PostMapping("/workflows/{id}/enabled")
+  public WorkflowItem setWorkflowEnabled(@PathVariable UUID id,
+                                         @RequestBody(required = false) byte[] raw,
+                                         HttpServletRequest http) {
+    EnabledBody body = parse(raw, EnabledBody.class);
+    if (body == null || body.enabled() == null) throw new ValidationException("enabled is required");
+    Companion phone = phones.signed(http, raw,
+        body.enabled() ? PhoneAccess.FULL : PhoneAccess.APPROVE);
+    WorkflowDto workflow = workflows.setEnabled(phone.userId(), id, body.enabled());
+    record(phone, body.enabled() ? "device.phone.workflow_enabled" : "device.phone.workflow_disabled",
+        workflow.name(), Json.obj().put("workflowId", id.toString()));
+    String formName = workflow.formId() == null ? null : forms.list(phone.userId()).stream()
+        .filter(f -> f.id().equals(workflow.formId())).map(com.jizza.engine.api.form.Forms.FormDto::name)
+        .findFirst().orElse(null);
+    return item(workflow, formName);
   }
 
   /**

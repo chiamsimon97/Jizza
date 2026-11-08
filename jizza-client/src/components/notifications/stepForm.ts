@@ -18,6 +18,8 @@ export interface StepField {
   /** The mapping the value came from, such as {{ input.movie }}. */
   source?: string
   options?: string[]
+  /** What the site said is wrong with this value after the form was sent. */
+  error?: string
 }
 
 export interface StepForm {
@@ -51,6 +53,7 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       missing: f.missing === true,
       ...(typeof f.source === 'string' ? { source: f.source } : {}),
       ...(Array.isArray(f.options) ? { options: (f.options as unknown[]).map(String) } : {}),
+      ...(typeof f.error === 'string' && f.error ? { error: f.error } : {}),
     })
   }
   const data = Array.isArray(raw.data)
