@@ -28,10 +28,55 @@ export interface WiresLayout {
 /** Identifies a wire by the exit it leaves from; an exit has at most one wire. */
 export const wireKey = (e: Pick<CanvasEdge, 'from' | 'branch'>) => `${e.from}:${e.branch ?? 'out'}`
 
+/** Where a step was dragged to in this view, if it was; the canvas keeps its own position. */
+export function placedAt(config: Record<string, unknown>): Box | null {
+  const at = config.wiresAt as { x?: unknown; y?: unknown } | undefined
+  return at && typeof at.x === 'number' && typeof at.y === 'number' ? { x: at.x, y: at.y } : null
+}
+
+/** Puts a step where it was dragged, on the 8px grid and clear of the board's top-left edge. */
+export function placeStep(graph: CanvasGraph, id: string, at: Box): CanvasGraph {
+  const node = graph.nodes.find(n => n.id === id)
+  if (!node) return graph
+  const snap = (v: number) => Math.max(8, Math.round(v / 8) * 8)
+  return updateNode(graph, id, { config: { ...node.config, wiresAt: { x: snap(at.x), y: snap(at.y) } } })
+}
+
+/** Whether any step was moved by hand, so lining everything up again would change something. */
+export const isArranged = (graph: CanvasGraph) => graph.nodes.some(n => placedAt(n.config) !== null)
+
+/** Forgets every hand-placed position: each step goes back to its place in the automatic layout. */
+export function autoAlign(graph: CanvasGraph): CanvasGraph {
+  if (!isArranged(graph)) return graph
+  return {
+    ...graph,
+    nodes: graph.nodes.map(n => {
+      if (!placedAt(n.config)) return n
+      const { wiresAt: _drop, ...config } = n.config
+      return { ...n, config }
+    }),
+  }
+}
+
+/**
+ * Keeps what this view stores on a step (where it was moved to, its wires' labels) when the step's
+ * settings are saved from a copy taken before those changed.
+ */
+export function keepWiresSettings(saved: CanvasGraph, current: CanvasGraph, id: string): CanvasGraph {
+  const now = current.nodes.find(n => n.id === id)?.config
+  const node = saved.nodes.find(n => n.id === id)
+  if (!now || !node) return saved
+  const { wiresAt: _at, wireLabels: _labels, ...config } = node.config
+  return updateNode(saved, id, {
+    config: { ...config, ...(now.wiresAt ? { wiresAt: now.wiresAt } : {}), ...(now.wireLabels ? { wireLabels: now.wireLabels } : {}) },
+  })
+}
+
 /**
  * Lays the graph out top to bottom: one row per step along the longest path from Start, each step
  * centred over the steps it leads to, children in exit order (yes before no). Steps nothing leads
- * to are laid out the same way to the right of the main flow.
+ * to are laid out the same way to the right of the main flow. A step moved by hand stays where it
+ * was put.
  */
 export function wiresLayout(graph: CanvasGraph): WiresLayout {
   const ids = graph.nodes.map(n => n.id)
@@ -82,16 +127,16 @@ export function wiresLayout(graph: CanvasGraph): WiresLayout {
   roots.forEach((r, i) => { if (i > 0) cursor += 0.25; walk(r) })
 
   const at = new Map<string, Box>()
-  let maxCol = 0
-  let maxDepth = 0
+  let right = 0
+  let bottom = 0
   for (const id of ids) {
-    const c = col.get(id) ?? 0
-    const d = depth.get(id) ?? 0
-    maxCol = Math.max(maxCol, c)
-    maxDepth = Math.max(maxDepth, d)
-    at.set(id, { x: Math.round(PAD + c * COL), y: PAD + d * ROW })
+    const box = placedAt(byId.get(id)!.config) ?? { x: Math.round(PAD + (col.get(id) ?? 0) * COL), y: PAD + (depth.get(id) ?? 0) * ROW }
+    right = Math.max(right, box.x + CARD_W)
+    bottom = Math.max(bottom, box.y + CARD_H)
+    at.set(id, box)
   }
-  return { at, depth, width: Math.round(PAD * 2 + maxCol * COL + CARD_W), height: PAD * 2 + maxDepth * ROW + CARD_H + 40 }
+  // Room past the furthest step for wires that go round the side, and to drag a step further out.
+  return { at, depth, width: Math.round(right + PAD + CARD_W / 2), height: bottom + PAD + 40 }
 }
 
 /** Where an exit's socket sits: spread along the bottom of the card, first exit on the left. */
@@ -122,7 +167,8 @@ export function route(a: Point, b: Point, nextRow: boolean): Route {
   let pts: Point[]
   let mid: Point
   if (y2 > y1 + 20) {
-    const ym = nextRow ? y1 + 22 : y2 - 24
+    // Steps moved close together still get a wire that only runs downwards.
+    const ym = nextRow ? y1 + Math.min(22, (y2 - y1) / 2) : Math.max((y1 + y2) / 2, y2 - 24)
     if (Math.abs(x1 - x2) < 1) {
       pts = [a, b]
       mid = [x1, Math.round((y1 + y2) / 2)]

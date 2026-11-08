@@ -127,4 +127,33 @@ describe('WiresBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Notify me: Loose end' }))
     expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
   })
+
+  it('moves a step by dragging it, and puts it back in line with auto align', () => {
+    const { onChange, last } = show()
+    const step = screen.getByRole('button', { name: 'Notify me: Tell me it was skipped' })
+    expect(screen.getByRole('button', { name: /Auto align/ })).toBeDisabled()
+    pointer('pointerDown', step, 100, 100)
+    pointer('pointerMove', step, 260, 180)
+    pointer('pointerUp', step, 260, 180)
+    const moved = last().nodes.find(n => n.id === 'skip')!
+    expect(moved.config.wiresAt).toBeDefined()
+    // Letting go after a drag is not a click on the step.
+    fireEvent.click(step)
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('aligns hand-placed steps again', () => {
+    const graph = booking()
+    graph.nodes = graph.nodes.map(n => (n.id === 'skip' ? { ...n, config: { ...n.config, wiresAt: { x: 900, y: 40 } } } : n))
+    const { last } = show(graph)
+    fireEvent.click(screen.getByRole('button', { name: /Auto align/ }))
+    expect(last().nodes.find(n => n.id === 'skip')!.config).not.toHaveProperty('wiresAt')
+  })
 })
+
+/** jsdom has no PointerEvent, so position, button and pointer are set on the event by hand. */
+function pointer(kind: 'pointerDown' | 'pointerMove' | 'pointerUp', el: HTMLElement, x: number, y: number) {
+  const ev = createEvent[kind](el)
+  for (const [k, v] of Object.entries({ clientX: x, clientY: y, button: 0, pointerId: 1 })) Object.defineProperty(ev, k, { value: v })
+  fireEvent(el, ev)
+}

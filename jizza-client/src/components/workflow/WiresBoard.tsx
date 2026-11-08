@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, Check, ChevronDown, Copy, Globe, Pencil, Play, Plus, Scissors, Search, Tag, Trash2, X } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, Copy, Globe, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, X } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
@@ -14,7 +14,7 @@ import { NODE_ICON, StepPicker, exitLabel, summarise, type StepRun } from './can
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
 import {
-  CARD_H, CARD_W, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, previewPath, route, setWireLabel, stepNumbers,
+  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
   wireKey, wireLabel, wiresLayout, type Route,
 } from './wiresModel'
 
@@ -106,6 +106,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const dragged = useRef<NodeType | PaletteEntry | null>(null)
   const [suggest, setSuggest] = useState<Suggestion | null>(null)
   const [dragging, setDragging] = useState(false)
+  /** A step being moved by hand: where it is under the pointer. */
+  const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null)
+  const grab = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
+  const justMoved = useRef(false)
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number>()
   const [preview, setPreview] = useState<number | null>(null)
@@ -147,7 +151,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   // ---- Layout and wires -------------------------------------------------------------------
 
-  const layout = useMemo(() => wiresLayout(graph), [graph])
+  // While a step is being moved, everything (its wires too) is laid out with it where the pointer is.
+  const shown = useMemo(() => (moving ? placeStep(graph, moving.id, moving) : graph), [graph, moving])
+  const layout = useMemo(() => wiresLayout(shown), [shown])
+  const arranged = useMemo(() => isArranged(graph), [graph])
   const byId = useMemo(() => new Map(graph.nodes.map(n => [n.id, n])), [graph])
   const routes = useMemo(() => {
     const map = new Map<string, Route & { edge: CanvasEdge; end: [number, number] }>()
@@ -210,7 +217,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   // ---- Hover --------------------------------------------------------------------------------
 
-  const quiet = !readOnly && !dragging && preview === null && !pending && !labelFor && !picker
+  const quiet = !readOnly && !dragging && !moving && preview === null && !pending && !labelFor && !picker
   const wireOn = (k: string) => { window.clearTimeout(wireTimer.current); setHoverWire(k) }
   const wireOff = () => { window.clearTimeout(wireTimer.current); wireTimer.current = window.setTimeout(() => setHoverWire(null), 200) }
   const stepOn = (id: string) => { window.clearTimeout(stepTimer.current); setHoverStep(id) }
@@ -337,7 +344,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   // ---- Status -------------------------------------------------------------------------------
 
   const ranCount = view ? [...view.nodes.values()].filter(s => s === 'done').length : 0
-  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step onto a step or a wire. Hover a wire or a step for options.')
+  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, or drop a new one onto a step or a wire. Hover for options.')
+  if (moving) status = 'Let go to put the step here. Auto align lines everything up again.'
   if (pending) status = `Click the step that comes after “${byId.get(pending.from)?.label}”${pending.branch ? ` (${exitLabel(pending.branch, byId.get(pending.from))})` : ''}. Esc cancels.`
   if (dragging) status = suggest?.kind === 'step' ? `Drop to wire it in after “${byId.get(suggest.id)?.label}”.`
     : suggest?.kind === 'wire' ? 'Drop to put it on this wire. Steps below move down.' : 'Hover a step or a wire to wire it in.'
@@ -433,6 +441,14 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             )}
             <span className="truncate text-xs text-gray-600 dark:text-gray-400" aria-live="polite">{status}</span>
           </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+          {!readOnly && (
+            <button type="button" disabled={!arranged} onClick={() => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') }}
+              title={arranged ? 'Put every step back in a neat top-to-bottom layout' : 'Every step is already lined up'}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:disabled:hover:bg-gray-900">
+              <Sparkles className="h-3.5 w-3.5" />Auto align
+            </button>
+          )}
           {preview === null
             ? <button type="button" onClick={startPreview} title="Walk the wires from Start without running anything"
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white">
@@ -442,6 +458,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                 <X className="h-3.5 w-3.5" />Clear preview
               </button>}
+          </div>
         </div>
 
         <div role="region" aria-label="Workflow wires" className="absolute inset-0 overflow-auto bg-gray-50 pt-11 dark:bg-gray-950"
@@ -502,7 +519,34 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               const note = typeof n.config.note === 'string' && n.config.note.trim()
               return (
                 <button key={n.id} type="button" aria-label={`${meta.label}: ${n.label}`}
-                  onClick={() => { if (pending) connectTo(n.id); else setSelected(s => (s === n.id ? null : n.id)) }}
+                  onClick={() => {
+                    if (justMoved.current) { justMoved.current = false; return }
+                    if (pending) connectTo(n.id); else setSelected(s => (s === n.id ? null : n.id))
+                  }}
+                  onPointerDown={e => {
+                    justMoved.current = false
+                    if (readOnly || pending || preview !== null || e.button !== 0) return
+                    grab.current = { id: n.id, sx: e.clientX, sy: e.clientY, ox: box.x, oy: box.y, moved: false }
+                    e.currentTarget.setPointerCapture?.(e.pointerId)
+                  }}
+                  onPointerMove={e => {
+                    const g = grab.current
+                    if (!g || g.id !== n.id) return
+                    const dx = e.clientX - g.sx
+                    const dy = e.clientY - g.sy
+                    if (!g.moved && Math.hypot(dx, dy) < 4) return
+                    g.moved = true
+                    setMoving({ id: n.id, x: g.ox + dx, y: g.oy + dy })
+                  }}
+                  onPointerUp={e => {
+                    const g = grab.current
+                    grab.current = null
+                    if (!g?.moved) return
+                    justMoved.current = true
+                    setMoving(null)
+                    commit(placeStep(graph, g.id, { x: g.ox + e.clientX - g.sx, y: g.oy + e.clientY - g.sy }))
+                  }}
+                  onPointerCancel={() => { grab.current = null; setMoving(null) }}
                   onDoubleClick={() => openSettings(n.id)}
                   onMouseEnter={() => stepOn(n.id)} onMouseLeave={stepOff}
                   title={problems?.join('\n')}
@@ -516,7 +560,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                   style={{
                     left: box.x, top: box.y, width: CARD_W, height: CARD_H,
                     opacity: (focusIds && !focusIds.has(n.id)) ? 0.35 : waiting ? 0.45 : pending && !canTarget && pending.from !== n.id ? 0.45 : 1,
-                    cursor: pending ? (canTarget ? 'pointer' : 'not-allowed') : 'pointer',
+                    cursor: pending ? (canTarget ? 'pointer' : 'not-allowed') : moving?.id === n.id ? 'grabbing' : readOnly ? 'pointer' : 'grab',
+                    zIndex: moving?.id === n.id ? 20 : undefined,
+                    boxShadow: moving?.id === n.id ? '0 18px 40px rgb(0 0 0 / 0.18)' : undefined,
+                    touchAction: 'none',
                   }}>
                   <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${meta.tone}`}><Icon className="h-[18px] w-[18px]" /></span>
                   <span className="min-w-0 flex-1">
@@ -644,7 +691,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
         {editNode && (
           <CanvasInspector key={editNode.id} node={editNode} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows} readOnly={readOnly}
             issues={[]} step={realRun?.steps.get(editNode.id)} runSteps={realRun?.steps} onDirty={onDirty}
-            onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, editNode.id)); setEditing(null) }}
+            onSave={edited => { unsaved.current = false; commit(keepWiresSettings(applyStepEdit(graph, edited, editNode.id), graph, editNode.id)); setEditing(null) }}
             onClose={() => { unsaved.current = false; setEditing(null) }} />
         )}
       </div>

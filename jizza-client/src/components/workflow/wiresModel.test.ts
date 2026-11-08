@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { fromGraph, toGraph, type CanvasGraph } from './canvasModel'
 import {
-  CARD_H, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, previewPath, route, setWireLabel, stepNumbers, wireKey, wireLabel, wiresLayout,
+  CARD_H, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
+  wireKey, wireLabel, wiresLayout,
 } from './wiresModel'
 
 /** Start → open → approval; approved → hold → notify, rejected → skip. */
@@ -121,5 +122,30 @@ describe('wiresModel', () => {
 
   it('numbers steps in the order they run', () => {
     expect([...stepNumbers(booking())]).toEqual([['start', 1], ['open', 2], ['ok', 3], ['hold', 4], ['skip', 5], ['tell', 6]])
+  })
+
+  it('keeps a step where it was dragged, on the grid, without touching its canvas position', () => {
+    const moved = placeStep(booking(), 'skip', { x: 701, y: 37 })
+    expect(wiresLayout(moved).at.get('skip')).toEqual({ x: 704, y: 40 })
+    expect(moved.nodes.find(n => n.id === 'skip')).toMatchObject({ x: 900, y: 200 })
+    // The board grows to fit a step dragged far out.
+    expect(wiresLayout(placeStep(booking(), 'skip', { x: 3000, y: 2000 })).width).toBeGreaterThan(3000)
+  })
+
+  it('lines every step up again with auto align', () => {
+    const g = booking()
+    const moved = placeStep(placeStep(g, 'skip', { x: 900, y: 40 }), 'hold', { x: 16, y: 16 })
+    expect(isArranged(moved)).toBe(true)
+    const aligned = autoAlign(moved)
+    expect(isArranged(aligned)).toBe(false)
+    expect(wiresLayout(aligned).at).toEqual(wiresLayout(g).at)
+    expect(autoAlign(g)).toBe(g)
+  })
+
+  it('keeps a moved position and wire labels when settings saved from an older copy come back', () => {
+    const before = booking()
+    const now = setWireLabel(placeStep(before, 'ok', { x: 400, y: 400 }), { from: 'ok', branch: 'approved' }, 'yes')
+    const saved = keepWiresSettings(before, now, 'ok')
+    expect(saved.nodes.find(n => n.id === 'ok')!.config).toMatchObject({ wiresAt: { x: 400, y: 400 }, wireLabels: { approved: 'yes' } })
   })
 })
