@@ -66,6 +66,32 @@ class StepCompilerTest {
   }
 
   @Test
+  void aListChoiceAndItsCardBecomeInputs() {
+    JsonNode choose = step("""
+        {"seq":1,"action":"browser.clickItem","version":1,"label":"Choose the time \\"01:15 PM\\"",
+         "input":{"element":{"strategies":[{"by":"css","value":".time"}]},"item":"01:15 PM",
+                  "within":{"element":{"strategies":[{"by":"css","value":".venue"}]},"item":"Vijay Park"}},
+         "meta":{"list":{"kind":"time","inputName":"time"}},
+         "mappings":{"item":{"name":"time","type":"text","default":"01:15 PM"},
+                     "within.item":{"name":"cinema","type":"text","default":"Vijay Park"}}}""");
+    var graph = StepCompiler.compile("https://tickets.example.com", List.of(OPEN, choose));
+
+    var config = graph.path("nodes").get(2).path("config");
+    assertThat(config.path("action").asText()).isEqualTo("browser.clickItem");
+    assertThat(config.path("inputs").path("item").asText()).isEqualTo("{{ input.time }}");
+    assertThat(config.path("inputs").path("within").path("item").asText())
+        .isEqualTo("{{ input.cinema }}");
+    assertThat(config.path("inputs").path("within").path("element").path("strategies")).hasSize(1);
+    var inputs = graph.path("nodes").get(0).path("config").path("inputs");
+    assertThat(inputs).extracting(n -> n.path("name").asText()).containsExactly("time", "cinema");
+    assertThat(inputs.get(1).path("default").asText()).isEqualTo("Vijay Park");
+
+    var inline = StepCompiler.compile("https://tickets.example.com", List.of(OPEN, choose), true);
+    assertThat(inline.path("nodes").get(1).path("config").path("inputs").path("within")
+        .path("item").asText()).isEqualTo("Vijay Park");
+  }
+
+  @Test
   void aRecordingThatAlreadyEndsByClosingGetsNoSecondClose() {
     JsonNode close = step("""
         {"seq":2,"action":"browser.close","version":1,"label":"Close browser",

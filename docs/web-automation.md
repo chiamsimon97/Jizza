@@ -38,6 +38,17 @@ If a saved recording already does what you ask, such as "download last month's i
 offers to run it and runs it only after you say yes. Clicking and typing in your browser from chat
 always asks for your approval.
 
+### Lists made of cards
+
+From browser agent 0.4.0, a plain click on one item of a list the page repeats (movie cards, a
+date strip, the showtimes of one theatre, a dialog's choices) is recorded as
+`browser.clickItem@1 { item, within? }` with `meta.list { title, kind, count, inputName,
+withinTitle?, withinInputName? }`. Review offers `item` and `within.item` as inputs (mapping keys
+are dotted paths into the step's inputs; `StepCompiler` writes `{{ input.name }}` at that path),
+and **Make reusable** maps every list choice at once, keeping the recorded items as defaults. An
+older Click step can be switched to **Choose the item at run time** in the builder; it now starts
+with the item the click recorded.
+
 ## When a page changes
 
 Sites change. When a step can no longer find its element, Chrome looks for elements that look like

@@ -1,7 +1,19 @@
 import type { EditOp, RecordedStep } from '@/api/web'
 
-/** Fields of a step that hold a typed value a person might want to change on each run. */
-const VALUE_FIELDS = ['text', 'url', 'value', 'keys', 'query'] as const
+/** Fields of a step that hold a typed value a person might want to change on each run.
+ *  `item` and `within.item` are what a "Choose from a list" step chooses (the movie, and the
+ *  theatre whose showtimes it chooses among). */
+const VALUE_FIELDS = ['text', 'url', 'value', 'keys', 'query', 'item', 'within.item'] as const
+
+/** A field of a step's input, where `within.item` is field `item` of object `within`. */
+function valueAt(input: Record<string, unknown>, field: string): unknown {
+  let node: unknown = input
+  for (const part of field.split('.')) {
+    if (typeof node !== 'object' || node === null) return undefined
+    node = (node as Record<string, unknown>)[part]
+  }
+  return node
+}
 
 /** The steps still in the recording, in the order they will run. */
 export const liveSteps = (steps: RecordedStep[] | undefined): RecordedStep[] =>
@@ -14,13 +26,16 @@ export function mappableFields(s: RecordedStep): { field: string; value: string 
   if (isPassword(s)) return []
   const input = s.step.input ?? {}
   return VALUE_FIELDS.flatMap(field => {
-    const v = input[field]
+    const v = valueAt(input, field)
     return typeof v === 'string' || typeof v === 'number' ? [{ field, value: String(v) }] : []
   })
 }
 
 /** The name an input gets by default: the last words of the step's label, as a lowercase word. */
 export function suggestInputName(s: RecordedStep, field: string): string {
+  const list = s.step.meta?.list
+  const offered = field === 'item' ? list?.inputName : field === 'within.item' ? list?.withinInputName : undefined
+  if (offered && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(offered)) return offered
   const quoted = /"([^"]+)"/.exec(s.step.label ?? '')?.[1] ?? field
   const words = quoted.replace(/[^A-Za-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
   if (words.length === 0) return field
@@ -51,4 +66,31 @@ export function siteAllowed(host: string, patterns: string[]): boolean {
     if (pattern.startsWith('*.')) return host.endsWith(pattern.slice(1))
     return host === pattern
   })
+}
+
+/** Whether the step chooses an item from a list the page shows. */
+export const isListChoice = (s: RecordedStep): boolean => s.step.action === 'browser.clickItem'
+
+/**
+ * The edits that make a recording reusable: each list choice's item (and the card it is chosen
+ * in) not yet an input becomes one, named as the recording suggests and unique, with the recorded
+ * item as its default. Run as is, the workflow does what was recorded; given other values, it
+ * chooses another movie, date or showtime.
+ */
+export function reusableOps(steps: RecordedStep[] | undefined): EditOp[] {
+  const live = liveSteps(steps)
+  const used = new Set(live.flatMap(s => Object.values(s.step.mappings ?? {}).map(m => m.name)))
+  const ops: EditOp[] = []
+  for (const s of live) {
+    if (!isListChoice(s)) continue
+    for (const { field, value } of mappableFields(s)) {
+      if ((field !== 'item' && field !== 'within.item') || s.step.mappings?.[field]) continue
+      const base = suggestInputName(s, field)
+      let name = base
+      for (let n = 2; used.has(name); n++) name = `${base}${n}`
+      used.add(name)
+      ops.push({ op: 'map', seq: s.seq, field, input: { name, type: 'text', default: value } })
+    }
+  }
+  return ops
 }

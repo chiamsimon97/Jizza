@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, KeyRound, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, KeyRound, ListChecks, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
 import type { EditOp, RecordedStep, Recording } from '@/api/web'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { isPassword, liveSteps, mappableFields, moveOp, suggestInputName } from './recordingModel'
+import { isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
+const FIELD_NAMES: Record<string, string> = { item: 'Item chosen', 'within.item': 'Chosen in' }
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,
@@ -24,9 +25,23 @@ export function RecordingReview({ recording, busy, onEdit }: {
   const [dragging, setDragging] = useState<number | null>(null)
 
   if (steps.length === 0) return <p className="py-6 text-center text-sm text-gray-500">Nothing was captured.</p>
+  const reusable = reusableOps(recording.steps)
+  const choices = steps.filter(isListChoice).length
 
   return (
     <>
+      {choices > 0 && (
+        <div className="mb-3 flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300">
+          <ListChecks className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="flex-1">
+            {choices === 1 ? 'One step chooses' : `${choices} steps choose`} from a list on the page (cards, dates, times).
+            Make what is chosen an input to run this workflow for any of them; the recorded choice stays the default.
+          </p>
+          {reusable.length > 0 && (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => onEdit(reusable)}>Make reusable</Button>
+          )}
+        </div>
+      )}
       <ol className="space-y-2" aria-label="Recorded steps">
         {steps.map((s, i) => (
           <li key={s.seq} draggable onDragStart={() => setDragging(i)} onDragOver={e => e.preventDefault()}
@@ -40,6 +55,7 @@ export function RecordingReview({ recording, busy, onEdit }: {
               <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
               <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}</Badge>}
                 {Object.entries(s.step.mappings ?? {}).map(([field, m]) => <Badge key={field}>input: {m.name}</Badge>)}
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
@@ -98,7 +114,7 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
           <label className="block">Value
             <select value={field} onChange={e => { setField(e.target.value); setName(suggestInputName(step, e.target.value)) }}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-2 py-1.5 dark:border-gray-600">
-              {fields.map(f => <option key={f.field} value={f.field}>{f.field}: {f.value}</option>)}
+              {fields.map(f => <option key={f.field} value={f.field}>{FIELD_NAMES[f.field] ?? f.field}: {f.value}</option>)}
             </select>
           </label>
         )}

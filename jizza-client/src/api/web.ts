@@ -43,7 +43,17 @@ export interface RecordedStepData {
   input?: Record<string, unknown>
   mappings?: Record<string, { name: string; type: string; default?: unknown }>
   secretRef?: string | null
-  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean }
+  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean; list?: RecordedList }
+}
+
+/** A "Choose from a list" step (browser agent 0.4.0+): what the list is, and the input names offered. */
+export interface RecordedList {
+  title?: string
+  kind?: 'date' | 'time' | 'text'
+  count?: number
+  inputName?: string
+  withinTitle?: string
+  withinInputName?: string
 }
 
 export interface RecordedStep {

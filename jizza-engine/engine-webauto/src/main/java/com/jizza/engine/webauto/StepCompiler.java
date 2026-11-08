@@ -118,10 +118,11 @@ final class StepCompiler {
         }
         if (inline) {
           JsonNode kept = mapping.getValue().get("default");
-          if (kept != null && !kept.isNull()) stepInputs.set(mapping.getKey(), kept);
+          if (kept != null && !kept.isNull()) setAt(stepInputs, mapping.getKey(), kept);
           continue;
         }
-        stepInputs.put(mapping.getKey(), "{{ input." + name + " }}");
+        setAt(stepInputs, mapping.getKey(),
+            Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
         if (inputNames.add(name)) inputs.add(inputField(name, mapping.getValue()));
       }
 
@@ -158,6 +159,26 @@ final class StepCompiler {
     graph.set("nodes", nodes);
     graph.set("edges", edges);
     return graph;
+  }
+
+  /**
+   * A field of a step's inputs, where {@code within.item} is field {@code item} of object
+   * {@code within} (the card a "Choose from a list" step chooses inside). Null when absent.
+   */
+  static JsonNode valueAt(JsonNode inputs, String field) {
+    JsonNode node = inputs;
+    for (String part : field.split("\\.", -1)) {
+      if (node == null || !node.isObject()) return null;
+      node = node.get(part);
+    }
+    return node;
+  }
+
+  /** Sets a field of a step's inputs by the same dotted path, when its parent object exists. */
+  private static void setAt(ObjectNode inputs, String field, JsonNode value) {
+    int dot = field.lastIndexOf('.');
+    JsonNode parent = dot < 0 ? inputs : valueAt(inputs, field.substring(0, dot));
+    if (parent instanceof ObjectNode object) object.set(field.substring(dot + 1), value);
   }
 
   /** The mapped inputs of the steps, in the shape a workflow keeps as its input schema. */
