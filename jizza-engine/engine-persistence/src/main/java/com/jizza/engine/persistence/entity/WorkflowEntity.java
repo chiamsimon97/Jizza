@@ -76,6 +76,13 @@ public class WorkflowEntity {
   @Column(columnDefinition = "jsonb")
   private JsonNode reuse;
 
+  /** The form whose submissions start this workflow, or null. Not part of the graph. */
+  private UUID formId;
+
+  /** The graph fingerprint the person turned the workflow on with, or null when it is off. */
+  @Column(columnDefinition = "text")
+  private String triggersOnFingerprint;
+
   private Instant createdAt;
 
   @Version
@@ -143,6 +150,22 @@ public class WorkflowEntity {
 
   public JsonNode getReuse() { return reuse; }
   public void setReuse(JsonNode reuse) { this.reuse = reuse; }
+
+  public UUID getFormId() { return formId; }
+  public void setFormId(UUID formId) { this.formId = formId; }
+
+  public String getTriggersOnFingerprint() { return triggersOnFingerprint; }
+  public void setTriggersOnFingerprint(String v) { this.triggersOnFingerprint = v; }
+
+  /**
+   * On: it may start from its triggers. An approved workflow is on unless disabled; a draft is on
+   * while its steps are the ones the person turned it on with.
+   */
+  public boolean isEnabled() {
+    if (disabled) return false;
+    if (status == com.jizza.engine.api.enums.WorkflowStatus.APPROVED) return true;
+    return triggersOnFingerprint != null && triggersOnFingerprint.equals(graphFingerprint);
+  }
 
   public Instant getCreatedAt() { return createdAt; }
   public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

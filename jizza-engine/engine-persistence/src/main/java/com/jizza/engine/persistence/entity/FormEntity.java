@@ -1,0 +1,89 @@
+package com.jizza.engine.persistence.entity;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+/** A form the person builds and publishes; see {@code V41__forms.sql}. */
+@Entity
+@Table(name = "forms")
+public class FormEntity {
+
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  private UUID id;
+
+  @Column(nullable = false)
+  private UUID userId;
+
+  @Column(nullable = false)
+  private String name;
+
+  @Column(columnDefinition = "text")
+  private String description;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb", nullable = false)
+  private JsonNode fields;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb", nullable = false)
+  private JsonNode settings;
+
+  @Column(nullable = false)
+  private String status;
+
+  private String publicToken;
+  private Instant publishedAt;
+  private UUID sourceWorkflowId;
+  private int submissionCount;
+  private Instant createdAt;
+  private Instant updatedAt;
+
+  public UUID getId() { return id; }
+  public void setId(UUID v) { this.id = v; }
+  public UUID getUserId() { return userId; }
+  public void setUserId(UUID v) { this.userId = v; }
+  public String getName() { return name; }
+  public void setName(String v) { this.name = v; }
+  public String getDescription() { return description; }
+  public void setDescription(String v) { this.description = v; }
+  public JsonNode getFields() { return fields; }
+  public void setFields(JsonNode v) { this.fields = v; }
+  public JsonNode getSettings() { return settings; }
+  public void setSettings(JsonNode v) { this.settings = v; }
+  public String getStatus() { return status; }
+  public void setStatus(String v) { this.status = v; }
+  public String getPublicToken() { return publicToken; }
+  public void setPublicToken(String v) { this.publicToken = v; }
+  public Instant getPublishedAt() { return publishedAt; }
+  public void setPublishedAt(Instant v) { this.publishedAt = v; }
+  public UUID getSourceWorkflowId() { return sourceWorkflowId; }
+  public void setSourceWorkflowId(UUID v) { this.sourceWorkflowId = v; }
+  public int getSubmissionCount() { return submissionCount; }
+  public void setSubmissionCount(int v) { this.submissionCount = v; }
+  public Instant getCreatedAt() { return createdAt; }
+  public Instant getUpdatedAt() { return updatedAt; }
+
+  @PrePersist
+  void onCreate() {
+    Instant now = Instant.now();
+    if (createdAt == null) createdAt = now;
+    updatedAt = now;
+  }
+
+  @PreUpdate
+  void onUpdate() {
+    updatedAt = Instant.now();
+  }
+}

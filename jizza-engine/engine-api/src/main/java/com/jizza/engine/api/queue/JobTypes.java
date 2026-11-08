@@ -11,4 +11,6 @@ public final class JobTypes {
   public static final String INBOUND_EVENT = "inbound_event";
   /** Something happened on a paired device that may start workflows. */
   public static final String DEVICE_EVENT = "device_event";
+  /** Someone submitted a form; its workflows start from this job. */
+  public static final String FORM_SUBMITTED = "form_submitted";
 }

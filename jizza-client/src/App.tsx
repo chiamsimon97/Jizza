@@ -18,6 +18,9 @@ import { ConnectorsPage } from '@/pages/connectors/ConnectorsPage'
 import { ServiceEditorPage } from '@/pages/connectors/ServiceEditorPage'
 import { McpServerPage } from '@/pages/connectors/McpServers'
 import { FunctionsPage } from '@/pages/FunctionsPage'
+import { FormsPage } from '@/pages/FormsPage'
+import { FormBuilderPage } from '@/pages/FormBuilderPage'
+import { PublicFormPage } from '@/pages/PublicFormPage'
 import { RecordingsPage } from '@/pages/RecordingsPage'
 import { HelpPage } from '@/pages/HelpPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
@@ -50,6 +53,8 @@ export default function App() {
       <Route path="/recover" element={<RecoverPage />} />
       {/* Opened by a phone that scanned the login page's QR; it checks the sign-in itself. */}
       <Route path="/smart-sign-in" element={<SmartSignInApprovePage />} />
+      {/* A published form's link: anyone can fill it in, signed in or not. */}
+      <Route path="/f/:token" element={<PublicFormPage />} />
 
       <Route element={<EnrollmentRoute />}>
         <Route path="/setup-2fa" element={<SetupTwoStepPage />} />
@@ -73,6 +78,8 @@ export default function App() {
             <Route path="/recordings" element={<RecordingsPage />} />
             <Route path="/procedures" element={<ProceduresPage />} />
             <Route path="/functions/:functionId?" element={<FunctionsPage />} />
+            <Route path="/forms" element={<FormsPage />} />
+            <Route path="/forms/:formId" element={<FormBuilderPage />} />
             <Route path="/guardrails" element={<GuardrailsPage />} />
             <Route path="/autonomy" element={<Navigate to="/guardrails" replace />} />
             <Route path="/activity" element={<ActivityPage />} />

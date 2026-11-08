@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { WorkflowGuardrails } from '@/components/guardrails/WorkflowGuardrails'
 import { ReuseSettings } from '@/components/workflow/ReuseSettings'
+import { WorkflowTriggerControls } from '@/components/workflow/WorkflowTriggerControls'
 
 export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
@@ -74,6 +75,7 @@ export function WorkflowsPage() {
                   {wf.description && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{wf.description}</p>
                   )}
+                  <div className="mt-2"><WorkflowTriggerControls workflowId={wf.id} compact /></div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Link to={`/runs?wf=${wf.id}`} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}

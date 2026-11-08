@@ -4,7 +4,7 @@ import { notificationsApi } from '@/api/notifications'
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
-  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, UserCog,
+  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, ClipboardList, UserCog,
   MonitorSmartphone, Video, LifeBuoy,
   type LucideIcon,
 } from 'lucide-react'
@@ -43,6 +43,7 @@ const personalSections: NavSection[] = [
       { to: '/memory',      icon: Brain,     label: 'Memory' },
       { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
       { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
+      { to: '/forms',       icon: ClipboardList, label: 'Forms' },
       { to: '/recordings',  icon: Video,     label: 'Recordings' },
       { to: '/functions',   icon: Braces,    label: 'Functions' },
       { to: '/procedures',  icon: GitBranch, label: 'Procedures' },

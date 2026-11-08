@@ -43,6 +43,8 @@ class ApiContractE2eTest extends E2eSupport {
       "/api/auth/recover/complete", "/api/auth/mfa/verify", "/api/auth/invitations/{token}",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/{token}",
       "/api/auth/logout",
+      // A published form's link: anyone can read the form and send an answer.
+      "/api/public/forms/{token}", "/api/public/forms/{token}/submit",
       // Smart sign-in: the login page starts and polls before anyone is signed in.
       "/api/auth/smart-sign-in/config", "/api/auth/smart-sign-in/start",
       "/api/auth/smart-sign-in/attempts/{id}", "/api/auth/smart-sign-in/attempts/{id}/complete");

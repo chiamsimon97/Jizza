@@ -855,6 +855,10 @@ export interface WorkflowDto {
   createdAt: string
   /** Kept in the workflow library for Jizza to reuse; absent when it is not. */
   reuse?: ReuseProfile
+  /** On: it starts from its triggers, such as a form submission. */
+  enabled?: boolean
+  /** The form whose submissions start it. */
+  formId?: string | null
 }
 
 export type RunStatus = 'RUNNING' | 'PAUSED_WAITING_INSTRUCTION' | 'WAITING' | 'DONE' | 'FAILED' | 'CANCELLED'
@@ -1068,7 +1072,7 @@ export interface ActivityCatalog {
 }
 
 // ── Run history ───────────────────────────────────────────────────────────────
-export type TriggerKind = 'manual' | 'webhook' | 'schedule' | 'agent' | 'event' | 'device' | 'subworkflow' | 'other'
+export type TriggerKind = 'manual' | 'webhook' | 'schedule' | 'agent' | 'event' | 'device' | 'form' | 'subworkflow' | 'other'
 
 export interface RunSummary {
   id: string

@@ -11,6 +11,7 @@ import { workflowsApi } from '@/api/workflows'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Field, SlideOver, fieldClass } from '@/components/ui/SlideOver'
+import { WorkflowTriggerControls } from '@/components/workflow/WorkflowTriggerControls'
 import { useFormStore } from '@/jizza/formStore'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { useJizzaContext } from '@/jizza/contextStore'
@@ -272,6 +273,7 @@ export function WorkflowForm() {
           className="mr-auto inline-flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800">
           <JizzaOrb size={32} />Ask Jizza
         </button>
+        {workflowId && <div className="mr-2 hidden lg:block"><WorkflowTriggerControls workflowId={workflowId} compact /></div>}
         <Button variant="secondary" onClick={close}>{readOnly ? 'Close' : 'Cancel'}</Button>
         {workflowId && (
           <Button type="button" variant="secondary" onClick={() => { setError(''); if (declaredInputs.length && !askInputs) setAskInputs(true); else run.mutate() }} loading={run.isPending}>

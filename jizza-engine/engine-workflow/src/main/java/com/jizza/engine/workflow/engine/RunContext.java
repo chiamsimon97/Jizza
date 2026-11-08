@@ -41,6 +41,7 @@ import java.util.Map;
  *   "browser":  { "deviceId": "...", "sessionId": "...", "opened": true },
  *                                                 // browser affinity; inherited sessions are not owned
  *   "depth":    0,                                // how deep in sub-workflows this run is
+ *   "stepOverrides": { "nodeId": [...] },         // settings replaced for this run (a form)
  *   "legacy":   true                              // started before parallel paths existed
  * }
  * </pre>
@@ -79,6 +80,15 @@ public final class RunContext {
   }
 
   public JsonNode toJson() { return root; }
+
+  /** Settings of this run's steps replaced for this run only; see {@link StepOverrides}. */
+  public JsonNode stepOverrides() { return root.path("stepOverrides"); }
+
+  public void setStepOverrides(JsonNode overrides) {
+    if (overrides != null && overrides.isObject() && !overrides.isEmpty()) {
+      root.set("stepOverrides", overrides);
+    }
+  }
 
   public JsonNode input() { return root.path("input"); }
 

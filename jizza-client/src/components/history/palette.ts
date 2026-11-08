@@ -54,6 +54,6 @@ export const RUN_STATUS: Record<RunStatus, { label: string; color: string; text:
 }
 
 export const TRIGGER_LABEL: Record<TriggerKind, string> = {
-  manual: 'Manual', webhook: 'Webhook', schedule: 'Schedule', agent: 'Agent', event: 'Event', device: 'Device',
+  manual: 'Manual', webhook: 'Webhook', schedule: 'Schedule', agent: 'Agent', event: 'Event', device: 'Device', form: 'Form',
   subworkflow: 'Sub-workflow', other: 'Other',
 }

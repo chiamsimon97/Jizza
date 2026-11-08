@@ -9,6 +9,16 @@ public interface WorkflowEngine {
 
   RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource);
 
+  /**
+   * As {@link #start}, with some steps' settings pointed at the run's input for this run only:
+   * {@code {"nodeId": [{"path": [...], "value": "{{ input.field }}"}]}}. A form made from a
+   * workflow's steps starts it this way.
+   */
+  default RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource,
+                       JsonNode stepOverrides) {
+    return start(workflowId, version, input, triggerSource);
+  }
+
   /** Continue a run paused on a human-intervention node, feeding the instruction downstream. */
   RunDto resume(UUID runId, JsonNode instruction);
 

@@ -16,6 +16,7 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   runs:          { path: '/runs',          label: 'Run history',   aliases: ['run history', 'runs', 'workflow runs', 'executions', 'task history', 'run log'] },
   recordings:    { path: '/recordings',    label: 'Recordings',    aliases: ['recordings', 'recording', 'recorded tasks', 'web recordings'] },
   functions:     { path: '/functions',     label: 'Functions',     aliases: ['functions', 'function', 'scripts', 'script functions'] },
+  forms:         { path: '/forms',         label: 'Forms',         aliases: ['forms', 'form', 'form builder', 'public forms', 'submissions'] },
   devices:       { path: '/settings/devices', label: 'Devices',     aliases: ['devices', 'device', 'agents on my computer', 'paired devices', 'browsers', 'phones'] },
   help:          { path: '/help',          label: 'Help',          aliases: ['help', 'guides', 'docs', 'how to'] },
   usage:         { path: '/usage',         label: 'Usage',         aliases: ['usage', 'cost', 'costs', 'spend', 'billing', 'tokens'] },
