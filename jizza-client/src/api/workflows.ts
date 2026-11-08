@@ -41,6 +41,14 @@ export const workflowsApi = {
   setReuse: (id: string, reuse: ReuseProfile) =>
     api.put<LibraryEntry>(`/api/workflows/${id}/reuse`, reuse),
 
+  /** Turns the workflow on or off for its triggers (a form submission, a schedule). */
+  setEnabled: (id: string, enabled: boolean) =>
+    api.put<WorkflowDto>(`/api/workflows/${id}/enabled`, { enabled }),
+
+  /** Starts the workflow when this form is submitted; null for no form. */
+  setFormTrigger: (id: string, formId: string | null) =>
+    api.put<WorkflowDto>(`/api/workflows/${id}/form-trigger`, { formId }),
+
   forgetReuse: (id: string) =>
     api.delete<LibraryEntry>(`/api/workflows/${id}/reuse`),
 }

@@ -40,15 +40,40 @@ public class WorkflowController {
   private final SkillUseCase skills;
   private final com.jizza.engine.api.orchestrator.AgentDirectory agents;
   private final FormulaPreview formulas;
+  private final com.jizza.engine.api.form.Forms forms;
+
+  /** Turns a workflow on or off. */
+  public record SetEnabled(@jakarta.validation.constraints.NotNull Boolean enabled) {}
+
+  /** The form whose submissions start a workflow; null for none. */
+  public record SetFormTrigger(UUID formId) {}
 
   public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills,
                             com.jizza.engine.api.orchestrator.AgentDirectory agents,
-                            FormulaPreview formulas) {
+                            FormulaPreview formulas, com.jizza.engine.api.form.Forms forms) {
     this.engine = engine;
     this.workflows = workflows;
     this.skills = skills;
     this.agents = agents;
     this.formulas = formulas;
+    this.forms = forms;
+  }
+
+  /**
+   * Turns the workflow on or off for its triggers. On holds for its current steps; saving new
+   * steps in the builder keeps it on.
+   */
+  @PutMapping("/workflows/{id}/enabled")
+  public WorkflowDto setEnabled(@PathVariable UUID id, @Valid @RequestBody SetEnabled request) {
+    return workflows.setEnabled(CurrentUser.userId(), id, request.enabled());
+  }
+
+  /** Starts the workflow when the form is submitted (only while the workflow is on). */
+  @PutMapping("/workflows/{id}/form-trigger")
+  public WorkflowDto setFormTrigger(@PathVariable UUID id, @RequestBody SetFormTrigger request) {
+    UUID userId = CurrentUser.userId();
+    if (request.formId() != null) forms.get(userId, request.formId());
+    return workflows.setFormTrigger(userId, id, request.formId());
   }
 
   /**

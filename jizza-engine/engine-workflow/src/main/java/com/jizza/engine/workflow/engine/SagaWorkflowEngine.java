@@ -207,6 +207,16 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     return launch(workflow, version, input, triggerSource, context -> { });
   }
 
+  @Override
+  @Transactional
+  public RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource,
+                      JsonNode stepOverrides) {
+    WorkflowEntity workflow = workflows.findById(workflowId)
+        .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
+    return launch(workflow, version, input, triggerSource,
+        context -> context.setStepOverrides(stepOverrides));
+  }
+
   /**
    * Starts {@code workflowId} as a step of another run. The child belongs to the same person,
    * must not already be running further up the chain, and follows the same approval rule as any
@@ -262,8 +272,12 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     return startChild(parentRunId, parentNodeId, workflowId, input, true);
   }
 
-  /** A library run of the current version, whose steps are the ones the user allowed unattended. */
+  /**
+   * A run nobody is watching that the person allowed anyway: of the current version of a workflow
+   * they turned on with these steps, or a library run of steps they allowed unattended.
+   */
   private static boolean allowedUnattended(WorkflowEntity workflow, int version, String triggerSource) {
+    if (version == workflow.getVersion() && workflow.isEnabled()) return true;
     if (triggerSource == null || !triggerSource.startsWith("library:")) return false;
     if (version != workflow.getVersion()) return false;
     var profile = com.jizza.engine.api.workflow.library.ReuseProfile.from(workflow.getReuse());
@@ -681,6 +695,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
             + "version of the workflow");
         return stop(runId, alongside);
       }
+      node = StepOverrides.apply(node, context.stepOverrides());
 
       Optional<WorkflowRunStepEntity> checkpoint = steps.findByRunIdAndNodeId(runId, nodeId);
 

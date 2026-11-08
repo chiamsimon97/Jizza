@@ -118,6 +118,7 @@ public final class RunHistoryDto {
       case "skill" -> "agent";
       case "event" -> "event";
       case "device" -> "device";
+      case "form" -> "form";
       default -> "other";
     };
   }

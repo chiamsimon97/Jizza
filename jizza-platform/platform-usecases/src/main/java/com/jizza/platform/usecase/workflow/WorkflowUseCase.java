@@ -88,6 +88,8 @@ public class WorkflowUseCase {
       }
     }
 
+    // A workflow the person turned on stays on when they change its steps here themselves.
+    boolean wasOn = !creating && ownedBy(userId, workflowId).enabled();
     WorkflowDto saved = workflows.save(new WorkflowDto(workflowId, userId, name, description,
         graph, inputSchema, triggerConfig, WorkflowOrigin.USER_BUILT, WorkflowStatus.DRAFT,
         owningAgentId, 1, null, null));
@@ -95,11 +97,29 @@ public class WorkflowUseCase {
     audit.record(userId, ActorType.USER, owningAgentId,
         creating ? "workflow.created" : "workflow.saved", saved.name(),
         Json.obj().put("workflowId", saved.id().toString()).put("version", saved.version()));
+    if (wasOn && !saved.enabled()) saved = workflows.setEnabled(saved.id(), true);
     if (reuse != null && library != null) {
       library.describe(userId, saved.id(), reuse);
       return ownedBy(userId, saved.id());
     }
     return saved;
+  }
+
+  /** Turns a workflow on or off for its triggers (a form, a schedule). */
+  @Transactional
+  public WorkflowDto setEnabled(UUID userId, UUID workflowId, boolean enabled) {
+    WorkflowDto workflow = ownedBy(userId, workflowId);
+    WorkflowDto saved = workflows.setEnabled(workflowId, enabled);
+    audit.record(userId, ActorType.USER, null, enabled ? "workflow.enabled" : "workflow.disabled",
+        workflow.name(), Json.obj().put("workflowId", workflowId.toString()));
+    return saved;
+  }
+
+  /** Makes the form's submissions start the workflow; null for none. The caller checks the form is theirs. */
+  @Transactional
+  public WorkflowDto setFormTrigger(UUID userId, UUID workflowId, UUID formId) {
+    ownedBy(userId, workflowId);
+    return workflows.setFormTrigger(workflowId, formId);
   }
 
   /** What the library keeps for reusing a workflow, as the user set it; null takes it out. */

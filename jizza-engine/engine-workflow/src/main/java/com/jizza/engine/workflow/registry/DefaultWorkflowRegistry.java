@@ -106,6 +106,28 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
 
   @Override
   @Transactional
+  public WorkflowDto setEnabled(UUID workflowId, boolean enabled) {
+    WorkflowEntity w = require(workflowId);
+    // Off for a draft only stops its triggers, so the person can still test it by hand. An
+    // approved workflow runs from its triggers by approval alone, so off disables it, as it
+    // always has.
+    w.setDisabled(!enabled && w.getStatus() == com.jizza.engine.api.enums.WorkflowStatus.APPROVED);
+    w.setTriggersOnFingerprint(enabled ? w.getGraphFingerprint() : null);
+    workflows.save(w);
+    return toDto(w);
+  }
+
+  @Override
+  @Transactional
+  public WorkflowDto setFormTrigger(UUID workflowId, UUID formId) {
+    WorkflowEntity w = require(workflowId);
+    w.setFormId(formId);
+    workflows.save(w);
+    return toDto(w);
+  }
+
+  @Override
+  @Transactional
   public WorkflowDto save(WorkflowDto dto) {
     WorkflowGraph graph = WorkflowGraph.from(dto.graph());
     validator.validate(graph);
@@ -176,7 +198,7 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     return new WorkflowDto(w.getId(), w.getUserId(), w.getName(), w.getDescription(), w.getGraph(),
         w.getInputSchema(), w.getTriggerConfig(), w.getOrigin(), w.getStatus(),
         w.getOwningAgentId(), w.getVersion(), w.getSourceTaskId(), w.getCreatedAt(),
-        w.getReuse());
+        w.getReuse(), w.isEnabled(), w.getFormId());
   }
 
   private static WorkflowDto snapshotDto(WorkflowEntity workflow, WorkflowVersionEntity snapshot) {
@@ -184,7 +206,9 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
         workflow.getDescription(), snapshot.getGraph(), workflow.getInputSchema(),
         workflow.getTriggerConfig(), workflow.getOrigin(), snapshot.getStatus(),
         workflow.getOwningAgentId(), snapshot.getVersion(), workflow.getSourceTaskId(),
-        snapshot.getCreatedAt(), workflow.getReuse());
+        snapshot.getCreatedAt(), workflow.getReuse(),
+        workflow.isEnabled() && snapshot.getVersion() == workflow.getVersion(),
+        workflow.getFormId());
   }
 
 }

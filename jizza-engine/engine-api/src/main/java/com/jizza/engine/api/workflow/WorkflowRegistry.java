@@ -39,4 +39,18 @@ public interface WorkflowRegistry {
   default void setMaintainers(UUID workflowId, List<UUID> agentIds) {
     throw new UnsupportedOperationException("Maintainers are not supported here");
   }
+
+  /**
+   * Turns the workflow on or off for its triggers (a form submission, a schedule). On holds for
+   * the current steps: a draft whose steps change some other way is off again until turned on.
+   * Off stops a draft's triggers (it can still be tested by hand) and disables an approved one.
+   */
+  default WorkflowDto setEnabled(UUID workflowId, boolean enabled) {
+    throw new UnsupportedOperationException("Turning workflows on and off is not supported here");
+  }
+
+  /** Makes submissions of {@code formId} start the workflow; null stops any form starting it. */
+  default WorkflowDto setFormTrigger(UUID workflowId, UUID formId) {
+    throw new UnsupportedOperationException("Form triggers are not supported here");
+  }
 }

@@ -10,4 +10,5 @@ public interface WorkflowRepository extends JpaRepository<WorkflowEntity, UUID> 
   List<WorkflowEntity> findByUserIdOrderByCreatedAtDesc(UUID userId);
   List<WorkflowEntity> findByUserIdAndStatus(UUID userId, WorkflowStatus status);
   List<WorkflowEntity> findBySourceTaskId(UUID sourceTaskId);
+  List<WorkflowEntity> findByFormId(UUID formId);
 }

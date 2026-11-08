@@ -41,6 +41,8 @@ public class SecurityConfig {
       "/api/auth/smart-sign-in/config", "/api/auth/smart-sign-in/start",
       "/api/auth/smart-sign-in/attempts/**",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/**",
+      // A published form's link: read the form and send an answer, by its unguessable token.
+      "/api/public/forms/**",
       // Paired devices sign in with their own key and short-lived token, never a session.
       "/agent/v1/**",
       "/actuator/health", "/actuator/health/**", "/actuator/info"
