@@ -1367,7 +1367,8 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   }
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
     !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
-    && !(action === 'browser.fillForm' && key === 'fields'))
+    && !(action === 'browser.fillForm' && key === 'fields')
+    && !(key === 'within' || key === 'loadMore'))
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
   const toggleRunTimeChoice = (on: boolean) => {
@@ -1427,6 +1428,11 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
             : 'For a card or row that changes from day to day, such as a movie or a date: the step picks it from the list on the page when it runs.'}
         </p>
       </div>
+    )}
+
+    {(choosesAtRunTime || action === 'browser.listItems') && (
+      <ListChoiceOptions inputs={inputs} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
+        setInput={setInput} />
     )}
 
     {action === 'browser.fillForm' && (
@@ -1537,7 +1543,56 @@ function isLocatorProperty(property: WebProperty): boolean {
 
 const WEB_INPUT_LABELS: Record<string, string> = {
   to: 'Drop onto', waitElement: 'Wait for element', nextPage: 'Next page button', urlContains: 'Address contains',
-  promptText: 'Text for prompt dialogs',
+  promptText: 'Text for prompt dialogs', prefer: 'When several match', opener: 'Opens the calendar',
+  optionElement: 'One suggestion (optional)', submit: 'Send button (optional)', checkErrors: "Read the site's errors after sending",
+  option: 'Suggestion to choose', date: 'Date', item: 'Item to choose',
+}
+
+/**
+ * The run-time list's own options: choosing inside one card of another list first (a showtime of
+ * the theatre chosen), and loading more of a list that grows as you scroll.
+ */
+function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
+  inputs: Record<string, unknown>; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext
+  setInput: (key: string, value: unknown) => void
+}) {
+  const within = asInputs(inputs.within)
+  const loadMore = asInputs(inputs.loadMore)
+  const inCard = inputs.within !== undefined
+  const loads = inputs.loadMore !== undefined
+  return <div className="space-y-2">
+    <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+      <input type="checkbox" checked={inCard}
+        onChange={e => setInput('within', e.target.checked ? { item: '' } : undefined)} />
+      Choose inside a card of another list first
+    </label>
+    {inCard && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
+      <p className="text-[11px] text-gray-500">Such as a showtime inside the theatre you choose: pick one card of the outer list (a theatre), then say which card to choose in.</p>
+      <ElementField label="One card of the outer list" value={within.element} deviceId={deviceId} browsers={browsers}
+        hasEarlierOpen mapping={mapping} required missing={within.element === undefined}
+        onChange={value => setInput('within', { ...within, element: value })} />
+      <Labelled group label="Which card" required hint="Its name, such as a theatre. Map it from earlier steps.">
+        <MappedField aria-label="Which card" mode="template" context={mapping}
+          value={typeof within.item === 'string' ? within.item : ''}
+          onChange={v => setInput('within', { ...within, item: v })} />
+      </Labelled>
+    </div>}
+    <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+      <input type="checkbox" checked={loads}
+        onChange={e => setInput('loadMore', e.target.checked ? { rounds: 5 } : undefined)} />
+      The list loads more as you scroll
+    </label>
+    {loads && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
+      <ElementField label="Load more button (optional)" value={loadMore.button} deviceId={deviceId} browsers={browsers}
+        hasEarlierOpen mapping={mapping} required={false} missing={false}
+        onChange={value => setInput('loadMore', { ...loadMore, button: value })} />
+      <Labelled label="Times to load more" hint="It stops sooner when the list stops growing.">
+        <input type="number" aria-label="Times to load more" min={1} max={30} className={fieldClass}
+          value={typeof loadMore.rounds === 'number' ? loadMore.rounds : 5}
+          onChange={e => setInput('loadMore', { ...loadMore, rounds: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })} />
+      </Labelled>
+    </div>}
+  </div>
 }
 
 function webInputLabel(name: string): string {
@@ -1587,7 +1642,7 @@ function WebSchemaField({ name, property, value, required, mapping, onChange }: 
   </Labelled>
 }
 
-type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date'
+type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox'
 type FormFieldRow = { element?: unknown; kind: FormFieldKind; value?: unknown; label?: string; required?: boolean; format?: string }
 
 const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] = [
@@ -1597,6 +1652,8 @@ const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] =
   { kind: 'checkboxes', label: 'Checkbox group', hint: 'The boxes to tick, comma-separated. Others are unticked.' },
   { kind: 'radio', label: 'Radio buttons', hint: 'The option to choose, as its label reads. Pick the group.' },
   { kind: 'date', label: 'Date or date and time', hint: 'Such as 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30.' },
+  { kind: 'datepicker', label: 'Calendar the site draws', hint: 'The date to pick. Pick the field that opens the calendar.' },
+  { kind: 'combobox', label: 'Search and choose', hint: 'What to type; the suggestion that matches is chosen.' },
 ]
 
 const asRows = (value: unknown): FormFieldRow[] =>

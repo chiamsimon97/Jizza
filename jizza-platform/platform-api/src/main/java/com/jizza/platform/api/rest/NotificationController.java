@@ -95,7 +95,7 @@ public class NotificationController {
   }
 
   /** An approval card's values: one flat object of at most 60 keys. */
-  private static com.fasterxml.jackson.databind.JsonNode boundedInputs(
+  static com.fasterxml.jackson.databind.JsonNode boundedInputs(
       com.fasterxml.jackson.databind.JsonNode inputs) {
     if (inputs == null || inputs.isNull()) return null;
     if (!inputs.isObject() || inputs.size() > 60 || inputs.toString().length() > 200_000) {

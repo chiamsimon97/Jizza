@@ -20,6 +20,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
+import com.jizza.engine.persistence.repository.WorkflowStorageRepository;
 import com.jizza.engine.workflow.engine.NodeExecutor;
 import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
@@ -52,13 +53,16 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private final JexlSandbox sandbox;
   private final AgentRepository agents;
   private final ObjectProvider<LocatorFixes> fixes;
+  private final ObjectProvider<WorkflowStorageRepository> storage;
   private FastReplay fastReplay = new FastReplay(false);
 
   public DeviceActionNodeExecutor(ObjectProvider<DeviceCommands> commands,
                                   ObjectProvider<DeviceActionCatalog> catalog,
                                   AutonomyGate autonomyGate, JexlSandbox sandbox,
-                                  AgentRepository agents, ObjectProvider<LocatorFixes> fixes) {
+                                  AgentRepository agents, ObjectProvider<LocatorFixes> fixes,
+                                  ObjectProvider<WorkflowStorageRepository> storage) {
     this.commands = commands;
+    this.storage = storage;
     this.catalog = catalog;
     this.autonomyGate = autonomyGate;
     this.sandbox = sandbox;
@@ -175,40 +179,107 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         : GuardrailContext.inWorkflow(actor, toolRef, inputs, execution.workflowId(),
             execution.workflowVersion(), nodeId, spec.actionType());
     boolean approved = execution.context().approved(nodeId);
+    boolean formAction = browserAction || "ui".equals(spec.capability());
+    JsonNode edits = execution.context().approvedInputs(nodeId);
 
     // A choice made at run time: the page's list as it is now, read before anyone decides.
-    boolean pick = WebStepForm.CLICK_ITEM.equals(spec.action())
+    String pickKey = WebStepForm.pickKey(spec.action());
+    boolean listed = WebStepForm.CLICK_ITEMS.contains(spec.action())
         && !"index".equals(inputs.path("by").asText("text"));
-    List<String> choices = null;
+    boolean pick = pickKey != null && (listed || state.has("choices"));
+    String prefer = inputs.path("prefer").asText(null);
+    List<ItemMatch.Item> choices = null;
     if (pick) {
-      if (!state.has("choices")) {
-        Decision first = autonomyGate.evaluate(guardrail);
-        if (first.denied()) {
-          return Outcome.permanentFailure("Blocked by your guardrails: " + first.reason());
+      JsonNode within = inputs.path("within");
+      if (listed && within.isObject() && !state.has("parent")) {
+        if (!state.has("parents")) {
+          Decision first = autonomyGate.evaluate(guardrail);
+          if (first.denied()) {
+            return Outcome.permanentFailure("Blocked by your guardrails: " + first.reason());
+          }
+          ObjectNode parentInput = listInput(inputs, false);
+          parentInput.set("element", within.get("element"));
+          return listChoices(execution, broker, state, target, workspaceId,
+              WebStepForm.listAction(spec.action()), parentInput, "parents");
         }
-        return listChoices(execution, broker, state, target, workspaceId, inputs);
+        List<ItemMatch.Item> parents = ItemMatch.items(state.get("parents"));
+        String wantedParent = within.path("item").asText("");
+        String known = remembered(execution, "within", wantedParent, parents);
+        ItemMatch.Pick parent = known != null ? new ItemMatch.Pick(known, List.of())
+            : ItemMatch.match(parents, wantedParent, null);
+        if (!parent.found()) {
+          // Which card to choose inside is the person's call before anything else.
+          state.put("wantedWithin", wantedParent);
+          List<WebStepForm.Field> form = WebStepForm.fields(spec, config, (ObjectNode) inputs, null)
+              .stream().map(f -> "within.item".equals(f.key())
+                  ? f.withOptions("select", ordered(parents, parent.tied()), true) : f).toList();
+          form = withRemember(execution, form, wantedParent);
+          return ask(execution, state, spec, target, form, labels(parents),
+              pickReason(wantedParent, parent, "the list"));
+        }
+        String parentLabel = parents.stream().filter(i -> i.display().equals(parent.chosen()))
+            .map(ItemMatch.Item::label).findFirst().orElse(parent.chosen());
+        state.put("parent", parentLabel);
       }
-      choices = new java.util.ArrayList<>();
-      for (JsonNode label : state.get("choices")) choices.add(label.asText());
+      if (within.isObject() && state.has("parent")) {
+        ((ObjectNode) within).put("item", state.get("parent").asText());
+      }
+      if (listed && !state.has("choices")) {
+        if (!within.isObject()) {
+          Decision first = autonomyGate.evaluate(guardrail);
+          if (first.denied()) {
+            return Outcome.permanentFailure("Blocked by your guardrails: " + first.reason());
+          }
+        }
+        return listChoices(execution, broker, state, target, workspaceId,
+            WebStepForm.listAction(spec.action()), listInput(inputs, true), "choices");
+      }
+      choices = ItemMatch.items(state.get("choices"));
+    }
+
+    String wanted = !pick ? null : inputs.path(pickKey).asText(
+        WebStepForm.CHOOSE_OPTION.equals(spec.action()) ? inputs.path("text").asText("") : "");
+    ItemMatch.Pick picked = null;
+    if (pick) {
+      String known = remembered(execution, pickKey, wanted, choices);
+      picked = known != null ? new ItemMatch.Pick(known, List.of())
+          : ItemMatch.match(choices, wanted, prefer);
+      if (picked.found()) {
+        String chosenName = picked.chosen();
+        ItemMatch.Item item = choices.stream().filter(i -> i.display().equals(chosenName))
+            .findFirst().orElse(null);
+        if (item != null && item.byIndex() && WebStepForm.CLICK_ITEMS.contains(spec.action())) {
+          // Two cards share the name: the one meant is clicked by its place in the list.
+          ((ObjectNode) inputs).put("by", "index").put(pickKey, String.valueOf(item.index()));
+          state.put("chosenDisplay", item.display());
+        } else {
+          ((ObjectNode) inputs).put(pickKey, item == null ? picked.chosen() : item.label());
+        }
+      }
+    }
+    rememberAnswer(execution, state, edits, pickKey, inputs);
+
+    // The site refused the form it was sent: the person fixes the values it named.
+    JsonNode siteErrors = state.get("siteErrors");
+    boolean fixing = siteErrors != null && !state.path("siteErrorsAsked").asBoolean(false);
+    if (siteErrors != null && !fixing) {
+      state.remove("siteErrors");
+      state.remove("siteErrorsAsked");
     }
 
     Decision decision;
-    String chosen = pick ? WebStepForm.match(choices, inputs.path("item").asText(null)) : null;
-    if (pick && chosen != null) ((ObjectNode) inputs).put("item", chosen);
     if (approved) {
       decision = autonomyGate.evaluate(guardrail);
     } else if (pick) {
       // "Let Jizza decide" picks the item the run asked for when the page lists it; otherwise
       // the person picks from what is there.
       decision = autonomyGate.evaluate(guardrail);
-      if ((decision.allowed() || decision.needsJizza()) && chosen != null) {
+      if ((decision.allowed() || decision.needsJizza()) && picked.found()) {
         decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ALLOW,
-            "the page lists " + chosen);
+            "the page lists " + picked.chosen());
       } else if (decision.allowed() || decision.needsJizza()) {
-        String wanted = inputs.path("item").asText("");
-        decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ASK, wanted.isBlank()
-            ? "Choose which one; the step was not told which"
-            : "The page does not list \"" + wanted + "\" now, so choose one of what it lists");
+        decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ASK,
+            pickReason(wanted, picked, "the page"));
       }
     } else {
       decision = autonomyGate.decide(guardrail);
@@ -217,28 +288,53 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure("Blocked by your guardrails: " + decision.reason());
     }
 
-    List<WebStepForm.Field> form = browserAction
-        ? WebStepForm.fields(spec, config, (ObjectNode) inputs, choices) : List.of();
-    if (pick && chosen == null && !form.isEmpty()) {
+    List<WebStepForm.Field> form = formAction
+        ? WebStepForm.fields(spec, config, (ObjectNode) inputs, pick ? labels(choices) : null)
+        : List.of();
+    if (pick && !picked.found() && !form.isEmpty()) {
       // An item the page does not list cannot be clicked: it counts as not filled in.
-      form = form.stream().map(f -> "item".equals(f.key())
-          ? new WebStepForm.Field(f.key(), f.label(), f.type(), null, true, f.source(), f.options())
-          : f).toList();
+      List<String> options = ordered(choices, picked.tied());
+      form = form.stream().map(f -> pickKey.equals(f.key())
+          ? f.withOptions("select", options, true) : f).toList();
+      state.put("wanted", wanted);
+      form = withRemember(execution, form, wanted);
+    }
+    String siteSaid = null;
+    if (fixing) {
+      java.util.Map<Integer, String> byField = new java.util.HashMap<>();
+      List<String> general = new java.util.ArrayList<>();
+      for (JsonNode error : siteErrors) {
+        String message = error.path("message").asText("").strip();
+        if (message.isEmpty()) continue;
+        if (error.path("field").isInt()) byField.merge(error.get("field").asInt(), message, (a, b) -> a + " " + b);
+        else general.add(error.path("label").asText("").isBlank() ? message
+            : error.get("label").asText() + ": " + message);
+      }
+      form = form.stream().map(f -> {
+        for (var e : byField.entrySet()) {
+          if (f.key().equals("fields." + e.getKey() + ".value")) return f.withError(e.getValue());
+        }
+        return f;
+      }).toList();
+      List<String> all = new java.util.ArrayList<>(general);
+      byField.forEach((i, m) -> all.add(m));
+      siteSaid = "The site did not accept the form" + (all.isEmpty() ? "" : ": "
+          + String.join("; ", all.subList(0, Math.min(all.size(), 5))))
+          + ". Fix the values and approve to send it again";
+      state.put("siteErrorsAsked", true);
     }
     List<String> missing = form.stream().filter(WebStepForm.Field::missing)
+        .filter(f -> !f.key().startsWith("_"))
         .map(WebStepForm.Field::label).toList();
     boolean asks = !approved && (decision.needsPermission() || decision.needsJizza());
-    if (asks || !missing.isEmpty()) {
-      String why = !missing.isEmpty() && !asks
+    if (asks || fixing || !missing.isEmpty()) {
+      String why = fixing ? siteSaid
+          : pick && !picked.found() ? pickReason(wanted, picked, "the page")
+          : !missing.isEmpty() && !asks
           ? (missing.size() == 1 ? missing.get(0) + " has" : String.join(", ", missing) + " have")
               + " no value, so fill " + (missing.size() == 1 ? "it" : "them") + " in to go on"
           : decision.reason();
-      state.remove("choices");
-      ArrayNode keys = state.putArray("offered");
-      form.forEach(f -> keys.add(f.key()));
-      return Outcome.awaitPermission("This step needs your approval before it asks "
-          + target.describe() + " to " + lower(spec.title()) + ". " + why + ".",
-          approvalDetail(spec, form, choices, execution.context().variables()));
+      return ask(execution, state, spec, target, form, pick ? labels(choices) : null, why);
     }
     state.remove("choices");
     Duration timeout = config.path("timeoutSec").asInt(0) > 0
@@ -247,10 +343,14 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     try {
       command = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
           spec.action(), spec.version(), inputs, timeout, execution.runId(),
-          nodeId, execution.runId() + ":" + nodeId + ":" + execution.attempt(), false));
+          nodeId, execution.runId() + ":" + nodeId + ":" + execution.attempt()
+              + (state.path("sends").asInt(0) > 0 ? ":s" + state.path("sends").asInt() : ""),
+          false));
     } catch (ValidationException | NotFoundException e) {
       return Outcome.permanentFailure(e.getMessage());
     }
+    state.put("sends", state.path("sends").asInt(0) + 1);
+    state.remove(List.of("parent", "parents"));
     state.put("commandId", command.id().toString());
     state.put("device", command.deviceName());
     state.put("browserAction", browserAction);
@@ -275,6 +375,21 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     return keys;
   }
 
+  /**
+   * Stops for the person with the step's values. What the page listed is read again after the
+   * answer, so the choice is still on the page when it is clicked.
+   */
+  private Outcome ask(Execution execution, ObjectNode state, DeviceActionSpec spec,
+                      DeviceTarget target, List<WebStepForm.Field> form, List<String> choices,
+                      String why) {
+    state.remove(List.of("choices", "parents", "parent"));
+    ArrayNode keys = state.putArray("offered");
+    form.forEach(f -> keys.add(f.key()));
+    return Outcome.awaitPermission("This step needs your approval before it asks "
+        + target.describe() + " to " + lower(spec.title()) + ". " + why + ".",
+        approvalDetail(spec, form, choices, execution.context().variables()));
+  }
+
   /** What the approval card shows: the step's values, what is missing, and data to map from. */
   private static ObjectNode approvalDetail(DeviceActionSpec spec, List<WebStepForm.Field> form,
                                           List<String> choices, Map<String, Object> variables) {
@@ -286,17 +401,131 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     form.forEach(f -> fields.add(f.toJson()));
     ArrayNode missing = out.putArray("missing");
     form.stream().filter(WebStepForm.Field::missing).forEach(f -> missing.add(f.key()));
-    if (choices != null) out.put("choicesAt", java.time.Instant.now().toString());
+    boolean listedNow = choices != null || form.stream().anyMatch(f -> f.options() != null
+        && "select".equals(f.type()) && f.key().equals("within.item"));
+    if (listedNow) out.put("choicesAt", java.time.Instant.now().toString());
     out.set("data", WebStepForm.data(variables));
     return detail;
   }
 
+  /** The inputs the listing of a choosing step's list takes. */
+  private static ObjectNode listInput(JsonNode inputs, boolean withinAndMore) {
+    ObjectNode out = Json.obj();
+    for (String key : List.of("session", "element", "timeoutMs", "highlight", "app", "max")) {
+      if (inputs.has(key)) out.set(key, inputs.get(key));
+    }
+    if (withinAndMore) {
+      for (String key : List.of("within", "loadMore")) {
+        if (inputs.has(key)) out.set(key, inputs.get(key));
+      }
+    }
+    return out;
+  }
+
+  private static List<String> labels(List<ItemMatch.Item> items) {
+    return items == null ? null : items.stream().map(ItemMatch.Item::display).toList();
+  }
+
+  /** All the listed labels, the ones that tied first. */
+  private static List<String> ordered(List<ItemMatch.Item> items, List<String> tied) {
+    java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(tied);
+    items.forEach(i -> out.add(i.display()));
+    return new java.util.ArrayList<>(out);
+  }
+
+  private static String pickReason(String wanted, ItemMatch.Pick pick, String where) {
+    if (wanted == null || wanted.isBlank()) return "Choose which one; the step was not told which";
+    if (!pick.tied().isEmpty()) {
+      List<String> some = pick.tied().subList(0, Math.min(pick.tied().size(), 4));
+      return "Several items match \"" + wanted + "\" (" + String.join(", ", some)
+          + (pick.tied().size() > some.size() ? ", …" : "") + "), so choose one";
+    }
+    return "The " + ("the page".equals(where) ? "page" : "list") + " does not list \"" + wanted
+        + "\" now, so choose one of what it lists";
+  }
+
+  // ── remembered picks ────────────────────────────────────────────────────
+
+  static final String REMEMBER = "_remember";
+
+  private String picksKey(Execution execution) {
+    return "jizza.picks." + execution.workflowId() + "." + execution.node().id();
+  }
+
+  /** Offers to remember the person's pick for this wording, for a saved workflow. */
+  private List<WebStepForm.Field> withRemember(Execution execution, List<WebStepForm.Field> form,
+                                               String wanted) {
+    if (execution.workflowId() == null || storage.getIfAvailable() == null || wanted == null
+        || ItemMatch.fold(wanted).isEmpty()) {
+      return form;
+    }
+    List<WebStepForm.Field> out = new java.util.ArrayList<>(form);
+    out.add(new WebStepForm.Field(REMEMBER, "Next time the run asks for \"" + wanted
+        + "\", choose this one without asking", "checkbox",
+        Json.mapper().getNodeFactory().booleanNode(false), false, null, null));
+    return out;
+  }
+
+  /** The pick remembered for this wording, when the list still has it. */
+  private String remembered(Execution execution, String kind, String wanted,
+                            List<ItemMatch.Item> items) {
+    WorkflowStorageRepository repo = storage.getIfAvailable();
+    if (repo == null || execution.workflowId() == null || wanted == null
+        || ItemMatch.fold(wanted).isEmpty()) {
+      return null;
+    }
+    String label = repo.findByUserIdAndKey(execution.userId(), picksKey(execution))
+        .map(row -> row.getValue() == null ? null
+            : row.getValue().path(kind).path(ItemMatch.fold(wanted)).asText(null))
+        .orElse(null);
+    if (label == null) return null;
+    return items.stream().anyMatch(i -> i.display().equals(label)) ? label : null;
+  }
+
+  /** Keeps the person's pick when they ticked "choose this one without asking". */
+  private void rememberAnswer(Execution execution, ObjectNode state, JsonNode edits,
+                              String pickKey, JsonNode inputs) {
+    WorkflowStorageRepository repo = storage.getIfAvailable();
+    if (repo == null || execution.workflowId() == null || edits == null
+        || !WebStepForm.truthy(edits.get(REMEMBER)) || pickKey == null) {
+      return;
+    }
+    java.util.Map<String, String[]> picks = new java.util.LinkedHashMap<>();
+    if (state.hasNonNull("wanted") && edits.path(pickKey).isTextual()) {
+      picks.put(pickKey, new String[] {state.get("wanted").asText(), edits.get(pickKey).asText()});
+    }
+    if (state.hasNonNull("wantedWithin") && edits.path("within.item").isTextual()) {
+      picks.put("within", new String[] {state.get("wantedWithin").asText(),
+          edits.get("within.item").asText()});
+    }
+    if (picks.isEmpty()) return;
+    String key = picksKey(execution);
+    var row = repo.findByUserIdAndKey(execution.userId(), key).orElseGet(() -> {
+      var fresh = new com.jizza.engine.persistence.entity.WorkflowStorageEntity();
+      fresh.setUserId(execution.userId());
+      fresh.setKey(key);
+      return fresh;
+    });
+    ObjectNode value = row.getValue() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    picks.forEach((kind, pair) -> {
+      ObjectNode byWording = value.path(kind).isObject() ? (ObjectNode) value.get(kind)
+          : value.putObject(kind);
+      if (byWording.size() >= 50 && !byWording.has(ItemMatch.fold(pair[0]))) return;
+      byWording.put(ItemMatch.fold(pair[0]), pair[1]);
+    });
+    row.setValue(value);
+    row.setUpdatedAt(java.time.Instant.now());
+    repo.save(row);
+    state.remove(List.of("wanted", "wantedWithin"));
+  }
+
   /**
-   * Reads the list the step chooses from as the page shows it now. The listing is a read on the
-   * same page and browser; its result wakes the step, which then decides or asks.
+   * Reads the list the step chooses from as the page (or app) shows it now. The listing is a read
+   * on the same page and device; its result wakes the step, which then decides or asks.
    */
   private Outcome listChoices(Execution execution, DeviceCommands broker, ObjectNode state,
-                              DeviceTarget target, UUID workspaceId, JsonNode inputs) {
+                              DeviceTarget target, UUID workspaceId, String listAction,
+                              ObjectNode listInput, String into) {
     if (state.hasNonNull("listCommandId")) {
       DeviceCommandDto listing = broker.find(UUID.fromString(state.get("listCommandId").asText()))
           .orElse(null);
@@ -311,32 +540,31 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         return Outcome.retryable("Could not read the list on the page: "
             + (listing.error() == null ? listing.status().name().toLowerCase() : listing.error()));
       }
-      ArrayNode labels = state.putArray("choices");
-      WebStepForm.labels(listing.output()).forEach(labels::add);
-      if (labels.isEmpty()) {
-        state.remove("choices");
+      ArrayNode items = state.putArray(into);
+      ItemMatch.items(listing.output().path("items")).stream().limit(200)
+          .forEach(i -> items.addObject().put("label", i.label()).put("text", i.text())
+              .put("index", i.index()));
+      if (items.isEmpty()) {
+        state.remove(into);
         return Outcome.retryable("The list on the page has no items to choose from");
       }
       return execute(execution);
     }
-    ObjectNode listInput = Json.obj();
-    for (String key : List.of("session", "element", "timeoutMs", "highlight")) {
-      if (inputs.has(key)) listInput.set(key, inputs.get(key));
-    }
     DeviceCommandDto listing;
     try {
       listing = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
-          "browser.listItems", 1, listInput, null, execution.runId(), execution.node().id(),
+          listAction, 1, listInput, null, execution.runId(), execution.node().id(),
           execution.runId() + ":" + execution.node().id() + ":" + execution.attempt() + ":list"
               + state.path("lists").asInt(0),
           false));
-    state.put("lists", state.path("lists").asInt(0) + 1);
+      state.put("lists", state.path("lists").asInt(0) + 1);
     } catch (ValidationException | NotFoundException e) {
       return Outcome.permanentFailure(e.getMessage());
     }
     state.put("listCommandId", listing.id().toString());
-    if (listing.status().finished()) return listChoices(execution, broker, state, target,
-        workspaceId, inputs);
+    if (listing.status().finished()) {
+      return listChoices(execution, broker, state, target, workspaceId, listAction, listInput, into);
+    }
     return Outcome.awaitDevice(listing.deadlineAt());
   }
 
@@ -356,10 +584,22 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     }
     if (!command.status().finished()) return Outcome.awaitDevice(command.deadlineAt());
     return switch (command.status()) {
-      case SUCCEEDED -> Outcome.completed(outputOf(command,
+      case SUCCEEDED -> {
+        JsonNode errors = command.output() == null ? null : command.output().path("errors");
+        if (WebStepForm.FILL_FORMS.contains(command.action()) && errors != null
+            && errors.isArray() && !errors.isEmpty() && state.path("errorRounds").asInt(0) < 3) {
+          // The site refused what was typed; the person fixes it and the form is sent again.
+          state.remove("commandId");
+          state.set("siteErrors", errors.deepCopy());
+          state.remove("siteErrorsAsked");
+          state.put("errorRounds", state.path("errorRounds").asInt(0) + 1);
+          yield execute(execution);
+        }
+        yield Outcome.completed(outputOf(command,
           state.path("browserAction").asBoolean(false),
           state.path("browserOpened").asBoolean(true),
           state.path("browserWorkspace").asText(null)));
+      }
       case FAILED -> {
         // The next attempt sends a new command rather than reading this one again.
         state.remove("commandId");
@@ -367,6 +607,22 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         String kind = command.output() == null ? null
             : command.output().path("error").path("kind").asText(null);
         String message = failureMessage(command);
+        JsonNode listedNow = command.output() == null ? null
+            : command.output().path("error").path("items");
+        if ("item_not_found".equals(kind) && WebStepForm.pickKey(command.action()) != null
+            && listedNow != null && listedNow.isArray() && !listedNow.isEmpty()
+            && state.path("notFound").asInt(0) < 2) {
+          // What was asked for is not there: choose from what is, as a listed choice is made.
+          state.put("notFound", state.path("notFound").asInt(0) + 1);
+          // The card to choose inside is the one gone: choose that again first.
+          boolean within = command.output().path("error").path("within").asBoolean(false);
+          ArrayNode items = state.putArray(within ? "parents" : "choices");
+          if (within) state.remove(List.of("parent", "choices"));
+          ItemMatch.items(listedNow).stream().limit(200)
+              .forEach(i -> items.addObject().put("label", i.label()).put("text", i.text())
+              .put("index", i.index()));
+          yield execute(execution);
+        }
         if (state.path("browserAction").asBoolean(false) && "element_not_found".equals(kind)) {
           proposeFix(execution, command.output().path("error"));
         }

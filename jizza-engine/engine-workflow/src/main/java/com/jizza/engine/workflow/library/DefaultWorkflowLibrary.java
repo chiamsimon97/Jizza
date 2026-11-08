@@ -119,17 +119,41 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
         ReuseProfile.Guardrails.DEFAULT, null);
   }
 
-  /** The inputs a workflow's start step declares, from its saved input schema. */
+  /**
+   * The inputs a workflow takes: those its start step declares in its saved input schema, and
+   * those its steps read as {@code {{ input.name }}} without declaring them (a movie name made
+   * dynamic in a recorded step), so a chat that runs it can pass "Ramayana" in.
+   */
   static List<ReuseProfile.Input> declaredInputs(WorkflowEntity workflow) {
     JsonNode schema = workflow.getInputSchema();
-    if (schema == null || !schema.path("properties").isObject()) return List.of();
-    java.util.Set<String> required = new java.util.HashSet<>();
-    schema.path("required").forEach(r -> required.add(r.asText()));
     List<ReuseProfile.Input> inputs = new ArrayList<>();
-    schema.path("properties").fields().forEachRemaining(e -> inputs.add(new ReuseProfile.Input(
-        e.getKey(), e.getValue().path("description").asText(null), required.contains(e.getKey()))));
+    java.util.Set<String> known = new java.util.HashSet<>();
+    if (schema != null && schema.path("properties").isObject()) {
+      java.util.Set<String> required = new java.util.HashSet<>();
+      schema.path("required").forEach(r -> required.add(r.asText()));
+      schema.path("properties").fields().forEachRemaining(e -> {
+        known.add(e.getKey());
+        inputs.add(new ReuseProfile.Input(e.getKey(),
+            e.getValue().path("description").asText(null), required.contains(e.getKey())));
+      });
+    }
+    JsonNode graph = workflow.getGraph();
+    if (graph == null) return inputs;
+    for (JsonNode node : graph.path("nodes")) {
+      java.util.regex.Matcher m = READS_INPUT.matcher(node.path("config").toString());
+      while (m.find() && inputs.size() < 30) {
+        String name = m.group(1);
+        if (!known.add(name)) continue;
+        String step = node.path("label").asText("").isBlank() ? node.path("id").asText()
+            : node.path("label").asText();
+        inputs.add(new ReuseProfile.Input(name, "Used by the step '" + step + "'", false));
+      }
+    }
     return inputs;
   }
+
+  private static final java.util.regex.Pattern READS_INPUT = java.util.regex.Pattern.compile(
+      "\\{\\{[^}]*?\\binput\\.([A-Za-z_][A-Za-z0-9_]*)");
 
   /** What the steps say about themselves: their labels and the sites they open or call. */
   static String stepsText(JsonNode graph) {

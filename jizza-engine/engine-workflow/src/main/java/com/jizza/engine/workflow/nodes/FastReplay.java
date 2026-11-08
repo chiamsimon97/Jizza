@@ -58,7 +58,8 @@ final class FastReplay {
   private static final int MAX_STEPS = 100;
   /** Choosing from a list reads the page first and may ask, so it never runs in a batch. */
   private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.record", "browser.pickElement",
-      "browser.listItems", WebStepForm.CLICK_ITEM);
+      "browser.listItems", WebStepForm.CLICK_ITEM, WebStepForm.CHOOSE_OPTION,
+      "browser.pickDate");
   /** A template that reads another step's output can't be filled before that step has run. */
   private static final Pattern READS_STEPS = Pattern.compile("\\{\\{[^}]*\\bnodes\\b");
 
@@ -109,6 +110,8 @@ final class FastReplay {
       if (!inputs.isObject()) return null;
       ObjectNode input = (ObjectNode) inputs;
       WebStepForm.normalize(spec.get().action(), input);
+      // A form that is sent and checked may come back with the site's errors to fix.
+      if (WebStepForm.FILL_FORM.equals(spec.get().action()) && input.has("submit")) return null;
       // A step with a mandatory value still empty runs on its own, where the person fills it in.
       if (WebStepForm.fields(spec.get(), config, input, null).stream()
           .anyMatch(WebStepForm.Field::missing)) {

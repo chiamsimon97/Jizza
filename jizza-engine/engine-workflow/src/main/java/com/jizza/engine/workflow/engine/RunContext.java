@@ -142,7 +142,10 @@ public final class RunContext {
   public void recordApprovedInputs(String nodeId, JsonNode inputs) {
     ObjectNode edits = root.has("approvedInputs") && root.get("approvedInputs").isObject()
         ? (ObjectNode) root.get("approvedInputs") : root.putObject("approvedInputs");
-    edits.set(nodeId, inputs.deepCopy());
+    // A step can ask more than once (the site refused the form, the item is gone): later changes
+    // add to earlier ones rather than undo them.
+    if (edits.path(nodeId).isObject()) ((ObjectNode) edits.get(nodeId)).setAll((ObjectNode) inputs.deepCopy());
+    else edits.set(nodeId, inputs.deepCopy());
   }
 
   public JsonNode approvedInputs(String nodeId) {

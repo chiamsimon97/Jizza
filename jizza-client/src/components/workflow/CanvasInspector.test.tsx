@@ -302,11 +302,38 @@ describe('CanvasInspector', () => {
     const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs: { element: card } } } : n) }
     const { onSave } = open(graph, made.id)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Choose the item at run time' }))
-    type(await screen.findByRole('textbox', { name: 'Item' }), '{{ input.movie }}')
+    type(await screen.findByRole('textbox', { name: 'Item to choose' }), '{{ input.movie }}')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
     expect(saved.config).toMatchObject({ action: 'browser.clickItem', version: 1, inputs: { element: card, item: '{{ input.movie }}' } })
+    vi.unstubAllGlobals()
+  })
+
+  it('chooses inside a card of another list and loads more of a growing list', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element'], properties: {
+            element: locator, item: { type: 'string' }, within: { type: 'object' }, loadMore: { type: 'object' },
+            prefer: { enum: ['ask', 'first', 'lowestPrice', 'highestPrice'] } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const card = { strategies: [{ by: 'text', value: '7:00 PM' }], label: 'Showtime' }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs: { element: card, item: '{{ input.time }}' } } } : n) }
+    const { onSave } = open(graph, made.id)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Choose inside a card of another list first' }))
+    type(await screen.findByRole('textbox', { name: 'Which card' }), '{{ input.theatre }}')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'The list loads more as you scroll' }))
+    expect(screen.getByRole('combobox', { name: 'When several match' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ within: { item: '{{ input.theatre }}' }, loadMore: { rounds: 5 } })
     vi.unstubAllGlobals()
   })
 

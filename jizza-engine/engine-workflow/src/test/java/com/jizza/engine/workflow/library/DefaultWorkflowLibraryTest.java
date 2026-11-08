@@ -116,6 +116,22 @@ class DefaultWorkflowLibraryTest {
   }
 
   @Test
+  void valuesTheStepsReadAreInputsTooSoAChatCanPassTheMovie() {
+    gold.setReuse(null);
+    gold.setGraph(Json.read("""
+        {"nodes":[{"id":"n1","type":"DEVICE_ACTION","label":"Choose the movie",
+          "config":{"action":"browser.clickItem","inputs":{"item":"{{ input.movie }}"}}},
+         {"id":"n2","type":"DEVICE_ACTION","label":"Pick the date",
+          "config":{"inputs":{"date":"{{ fmt:date(input.date) }}","item":"{{input.movie}}"}}}],
+         "edges":[]}"""));
+
+    assertThat(library.runnable(userId)).singleElement().satisfies(m ->
+        assertThat(m.profile().inputs()).containsExactly(
+            new ReuseProfile.Input("movie", "Used by the step 'Choose the movie'", false),
+            new ReuseProfile.Input("date", "Used by the step 'Pick the date'", false)));
+  }
+
+  @Test
   void oneAwaitingReviewOrTurnedOffIsLeftOut() {
     gold.setStatus(WorkflowStatus.PENDING_REVIEW);
     assertThat(library.find(userId, "check the gold rate", Use.CHAT, 3)).isEmpty();

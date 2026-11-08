@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.device.DeviceActionSpec;
 import com.jizza.engine.api.util.Json;
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -30,17 +29,48 @@ final class WebStepForm {
   /** Inputs that are about how the step runs, not what it sends: never shown or editable. */
   private static final Set<String> PLUMBING = Set.of("session", "element", "timeoutMs", "trusted",
       "screenshotOnError", "highlight", "secretRef", "waitElement", "to", "offset", "modifiers",
-      "steps", "fields", "group", "in", "waitAfter", "by", "max");
+      "steps", "fields", "group", "in", "waitAfter", "by", "max", "within", "loadMore", "submit",
+      "checkErrors", "opener", "optionElement", "prefer", "app");
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";
+  static final String CHOOSE_OPTION = "browser.chooseOption";
+  /** Choices made from a list the page or app shows at run time. */
+  static final Set<String> CLICK_ITEMS = Set.of(CLICK_ITEM, "ui.clickItem");
+  static final Set<String> FILL_FORMS = Set.of(FILL_FORM, "ui.fillForm");
+
+  /** The input that names the item chosen, for an action that chooses from a list. */
+  static String pickKey(String action) {
+    if (CLICK_ITEMS.contains(action)) return "item";
+    if (CHOOSE_OPTION.equals(action)) return "option";
+    return null;
+  }
+
+  /** The action that reads the list a choosing action chooses from. */
+  static String listAction(String action) {
+    return action.startsWith("ui.") ? "ui.listItems" : "browser.listItems";
+  }
   private static final int MAX_TEXT = 10_000;
   private static final int MAX_LIST = 100;
   private static final int MAX_DATA = 40;
 
   /** One value of the step, as the approval card shows it. */
   record Field(String key, String label, String type, JsonNode value, boolean required,
-               String source, List<String> options) {
+               String source, List<String> options, String error) {
+
+    Field(String key, String label, String type, JsonNode value, boolean required,
+          String source, List<String> options) {
+      this(key, label, type, value, required, source, options, null);
+    }
+
+    Field withError(String message) {
+      return new Field(key, label, type, value, required, source, options, message);
+    }
+
+    Field withOptions(String newType, List<String> newOptions, boolean blank) {
+      return new Field(key, label, newType, blank ? null : value, blank || required, source,
+          newOptions, error);
+    }
 
     boolean missing() { return required && empty(value); }
 
@@ -49,6 +79,7 @@ final class WebStepForm {
           .put("required", required).put("missing", missing());
       if (value != null && !value.isMissingNode() && !value.isNull()) out.set("value", value);
       if (source != null) out.put("source", source);
+      if (error != null) out.put("error", error);
       if (options != null) {
         ArrayNode list = out.putArray("options");
         options.forEach(list::add);
@@ -77,15 +108,16 @@ final class WebStepForm {
       case "browser.setCheckbox" -> {
         if (inputs.has("state")) inputs.put("state", checkboxState(inputs.get("state")));
       }
-      case "browser.setText", "browser.setDate", CLICK_ITEM -> {
-        for (String key : List.of("text", "value", "item")) {
+      case "browser.setText", "browser.setDate", "browser.pickDate", CHOOSE_OPTION, CLICK_ITEM,
+          "ui.clickItem" -> {
+        for (String key : List.of("text", "value", "item", "date", "option")) {
           JsonNode value = inputs.get(key);
           if (value != null && (value.isNumber() || value.isBoolean())) {
             inputs.put(key, value.asText());
           }
         }
       }
-      case FILL_FORM -> {
+      case FILL_FORM, "ui.fillForm" -> {
         if (!inputs.path("fields").isArray()) return;
         ArrayNode kept = Json.mapper().createArrayNode();
         for (JsonNode raw : inputs.get("fields")) {
@@ -168,15 +200,16 @@ final class WebStepForm {
                             List<String> choices) {
     List<Field> out = new ArrayList<>();
     JsonNode configured = config.path("inputs");
-    if (FILL_FORM.equals(spec.action())) {
+    if (FILL_FORMS.contains(spec.action())) {
       JsonNode raw = configured.path("fields");
       int index = 0;
       for (JsonNode field : inputs.path("fields")) {
         String kind = field.path("kind").asText("text");
         // The rendered list drops optional empty fields, so match it back by element label.
         JsonNode source = sourceField(raw, field, index);
-        String label = field.path("label").asText(
-            field.path("element").path("label").asText("Field " + (index + 1)));
+        String label = field.path("label").asText(field.path("element").isTextual()
+            ? field.path("element").asText()
+            : field.path("element").path("label").asText("Field " + (index + 1)));
         out.add(new Field("fields." + index + ".value", label, formType(kind),
             field.get("value"), field.path("required").asBoolean(false),
             template(source == null ? null : source.get("value")), null));
@@ -203,13 +236,21 @@ final class WebStepForm {
       String key = entry.getKey();
       JsonNode property = entry.getValue();
       if (PLUMBING.contains(key) || property.has("$ref")) continue;
-      if (!required.contains(key) && !configured.has(key)) continue;
+      boolean chosen = key.equals(pickKey(spec.action())) && choices != null;
+      if (!required.contains(key) && !configured.has(key) && !chosen) continue;
       if ("object".equals(property.path("type").asText())) continue;
-      boolean pick = CLICK_ITEM.equals(spec.action()) && "item".equals(key) && choices != null;
+      boolean pick = key.equals(pickKey(spec.action())) && choices != null;
       List<String> options = pick ? choices : enumOptions(property);
       String type = pick ? "select" : typeOf(spec.action(), key, property);
       out.add(new Field(key, label(key, spec.action()), type, inputs.get(key),
           required.contains(key), template(configured.get(key)), options));
+    }
+    if (CLICK_ITEMS.contains(spec.action()) && inputs.path("within").isObject()
+        && out.stream().noneMatch(f -> "within.item".equals(f.key()))) {
+      String what = inputs.path("within").path("element").path("label").asText("");
+      out.add(0, new Field("within.item", what.isBlank() ? "Choose in" : what, "text",
+          inputs.path("within").get("item"), true,
+          template(configured.path("within").get("item")), null));
     }
     return out;
   }
@@ -230,7 +271,7 @@ final class WebStepForm {
     return switch (kind) {
       case "checkbox" -> "checkbox";
       case "checkboxes" -> "list";
-      case "date" -> "date";
+      case "date", "datepicker" -> "date";
       default -> "text";
     };
   }
@@ -238,6 +279,7 @@ final class WebStepForm {
   private static String typeOf(String action, String key, JsonNode property) {
     if (property.has("enum")) return "select";
     if ("browser.setDate".equals(action) && "value".equals(key)) return "date";
+    if ("browser.pickDate".equals(action) && "date".equals(key)) return "date";
     return switch (property.path("type").asText("string")) {
       case "boolean" -> "checkbox";
       case "array" -> "list";
@@ -253,10 +295,12 @@ final class WebStepForm {
     return out;
   }
 
-  private static final Map<String, String> LABELS = Map.of(
-      "text", "Text", "value", "Value", "items", "Items", "item", "Item to choose",
-      "state", "Checkbox", "url", "Address", "keys", "Keys", "only", "Untick the others",
-      "format", "Date format");
+  private static final Map<String, String> LABELS = Map.ofEntries(
+      Map.entry("text", "Text"), Map.entry("value", "Value"), Map.entry("items", "Items"),
+      Map.entry("item", "Item to choose"), Map.entry("state", "Checkbox"),
+      Map.entry("url", "Address"), Map.entry("keys", "Keys"),
+      Map.entry("only", "Untick the others"), Map.entry("format", "Date format"),
+      Map.entry("date", "Date"), Map.entry("option", "Option to choose"));
 
   private static String label(String key, String action) {
     if ("browser.setDate".equals(action) && "value".equals(key)) return "Date";
@@ -287,13 +331,15 @@ final class WebStepForm {
     if (edits == null || !edits.isObject()) return;
     for (Iterator<Map.Entry<String, JsonNode>> it = edits.fields(); it.hasNext(); ) {
       Map.Entry<String, JsonNode> edit = it.next();
-      if (!offered.contains(edit.getKey())) continue;
+      if (!offered.contains(edit.getKey()) || edit.getKey().startsWith("_")) continue;
       JsonNode value = plain(edit.getValue());
       if (value == null) continue;
       String[] path = edit.getKey().split("\\.");
       if (path.length == 1) {
         if (empty(value)) inputs.remove(path[0]);
         else inputs.set(path[0], value);
+      } else if (path.length == 2 && inputs.path(path[0]).isObject()) {
+        ((ObjectNode) inputs.get(path[0])).set(path[1], value);
       } else if (path.length == 3 && "fields".equals(path[0]) && inputs.path("fields").isArray()) {
         int index;
         try {
@@ -332,43 +378,17 @@ final class WebStepForm {
 
   /** The item labels a listing returned, in page order, without repeats. */
   static List<String> labels(JsonNode listed) {
-    LinkedHashSet<String> out = new LinkedHashSet<>();
-    for (JsonNode item : listed.path("items")) {
-      String label = item.path("label").asText("").trim();
-      if (label.isEmpty()) label = item.path("text").asText("").trim();
-      if (!label.isEmpty()) out.add(label.length() > 200 ? label.substring(0, 200) : label);
-    }
-    return new ArrayList<>(out);
+    return ItemMatch.items(listed.path("items")).stream().map(ItemMatch.Item::label).toList();
   }
 
-  /**
-   * The listed item the wanted text names, or null when none or several do: the same label, then
-   * a label that starts with it ("Ramayana" for "Ramayana (Hindi)"), then one containing it as a
-   * word. Case, accents and punctuation are ignored.
-   */
+  /** The listed item the wanted text names, or null when none or several do. */
   static String match(List<String> labels, String wanted) {
-    if (labels == null || wanted == null || wanted.isBlank()) return null;
-    String want = fold(wanted);
-    if (want.isEmpty()) return null;
-    for (String label : labels) if (fold(label).equals(want)) return label;
-    String found = unique(labels, l -> fold(l).startsWith(want + " "));
-    if (found != null) return found;
-    return unique(labels, l -> (" " + fold(l) + " ").contains(" " + want + " "));
-  }
-
-  private static String unique(List<String> labels, java.util.function.Predicate<String> test) {
-    String found = null;
-    for (String label : labels) {
-      if (!test.test(label)) continue;
-      if (found != null) return null;
-      found = label;
-    }
-    return found;
+    return ItemMatch.match(labels.stream().map(l -> new ItemMatch.Item(l, "")).toList(), wanted,
+        null).chosen();
   }
 
   static String fold(String text) {
-    String plain = Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
-    return plain.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+    return ItemMatch.fold(text);
   }
 
   // ── values from earlier steps, to map an empty field ───────────────────

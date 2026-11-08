@@ -53,4 +53,19 @@ describe('step approval form', () => {
     expect(initialValues(form)).toEqual({ item: '' })
     expect(unfilled(form, initialValues(form))).toEqual(['Item to choose'])
   })
+
+  it("carries the site's error for a field, and a remember choice that is not mandatory", () => {
+    const form = stepFormOf(approval({
+      action: 'browser.fillForm', title: 'Fill form',
+      fields: [
+        { key: 'fields.0.value', label: 'Phone', type: 'text', value: '123', required: false, missing: false, error: 'Enter a 10-digit number' },
+        { key: '_remember', label: 'Remember', type: 'checkbox', value: false, required: false, missing: false },
+      ],
+      missing: [],
+    }))!
+    expect(form.fields[0].error).toBe('Enter a 10-digit number')
+    const values = { ...initialValues(form), _remember: true }
+    expect(unfilled(form, values)).toEqual([])
+    expect(answerValues(form, values)).toEqual({ _remember: true })
+  })
 })

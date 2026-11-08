@@ -99,7 +99,11 @@ public class PhoneController {
                           boolean enabled, String modelTier, Double monthlyCostLimit,
                           UUID parentAgentId) {}
 
-  public record AnswerBody(Answer.Kind kind, String instruction, String feedback) {}
+  /** {@code inputs}: the approval card's values the person changed or filled in. */
+  public record AnswerBody(Answer.Kind kind, String instruction, String feedback,
+                           com.fasterxml.jackson.databind.JsonNode inputs) {}
+
+  public record AlwaysAllowBody(com.fasterxml.jackson.databind.JsonNode inputs) {}
 
   public record SnoozeBody(Instant until) {}
 
@@ -387,7 +391,8 @@ public class PhoneController {
       throw new ValidationException("The reason is too long");
     }
     NotificationDto answered = notifications.answer(phone.userId(), id,
-        new Answer(body.kind(), body.instruction(), body.feedback()));
+        new Answer(body.kind(), body.instruction(), body.feedback(),
+            NotificationController.boundedInputs(body.inputs())));
     record(phone, "device.phone.answered", id.toString(),
         Json.obj().put("kind", body.kind().name()));
     return answered;
@@ -475,10 +480,13 @@ public class PhoneController {
     if (item.status() != NotificationStatus.UNREAD && item.status() != NotificationStatus.READ) {
       throw new ValidationException("This item is already answered");
     }
+    AlwaysAllowBody body = raw == null || raw.length == 0 ? null : parse(raw, AlwaysAllowBody.class);
+    var inputs = NotificationController.boundedInputs(body == null ? null : body.inputs());
+    // Answered first: an answer refused for an empty mandatory value saves no rule.
+    NotificationDto answered = notifications.answer(phone.userId(), id,
+        new Answer(Answer.Kind.APPROVE, null, null, inputs));
     autonomy.upsert(phone.userId(), new AutonomyRuleDto(null, phone.userId(),
         item.sourceAgentId(), tool, AutonomyRule.ALLOW, null, 20));
-    NotificationDto answered = notifications.answer(phone.userId(), id,
-        new Answer(Answer.Kind.APPROVE, null, null));
     record(phone, "device.phone.always_allowed", id.toString(), Json.obj().put("tool", tool));
     return answered;
   }

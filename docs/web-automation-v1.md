@@ -315,3 +315,30 @@ recording:
 `READ` actions never change data on a site; `UPDATE` actions can. The server judges every web step
 through the existing guardrails. A saved recording's type is the most consequential type among its
 steps.
+
+#### More run-time choices (0.3.0)
+
+- `browser.clickItem@1` / `browser.listItems@1` take `within: { element, item }` (choose inside
+  one card of another list first: the server lists that outer list, matches `item`, then lists
+  inside the matched card) and `loadMore: { rounds, button? }`. `clickItem` takes `prefer`
+  (`ask` | `first` | `lowestPrice` | `highestPrice`) and its `item` is optional.
+- The server's matching (`ItemMatch`): exact name, a name that starts with it, then every
+  comma-separated term in the card's name or text; a date (ISO, day-first numbers, words, "today",
+  "tomorrow") finds its day in a strip; ties ask with the tied items first unless `prefer` settles
+  them by the price in the text. Two cards with the same name are offered as "Name · rest of text"
+  and clicked `by: "index"`.
+- `browser.pickDate@1` (a calendar the site draws) and `browser.chooseOption@1` (type and choose a
+  suggestion). An `item_not_found` failure of `clickItem` or `chooseOption` with `error.items`
+  turns into an approval with those items to choose from (`error.within` for the outer card).
+- `browser.fillForm@1` kinds `datepicker` and `combobox`; `submit` presses the send button and the
+  output's `errors: [{ field?, label?, message }]` come back to the approval card as each field's
+  `error`, with a message; the person's fixes are filled and sent again (at most 3 rounds).
+- The approval card offers `_remember` (a checkbox) for a pick from a list. Ticked, the pick is kept
+  in the person's workflow storage under `jizza.picks.<workflowId>.<stepId>`, by the folded wording
+  asked for; a later run that asks for the same wording takes it without asking while the page lists it.
+- Answers from the phone apps carry `inputs` too (`POST /agent/v1/me/notifications/{id}/answer`
+  and `/always-allow`), checked the same way.
+- `ui.fillForm@1`, `ui.listItems@1` and `ui.clickItem@1` do the same in Windows apps through UI
+  Automation, with the same approval card and choice at run time.
+- A workflow's inputs, as chat sees them, include every `{{ input.name }}` its steps read, so a run
+  started from chat can pass the movie and date the person named.
