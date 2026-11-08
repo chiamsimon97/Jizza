@@ -316,7 +316,7 @@ its `/api` twin for the phone's owner.
 | `/agent/v1/me/today?tz=` | The Today screen: `waiting` (needsYou, urgent, unread), `runs` since local midnight (total, done, failed, running, waiting, `active` list), `spend`, `devices` (total, online, offline names), `paused` |
 | `/agent/v1/me/notifications[?unreadOnly=]`, `/notifications/summary`, `/notifications/{id}` | The inbox, as `/api/notifications` |
 | `/agent/v1/me/runs?status=&workflowId=&from=&to=&q=&limit=&offset=&tz=`, `/runs/{id}/trace` | Run history, as `/api/runs` (limit at most 100) |
-| `/agent/v1/me/workflows` | id, name, description, status, version, inputSchema |
+| `/agent/v1/me/workflows` | id, name, description, status, version, inputSchema, enabled (on for its triggers: a form, a schedule), formId and formName (the form whose submissions start it, or null) |
 | `/agent/v1/me/usage`, `/usage/entries?limit=` | As `/api/usage/summary` and `/entries` |
 | `/agent/v1/me/activity?limit=&action=` | As `/api/activity` |
 | `/agent/v1/me/guardrails` | As `/api/guardrails` |
@@ -353,6 +353,8 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | `POST /agent/v1/me/pause` | `{"paused":false}` | full |
 | `POST /agent/v1/me/agents/{id}/enabled` | `{"enabled":false}` | approve |
 | `POST /agent/v1/me/agents/{id}/enabled` | `{"enabled":true}` | full |
+| `POST /agent/v1/me/workflows/{id}/enabled` | `{"enabled":false}` | approve |
+| `POST /agent/v1/me/workflows/{id}/enabled` | `{"enabled":true}` | full |
 | `POST /agent/v1/me/workflows/{id}/run` | `{"input":{…},"version"}` | full |
 | `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
 | `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
