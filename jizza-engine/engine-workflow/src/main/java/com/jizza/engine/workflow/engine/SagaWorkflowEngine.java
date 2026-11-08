@@ -366,6 +366,10 @@ public class SagaWorkflowEngine implements WorkflowEngine,
       // records the approval so the node does not stop to ask the same question again.
       clearPause(context, node);
       context.recordApproval(node);
+      if (instruction != null && instruction.path("inputs").isObject()) {
+        // What the person set on the approval card; the step applies only fields it offered.
+        context.recordApprovedInputs(node, instruction.get("inputs"));
+      }
       run.setContext(context.toJson());
       run.setStatus(RunStatus.RUNNING);
       run.setCurrentNode(node);
@@ -831,7 +835,8 @@ public class SagaWorkflowEngine implements WorkflowEngine,
       case AWAIT_INSTRUCTION -> parkForPerson(current, context, nodeId, PAUSED_FOR_INSTRUCTION,
           outcome.message(), NotificationKind.INSTRUCTION_REQUIRED);
       case AWAIT_PERMISSION -> parkForPerson(current, context, nodeId, PAUSED_FOR_PERMISSION,
-          outcome.message(), NotificationKind.PERMISSION_REQUEST, outcome.wakeAt());
+          outcome.message(), NotificationKind.PERMISSION_REQUEST, outcome.wakeAt(), null,
+          outcome.output());
       case WAIT -> {
         context.park(nodeId, PARKED_ON_TIMER, outcome.wakeAt());
         save(current, context);
@@ -1157,7 +1162,13 @@ public class SagaWorkflowEngine implements WorkflowEngine,
   /** As above; with {@code until}, the recovery sweep runs the step again once that time passes. */
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind, Instant until) {
-    parkForPerson(run, context, nodeId, reason, prompt, kind, until, null);
+    parkForPerson(run, context, nodeId, reason, prompt, kind, until, null, null);
+  }
+
+  private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
+                             String reason, String prompt, NotificationKind kind, Instant until,
+                             FailedStepChoice ifNoAnswer) {
+    parkForPerson(run, context, nodeId, reason, prompt, kind, until, ifNoAnswer, null);
   }
 
   /**
@@ -1166,10 +1177,11 @@ public class SagaWorkflowEngine implements WorkflowEngine,
    * and the one applied if nobody answers before the question expires.
    *
    * @param ifNoAnswer non-null for a step that failed for good
+   * @param extra      what the step adds to the question, such as its values to check
    */
   private void parkForPerson(WorkflowRunEntity run, RunContext context, String nodeId,
                              String reason, String prompt, NotificationKind kind, Instant until,
-                             FailedStepChoice ifNoAnswer) {
+                             FailedStepChoice ifNoAnswer, JsonNode extra) {
     context.park(nodeId, reason, until);
     save(run, context);
 
@@ -1177,7 +1189,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     if (bus != null) {
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
           prompt == null ? "This run needs your input to continue." : prompt,
-          detailFor(run, nodeId, ifNoAnswer), run.getId()));
+          detailFor(run, nodeId, ifNoAnswer, extra), run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
           run.getId(), nodeId);
@@ -1186,9 +1198,11 @@ public class SagaWorkflowEngine implements WorkflowEngine,
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
   }
 
-  private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, FailedStepChoice ifNoAnswer) {
-    ObjectNode detail = Json.obj().put("node", nodeId)
-        .put("workflowId", run.getWorkflowId().toString());
+  private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, FailedStepChoice ifNoAnswer,
+                               JsonNode extra) {
+    ObjectNode detail = Json.obj();
+    if (extra != null && extra.isObject()) detail.setAll((ObjectNode) extra.deepCopy());
+    detail.put("node", nodeId).put("workflowId", run.getWorkflowId().toString());
     if (ifNoAnswer != null) {
       detail.put("failedStep", true);
       ArrayNode choices = detail.putArray("choices");

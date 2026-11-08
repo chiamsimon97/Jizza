@@ -135,6 +135,21 @@ public final class RunContext {
     return root.path("approvals").path(nodeId).asBoolean(false);
   }
 
+  /**
+   * Values the person set on the approval card for this step (a field they changed, or one that
+   * was empty), kept as plain values the step applies over its own.
+   */
+  public void recordApprovedInputs(String nodeId, JsonNode inputs) {
+    ObjectNode edits = root.has("approvedInputs") && root.get("approvedInputs").isObject()
+        ? (ObjectNode) root.get("approvedInputs") : root.putObject("approvedInputs");
+    edits.set(nodeId, inputs.deepCopy());
+  }
+
+  public JsonNode approvedInputs(String nodeId) {
+    JsonNode value = root.path("approvedInputs").path(nodeId);
+    return value.isObject() ? value : null;
+  }
+
   public void clearPause() {
     root.remove("pausedFor");
     root.remove("pausedNode");

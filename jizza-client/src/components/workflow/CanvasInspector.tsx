@@ -1290,6 +1290,15 @@ function webInputIssues(node: CanvasNode, catalog?: DeviceActionSpec[]): FieldIs
       })
     }
   }
+  if (spec.action === 'browser.fillForm') {
+    const rows = asRows(inputs.fields)
+    if (rows.length === 0) issues.push({ field: 'inputs.fields', message: `"${node.label}" needs at least one form field.` })
+    rows.forEach((row, i) => {
+      const element = row.element as { strategies?: unknown[] } | string | undefined
+      const located = typeof element === 'string' ? element.includes('{{') : Array.isArray(element?.strategies) && element.strategies.length > 0
+      if (!located) issues.push({ field: 'inputs.fields', message: `"${node.label}": pick the element of field ${i + 1}.` })
+    })
+  }
   if (schema.oneOf?.length) {
     const matches = schema.oneOf.filter(choice => (choice.required ?? []).every(present)).length
     if (matches !== 1) {
@@ -1357,7 +1366,15 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
     }
   }
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
-    !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs))
+    !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
+    && !(action === 'browser.fillForm' && key === 'fields'))
+  const pickable = action === 'browser.click' || action === 'browser.clickItem'
+  const choosesAtRunTime = action === 'browser.clickItem'
+  const toggleRunTimeChoice = (on: boolean) => {
+    setConfig(on
+      ? { action: 'browser.clickItem', version: 1, actionTitle: 'Choose from a list', inputs: { element: inputs.element, item: '' } }
+      : { action: 'browser.click', version: 2, actionTitle: 'Click', inputs: inputs.element === undefined ? undefined : { element: inputs.element } })
+  }
   const retry = asInputs(node.config.retry)
   const setRetry = (patch: Record<string, unknown>) => {
     const next = { ...retry, ...patch }
@@ -1392,12 +1409,39 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
     {spec?.description && <p className="text-[11px] text-gray-500">{spec.description}</p>}
 
     {elementAction && (
-      <ElementField value={inputs.element} deviceId={concrete?.id} browsers={browsers}
+      <ElementField label={choosesAtRunTime || action === 'browser.listItems' ? 'One item of the list' : undefined}
+        value={inputs.element} deviceId={concrete?.id} browsers={browsers}
         hasEarlierOpen={mapping.graph.nodes.some(n => n.id !== node.id && n.config.action === 'browser.open')} mapping={mapping}
         required={WEB_ELEMENT_ACTIONS.has(action)} missing={isMissing('inputs.element')} onChange={value => setInput('element', value)} />
     )}
 
-    {ordinary.map(([key, property]) => isLocatorProperty(property)
+    {pickable && (
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input type="checkbox" checked={choosesAtRunTime} onChange={e => toggleRunTimeChoice(e.target.checked)} />
+          Choose the item at run time
+        </label>
+        <p className="text-[11px] text-gray-500">
+          {choosesAtRunTime
+            ? 'The step finds the list this item belongs to as the page shows it when the run gets here, then clicks the item named below (such as a movie or a date). Map it from earlier steps. With Ask me, your approval lists what the page shows then; with Let Jizza decide, Jizza clicks it when the page lists it and asks you when it does not.'
+            : 'For a card or row that changes from day to day, such as a movie or a date: the step picks it from the list on the page when it runs.'}
+        </p>
+      </div>
+    )}
+
+    {action === 'browser.fillForm' && (
+      <FillFormFields value={inputs.fields} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
+        missing={isMissing('inputs.fields')} onChange={value => setInput('fields', value)} />
+    )}
+
+    {ordinary.map(([key, property]) => key === 'items' && property.type === 'array'
+      ? <Labelled key={key} group label={action === 'browser.checkItems' ? 'Boxes to tick' : 'Items'} required={required.has(key)}
+          hint={property.description ?? 'Comma-separated, or map a list from earlier steps.'}>
+          <MappedField aria-label={action === 'browser.checkItems' ? 'Boxes to tick' : 'Items'} mode="template" context={mapping}
+            value={Array.isArray(inputs[key]) ? (inputs[key] as unknown[]).join(', ') : typeof inputs[key] === 'string' ? inputs[key] as string : ''}
+            onChange={v => setInput(key, v)} />
+        </Labelled>
+      : isLocatorProperty(property)
       ? <ElementField key={key} label={webInputLabel(key)} value={inputs[key]} deviceId={concrete?.id} browsers={browsers}
           hasEarlierOpen mapping={mapping} required={required.has(key)} missing={isMissing(`inputs.${key}`)}
           onChange={value => setInput(key, value)} />
@@ -1506,13 +1550,25 @@ function WebSchemaField({ name, property, value, required, mapping, onChange }: 
 }) {
   const label = webInputLabel(name)
   const hint = property.description
+  const [fromData, setFromData] = useState(typeof value === 'string' && value.includes('{{'))
+  if (property.enum && fromData) {
+    return <Labelled group label={label} required={required} hint={hint ?? `Mapped: the value must be one of ${property.enum.join(', ')} (or yes/no for a checkbox).`}>
+      <MappedField aria-label={label} mode="template" context={mapping}
+        value={typeof value === 'string' ? value : ''} onChange={v => onChange(v)} />
+      <button type="button" className="self-start text-[11px] text-brand-600 hover:underline dark:text-brand-300"
+        onClick={() => { setFromData(false); onChange(undefined) }}>Choose a fixed value instead</button>
+    </Labelled>
+  }
   if (property.enum) {
     return <Labelled label={label} required={required} hint={hint}>
       <select aria-label={label} className={fieldClass} value={value == null ? '' : String(value)}
-        onChange={e => onChange(e.target.value === '' ? undefined
-          : property.enum?.find(v => String(v) === e.target.value))}>
+        onChange={e => {
+          if (e.target.value === '__data') { setFromData(true); onChange(undefined); return }
+          onChange(e.target.value === '' ? undefined : property.enum?.find(v => String(v) === e.target.value))
+        }}>
         <option value="">Choose…</option>
         {property.enum.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
+        <option value="__data">Map from earlier steps…</option>
       </select>
     </Labelled>
   }
@@ -1529,6 +1585,92 @@ function WebSchemaField({ name, property, value, required, mapping, onChange }: 
       value={value == null ? '' : typeof value === 'string' ? value : String(value)}
       onChange={v => onChange((property.type === 'number' || property.type === 'integer') && v && !v.includes('{{') && !Number.isNaN(Number(v)) ? Number(v) : v)} />
   </Labelled>
+}
+
+type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date'
+type FormFieldRow = { element?: unknown; kind: FormFieldKind; value?: unknown; label?: string; required?: boolean; format?: string }
+
+const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] = [
+  { kind: 'text', label: 'Text or text area', hint: 'The text to type.' },
+  { kind: 'select', label: 'Dropdown', hint: 'The option to choose, as the dropdown shows it.' },
+  { kind: 'checkbox', label: 'Checkbox', hint: 'Yes or no (true or false).' },
+  { kind: 'checkboxes', label: 'Checkbox group', hint: 'The boxes to tick, comma-separated. Others are unticked.' },
+  { kind: 'radio', label: 'Radio buttons', hint: 'The option to choose, as its label reads. Pick the group.' },
+  { kind: 'date', label: 'Date or date and time', hint: 'Such as 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30.' },
+]
+
+const asRows = (value: unknown): FormFieldRow[] =>
+  Array.isArray(value) ? value.filter((v): v is FormFieldRow => !!v && typeof v === 'object') : []
+
+/** Fill form: one row per field, each an element, what kind of field it is, and its value. */
+function FillFormFields({ value, browsers, deviceId, mapping, missing, onChange }: {
+  value: unknown; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext; missing?: boolean
+  onChange: (value: unknown) => void
+}) {
+  const rows = asRows(value)
+  const set = (index: number, patch: Partial<FormFieldRow>) => {
+    const next = rows.map((row, i) => {
+      if (i !== index) return row
+      const merged: FormFieldRow = { ...row, ...patch }
+      for (const key of Object.keys(merged) as (keyof FormFieldRow)[]) {
+        if (merged[key] === undefined || merged[key] === '' || merged[key] === false) delete merged[key]
+      }
+      return merged
+    })
+    onChange(next)
+  }
+  return (
+    <Section title="Form fields">
+      <p className="text-[11px] text-gray-500">Each field is filled in turn. Map values from earlier steps to fill them at run time; an optional field whose value comes out empty is left as it is.</p>
+      {missing && rows.length === 0 && <p className="text-xs text-red-600">Add at least one field.</p>}
+      {rows.map((row, index) => {
+        const kind = FORM_FIELD_KINDS.find(k => k.kind === row.kind) ?? FORM_FIELD_KINDS[0]
+        const label = row.label || (row.element as { label?: string } | undefined)?.label || `Field ${index + 1}`
+        return (
+          <div key={index} className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-800">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</span>
+              <button type="button" aria-label={`Remove ${label}`} onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                className="text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+            <ElementField label={row.kind === 'checkboxes' || row.kind === 'radio' ? 'Group (or one box in it)' : 'Field'}
+              value={row.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping} required
+              onChange={element => set(index, { element })} />
+            <div className="grid grid-cols-2 gap-2">
+              <Labelled label="Kind">
+                <select aria-label={`Kind of ${label}`} className={fieldClass} value={kind.kind}
+                  onChange={e => set(index, { kind: e.target.value as FormFieldKind })}>
+                  {FORM_FIELD_KINDS.map(k => <option key={k.kind} value={k.kind}>{k.label}</option>)}
+                </select>
+              </Labelled>
+              <Labelled label="Name on approvals">
+                <input aria-label={`Name of ${label}`} className={fieldClass} value={row.label ?? ''} placeholder={label}
+                  onChange={e => set(index, { label: e.target.value })} />
+              </Labelled>
+            </div>
+            <Labelled group label="Value" hint={kind.hint}>
+              <MappedField aria-label={`Value of ${label}`} mode="template" context={mapping}
+                value={Array.isArray(row.value) ? row.value.join(', ') : row.value == null ? '' : String(row.value)}
+                onChange={v => set(index, { value: v })} />
+            </Labelled>
+            {row.kind === 'date' && (
+              <Labelled label="Date format (text fields only)" hint="Such as DD/MM/YYYY. Date pickers built into the browser need none.">
+                <input aria-label={`Date format of ${label}`} className={fieldClass} value={row.format ?? ''}
+                  onChange={e => set(index, { format: e.target.value })} />
+              </Labelled>
+            )}
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input type="checkbox" checked={row.required === true} onChange={e => set(index, { required: e.target.checked })} />
+              Mandatory: if its value comes out empty, ask me to fill it in before the step runs
+            </label>
+          </div>
+        )
+      })}
+      <Button type="button" variant="secondary" size="sm" onClick={() => onChange([...rows, { kind: 'text' }])}>
+        <Plus className="h-3.5 w-3.5" /> Add field
+      </Button>
+    </Section>
+  )
 }
 
 type LocatorStrategy = { by: string; value?: string; role?: string; name?: string; exact?: boolean }

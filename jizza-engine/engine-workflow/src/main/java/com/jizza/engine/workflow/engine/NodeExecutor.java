@@ -95,6 +95,15 @@ public interface NodeExecutor {
       return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt);
     }
 
+    /**
+     * Asks the user to approve, as {@link #awaitPermission}, with {@code detail} added to what the
+     * question carries (such as the step's values for the person to check or fill in). A step
+     * waiting for approval has no result, so the detail travels as the outcome's output.
+     */
+    public static Outcome awaitPermission(String prompt, JsonNode detail) {
+      return new Outcome(Status.AWAIT_PERMISSION, detail, null, prompt);
+    }
+
     /** Asks the user to approve, as {@link #awaitPermission}, and stops asking at {@code until}. */
     public static Outcome awaitApproval(String prompt, Instant until) {
       return new Outcome(Status.AWAIT_PERMISSION, null, null, prompt, until);

@@ -69,6 +69,11 @@ Every browser action takes these **common inputs** (merge them into each schema)
 | – | Pick element (design time) | `browser.pickElement@1` | READ | `session`? or `url`?, `prompt`? | `{element, preview, pagePreview?, url}` |
 | – | Record (design time) | `browser.record@1` | READ | `recordingId`, `url`?, `session`?, `maxMinutes` | `{stepCount, stoppedBy}` |
 | – | Run steps (fast replay, B9) | `browser.runSteps@1` | UPDATE | `session`?, `steps: [{key, action, version, input}]` (1–100), `stopOnError` (default true) | `{steps: {<key>: output}, failedAt?: key}` |
+| – | Fill form | `browser.fillForm@1` | UPDATE | `fields: [{element, kind, value?, label?, required?, format?}]` (1–50); `kind` ∈ `text`, `select`, `checkbox`, `checkboxes`, `radio`, `date`; browser only | `{filled: [{label, kind}], count}` |
+| – | Set date | `browser.setDate@1` ● | UPDATE | `value` (a date, or date and time, written any common way), `format`? (text fields only, e.g. `DD/MM/YYYY`), `pressEnter`; browser only | `{set, value?}` |
+| – | Check items | `browser.checkItems@1` ● | UPDATE | `items` (labels or values), `only` (default true: untick the rest); `element` is the group or one box in it; browser only | `{checked, changed}` |
+| – | List items | `browser.listItems@1` ● | READ | `max` (default 50); `element` is one item of the list; browser only | `{items: [{index, label, text}], count}` |
+| – | Choose from a list | `browser.clickItem@1` ● | UPDATE | `item` (text, or position with `by: "index"`), `by`, `waitAfter`; `element` is one item of the list; browser only | `{clicked, item, navigated, url}` |
 
 `browser.runSteps@1` runs its steps in order through the same action code as single commands,
 sending `progress` `{percent, text}` per step. When a step fails it stops, sends `result`
@@ -78,6 +83,55 @@ web steps, after every step has passed its own guardrail; it never nests batches
 `browser.record` or `browser.pickElement`, and it checks each step against the device's declared
 versions, blocked actions and allowed sites before sending. Batch steps carry no `session`; the batch's
 own `session` (or the one a `browser.open` step in it opens) is used.
+
+### Dynamic values, form filling and choices made at run time
+
+Any input may be mapped from earlier steps (`{{ input.movie }}`); the server renders it before
+sending. It also takes the shapes people's data comes in: `items` of Select item and Check items as a
+list or as comma-separated text, Set checkbox's `state` from yes/no or true/false, a Fill form
+field's value from text, yes/no or a list. An optional Fill form field whose value comes out empty
+is left as the page has it.
+
+`browser.fillForm@1` fills its fields in order through the same code as their own steps (Set text,
+Select item by label, Set checkbox, Check items, Select radio button by label on the group, Set
+date) and stops at the first field that fails, naming it.
+
+`browser.setDate@1` reads ISO dates, `9 Nov 2026`, `Nov 9, 2026`, and numeric dates day first
+(`09/11/2026` is 9 November; `11/25/2026` is read month first because 25 cannot be a month), with
+an optional time (`18:30`, `6:30 PM`). A browser date field (`date`, `datetime-local`, `time`,
+`month`, `week`) gets the form it takes; a text field gets `format` (tokens `YYYY YY MMMM MMM MM M
+DD D HH H hh h mm ss A`), or ISO without one.
+
+`browser.listItems@1` and `browser.clickItem@1` find a list from one recorded item: its repeated
+siblings when the item is still on the page, otherwise every element its text-free selectors
+(`testid`, `css` and `xpath`, each also with one position filter taken out) match. An item's
+`label` is its aria-label or title, a heading in it, its first line with three letters, or an
+image's alt text. `clickItem` matches `item` ignoring case, accents and punctuation: the same
+label, then the same line, then a label starting with it, then one containing it as words. Two
+equally good matches are never guessed between.
+
+**Approval card.** When a web step stops for approval (its guardrail is Ask me, or Let Jizza decide
+could not settle it), or a mandatory value came out empty (even when the guardrail allows the step),
+the permission request's `context.form` lists the step's values as they resolved:
+`{action, title, fields: [{key, label, type, value?, required, missing, source?, options?}],
+missing: [key], choicesAt?, data: [{path, value}]}`. `type` ∈ `text`, `number`, `checkbox`,
+`select`, `list`, `date`; `source` is the mapping the value came from; `data` holds the run's
+values so far, to map an empty field from. Approving
+(`POST /api/notifications/{id}/answer`, `kind: "APPROVE"`) may send `inputs` keyed like the fields
+(`"text"`, `"item"`, `"fields.2.value"`); the step applies only keys its card offered, as plain values
+that are never evaluated. Approving without a value for each `missing` key is refused (400).
+
+**Choice made at run time** (`browser.clickItem@1` by text). The step first sends
+`browser.listItems@1` for the same element and session, then:
+
+- **Ask me**: asks, with `item` as a `select` of the labels the page lists now (the mapped value
+  preselected when the page lists it). After the answer the list is read again, so the pick is
+  still on the page when it is clicked.
+- **Let Jizza decide** or **Auto**: clicks the listed item the run asked for; when the page does not
+  list it (or the value is empty), asks as above.
+- **Never**: fails.
+
+A Choose from a list step never runs inside a fast-replay batch.
 
 Every action that acts on an `element` also takes `highlight` (boolean, default false): the
 browser outlines the element for a moment before acting, for a person watching the run.

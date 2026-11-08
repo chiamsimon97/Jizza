@@ -1,6 +1,7 @@
 package com.jizza.engine.workflow.nodes;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.autonomy.AutonomyGate;
 import com.jizza.engine.api.autonomy.Decision;
@@ -24,6 +25,7 @@ import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
 import com.jizza.engine.workflow.sandbox.Templates;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -157,6 +159,11 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       ((ObjectNode) inputs).remove("session");
     }
 
+    if (browserAction) WebStepForm.normalize(spec.action(), (ObjectNode) inputs);
+    String nodeId = execution.node().id();
+    WebStepForm.apply((ObjectNode) inputs, execution.context().approvedInputs(nodeId),
+        offered(state));
+
     UUID actor = actorFor(execution);
     if (actor == null) {
       return Outcome.permanentFailure("No agent is available to run " + spec.title()
@@ -166,25 +173,81 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     GuardrailContext guardrail = execution.workflowId() == null
         ? new GuardrailContext(actor, toolRef, inputs, null, null, null, false, spec.actionType())
         : GuardrailContext.inWorkflow(actor, toolRef, inputs, execution.workflowId(),
-            execution.workflowVersion(), execution.node().id(), spec.actionType());
-    boolean approved = execution.context().approved(execution.node().id());
-    Decision decision = approved ? autonomyGate.evaluate(guardrail) : autonomyGate.decide(guardrail);
+            execution.workflowVersion(), nodeId, spec.actionType());
+    boolean approved = execution.context().approved(nodeId);
+
+    // A choice made at run time: the page's list as it is now, read before anyone decides.
+    boolean pick = WebStepForm.CLICK_ITEM.equals(spec.action())
+        && !"index".equals(inputs.path("by").asText("text"));
+    List<String> choices = null;
+    if (pick) {
+      if (!state.has("choices")) {
+        Decision first = autonomyGate.evaluate(guardrail);
+        if (first.denied()) {
+          return Outcome.permanentFailure("Blocked by your guardrails: " + first.reason());
+        }
+        return listChoices(execution, broker, state, target, workspaceId, inputs);
+      }
+      choices = new java.util.ArrayList<>();
+      for (JsonNode label : state.get("choices")) choices.add(label.asText());
+    }
+
+    Decision decision;
+    String chosen = pick ? WebStepForm.match(choices, inputs.path("item").asText(null)) : null;
+    if (pick && chosen != null) ((ObjectNode) inputs).put("item", chosen);
+    if (approved) {
+      decision = autonomyGate.evaluate(guardrail);
+    } else if (pick) {
+      // "Let Jizza decide" picks the item the run asked for when the page lists it; otherwise
+      // the person picks from what is there.
+      decision = autonomyGate.evaluate(guardrail);
+      if ((decision.allowed() || decision.needsJizza()) && chosen != null) {
+        decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ALLOW,
+            "the page lists " + chosen);
+      } else if (decision.allowed() || decision.needsJizza()) {
+        String wanted = inputs.path("item").asText("");
+        decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ASK, wanted.isBlank()
+            ? "Choose which one; the step was not told which"
+            : "The page does not list \"" + wanted + "\" now, so choose one of what it lists");
+      }
+    } else {
+      decision = autonomyGate.decide(guardrail);
+    }
     if (decision.denied()) {
       return Outcome.permanentFailure("Blocked by your guardrails: " + decision.reason());
     }
-    if (!approved && (decision.needsPermission() || decision.needsJizza())) {
-      return Outcome.awaitPermission("This step needs your approval before it asks "
-          + target.describe() + " to " + lower(spec.title()) + ". " + decision.reason() + ".");
-    }
 
+    List<WebStepForm.Field> form = browserAction
+        ? WebStepForm.fields(spec, config, (ObjectNode) inputs, choices) : List.of();
+    if (pick && chosen == null && !form.isEmpty()) {
+      // An item the page does not list cannot be clicked: it counts as not filled in.
+      form = form.stream().map(f -> "item".equals(f.key())
+          ? new WebStepForm.Field(f.key(), f.label(), f.type(), null, true, f.source(), f.options())
+          : f).toList();
+    }
+    List<String> missing = form.stream().filter(WebStepForm.Field::missing)
+        .map(WebStepForm.Field::label).toList();
+    boolean asks = !approved && (decision.needsPermission() || decision.needsJizza());
+    if (asks || !missing.isEmpty()) {
+      String why = !missing.isEmpty() && !asks
+          ? (missing.size() == 1 ? missing.get(0) + " has" : String.join(", ", missing) + " have")
+              + " no value, so fill " + (missing.size() == 1 ? "it" : "them") + " in to go on"
+          : decision.reason();
+      state.remove("choices");
+      ArrayNode keys = state.putArray("offered");
+      form.forEach(f -> keys.add(f.key()));
+      return Outcome.awaitPermission("This step needs your approval before it asks "
+          + target.describe() + " to " + lower(spec.title()) + ". " + why + ".",
+          approvalDetail(spec, form, choices, execution.context().variables()));
+    }
+    state.remove("choices");
     Duration timeout = config.path("timeoutSec").asInt(0) > 0
         ? Duration.ofSeconds(config.get("timeoutSec").asInt()) : null;
     DeviceCommandDto command;
     try {
       command = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
           spec.action(), spec.version(), inputs, timeout, execution.runId(),
-          execution.node().id(),
-          execution.runId() + ":" + execution.node().id() + ":" + execution.attempt(), false));
+          nodeId, execution.runId() + ":" + nodeId + ":" + execution.attempt(), false));
     } catch (ValidationException | NotFoundException e) {
       return Outcome.permanentFailure(e.getMessage());
     }
@@ -203,6 +266,78 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           || reusesAffinity && browser.opened());
     }
     return follow(execution, broker, state, command.id());
+  }
+
+  /** The keys the approval card offered, which are the only ones the person's answer may set. */
+  private static java.util.Set<String> offered(ObjectNode state) {
+    java.util.Set<String> keys = new java.util.HashSet<>();
+    state.path("offered").forEach(k -> keys.add(k.asText()));
+    return keys;
+  }
+
+  /** What the approval card shows: the step's values, what is missing, and data to map from. */
+  private static ObjectNode approvalDetail(DeviceActionSpec spec, List<WebStepForm.Field> form,
+                                          List<String> choices, Map<String, Object> variables) {
+    ObjectNode detail = Json.obj();
+    if (form.isEmpty()) return detail;
+    ObjectNode out = detail.putObject("form").put("action", spec.action())
+        .put("title", spec.title());
+    ArrayNode fields = out.putArray("fields");
+    form.forEach(f -> fields.add(f.toJson()));
+    ArrayNode missing = out.putArray("missing");
+    form.stream().filter(WebStepForm.Field::missing).forEach(f -> missing.add(f.key()));
+    if (choices != null) out.put("choicesAt", java.time.Instant.now().toString());
+    out.set("data", WebStepForm.data(variables));
+    return detail;
+  }
+
+  /**
+   * Reads the list the step chooses from as the page shows it now. The listing is a read on the
+   * same page and browser; its result wakes the step, which then decides or asks.
+   */
+  private Outcome listChoices(Execution execution, DeviceCommands broker, ObjectNode state,
+                              DeviceTarget target, UUID workspaceId, JsonNode inputs) {
+    if (state.hasNonNull("listCommandId")) {
+      DeviceCommandDto listing = broker.find(UUID.fromString(state.get("listCommandId").asText()))
+          .orElse(null);
+      if (listing == null) {
+        state.remove("listCommandId");
+        return Outcome.retryable("The list read from the page is gone");
+      }
+      if (!listing.status().finished()) return Outcome.awaitDevice(listing.deadlineAt());
+      state.remove("listCommandId");
+      if (listing.status() != com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED) {
+        preserveError(state, listing);
+        return Outcome.retryable("Could not read the list on the page: "
+            + (listing.error() == null ? listing.status().name().toLowerCase() : listing.error()));
+      }
+      ArrayNode labels = state.putArray("choices");
+      WebStepForm.labels(listing.output()).forEach(labels::add);
+      if (labels.isEmpty()) {
+        state.remove("choices");
+        return Outcome.retryable("The list on the page has no items to choose from");
+      }
+      return execute(execution);
+    }
+    ObjectNode listInput = Json.obj();
+    for (String key : List.of("session", "element", "timeoutMs", "highlight")) {
+      if (inputs.has(key)) listInput.set(key, inputs.get(key));
+    }
+    DeviceCommandDto listing;
+    try {
+      listing = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
+          "browser.listItems", 1, listInput, null, execution.runId(), execution.node().id(),
+          execution.runId() + ":" + execution.node().id() + ":" + execution.attempt() + ":list"
+              + state.path("lists").asInt(0),
+          false));
+    state.put("lists", state.path("lists").asInt(0) + 1);
+    } catch (ValidationException | NotFoundException e) {
+      return Outcome.permanentFailure(e.getMessage());
+    }
+    state.put("listCommandId", listing.id().toString());
+    if (listing.status().finished()) return listChoices(execution, broker, state, target,
+        workspaceId, inputs);
+    return Outcome.awaitDevice(listing.deadlineAt());
   }
 
   /** Whose guardrails judge the step: the workflow's agent, or the person's Jizza. */

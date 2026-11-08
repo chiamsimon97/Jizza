@@ -1,5 +1,6 @@
 package com.jizza.engine.notifications.bus;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.enums.ActorType;
@@ -161,6 +162,7 @@ public class DefaultNotificationBus implements NotificationBus {
 
   private NotificationDto answerPermission(NotificationEntity entity, Answer answer) {
     boolean approved = answer.kind() == Answer.Kind.APPROVE;
+    if (approved) requireFilledIn(entity, answer.inputs());
     entity.setStatus(approved ? NotificationStatus.APPROVED : NotificationStatus.DENIED);
     entity.setAnsweredAt(Instant.now());
     entity.setResponseNote(approved ? null : blankToNull(answer.feedback()));
@@ -177,9 +179,41 @@ public class DefaultNotificationBus implements NotificationBus {
     if (entity.getRunId() != null) {
       var payload = Json.obj().put("approved", approved);
       if (entity.getResponseNote() != null) payload.put("feedback", entity.getResponseNote());
+      if (approved && answer.inputs() != null && answer.inputs().isObject()
+          && !answer.inputs().isEmpty()) {
+        payload.set("inputs", answer.inputs());
+      }
       resumeRun(entity, payload);
     }
     return toDto(entity);
+  }
+
+  /**
+   * A step's approval card can list mandatory values that resolved empty; approving needs each of
+   * them filled in, so a run never goes on to fail for a value the person was asked for.
+   */
+  static void requireFilledIn(NotificationEntity entity, JsonNode inputs) {
+    JsonNode form = entity.getContext() == null ? null : entity.getContext().path("form");
+    if (form == null || !form.path("missing").isArray() || form.get("missing").isEmpty()) return;
+    java.util.List<String> unfilled = new java.util.ArrayList<>();
+    for (JsonNode key : form.get("missing")) {
+      JsonNode value = inputs == null ? null : inputs.get(key.asText());
+      boolean empty = value == null || value.isNull()
+          || value.isTextual() && value.asText().isBlank()
+          || value.isArray() && value.isEmpty();
+      if (empty) unfilled.add(labelOf(form, key.asText()));
+    }
+    if (!unfilled.isEmpty()) {
+      throw new ValidationException("Fill in " + String.join(", ", unfilled)
+          + " before approving");
+    }
+  }
+
+  private static String labelOf(JsonNode form, String key) {
+    for (JsonNode field : form.path("fields")) {
+      if (key.equals(field.path("key").asText())) return field.path("label").asText(key);
+    }
+    return key;
   }
 
   private NotificationDto answerReview(NotificationEntity entity, Answer answer) {

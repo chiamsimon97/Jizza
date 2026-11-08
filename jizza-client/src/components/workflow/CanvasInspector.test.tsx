@@ -285,6 +285,31 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('turns a recorded click into a choice made at run time, keeping the recorded card', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.click', version: 2, capability: 'browser', actionType: 'UPDATE', title: 'Click', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element'], properties: { element: locator } }, output: { type: 'object' } },
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: { element: locator, item: { type: 'string' } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])
+    const card = { strategies: [{ by: 'text', value: 'Ramayana' }], label: 'Ramayana' }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs: { element: card } } } : n) }
+    const { onSave } = open(graph, made.id)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Choose the item at run time' }))
+    type(await screen.findByRole('textbox', { name: 'Item' }), '{{ input.movie }}')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config).toMatchObject({ action: 'browser.clickItem', version: 1, inputs: { element: card, item: '{{ input.movie }}' } })
+    vi.unstubAllGlobals()
+  })
+
   describe('Advanced web options', () => {
     const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

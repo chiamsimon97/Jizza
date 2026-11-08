@@ -106,6 +106,8 @@ public final class EngineHarness {
       com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED;
   public JsonNode nextDeviceOutput = Json.obj();
   public final java.util.Map<String, JsonNode> deviceOutputs = new java.util.HashMap<>();
+  /** Input schemas for browser actions a test needs as the catalog has them. */
+  public final java.util.Map<String, JsonNode> deviceInputSchemas = new java.util.HashMap<>();
   /** Actions the fake device did not declare: sending one is refused, as the broker refuses it. */
   public final java.util.Set<String> unsupportedDeviceActions = new java.util.HashSet<>();
   public String nextDeviceErrorCode;
@@ -339,6 +341,9 @@ public final class EngineHarness {
       com.fasterxml.jackson.databind.node.ObjectNode input = Json.obj();
       if ("browser.open".equals(action)) {
         input.put("type", "object").putArray("required").add("url");
+      }
+      if (deviceInputSchemas.containsKey(action)) {
+        input = (com.fasterxml.jackson.databind.node.ObjectNode) deviceInputSchemas.get(action);
       }
       return Optional.of(new com.jizza.engine.api.device.DeviceActionSpec(action,
           version == 0 ? 1 : version, "browser", com.jizza.engine.api.enums.ActionType.READ,

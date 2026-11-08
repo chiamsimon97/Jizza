@@ -136,9 +136,11 @@ public final class Requests {
 
   public record TaskRepetitive(boolean repetitive) {}
 
+  /** {@code inputs}: values set on a workflow step's approval card, keyed as its fields are. */
   public record AnswerNotification(@NotNull com.jizza.engine.api.notification.Answer.Kind kind,
                                    @Size(max = MAX_MESSAGE) String instruction,
-                                   @Size(max = 4000) String feedback) {}
+                                   @Size(max = 4000) String feedback,
+                                   JsonNode inputs) {}
 
   public record SnoozeNotification(java.time.Instant until) {}
 

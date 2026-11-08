@@ -45,11 +45,11 @@ export function NotificationsPage() {
   const after = <T,>(p: Promise<T>) => p.finally(refresh)
 
   const actions: InboxActions = {
-    approve: n => after(notificationsApi.answer(n.id, 'APPROVE')),
-    approveAlways: async n => {
+    approve: (n, inputs) => after(notificationsApi.answer(n.id, 'APPROVE', undefined, undefined, inputs)),
+    approveAlways: async (n, inputs) => {
       await guardrailsApi.saveRule({ agentId: n.sourceAgentId, toolRef: String(n.context?.tool), rule: 'ALLOW', precedence: 20 })
       void qc.invalidateQueries({ queryKey: ['guardrails'] })
-      return after(notificationsApi.answer(n.id, 'APPROVE'))
+      return after(notificationsApi.answer(n.id, 'APPROVE', undefined, undefined, inputs))
     },
     decline: (n, reason) => after(notificationsApi.answer(n.id, 'DENY', undefined, reason || undefined)),
     reply: (n, text) => after(notificationsApi.answer(n.id, 'SUBMIT_INSTRUCTION', text)),
