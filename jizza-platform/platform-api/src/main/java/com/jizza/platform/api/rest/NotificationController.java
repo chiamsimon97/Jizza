@@ -90,7 +90,19 @@ public class NotificationController {
   public NotificationDto answer(@PathVariable UUID id,
                                 @Valid @RequestBody Requests.AnswerNotification request) {
     return notifications.answer(CurrentUser.userId(), id,
-        new Answer(request.kind(), request.instruction(), request.feedback()));
+        new Answer(request.kind(), request.instruction(), request.feedback(),
+            boundedInputs(request.inputs())));
+  }
+
+  /** An approval card's values: one flat object of at most 60 keys. */
+  private static com.fasterxml.jackson.databind.JsonNode boundedInputs(
+      com.fasterxml.jackson.databind.JsonNode inputs) {
+    if (inputs == null || inputs.isNull()) return null;
+    if (!inputs.isObject() || inputs.size() > 60 || inputs.toString().length() > 200_000) {
+      throw new com.jizza.engine.api.error.ValidationException(
+          "The approval's values are not in the right shape");
+    }
+    return inputs;
   }
 
   private NotificationDto owned(UUID notificationId) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlarmClock, Archive, ArchiveRestore, Bell, Check, ChevronDown, Clock, GitBranch, History,
@@ -11,6 +11,8 @@ import {
   KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
   RUN_CHOICES,
 } from './inbox'
+import { StepApprovalForm } from './StepApprovalForm'
+import { answerValues, initialValues, stepFormOf, unfilled, type FormValues } from './stepForm'
 
 const KIND_ICON: Record<NotificationKind, LucideIcon> = {
   PERMISSION_REQUEST: ShieldCheck,
@@ -22,8 +24,9 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
 
 /** What the inbox can do to an item. Each returns once the server has answered. */
 export interface InboxActions {
-  approve: (n: NotificationDto) => Promise<unknown>
-  approveAlways: (n: NotificationDto) => Promise<unknown>
+  /** `inputs`: values set on a workflow step's approval card. */
+  approve: (n: NotificationDto, inputs?: Record<string, unknown>) => Promise<unknown>
+  approveAlways: (n: NotificationDto, inputs?: Record<string, unknown>) => Promise<unknown>
   decline: (n: NotificationDto, reason: string) => Promise<unknown>
   reply: (n: NotificationDto, text: string) => Promise<unknown>
   markRead: (n: NotificationDto) => Promise<unknown>
@@ -70,6 +73,11 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const defaultChoice = failedStep ? defaultChoiceOf(n) : null
   const canStopRun = open && n.kind === 'INSTRUCTION_REQUIRED' && !!n.runId
   const canAlwaysAllow = open && n.kind === 'PERMISSION_REQUEST' && !!tool && !!n.sourceAgentId
+  const stepForm = useMemo(() => n.kind === 'PERMISSION_REQUEST' ? stepFormOf(n) : null, [n])
+  const [values, setValues] = useState<FormValues>(() => stepForm ? initialValues(stepForm) : {})
+  const stillEmpty = stepForm && open ? unfilled(stepForm, values) : []
+  const canApprove = stillEmpty.length === 0
+  const approvedValues = () => (stepForm ? answerValues(stepForm, values) : undefined)
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key)
@@ -93,7 +101,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   useEffect(() => {
     if (!command) return
     onCommandHandled()
-    if (command === 'approve' && open && n.kind !== 'INSTRUCTION_REQUIRED') void run('approve', () => actions.approve(n))
+    if (command === 'approve' && open && n.kind !== 'INSTRUCTION_REQUIRED' && canApprove) void run('approve', () => actions.approve(n, approvedValues()))
     if (command === 'decline' && open && n.kind !== 'INSTRUCTION_REQUIRED') setMode('declining')
     if (command === 'archive' && n.kind === 'INFO') void run('archive', () => (n.archivedAt ? actions.unarchive(n) : actions.archive(n)))
     if (command === 'toggleRead') void run('read', () => (unread ? actions.markRead(n) : actions.markUnread(n)))
@@ -159,6 +167,13 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                 </div>
               ))}
             </dl>
+          )}
+
+          {stepForm && (
+            <div onClick={e => e.stopPropagation()}>
+              <StepApprovalForm form={stepForm} values={values} readOnly={!open}
+                onChange={(key, value) => setValues(v => ({ ...v, [key]: value }))} />
+            </div>
           )}
 
           {inputs && (
@@ -268,7 +283,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                 </p>
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="ghost" onClick={() => setMode('idle')}>Cancel</Button>
-                  <Button size="sm" loading={busy === 'always'} onClick={() => void run('always', () => actions.approveAlways(n))}>
+                  <Button size="sm" loading={busy === 'always'} disabled={!canApprove} onClick={() => void run('always', () => actions.approveAlways(n, approvedValues()))}>
                     Approve and always allow
                   </Button>
                 </div>
@@ -291,14 +306,16 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
               )}
               {open && n.kind !== 'INSTRUCTION_REQUIRED' && (
                 <>
-                  <Button size="sm" loading={busy === 'approve'} disabled={busy !== null} onClick={() => void run('approve', () => actions.approve(n))}>
+                  <Button size="sm" loading={busy === 'approve'} disabled={busy !== null || !canApprove}
+                    title={canApprove ? undefined : `Fill in ${stillEmpty.join(', ')} first`}
+                    onClick={() => void run('approve', () => actions.approve(n, approvedValues()))}>
                     <Check className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Approve procedure' : 'Approve'}
                   </Button>
                   <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => setMode('declining')}>
                     <X className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Request changes' : 'Decline'}
                   </Button>
                   {canAlwaysAllow && (
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => setMode('confirmAlways')}>
+                    <Button size="sm" variant="ghost" disabled={busy !== null || !canApprove} onClick={() => setMode('confirmAlways')}>
                       Always allow
                     </Button>
                   )}

@@ -56,7 +56,9 @@ final class FastReplay {
   static final String TRIED = "batchTried";
 
   private static final int MAX_STEPS = 100;
-  private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.record", "browser.pickElement");
+  /** Choosing from a list reads the page first and may ask, so it never runs in a batch. */
+  private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.record", "browser.pickElement",
+      "browser.listItems", WebStepForm.CLICK_ITEM);
   /** A template that reads another step's output can't be filled before that step has run. */
   private static final Pattern READS_STEPS = Pattern.compile("\\{\\{[^}]*\\bnodes\\b");
 
@@ -106,6 +108,12 @@ final class FastReplay {
       }
       if (!inputs.isObject()) return null;
       ObjectNode input = (ObjectNode) inputs;
+      WebStepForm.normalize(spec.get().action(), input);
+      // A step with a mandatory value still empty runs on its own, where the person fills it in.
+      if (WebStepForm.fields(spec.get(), config, input, null).stream()
+          .anyMatch(WebStepForm.Field::missing)) {
+        return null;
+      }
       if ("browser.open".equals(spec.get().action()) && context.needsNewBrowserSession()
           && node == chain.get(0)) {
         input.put("in", "newSession");

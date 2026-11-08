@@ -32,6 +32,7 @@ export const notificationsApi = {
     api.post<NotificationDto>(`/api/notifications/${id}/snooze`, { until }),
 
   /** Asks for a fresh step-up: approving can release a paused run or bind a procedure. */
-  answer: (id: string, kind: AnswerKind, instruction?: string, feedback?: string) =>
-    api.post<NotificationDto>(`/api/notifications/${id}/answer`, { kind, instruction, feedback }),
+  /** `inputs`: on an approval, the values set on a workflow step's approval card. */
+  answer: (id: string, kind: AnswerKind, instruction?: string, feedback?: string, inputs?: Record<string, unknown>) =>
+    api.post<NotificationDto>(`/api/notifications/${id}/answer`, { kind, instruction, feedback, inputs }),
 }
