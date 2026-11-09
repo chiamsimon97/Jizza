@@ -1,7 +1,7 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { fieldClass } from '@/components/ui/SlideOver'
-import { type FormValues, type StepField, type StepForm, isEmpty, mapped, splitList } from './stepForm'
+import { type FormValues, type StepField, type StepForm, isEmpty, mapped, optionsFor, splitList } from './stepForm'
 
 /**
  * The step's settings as they will be sent, on its approval card: each value as it resolved from
@@ -20,12 +20,24 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
       <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
         {form.title}: {readOnly ? 'what it sent' : 'check or change what it will send'}
       </p>
-      {form.fields.map(field => (
-        <FieldRow key={field.key} field={field} value={values[field.key]} data={form.data}
-          missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && isEmpty(values[field.key])}
-          choicesAt={field.type === 'select' && field.options && form.choicesAt ? form.choicesAt : undefined}
-          readOnly={readOnly} onChange={v => onChange(field.key, v)} />
-      ))}
+      {form.fields.map(field => {
+        const options = optionsFor(field, values)
+        // A field whose choices follow another one with no list for its value is typed instead.
+        const shown: StepField = field.dependsOn
+          ? { ...field, type: options ? 'select' : 'text', options }
+          : field
+        return (
+          <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data}
+            missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && isEmpty(values[field.key])}
+            choicesAt={shown.type === 'select' && shown.options && form.choicesAt ? form.choicesAt : undefined}
+            readOnly={readOnly}
+            onChange={v => {
+              onChange(field.key, v)
+              // A showtime of the theatre before is not one of the theatre chosen now.
+              for (const follower of form.fields) if (follower.dependsOn === field.key) onChange(follower.key, '')
+            }} />
+        )
+      })}
     </div>
   )
 }

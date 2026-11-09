@@ -149,6 +149,8 @@ The step saves a pattern for the items and for the cards. Runs read the list wit
 
 In the workflow builder, a **Choose from a list** step has **Load cards from the page** and **Load items from the page**. With the site open in the chosen browser, these read what the page shows now and offer a drop-down: pick a theatre, then load and pick one of its showtimes. When a run reaches the step and the chosen theatre or showtime isn't there, Jizza asks you, listing what the page shows then: theatres first, then the showtimes of the theatre you pick.
 
+When Jizza asks you to approve such a step, the approval card shows the theatre as a drop-down of every theatre on the page, and the showtimes of the theatre selected. Pick another theatre and its showtimes appear straight away (this needs browser extension 0.6.0 or later; with an older one, type the showtime).
+
 ## Review and save
 
 After you press **Stop**, the recording waits for you in review. Nothing runs until you save it.

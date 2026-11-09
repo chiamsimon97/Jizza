@@ -223,6 +223,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         String parentLabel = parents.stream().filter(i -> i.display().equals(parent.chosen()))
             .map(ItemMatch.Item::label).findFirst().orElse(parent.chosen());
         state.put("parent", parentLabel);
+        state.put("parentDisplay", parent.chosen());
       }
       if (within.isObject() && state.has("parent")) {
         ((ObjectNode) within).put("item", state.get("parent").asText());
@@ -294,6 +295,17 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     List<WebStepForm.Field> form = formAction
         ? WebStepForm.fields(spec, config, (ObjectNode) inputs, pick ? labels(choices) : null)
         : List.of();
+    if (pick && state.has("parents") && state.hasNonNull("parentDisplay")) {
+      // The card chosen inside (the theatre) stays a choice from the page's cards, so the person
+      // can switch it on the card; the items follow it (optionsBy).
+      List<String> cards = labels(ItemMatch.items(state.get("parents")));
+      com.fasterxml.jackson.databind.node.TextNode chosenCard =
+          Json.mapper().getNodeFactory().textNode(state.get("parentDisplay").asText());
+      form = form.stream().map(f -> "within.item".equals(f.key())
+          ? new WebStepForm.Field(f.key(), f.label(), "select", chosenCard, true, f.source(),
+              cards, f.error())
+          : f).toList();
+    }
     if (pick && !picked.found() && !form.isEmpty()) {
       // An item the page does not list cannot be clicked: it counts as not filled in.
       List<String> options = ordered(choices, picked.tied());
@@ -353,7 +365,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure(e.getMessage());
     }
     state.put("sends", state.path("sends").asInt(0) + 1);
-    state.remove(List.of("parent", "parents"));
+    state.remove(List.of("parent", "parents", "parentDisplay", "groups"));
     state.put("commandId", command.id().toString());
     state.put("device", command.deviceName());
     state.put("browserAction", browserAction);
@@ -371,6 +383,31 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     return follow(execution, broker, state, command.id());
   }
 
+  /**
+   * The items of every card of the outer list, by the card's name as the card's choice shows it
+   * (the showtimes of each theatre), when the page listed them; null otherwise.
+   */
+  static ObjectNode optionsByCard(ObjectNode state, String pickKey, List<WebStepForm.Field> form) {
+    if (pickKey == null || !state.path("groups").isArray() || !state.has("parents")
+        || form.stream().noneMatch(f -> "within.item".equals(f.key()) && f.options() != null)) {
+      return null;
+    }
+    List<ItemMatch.Item> cards = ItemMatch.items(state.get("parents"));
+    ObjectNode out = Json.obj();
+    for (JsonNode group : state.get("groups")) {
+      int index = group.path("index").asInt(-1);
+      String label = group.path("label").asText("");
+      String card = cards.stream().filter(c -> c.index() == index && c.label().equals(label))
+          .map(ItemMatch.Item::display).findFirst()
+          .orElse(cards.stream().filter(c -> c.label().equals(label))
+              .map(ItemMatch.Item::display).findFirst().orElse(null));
+      if (card == null || out.has(card)) continue;
+      ArrayNode items = out.putArray(card);
+      ItemMatch.items(group.path("items")).forEach(i -> items.add(i.display()));
+    }
+    return out.isEmpty() ? null : out;
+  }
+
   /** The keys the approval card offered, which are the only ones the person's answer may set. */
   private static java.util.Set<String> offered(ObjectNode state) {
     java.util.Set<String> keys = new java.util.HashSet<>();
@@ -385,12 +422,20 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private Outcome ask(Execution execution, ObjectNode state, DeviceActionSpec spec,
                       DeviceTarget target, List<WebStepForm.Field> form, List<String> choices,
                       String why) {
-    state.remove(List.of("choices", "parents", "parent"));
+    ObjectNode byCard = optionsByCard(state, WebStepForm.pickKey(spec.action()), form);
+    state.remove(List.of("choices", "parents", "parent", "parentDisplay", "groups"));
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
+    ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
+    if (byCard != null && detail.path("form").path("fields").isArray()) {
+      for (JsonNode field : detail.path("form").path("fields")) {
+        if (field.path("key").asText().equals(WebStepForm.pickKey(spec.action()))) {
+          ((ObjectNode) field).put("dependsOn", "within.item").set("optionsBy", byCard);
+        }
+      }
+    }
     return Outcome.awaitPermission("This step needs your approval before it asks "
-        + target.describe() + " to " + lower(spec.title()) + ". " + why + ".",
-        approvalDetail(spec, form, choices, execution.context().variables()));
+        + target.describe() + " to " + lower(spec.title()) + ". " + why + ".", detail);
   }
 
   /** What the approval card shows: the step's values, what is missing, and data to map from. */
@@ -422,6 +467,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       for (String key : List.of("within", "loadMore")) {
         if (inputs.has(key)) out.set(key, inputs.get(key));
       }
+      // The items of every card too, so the approval card can switch the card (theatre).
+      if (inputs.path("within").isObject()) out.put("groups", true);
     }
     return out;
   }
@@ -551,6 +598,23 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       if (items.isEmpty()) {
         state.remove(into);
         return Outcome.retryable("The list on the page has no items to choose from");
+      }
+      JsonNode groups = listing.output().path("groups");
+      if ("choices".equals(into) && groups.isArray() && !groups.isEmpty()) {
+        ArrayNode kept = state.putArray("groups");
+        for (JsonNode group : groups) {
+          if (kept.size() >= 40) break;
+          ObjectNode g = kept.addObject().put("index", group.path("index").asInt(-1))
+              .put("label", group.path("label").asText(""));
+          ArrayNode list = g.putArray("items");
+          for (JsonNode item : group.path("items")) {
+            if (list.size() >= 100) break;
+            list.addObject().put("label", item.path("label").asText(""))
+                .put("text", item.path("text").asText("")).put("index", item.path("index").asInt());
+          }
+        }
+      } else if ("choices".equals(into)) {
+        state.remove("groups");
       }
       return execute(execution);
     }

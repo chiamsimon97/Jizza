@@ -248,7 +248,9 @@ final class WebStepForm {
     if (CLICK_ITEMS.contains(spec.action()) && inputs.path("within").isObject()
         && out.stream().noneMatch(f -> "within.item".equals(f.key()))) {
       String what = inputs.path("within").path("element").path("label").asText("");
-      out.add(0, new Field("within.item", what.isBlank() ? "Choose in" : what, "text",
+      // A card's recorded label is all its text run together; a short one names the list.
+      out.add(0, new Field("within.item", what.isBlank() || what.length() > 40
+          ? "Card to choose in" : what, "text",
           inputs.path("within").get("item"), true,
           template(configured.path("within").get("item")), null));
     }
