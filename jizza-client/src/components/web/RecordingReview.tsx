@@ -8,7 +8,7 @@ import { ElementPreview } from './PageView'
 import { isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
-const FIELD_NAMES: Record<string, string> = { item: 'Item chosen', 'within.item': 'Chosen in' }
+const FIELD_NAMES: Record<string, string> = { item: 'Item chosen', 'within.item': 'Chosen in', items: 'Option chosen', date: 'Date', state: 'Ticked or not' }
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,

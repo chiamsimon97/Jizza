@@ -322,6 +322,40 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aManualFieldsDropdownChoiceDateAndCheckboxBecomeInputs() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.selectItem", "Class",
+            "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#c\"}]},"
+                + "\"by\":\"label\",\"items\":[\"Sleeper\"]}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(2, "browser.pickDate", "Journey",
+            "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#d\"}]},"
+                + "\"date\":\"20 Nov 2026\"}", false)));
+    for (String[] edit : new String[][] {{"1", "items", "travelClass", "text"},
+        {"2", "date", "journeyDate", "date"}}) {
+      var map = Json.obj().put("recordingId", id.toString()).put("op", "map")
+          .put("seq", Integer.parseInt(edit[0])).put("field", edit[1]);
+      map.putObject("input").put("name", edit[2]).put("type", edit[3]);
+      service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+    }
+    var steps = service.get(access, id).steps();
+    var travelClass = steps.stream().filter(s -> s.seq() == 1).findFirst().orElseThrow().step();
+    assertThat(travelClass.path("mappings").path("items").path("name").asText())
+        .isEqualTo("travelClass");
+    assertThat(travelClass.path("mappings").path("items").path("default").asText())
+        .isEqualTo("Sleeper");
+    var date = steps.stream().filter(s -> s.seq() == 2).findFirst().orElseThrow().step();
+    assertThat(date.path("mappings").path("date").path("type").asText()).isEqualTo("date");
+
+    service.stop(access, id);
+    service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+    assertThat(savedWorkflows.get(0).graph().toString())
+        .contains("\"items\":\"{{ input.travelClass }}\"")
+        .contains("{{ input.journeyDate }}");
+  }
+
+  @Test
   void theItemAndCardOfAListChoiceBecomeInputs() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

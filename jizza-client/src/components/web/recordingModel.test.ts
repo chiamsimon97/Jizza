@@ -15,6 +15,15 @@ describe('recordingModel', () => {
     expect(mappableFields(step(2, { meta: { sensitive: true } }))).toEqual([])
   })
 
+  it("offers a dropdown's chosen option, a calendar date and a checkbox's state as inputs", () => {
+    expect(mappableFields(step(3, { action: 'browser.selectItem', input: { by: 'label', items: ['Sleeper'] } })))
+      .toEqual([{ field: 'items', value: 'Sleeper' }])
+    expect(mappableFields(step(4, { action: 'browser.pickDate', input: { date: '20 Nov 2026' } })))
+      .toEqual([{ field: 'date', value: '20 Nov 2026' }])
+    expect(mappableFields(step(5, { action: 'browser.setCheckbox', input: { state: 'checked' } })))
+      .toEqual([{ field: 'state', value: 'checked' }])
+  })
+
   it('names an input from the quoted label', () => {
     expect(suggestInputName(step(1), 'text')).toBe('invoiceNumber')
   })

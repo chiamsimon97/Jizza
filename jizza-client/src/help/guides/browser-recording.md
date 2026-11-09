@@ -133,6 +133,31 @@ Many sites show lists that are not real lists: a row of movie cards, a strip of 
 
 When the list sits inside a card of another list (the showtimes of one theatre), the step also remembers that card, so it chooses "01:15 PM" at "The Vijay Park Multiplex" and not at the first theatre.
 
+### Record manually: add each field yourself
+
+For long forms such as a train booking (stations, date, class, passengers, payment), switch the side panel to **Manual** (browser agent 0.7.0 or later). Your clicks and typing are then not recorded; you add each step yourself, so nothing extra slips in.
+
+1. Open the extension's side panel (right-click the Jizza icon, **Open side panel**) and press **Manual**.
+2. Fill a field on the page as you normally would, for example type the passenger's name or choose the class.
+3. Press **Add field** and click that field. The side panel shows what kind of field it is, its name and the value it holds now:
+
+| Kind | For | The step |
+| --- | --- | --- |
+| Text box | names, numbers, addresses | types the value |
+| Dropdown | a class or quota list | chooses the option |
+| Type and choose | station boxes that show suggestions | types and picks the matching suggestion |
+| Date box | a date input | sets the date |
+| Date from a calendar | a box that opens a calendar | opens it and clicks the day |
+| Checkbox | insurance, terms | ticks or unticks |
+| Option buttons | General / Tatkal, payment method | chooses one |
+| Button or link | Search, Continue, Pay | clicks it |
+
+4. Change the kind, name or value if the guess is wrong. Tick **Different each run** to make the value an input of the module (a different passenger or date each time), then press **Add step**.
+5. For a button that opens the next page (Search trains, Continue), press **Add field** and click the button first, then click it yourself so the site moves on. The click you make while picking doesn't reach the site.
+6. For a choice in a list of cards (a train in the results), use **Mark a list**: in Manual, clicks in a marked list are still recorded.
+
+You can switch between **Auto** and **Manual** at any time while recording, and **Add field** works in Auto too. Password and card fields are never read: choose a saved login for them when you review the recording.
+
 ### Mark a list yourself
 
 Sometimes the recorder guesses wrong. A plain **Click** may appear where you expected **Choose from a list**, or the whole theatre may be chosen instead of its showtime. Tell it what the list is (browser agent 0.5.0 or later):

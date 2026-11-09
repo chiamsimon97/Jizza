@@ -3,7 +3,7 @@ import type { EditOp, RecordedStep } from '@/api/web'
 /** Fields of a step that hold a typed value a person might want to change on each run.
  *  `item` and `within.item` are what a "Choose from a list" step chooses (the movie, and the
  *  theatre whose showtimes it chooses among). */
-const VALUE_FIELDS = ['text', 'url', 'value', 'keys', 'query', 'item', 'within.item'] as const
+const VALUE_FIELDS = ['text', 'url', 'value', 'keys', 'query', 'item', 'within.item', 'items', 'date', 'state'] as const
 
 /** A field of a step's input, where `within.item` is field `item` of object `within`. */
 function valueAt(input: Record<string, unknown>, field: string): unknown {
@@ -26,7 +26,9 @@ export function mappableFields(s: RecordedStep): { field: string; value: string 
   if (isPassword(s)) return []
   const input = s.step.input ?? {}
   return VALUE_FIELDS.flatMap(field => {
-    const v = valueAt(input, field)
+    let v = valueAt(input, field)
+    // A dropdown's one chosen item (items: ["Sleeper"]) is a value too.
+    if (Array.isArray(v) && v.length === 1) v = v[0]
     return typeof v === 'string' || typeof v === 'number' ? [{ field, value: String(v) }] : []
   })
 }
