@@ -20,6 +20,10 @@ export interface StepField {
   options?: string[]
   /** What the site said is wrong with this value after the form was sent. */
   error?: string
+  /** The field this one's choices follow, such as the theatre a showtime is in. */
+  dependsOn?: string
+  /** The choices for each value of `dependsOn`: the showtimes of each theatre. */
+  optionsBy?: Record<string, string[]>
 }
 
 export interface StepForm {
@@ -54,6 +58,9 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ...(typeof f.source === 'string' ? { source: f.source } : {}),
       ...(Array.isArray(f.options) ? { options: (f.options as unknown[]).map(String) } : {}),
       ...(typeof f.error === 'string' && f.error ? { error: f.error } : {}),
+      ...(typeof f.dependsOn === 'string' && f.optionsBy && typeof f.optionsBy === 'object'
+        ? { dependsOn: f.dependsOn, optionsBy: optionsByOf(f.optionsBy as Record<string, unknown>) }
+        : {}),
     })
   }
   const data = Array.isArray(raw.data)
@@ -69,6 +76,23 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
     ...(typeof raw.choicesAt === 'string' ? { choicesAt: raw.choicesAt } : {}),
     data,
   }
+}
+
+function optionsByOf(raw: Record<string, unknown>): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const [key, list] of Object.entries(raw)) if (Array.isArray(list)) out[key] = list.map(String)
+  return out
+}
+
+/**
+ * The choices a field offers with the values as they are now: for a field that follows another
+ * (a showtime follows its theatre), the choices for that field's current value; undefined when
+ * the page's list for it is not known, so the value is typed instead.
+ */
+export function optionsFor(field: StepField, values: FormValues): string[] | undefined {
+  if (!field.dependsOn || !field.optionsBy) return field.options
+  const on = values[field.dependsOn]
+  return typeof on === 'string' && field.optionsBy[on] ? field.optionsBy[on] : undefined
 }
 
 /** What each input starts with: the value the step resolved, in the input's own shape. */
@@ -116,7 +140,11 @@ export function answerValues(form: StepForm, values: FormValues): Record<string,
   for (const f of form.fields) {
     const now = values[f.key]
     const changed = JSON.stringify(now) !== JSON.stringify(start[f.key])
-    if (changed || form.missing.includes(f.key)) out[f.key] = now
+    // A choice that follows another is sent again when that one changed: the same showtime in
+    // another theatre is another choice.
+    const followed = f.dependsOn !== undefined
+      && JSON.stringify(values[f.dependsOn]) !== JSON.stringify(start[f.dependsOn])
+    if (changed || followed || form.missing.includes(f.key)) out[f.key] = now
   }
   return Object.keys(out).length ? out : undefined
 }

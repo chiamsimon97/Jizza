@@ -199,6 +199,55 @@ class DynamicWebStepsMoreTest {
   }
 
   @Test
+  void theCardLetsThePersonSwitchTheatreAndShowsThatTheatresShowtimes() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"07:20 PM"}],"label":"Showtime"},
+                   "item":"{{ input.time }}",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}],
+                             "label":"INOX: LUXE Phoenix Market City, VelacheryCancellation available"},
+                             "item":"{{ input.theatre }}"}}}
+        """);
+    harness.toolRule = AutonomyRule.ASK;
+    var theatres = listing("PVR Phoenix", "INOX Nexus");
+    var inox = (com.fasterxml.jackson.databind.node.ObjectNode) listing("11:30 AM", "07:30 PM");
+    var groups = inox.putArray("groups");
+    groups.addObject().put("index", 0).put("label", "PVR Phoenix")
+        .set("items", listing("10:00 AM", "07:00 PM").get("items"));
+    groups.addObject().put("index", 1).put("label", "INOX Nexus")
+        .set("items", listing("11:30 AM", "07:30 PM").get("items"));
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        theatres, inox, theatres, listing("10:00 AM", "07:00 PM"))));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "INOX Nexus").put("time", "07:30 PM"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    var lists = harness.deviceRequests.stream()
+        .filter(r -> r.action().equals("browser.listItems")).toList();
+    assertThat(lists.get(1).input().path("groups").asBoolean()).isTrue();
+    // The theatre stays a choice of the page's theatres, its long recorded label shortened.
+    JsonNode theatre = field(harness, "within.item");
+    assertThat(theatre.path("type").asText()).isEqualTo("select");
+    assertThat(theatre.path("label").asText()).isEqualTo("Card to choose in");
+    assertThat(theatre.path("value").asText()).isEqualTo("INOX Nexus");
+    assertThat(theatre.path("options").toString()).isEqualTo("[\"PVR Phoenix\",\"INOX Nexus\"]");
+    JsonNode time = field(harness, "item");
+    assertThat(time.path("dependsOn").asText()).isEqualTo("within.item");
+    assertThat(time.path("optionsBy").path("PVR Phoenix").toString())
+        .isEqualTo("[\"10:00 AM\",\"07:00 PM\"]");
+    assertThat(time.path("optionsBy").path("INOX Nexus").toString())
+        .isEqualTo("[\"11:30 AM\",\"07:30 PM\"]");
+
+    harness.engine.resume(run.id(), Json.obj().put("approved", true).set("inputs",
+        Json.obj().put("within.item", "PVR Phoenix").put("item", "07:00 PM")));
+    var sent = harness.deviceRequests.get(harness.deviceRequests.size() - 1);
+    assertThat(sent.action()).isEqualTo("browser.clickItem");
+    assertThat(sent.input().path("within").path("item").asText()).isEqualTo("PVR Phoenix");
+    assertThat(sent.input().path("item").asText()).isEqualTo("07:00 PM");
+  }
+
+  @Test
   void aRememberedPickIsUsedNextTimeWithoutAsking() {
     EngineHarness harness = harness(click(""));
     harness.toolRule = AutonomyRule.JIZZA;
