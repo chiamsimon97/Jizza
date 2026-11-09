@@ -133,6 +133,22 @@ Many sites show lists that are not real lists: a row of movie cards, a strip of 
 
 When the list sits inside a card of another list (the showtimes of one theatre), the step also remembers that card, so it chooses "01:15 PM" at "The Vijay Park Multiplex" and not at the first theatre.
 
+### Mark a list yourself
+
+Sometimes the recorder guesses wrong. A plain **Click** may appear where you expected **Choose from a list**, or the whole theatre may be chosen instead of its showtime. Tell it what the list is (browser agent 0.5.0 or later):
+
+1. Before you click the item, press **Mark a list** in the extension's side panel.
+2. Click one item of the list on the page, such as a showtime. The click doesn't reach the site. Use the Up and Down arrow keys to widen the highlight to the whole item or narrow it.
+3. Click the card it sits in, such as the theatre: point at the theatre's name and press Up until the whole theatre is outlined, then press Enter. Press Esc if the list is not inside a card.
+4. The page briefly outlines every item found, and the side panel says how many, for example "is one of 4 items inside Rakki RGB Laser 4K (one of 12 cards)".
+5. Now click the item as usual. It is recorded as **Choose from a list**, and so is every later click in that list.
+
+The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
+
+### Choose the theatre and showtime from the page
+
+In the workflow builder, a **Choose from a list** step has **Load cards from the page** and **Load items from the page**. With the site open in the chosen browser, these read what the page shows now and offer a drop-down: pick a theatre, then load and pick one of its showtimes. When a run reaches the step and the chosen theatre or showtime isn't there, Jizza asks you, listing what the page shows then: theatres first, then the showtimes of the theatre you pick.
+
 ## Review and save
 
 After you press **Stop**, the recording waits for you in review. Nothing runs until you save it.

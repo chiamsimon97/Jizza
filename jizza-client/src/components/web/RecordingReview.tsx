@@ -55,7 +55,7 @@ export function RecordingReview({ recording, busy, onEdit }: {
               <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
               <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}</Badge>}
+                {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
                 {Object.entries(s.step.mappings ?? {}).map(([field, m]) => <Badge key={field}>input: {m.name}</Badge>)}
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">

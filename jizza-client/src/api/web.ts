@@ -54,6 +54,8 @@ export interface RecordedList {
   inputName?: string
   withinTitle?: string
   withinInputName?: string
+  /** Marked by the person while recording (Mark a list): read with its saved patterns. */
+  marked?: boolean
 }
 
 export interface RecordedStep {

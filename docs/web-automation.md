@@ -49,6 +49,15 @@ and **Make reusable** maps every list choice at once, keeping the recorded items
 older Click step can be switched to **Choose the item at run time** in the builder; it now starts
 with the item the click recorded.
 
+From browser agent 0.5.0, **Mark a list** in the side panel lets the person show the recorder one
+item and the card of the outer list it sits in. Such steps carry `itemCss` and `within.itemCss`
+(CSS patterns for the items and cards) and `meta.list.marked`. The catalog accepts both. The
+engine lists the outer cards with `within.itemCss` and the items with `itemCss`
+(`DeviceActionNodeExecutor.listInput`), and the approval form never shows them (`WebStepForm`
+plumbing). The builder shows them as editable **Item/Card pattern (CSS)** fields. **Load cards / items from the page**
+runs `browser.listItems@1` as a test step on the chosen browser, so a theatre and then its
+showtimes are picked from what the page shows.
+
 ## When a page changes
 
 Sites change. When a step can no longer find its element, Chrome looks for elements that look like
