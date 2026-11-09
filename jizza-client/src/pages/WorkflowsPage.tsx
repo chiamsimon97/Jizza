@@ -16,6 +16,7 @@ import { EmptyState, LoadError } from '@/components/ui/EmptyState'
 import { WorkflowGuardrails } from '@/components/guardrails/WorkflowGuardrails'
 import { ReuseSettings } from '@/components/workflow/ReuseSettings'
 import { WorkflowTriggerControls } from '@/components/workflow/WorkflowTriggerControls'
+import { DeleteWorkflowButton } from '@/components/workflow/DeleteWorkflowButton'
 
 export function WorkflowsPage() {
   const openForm = useFormStore(s => s.open)
@@ -89,6 +90,7 @@ export function WorkflowsPage() {
                   </Button>
                   {wf.reuse && <Badge variant="default">Reused by Jizza</Badge>}
                   <Badge variant={wf.status === 'ACTIVE' ? 'success' : 'default'}>{wf.status}</Badge>
+                  <DeleteWorkflowButton workflowId={wf.id} name={wf.name} />
                 </div>
               </div>
               {guarding === wf.id && (

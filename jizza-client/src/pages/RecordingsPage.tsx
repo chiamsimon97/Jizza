@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Circle, Play, Video } from 'lucide-react'
+import { Circle, Play, Trash2, Video } from 'lucide-react'
 import { webApi } from '@/api/web'
 import { workflowsApi } from '@/api/workflows'
 import { RecordFlow } from '@/components/web/RecordFlow'
+import { DeleteWorkflowButton } from '@/components/workflow/DeleteWorkflowButton'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -29,6 +30,11 @@ export function RecordingsPage() {
   const modules = useQuery({ queryKey: ['workflows'], queryFn: () => workflowsApi.list() })
   const saved = (modules.data ?? []).filter(w => w.origin === 'RECORDED')
   const run = useMutation({ mutationFn: (id: string) => workflowsApi.run(id) })
+  // A draft is only notes until it is saved, so it goes with one confirm, no dialog.
+  const discard = useMutation({
+    mutationFn: (id: string) => webApi.discardRecording(id),
+    onSuccess: () => void drafts.refetch(),
+  })
   const loading = drafts.isLoading || modules.isLoading
 
   return (
@@ -50,6 +56,12 @@ export function RecordingsPage() {
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{d.name}</p><p className="truncate text-xs text-gray-500">{d.kind === 'desktop' ? `${d.app ?? 'Windows apps'} on ${d.deviceName ?? 'your PC'}` : d.startUrl}, {d.stepCount} steps</p></div>
                   <Badge>{d.status === 'recording' ? 'Recording' : 'Ready to review'}</Badge>
                   <Button size="sm" variant="secondary" onClick={() => { setResume(d.id); setRecording(true) }}>{d.status === 'recording' ? 'Open' : 'Review'}</Button>
+                  <Button size="sm" variant="ghost" aria-label={`Discard ${d.name}`} title="Discard draft"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40"
+                    loading={discard.isPending && discard.variables === d.id}
+                    onClick={() => { if (window.confirm(`Discard the draft "${d.name}"? Its recorded steps are thrown away.`)) discard.mutate(d.id) }}>
+                    <Trash2 className="h-4 w-4" />Discard
+                  </Button>
                 </Card>
               ))}
             </section>
@@ -63,6 +75,7 @@ export function RecordingsPage() {
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{w.name}</p><p className="truncate text-xs text-gray-500">{w.description}</p></div>
                   <Button size="sm" variant="secondary" loading={run.isPending && run.variables === w.id} onClick={() => run.mutate(w.id)}><Play className="h-4 w-4" />Run now</Button>
                   <Link to={`/workflows?open=${w.id}`} className="text-sm font-medium text-brand-600 hover:underline">Open in builder</Link>
+                  <DeleteWorkflowButton workflowId={w.id} name={w.name} what="recording" />
                 </Card>
               ))}
           </section>

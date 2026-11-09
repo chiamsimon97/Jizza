@@ -68,6 +68,13 @@ public class WorkflowController {
     return workflows.setEnabled(CurrentUser.userId(), id, request.enabled());
   }
 
+  /** Deletes the workflow, cancelling its unfinished runs; its run history stays. */
+  @DeleteMapping("/workflows/{id}")
+  @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+  public void delete(@PathVariable UUID id) {
+    workflows.delete(CurrentUser.userId(), id);
+  }
+
   /** Starts the workflow when the form is submitted (only while the workflow is on). */
   @PutMapping("/workflows/{id}/form-trigger")
   public WorkflowDto setFormTrigger(@PathVariable UUID id, @RequestBody SetFormTrigger request) {

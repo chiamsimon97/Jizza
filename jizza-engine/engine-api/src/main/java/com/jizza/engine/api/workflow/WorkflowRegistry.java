@@ -53,4 +53,17 @@ public interface WorkflowRegistry {
   default WorkflowDto setFormTrigger(UUID workflowId, UUID formId) {
     throw new UnsupportedOperationException("Form triggers are not supported here");
   }
+
+  /** The workflow's runs that have not ended (running, waiting, or waiting for someone). */
+  default List<UUID> unfinishedRuns(UUID workflowId) {
+    return List.of();
+  }
+
+  /**
+   * Deletes the workflow: it stops starting from its triggers and disappears from every list,
+   * search and lookup, while its runs and their history stay. Cancel its unfinished runs first.
+   */
+  default void delete(UUID workflowId) {
+    throw new UnsupportedOperationException("Deleting workflows is not supported here");
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { makeSnapshot, renderWithSnapshot } from '@/test/utils'
 import { RecordingsPage } from './RecordingsPage'
 import { webApi } from '@/api/web'
@@ -40,5 +40,35 @@ describe('RecordingsPage', () => {
     vi.spyOn(workflowsApi, 'list').mockResolvedValue([])
     renderWithSnapshot(<RecordingsPage />, makeSnapshot())
     expect(await screen.findByText('Notepad on Office PC, 3 steps')).toBeInTheDocument()
+  })
+
+  it('deletes a saved recording after asking, and the list drops it', async () => {
+    vi.spyOn(webApi, 'listRecordings').mockResolvedValue([])
+    const list = vi.spyOn(workflowsApi, 'list').mockResolvedValueOnce([wf({})]).mockResolvedValue([])
+    const del = vi.spyOn(workflowsApi, 'delete').mockResolvedValue(undefined)
+    renderWithSnapshot(<RecordingsPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Download invoices' }))
+    const dialog = screen.getByRole('dialog', { name: 'Delete Download invoices?' })
+    expect(del).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete recording' }))
+    await waitFor(() => expect(del).toHaveBeenCalledWith('w1'))
+    expect(await screen.findByText('No recordings yet')).toBeInTheDocument()
+    expect(list).toHaveBeenCalledTimes(2)
+  })
+
+  it('discards a draft only after the confirm', async () => {
+    vi.spyOn(webApi, 'listRecordings').mockResolvedValue([
+      { id: 'r1', name: 'Pay bills', status: 'review', deviceId: 'd1', startUrl: 'https://bank.example.com', stepCount: 4, updatedAt: '2026-01-01T00:00:00Z' },
+    ])
+    vi.spyOn(workflowsApi, 'list').mockResolvedValue([])
+    const discard = vi.spyOn(webApi, 'discardRecording').mockResolvedValue(undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    renderWithSnapshot(<RecordingsPage />, makeSnapshot())
+    const button = await screen.findByRole('button', { name: 'Discard Pay bills' })
+    fireEvent.click(button)
+    expect(discard).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    await waitFor(() => expect(discard).toHaveBeenCalledWith('r1'))
+    expect(confirm).toHaveBeenCalledTimes(2)
   })
 })

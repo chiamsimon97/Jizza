@@ -26,6 +26,7 @@ class WorkflowUseCaseTest {
 
   private final UUID userId = UUID.randomUUID();
   private final List<WorkflowDto> rows = new ArrayList<>();
+  private List<UUID> openRuns = List.of();
   private WorkflowUseCase useCase;
 
   /** Stands in for the engine's registry: persists whatever it is handed, defaults nothing. */
@@ -55,6 +56,14 @@ class WorkflowUseCaseTest {
       rows.removeIf(w -> w.id().equals(saved.id()));
       rows.add(saved);
       return saved;
+    }
+
+    @Override public List<UUID> unfinishedRuns(UUID id) {
+      return openRuns;
+    }
+
+    @Override public void delete(UUID id) {
+      rows.removeIf(w -> w.id().equals(id));
     }
 
     private WorkflowDto merge(WorkflowDto existing, WorkflowDto edit) {
@@ -129,5 +138,21 @@ class WorkflowUseCaseTest {
     useCase.save(UUID.randomUUID(), null, "Somebody else's", "d", graph(), null, null, null);
 
     assertThat(useCase.list(userId)).hasSize(1);
+  }
+
+  @Test
+  void deletingCancelsTheUnfinishedRunsAndOnlyTheOwnerMayDoIt() {
+    var created = useCase.save(userId, null, "Old booking", "d", graph(), null, null, null);
+    UUID waiting = UUID.randomUUID();
+    openRuns = List.of(waiting);
+    var engine = mock(com.jizza.engine.api.workflow.WorkflowEngine.class);
+    useCase.setEngine(engine);
+
+    assertThatThrownBy(() -> useCase.delete(UUID.randomUUID(), created.id()))
+        .isInstanceOf(NotFoundException.class);
+    useCase.delete(userId, created.id());
+
+    org.mockito.Mockito.verify(engine).cancel(waiting);
+    assertThat(useCase.list(userId)).isEmpty();
   }
 }
