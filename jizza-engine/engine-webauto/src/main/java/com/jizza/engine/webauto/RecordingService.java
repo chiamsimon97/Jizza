@@ -547,6 +547,9 @@ public class RecordingService implements Recordings, RecordingIntake {
       return;
     }
     JsonNode value = StepCompiler.valueAt(target.node.path("input"), op.field());
+    // A dropdown's one chosen item (items: ["Sleeper"]) is a value too; runs turn the mapped
+    // text back into a list.
+    if (value != null && value.isArray() && value.size() == 1) value = value.get(0);
     if (value == null || value.isNull() || !value.isValueNode()) {
       throw new ValidationException("This step has no '" + op.field() + "' value to turn into an input");
     }
