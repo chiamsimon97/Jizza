@@ -337,6 +337,48 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('loads the cards and items of a list from the page to choose from', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    const sent: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      let body: unknown = []
+      if (url.includes('/api/devices/catalog')) body = [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element'], properties: {
+            element: locator, item: { type: 'string' }, itemCss: { type: 'string' }, within: { type: 'object' } } }, output: { type: 'object' } },
+      ]
+      if (url.includes('/api/web/browsers')) body = [{ id: 'b1', workspaceId: null, name: 'Chrome', online: true, family: null, version: null, allowedSites: [], sessions: 1, lastSeenAt: null }]
+      if (url.includes('/api/web/test-step')) {
+        const request = JSON.parse(String(init?.body)) as { inputs: Record<string, unknown> }
+        sent.push(request.inputs)
+        body = { status: 'succeeded', files: [], output: { count: 2, items: request.inputs.within
+          ? [{ index: 0, label: '03:40 PM' }, { index: 1, label: '07:15 PM' }]
+          : [{ index: 0, label: 'Rakki RGB Laser 4K' }, { index: 1, label: 'Meenakshi Cinemas' }] } }
+      }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const show = { strategies: [{ by: 'text', value: '10:45 PM' }], label: 'Showtime' }
+    const venue = { strategies: [{ by: 'css', value: 'div.venue' }], label: 'Theatre' }
+    const inputs = { element: show, item: '10:45 PM', itemCss: 'div.times > div', within: { element: venue, item: '', itemCss: 'div.venue' } }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, target: 'b1', inputs } } : n) }
+    const { onSave } = open(graph, made.id)
+    expect(await screen.findByRole('textbox', { name: 'Item pattern (CSS)' })).toHaveValue('div.times > div')
+    fireEvent.click(await screen.findByRole('button', { name: 'Load cards from the page' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Card on the page' }), { target: { value: 'Meenakshi Cinemas' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Load items from the page' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Item on the page' }), { target: { value: '07:15 PM' } })
+    expect(sent[0]).toMatchObject({ element: venue, itemCss: 'div.venue' })
+    expect(sent[1]).toMatchObject({ element: show, itemCss: 'div.times > div', within: { item: 'Meenakshi Cinemas', itemCss: 'div.venue' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ item: '07:15 PM', itemCss: 'div.times > div', within: { item: 'Meenakshi Cinemas', itemCss: 'div.venue' } })
+    vi.unstubAllGlobals()
+  })
+
   describe('Advanced web options', () => {
     const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

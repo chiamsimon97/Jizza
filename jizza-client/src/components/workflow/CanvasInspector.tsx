@@ -1368,7 +1368,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
     !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
     && !(action === 'browser.fillForm' && key === 'fields')
-    && !(key === 'within' || key === 'loadMore'))
+    && !(key === 'within' || key === 'loadMore' || key === 'itemCss'))
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
   const toggleRunTimeChoice = (on: boolean) => {
@@ -1560,6 +1560,15 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
   const loadMore = asInputs(inputs.loadMore)
   const inCard = inputs.within !== undefined
   const loads = inputs.loadMore !== undefined
+  const fixedCard = typeof within.item === 'string' && within.item.trim() !== '' && !within.item.includes('{{')
+  const cardList: Record<string, unknown> | undefined = within.element === undefined ? undefined
+    : { element: within.element, max: 100, ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}) }
+  const itemList: Record<string, unknown> | undefined = inputs.element === undefined || (inCard && !fixedCard) ? undefined
+    : {
+        element: inputs.element, max: 100,
+        ...(typeof inputs.itemCss === 'string' ? { itemCss: inputs.itemCss } : {}),
+        ...(inCard ? { within: { element: within.element, item: within.item, ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}) } } : {}),
+      }
   return <div className="space-y-2">
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={inCard}
@@ -1576,6 +1585,16 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
           value={typeof within.item === 'string' ? within.item : ''}
           onChange={v => setInput('within', { ...within, item: v })} />
       </Labelled>
+      <LoadFromPage what="cards" deviceId={deviceId} list={cardList}
+        onPick={v => setInput('within', { ...within, item: v })} />
+      <PatternField label="Card pattern (CSS)" value={within.itemCss}
+        onChange={v => setInput('within', { ...within, itemCss: v })} />
+    </div>}
+    {inputs.element !== undefined && <div className="space-y-1">
+      <LoadFromPage what="items" deviceId={deviceId} list={itemList}
+        blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
+        onPick={v => setInput('item', v)} />
+      <PatternField label="Item pattern (CSS)" value={inputs.itemCss} onChange={v => setInput('itemCss', v)} />
     </div>}
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={loads}
@@ -1593,6 +1612,65 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
       </Labelled>
     </div>}
   </div>
+}
+
+/**
+ * Reads a list from the page as the chosen browser shows it now (List items, run as a test), so a
+ * card or item can be chosen from what is there instead of typed: a theatre, then its showtimes.
+ */
+function LoadFromPage({ what, deviceId, list, blocked, onPick }: {
+  what: 'cards' | 'items'; deviceId?: string; list?: Record<string, unknown>; blocked?: string
+  onPick: (label: string) => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [labels, setLabels] = useState<string[] | undefined>()
+  const [error, setError] = useState<string | undefined>()
+  const reason = blocked ?? (!deviceId ? 'Choose a browser above to load from its page.' : undefined)
+  const load = async () => {
+    if (!deviceId || !list) return
+    setLoading(true); setError(undefined); setLabels(undefined)
+    try {
+      const result = await webApi.testStep({ deviceId, action: 'browser.listItems', version: 1, inputs: list })
+      const items = (result.output as { items?: { label?: string }[] } | undefined)?.items
+      if (result.status === 'succeeded' && items) {
+        const found = [...new Set(items.map(i => i.label ?? '').filter(Boolean))]
+        setLabels(found)
+        if (found.length === 0) setError('The page shows no such list now.')
+      } else {
+        setError(result.error?.detail ?? result.message ?? 'The list could not be read.')
+      }
+    } catch (e) {
+      const problem = (e as { problem?: { detail?: string; title?: string } }).problem
+      setError(problem?.detail ?? problem?.title ?? (e instanceof Error ? e.message : 'The list could not be read.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+  if (!list && !blocked) return null
+  const noun = what === 'cards' ? 'cards' : 'items'
+  return <div className="space-y-1">
+    <button type="button" disabled={loading || reason !== undefined} onClick={() => void load()}
+      title={reason ?? `Read the ${noun} the page shows now, in the browser chosen above`}
+      className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-300">
+      {loading && <Loader2 className="h-3 w-3 animate-spin" />}Load {noun} from the page
+    </button>
+    {reason && <p className="text-[11px] text-gray-500">{reason}</p>}
+    {labels && labels.length > 0 && <select aria-label={what === 'cards' ? 'Card on the page' : 'Item on the page'}
+      className={fieldClass} defaultValue="" onChange={e => { if (e.target.value) onPick(e.target.value) }}>
+      <option value="" disabled>Choose one of {labels.length} on the page</option>
+      {labels.map(l => <option key={l} value={l}>{l}</option>)}
+    </select>}
+    {error && <p className="text-[11px] text-red-600">{error} Open the page in that browser first.</p>}
+  </div>
+}
+
+/** The CSS pattern Mark a list saved, editable for a site whose markup changed. */
+function PatternField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: string | undefined) => void }) {
+  return <Labelled label={label} hint="Saved when you marked the list while recording; the list is read with it first. Leave empty to find the list by its shape.">
+    <input aria-label={label} className={fieldClass} value={typeof value === 'string' ? value : ''}
+      placeholder="Found by its shape"
+      onChange={e => onChange(e.target.value.trim() === '' ? undefined : e.target.value)} />
+  </Labelled>
 }
 
 function webInputLabel(name: string): string {

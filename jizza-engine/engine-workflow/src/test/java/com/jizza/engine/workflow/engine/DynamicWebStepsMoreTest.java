@@ -169,6 +169,36 @@ class DynamicWebStepsMoreTest {
   }
 
   @Test
+  void aMarkedListReadsTheatresAndShowtimesWithTheirOwnPatterns() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"10:45 PM"}],"label":"Showtime"},
+                   "item":"{{ input.time }}","itemCss":"div.times > div",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}],
+                             "label":"Theatre"},"item":"{{ input.theatre }}",
+                             "itemCss":"div.venue"}}}
+        """);
+    harness.toolRule = AutonomyRule.JIZZA;
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        listing("Rakki RGB Laser 4K", "Meenakshi Cinemas"), listing("03:40 PM", "07:15 PM"))));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "meenakshi").put("time", "07:15 PM"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    var lists = harness.deviceRequests.stream()
+        .filter(r -> r.action().equals("browser.listItems")).toList();
+    // The theatres are read with the card pattern, the showtimes with the item pattern.
+    assertThat(lists.get(0).input().path("itemCss").asText()).isEqualTo("div.venue");
+    assertThat(lists.get(1).input().path("itemCss").asText()).isEqualTo("div.times > div");
+    assertThat(lists.get(1).input().path("within").path("itemCss").asText())
+        .isEqualTo("div.venue");
+    var sent = harness.deviceRequests.get(harness.deviceRequests.size() - 1).input();
+    assertThat(sent.path("itemCss").asText()).isEqualTo("div.times > div");
+    assertThat(sent.path("within").path("item").asText()).isEqualTo("Meenakshi Cinemas");
+  }
+
+  @Test
   void aRememberedPickIsUsedNextTimeWithoutAsking() {
     EngineHarness harness = harness(click(""));
     harness.toolRule = AutonomyRule.JIZZA;
