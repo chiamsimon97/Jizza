@@ -112,6 +112,7 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | --- | --- |
 | Type an address or open a bookmark | Open URL |
 | Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
+| Click one card of a list: a movie, a date in a date strip, a showtime, a choice in a pop-up (browser agent 0.4.0 or later) | Choose from a list, with the item you clicked |
 | Type in a field | Set text, one step per field when you leave it |
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
 | Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
@@ -126,6 +127,12 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 
 Each step stores several ways to find its element (its label, text, role and position), plus a small picture of it, so you can tell steps apart in review.
 
+### Lists made of cards
+
+Many sites show lists that are not real lists: a row of movie cards, a strip of dates, the showtimes of each theatre. The recorder notices when the thing you click has look-alike neighbours, and records **Choose from a list** instead of a plain click. The step finds the list by its shape and chooses the item by its name, so it still works when the cards move around, and it can choose a different item on the next run.
+
+When the list sits inside a card of another list (the showtimes of one theatre), the step also remembers that card, so it chooses "01:15 PM" at "The Vijay Park Multiplex" and not at the first theatre.
+
 ## Review and save
 
 After you press **Stop**, the recording waits for you in review. Nothing runs until you save it.
@@ -134,6 +141,7 @@ After you press **Stop**, the recording waits for you in review. Nothing runs un
 - **Rename** a step so it reads like an instruction, such as "Open the invoice search".
 - **Move up / Move down** to change the order, and **Delete** steps you don't need.
 - **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
+- **Make reusable** turns every list choice (the movie, the date, the format, the showtime and its theatre) into an input in one go, with names such as `movie`, `date` and `time`. The recorded choices stay as the defaults, so the workflow still does what you recorded until a run, a form or a schedule passes other values. You can also make one choice an input with **Make this an input** (**Item chosen**, or **Chosen in** for the theatre).
 - **Saved login** on each password step: enter the saved login to use. A recording with a password step can't be saved without one. (For now this is a text field for the login's id; a picker is planned.)
 
 Then give the module a name and a short description, and press **Save as module**. The description helps Jizza find the module when you ask for it in chat.

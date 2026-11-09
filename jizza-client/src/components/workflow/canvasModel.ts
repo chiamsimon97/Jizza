@@ -653,3 +653,21 @@ export function unreachable(graph: CanvasGraph): Set<string> {
   const start = graph.nodes.find(n => n.type === 'TRIGGER')
   return new Set(graph.nodes.filter(n => n.type !== 'TRIGGER' && !(start && reaches(graph, start.id, n.id))).map(n => n.id))
 }
+
+/**
+ * What a recorded click chose, to start a "Choose from a list" step with: the element's own text
+ * as it was recorded, so the step still chooses the same item until the person maps another.
+ */
+export function recordedItem(element: unknown): string {
+  if (typeof element !== 'object' || element === null) return ''
+  const e = element as { fingerprint?: { text?: unknown }; label?: unknown; strategies?: unknown }
+  const text = typeof e.fingerprint?.text === 'string' ? e.fingerprint.text : ''
+  if (text.trim()) return text.replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (Array.isArray(e.strategies)) {
+    for (const s of e.strategies as { by?: string; name?: unknown; value?: unknown }[]) {
+      if (s.by === 'role' && typeof s.name === 'string' && s.name.trim()) return s.name.trim().slice(0, 200)
+      if (s.by === 'text' && typeof s.value === 'string' && s.value.trim()) return s.value.trim().slice(0, 200)
+    }
+  }
+  return typeof e.label === 'string' ? e.label.replace(/^Click\s+/, '').replace(/^"|"$/g, '').slice(0, 200) : ''
+}

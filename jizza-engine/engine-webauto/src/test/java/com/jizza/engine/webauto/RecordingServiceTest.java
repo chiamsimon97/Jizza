@@ -322,6 +322,31 @@ class RecordingServiceTest {
   }
 
   @Test
+  void theItemAndCardOfAListChoiceBecomeInputs() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.clickItem", "Choose the time",
+            "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\".t\"}]},\"item\":\"01:15 PM\","
+                + "\"within\":{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\".v\"}]},"
+                + "\"item\":\"Vijay Park\"}}", false)));
+    service.stop(access, id);
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("map", 1, null, null, "item",
+            new Recordings.Input("time", "text", null), null, null),
+        new Recordings.EditOp("map", 1, null, null, "within.item",
+            new Recordings.Input("cinema", "text", null), null, null)));
+
+    var step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("mappings").path("within.item").path("default").asText())
+        .isEqualTo("Vijay Park");
+    assertThat(step.path("mappings").path("item").path("default").asText()).isEqualTo("01:15 PM");
+    assertThatThrownBy(() -> service.edit(access, id, List.of(
+        new Recordings.EditOp("map", 1, null, null, "within",
+            new Recordings.Input("x", "text", null), null, null))))
+        .isInstanceOf(ValidationException.class);
+  }
+
+  @Test
   void insertsACheckBuiltFromAnEarlierElement() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

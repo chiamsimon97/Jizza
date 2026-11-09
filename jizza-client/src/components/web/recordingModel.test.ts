@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordedStep } from '@/api/web'
-import { hostOf, liveSteps, mappableFields, missingLogins, siteAllowed, suggestInputName } from './recordingModel'
+import { hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
 
 const step = (seq: number, over: Partial<RecordedStep['step']> = {}, deleted = false, position = seq): RecordedStep =>
   ({ seq, position, deleted, step: { action: 'browser.setText', label: 'Set "Invoice number" to "INV-2041"', input: { text: 'INV-2041', clearFirst: true }, ...over } })
@@ -39,5 +39,33 @@ describe('site checks for the setup checklist', () => {
     expect(siteAllowed('example.com', ['*.example.com'])).toBe(false)
     expect(siteAllowed('badexample.com', ['*.example.com'])).toBe(false)
     expect(siteAllowed('other.com', ['example.com'])).toBe(false)
+  })
+})
+
+describe('list choices', () => {
+  const choose = (seq: number, input: Record<string, unknown>, list: Record<string, unknown>, mappings?: Record<string, { name: string; type: string }>) => ({
+    seq, position: seq, deleted: false,
+    step: { action: 'browser.clickItem', label: 'Choose', input, meta: { list }, ...(mappings ? { mappings } : {}) },
+  })
+
+  it('offers the item and the card it is chosen in, named as the recording suggests', () => {
+    const s = choose(1, { item: '01:15 PM', within: { item: 'Vijay Park' } }, { kind: 'time', inputName: 'time', withinInputName: 'cinema' })
+    expect(mappableFields(s)).toEqual([{ field: 'item', value: '01:15 PM' }, { field: 'within.item', value: 'Vijay Park' }])
+    expect(suggestInputName(s, 'item')).toBe('time')
+    expect(suggestInputName(s, 'within.item')).toBe('cinema')
+  })
+
+  it('makes every list choice reusable once, with unique names and the recorded defaults', () => {
+    const steps = [
+      choose(1, { item: 'Scene' }, { inputName: 'movie' }),
+      choose(2, { item: '2D' }, { inputName: 'format' }, { item: { name: 'format', type: 'text' } }),
+      choose(3, { item: '10' }, { inputName: 'date' }),
+      choose(4, { item: 'Ramayana' }, { inputName: 'movie' }),
+    ]
+    expect(reusableOps(steps)).toEqual([
+      { op: 'map', seq: 1, field: 'item', input: { name: 'movie', type: 'text', default: 'Scene' } },
+      { op: 'map', seq: 3, field: 'item', input: { name: 'date', type: 'text', default: '10' } },
+      { op: 'map', seq: 4, field: 'item', input: { name: 'movie2', type: 'text', default: 'Ramayana' } },
+    ])
   })
 })

@@ -58,3 +58,23 @@ describe('RecordingReview', () => {
     expect(page.src).toContain('page-1')
   })
 })
+
+describe('RecordingReview list choices', () => {
+  it('makes the recorded choices inputs in one go', () => {
+    const onEdit = vi.fn()
+    render(<RecordingReview onEdit={onEdit} recording={{
+      ...recording,
+      steps: [
+        { seq: 1, position: 1, deleted: false, step: { action: 'browser.clickItem', label: 'Choose "Scene" in Recommended Movies', input: { item: 'Scene' }, meta: { list: { kind: 'text', count: 9, inputName: 'movie' } } } },
+        { seq: 2, position: 2, deleted: false, step: { action: 'browser.clickItem', label: 'Choose the time "01:15 PM" in "Vijay Park"', input: { item: '01:15 PM', within: { item: 'Vijay Park' } }, meta: { list: { kind: 'time', inputName: 'time', withinInputName: 'cinema' } } } },
+      ],
+    }} />)
+    expect(screen.getByText('list of 9')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Make reusable' }))
+    expect(onEdit).toHaveBeenLastCalledWith([
+      { op: 'map', seq: 1, field: 'item', input: { name: 'movie', type: 'text', default: 'Scene' } },
+      { op: 'map', seq: 2, field: 'item', input: { name: 'time', type: 'text', default: '01:15 PM' } },
+      { op: 'map', seq: 2, field: 'within.item', input: { name: 'cinema', type: 'text', default: 'Vijay Park' } },
+    ])
+  })
+})

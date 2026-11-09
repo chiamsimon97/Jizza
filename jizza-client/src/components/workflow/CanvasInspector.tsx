@@ -10,7 +10,7 @@ import { devicesApi } from '@/api/devices'
 import { ElementPreview } from '@/components/web/PageView'
 import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
-  MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, toDuration, updateNode,
+  MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, recordedItem, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type FieldIssue, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
@@ -1373,7 +1373,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   const choosesAtRunTime = action === 'browser.clickItem'
   const toggleRunTimeChoice = (on: boolean) => {
     setConfig(on
-      ? { action: 'browser.clickItem', version: 1, actionTitle: 'Choose from a list', inputs: { element: inputs.element, item: '' } }
+      ? { action: 'browser.clickItem', version: 1, actionTitle: 'Choose from a list', inputs: { element: inputs.element, item: recordedItem(inputs.element) } }
       : { action: 'browser.click', version: 2, actionTitle: 'Click', inputs: inputs.element === undefined ? undefined : { element: inputs.element } })
   }
   const retry = asInputs(node.config.retry)
@@ -2083,3 +2083,4 @@ function Labelled({ label, hint, required, missing, group, children }: {
     </Wrapper>
   )
 }
+

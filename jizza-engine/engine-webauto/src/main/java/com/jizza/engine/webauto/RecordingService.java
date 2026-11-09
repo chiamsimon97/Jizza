@@ -546,7 +546,7 @@ public class RecordingService implements Recordings, RecordingIntake {
       target.changed = true;
       return;
     }
-    JsonNode value = target.node.path("input").get(op.field());
+    JsonNode value = StepCompiler.valueAt(target.node.path("input"), op.field());
     if (value == null || value.isNull() || !value.isValueNode()) {
       throw new ValidationException("This step has no '" + op.field() + "' value to turn into an input");
     }

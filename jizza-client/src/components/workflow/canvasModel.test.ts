@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, setNext, targetsFor, tidy,
+  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
   toDuration, toGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
 } from './canvasModel'
 
@@ -284,5 +284,14 @@ describe('palette groups', () => {
     expect(r.graph.edges.find(e => e.from === start)?.to).toBe(r.ids[0])
     expect(r.graph.edges.find(e => e.from === r.ids[0])?.to).toBe(r.ids[1])
     expect(r.graph.edges.find(e => e.from === r.ids[1])?.to).toBe(end.id)
+  })
+})
+
+describe('recordedItem', () => {
+  it('starts a run-time choice with what the recorded click chose', () => {
+    expect(recordedItem({ fingerprint: { text: ' 01:15 PM\n 4K DOLBY ' }, strategies: [] })).toBe('01:15 PM 4K DOLBY')
+    expect(recordedItem({ strategies: [{ by: 'css', value: '.x' }, { by: 'role', role: 'button', name: '2D' }] })).toBe('2D')
+    expect(recordedItem({ strategies: [{ by: 'text', value: 'Book tickets' }] })).toBe('Book tickets')
+    expect(recordedItem(undefined)).toBe('')
   })
 })
