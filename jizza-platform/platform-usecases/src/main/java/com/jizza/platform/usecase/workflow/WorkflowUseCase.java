@@ -33,6 +33,7 @@ public class WorkflowUseCase {
   private final WorkflowRegistry workflows;
   private final AuditLog audit;
   private WorkflowLibrary library;
+  private com.jizza.engine.api.workflow.WorkflowEngine engine;
 
   public WorkflowUseCase(WorkflowRegistry workflows, AuditLog audit) {
     this.workflows = workflows;
@@ -42,6 +43,33 @@ public class WorkflowUseCase {
   @Autowired(required = false)
   public void setLibrary(WorkflowLibrary library) {
     this.library = library;
+  }
+
+  @Autowired(required = false)
+  public void setEngine(com.jizza.engine.api.workflow.WorkflowEngine engine) {
+    this.engine = engine;
+  }
+
+  /**
+   * Deletes a workflow (a saved recording is one too): its unfinished runs are cancelled, it stops
+   * starting from its form or schedule, and it leaves every list. Its run history stays. Not one
+   * transaction: each run is cancelled on its own, so one that ended meanwhile spoils nothing.
+   */
+  public void delete(UUID userId, UUID workflowId) {
+    WorkflowDto workflow = ownedBy(userId, workflowId);
+    List<UUID> open = workflows.unfinishedRuns(workflowId);
+    if (engine != null) {
+      for (UUID runId : open) {
+        try {
+          engine.cancel(runId);
+        } catch (RuntimeException ended) {
+          // It ended on its own meanwhile.
+        }
+      }
+    }
+    workflows.delete(workflowId);
+    audit.record(userId, ActorType.USER, null, "workflow.deleted", workflow.name(),
+        Json.obj().put("workflowId", workflowId.toString()).put("cancelledRuns", open.size()));
   }
 
   @Transactional(readOnly = true)

@@ -49,6 +49,13 @@ export const workflowsApi = {
   setFormTrigger: (id: string, formId: string | null) =>
     api.put<WorkflowDto>(`/api/workflows/${id}/form-trigger`, { formId }),
 
+  /**
+   * Deletes the workflow (a saved recording is a workflow too). Its unfinished runs are cancelled;
+   * past runs stay in the run history.
+   */
+  delete: (id: string) =>
+    api.delete<void>(`/api/workflows/${id}`),
+
   forgetReuse: (id: string) =>
     api.delete<LibraryEntry>(`/api/workflows/${id}/reuse`),
 }

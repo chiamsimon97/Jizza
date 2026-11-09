@@ -7,7 +7,10 @@ import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.api.workflow.graph.WorkflowGraph;
 import com.jizza.engine.persistence.entity.WorkflowEntity;
 import com.jizza.engine.persistence.entity.WorkflowVersionEntity;
+import com.jizza.engine.api.enums.RunStatus;
+import com.jizza.engine.persistence.entity.WorkflowRunEntity;
 import com.jizza.engine.persistence.repository.WorkflowRepository;
+import com.jizza.engine.persistence.repository.WorkflowRunRepository;
 import com.jizza.engine.persistence.repository.WorkflowVersionRepository;
 import com.jizza.engine.workflow.engine.WorkflowValidator;
 import java.util.List;
@@ -31,12 +34,29 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
   private final WorkflowRepository workflows;
   private final WorkflowVersionRepository versions;
   private final WorkflowValidator validator;
+  private WorkflowRunRepository runs;
 
   public DefaultWorkflowRegistry(WorkflowRepository workflows, WorkflowVersionRepository versions,
                                  WorkflowValidator validator) {
     this.workflows = workflows;
     this.versions = versions;
     this.validator = validator;
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setRuns(WorkflowRunRepository runs) {
+    this.runs = runs;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<UUID> unfinishedRuns(UUID workflowId) {
+    if (runs == null) return List.of();
+    return java.util.stream.Stream.of(RunStatus.RUNNING, RunStatus.WAITING,
+            RunStatus.PAUSED_WAITING_INSTRUCTION)
+        .flatMap(status -> runs.findByWorkflowIdAndStatus(workflowId, status).stream())
+        .map(WorkflowRunEntity::getId)
+        .toList();
   }
 
   @Override
@@ -115,6 +135,17 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     w.setTriggersOnFingerprint(enabled ? w.getGraphFingerprint() : null);
     workflows.save(w);
     return toDto(w);
+  }
+
+  @Override
+  @Transactional
+  public void delete(UUID workflowId) {
+    WorkflowEntity w = require(workflowId);
+    w.setDisabled(true);
+    w.setTriggersOnFingerprint(null);
+    w.setFormId(null);
+    w.setDeletedAt(java.time.Instant.now());
+    workflows.save(w);
   }
 
   @Override

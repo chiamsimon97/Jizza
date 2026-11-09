@@ -14,10 +14,13 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "workflows")
+/* A deleted workflow keeps its row for the runs that point at it, and is hidden from every query. */
+@SQLRestriction("deleted_at is null")
 public class WorkflowEntity {
 
   @Id
@@ -78,6 +81,9 @@ public class WorkflowEntity {
 
   /** The form whose submissions start this workflow, or null. Not part of the graph. */
   private UUID formId;
+
+  /** When the person deleted it; such a row is never loaded (see the class restriction). */
+  private Instant deletedAt;
 
   /** The graph fingerprint the person turned the workflow on with, or null when it is off. */
   @Column(columnDefinition = "text")
@@ -153,6 +159,8 @@ public class WorkflowEntity {
 
   public UUID getFormId() { return formId; }
   public void setFormId(UUID formId) { this.formId = formId; }
+  public Instant getDeletedAt() { return deletedAt; }
+  public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
 
   public String getTriggersOnFingerprint() { return triggersOnFingerprint; }
   public void setTriggersOnFingerprint(String v) { this.triggersOnFingerprint = v; }

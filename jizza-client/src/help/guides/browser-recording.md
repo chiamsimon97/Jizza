@@ -185,6 +185,10 @@ What a step reads, such as a table's rows or an element's text, is available to 
 
 By default, a saved recording asks before Jizza runs it on its own and does not run on a schedule. When you ask Jizza in chat to run it, your request is the yes, so it runs straight away. You can change that in the workflow's reuse settings.
 
+### Delete a recording
+
+On the Recordings page, **Delete** next to a saved recording removes it after you confirm. The same button is on each workflow on the Workflows page. Deleting stops any run of it still in progress, and its schedule or form no longer starts it. Past runs stay in the run history, shown as **Deleted workflow**. A workflow that runs it as a module fails at that step, so update those first. A draft that is still being recorded or reviewed has **Discard** instead.
+
 ## Who runs it and which steps ask
 
 Each workflow has a **Guardrails** panel on the [Workflows](/workflows) page.
