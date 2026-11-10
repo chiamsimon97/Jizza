@@ -514,7 +514,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   private static String pickReason(String wanted, ItemMatch.Pick pick, String where) {
-    if (wanted == null || wanted.isBlank()) return "Choose which one; the step was not told which";
+    if (wanted == null || wanted.isBlank()) return "Choose one of what it lists now";
     if (!pick.tied().isEmpty()) {
       List<String> some = pick.tied().subList(0, Math.min(pick.tied().size(), 4));
       return "Several items match \"" + wanted + "\" (" + String.join(", ", some)

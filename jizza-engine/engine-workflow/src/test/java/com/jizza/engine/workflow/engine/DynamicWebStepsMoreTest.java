@@ -294,6 +294,36 @@ class DynamicWebStepsMoreTest {
   }
 
   @Test
+  void noTheatreGivenAsksWithTheTheatresAndShowtimesThePageListsNow() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"07:20 PM"}],"label":"Showtime"},
+                   "item":"{{ input.time }}",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}],
+                             "label":"Theatres"},
+                             "item":"{{ input.theatre }}"}}}
+        """);
+    harness.toolRule = AutonomyRule.JIZZA;
+    var first = (com.fasterxml.jackson.databind.node.ObjectNode) listing("10:00 AM");
+    var groups = first.putArray("groups");
+    groups.addObject().put("index", 0).put("label", "Kamala")
+        .set("items", listing("10:00 AM").get("items"));
+    groups.addObject().put("index", 1).put("label", "Sathyam")
+        .set("items", listing("02:00 PM", "10:00 PM").get("items"));
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        listing("Kamala", "Sathyam"), first)));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "").put("time", ""), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(field(harness, "within.item").path("options").toString())
+        .isEqualTo("[\"Kamala\",\"Sathyam\"]");
+    assertThat(field(harness, "item").path("optionsBy").path("Sathyam").toString())
+        .isEqualTo("[\"02:00 PM\",\"10:00 PM\"]");
+  }
+
+  @Test
   void aTheatreNotOnThePageIsStillAskedWhenItsShowtimesCannotBeRead() {
     EngineHarness harness = harness("""
         {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",

@@ -379,6 +379,33 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aListChoiceInputDoesNotKeepTheItemRecorded() {
+    var id = started().id();
+    var step = (com.fasterxml.jackson.databind.node.ObjectNode) step(1, "browser.clickItem",
+        "Choose Showtime", "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\".t\"}]},"
+            + "\"item\":\"07:15 PM\",\"within\":{\"element\":{\"strategies\":[{\"by\":\"css\","
+            + "\"value\":\".v\"}]},\"item\":\"PVR\"}}", false);
+    ((com.fasterxml.jackson.databind.node.ObjectNode) step.get("meta")).set("list", Json.read(
+        "{\"title\":\"Showtime\",\"withinTitle\":\"Theatre\",\"kind\":\"time\",\"count\":2}"));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id, step));
+    service.stop(access, id);
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("map", 1, null, null, "item",
+            new Recordings.Input("time", "text", null), null, null),
+        new Recordings.EditOp("map", 1, null, null, "within.item",
+            new Recordings.Input("theatre", "text", null), null, null)));
+
+    // Each run chooses from what the page lists then: no recorded theatre or showtime is kept.
+    var saved = service.get(access, id).steps().get(0).step();
+    assertThat(saved.path("mappings").path("item").path("default").asText()).isEmpty();
+    assertThat(saved.path("mappings").path("within.item").path("default").asText()).isEmpty();
+    service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+    var graph = savedWorkflows.get(0).graph().toString();
+    assertThat(graph).doesNotContain("\"default\":\"PVR\"")
+        .doesNotContain("\"default\":\"07:15 PM\"");
+  }
+
+  @Test
   void aNamedListKeepsItsNamesAndChoicesForTheBuilder() {
     var id = started().id();
     var step = (com.fasterxml.jackson.databind.node.ObjectNode) step(1, "browser.clickItem",
