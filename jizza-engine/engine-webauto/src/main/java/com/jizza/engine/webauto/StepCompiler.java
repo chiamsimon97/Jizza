@@ -129,6 +129,8 @@ final class StepCompiler {
       int version = step.path("version").asInt(1);
       ObjectNode config = web ? webConfig(action, version, stepInputs)
           : deviceConfig(desktop, action, version, stepInputs);
+      ObjectNode list = listFacts(step.path("meta"));
+      if (list != null) config.set("list", list);
       nodes.add(node(id, "DEVICE_ACTION", label, config, row++));
       if (previous != null) edges.add(edge(previous, id));
       previous = id;
@@ -168,8 +170,15 @@ final class StepCompiler {
   static JsonNode valueAt(JsonNode inputs, String field) {
     JsonNode node = inputs;
     for (String part : field.split("\\.", -1)) {
-      if (node == null || !node.isObject()) return null;
-      node = node.get(part);
+      if (node == null) return null;
+      if (node.isObject()) {
+        node = node.get(part);
+      } else if (node.isArray() && part.matches("\\d{1,3}")) {
+        // A form step's field: fields.2.value.
+        node = node.get(Integer.parseInt(part));
+      } else {
+        return null;
+      }
     }
     return node;
   }
@@ -179,6 +188,26 @@ final class StepCompiler {
     int dot = field.lastIndexOf('.');
     JsonNode parent = dot < 0 ? inputs : valueAt(inputs, field.substring(0, dot));
     if (parent instanceof ObjectNode object) object.set(field.substring(dot + 1), value);
+  }
+
+  /**
+   * What a recorded "Choose from a list" step knew about its list: the names the person gave the
+   * items and the cards, and the names the list showed. The builder and the approval card show
+   * them as field names and drop-down choices. Null when the step has none of it.
+   */
+  private static ObjectNode listFacts(JsonNode meta) {
+    JsonNode list = meta.path("list");
+    if (!list.isObject()) return null;
+    ObjectNode out = Json.obj();
+    for (String key : List.of("title", "withinTitle", "kind")) {
+      if (list.path(key).isTextual() && !list.get(key).asText().isBlank()) {
+        out.put(key, list.get(key).asText());
+      }
+    }
+    if (list.path("named").asBoolean(false)) out.put("named", true);
+    if (list.path("options").isArray()) out.set("options", list.get("options"));
+    if (list.path("groups").isArray()) out.set("groups", list.get("groups"));
+    return out.isEmpty() ? null : out;
   }
 
   /** The mapped inputs of the steps, in the shape a workflow keeps as its input schema. */

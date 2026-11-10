@@ -5,10 +5,9 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
+import { fieldName, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
-const FIELD_NAMES: Record<string, string> = { item: 'Item chosen', 'within.item': 'Chosen in', items: 'Option chosen', date: 'Date', state: 'Ticked or not' }
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,
@@ -54,8 +53,21 @@ export function RecordingReview({ recording, busy, onEdit }: {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
               <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
+              {s.step.action === 'browser.fillForm' && Array.isArray(s.step.input?.fields) && (
+                <ul className="mt-1 space-y-0.5 text-xs text-gray-600 dark:text-gray-300" aria-label="Form fields">
+                  {(s.step.input.fields as { label?: string; value?: unknown }[]).map((f, n) => (
+                    <li key={n}>
+                      {fieldName(s, `fields.${n}.value`)}: {typeof f.value === 'string' ? f.value : ''}
+                      {s.step.mappings?.[`fields.${n}.value`] && <span className="ml-1 text-brand-600 dark:text-brand-300">(input: {s.step.mappings[`fields.${n}.value`].name})</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
+                {isListChoice(s) && s.step.meta?.list?.named && (
+                  <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>
+                )}
                 {Object.entries(s.step.mappings ?? {}).map(([field, m]) => <Badge key={field}>input: {m.name}</Badge>)}
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
@@ -114,7 +126,7 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
           <label className="block">Value
             <select value={field} onChange={e => { setField(e.target.value); setName(suggestInputName(step, e.target.value)) }}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-2 py-1.5 dark:border-gray-600">
-              {fields.map(f => <option key={f.field} value={f.field}>{FIELD_NAMES[f.field] ?? f.field}: {f.value}</option>)}
+              {fields.map(f => <option key={f.field} value={f.field}>{fieldName(step, f.field)}: {f.value}</option>)}
             </select>
           </label>
         )}

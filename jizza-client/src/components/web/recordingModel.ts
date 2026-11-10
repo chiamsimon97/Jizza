@@ -25,12 +25,33 @@ export const isPassword = (s: RecordedStep): boolean => s.step.meta?.sensitive =
 export function mappableFields(s: RecordedStep): { field: string; value: string }[] {
   if (isPassword(s)) return []
   const input = s.step.input ?? {}
-  return VALUE_FIELDS.flatMap(field => {
+  // A form step (browser agent 0.8.0+): each field's value.
+  const form = (Array.isArray(input.fields) ? input.fields : []).flatMap((f, i) => {
+    const v = (f as { value?: unknown } | null)?.value
+    return typeof v === 'string' && v !== '' ? [{ field: `fields.${i}.value`, value: v }] : []
+  })
+  return [...form, ...VALUE_FIELDS.flatMap(field => {
     let v = valueAt(input, field)
     // A dropdown's one chosen item (items: ["Sleeper"]) is a value too.
     if (Array.isArray(v) && v.length === 1) v = v[0]
     return typeof v === 'string' || typeof v === 'number' ? [{ field, value: String(v) }] : []
-  })
+  })]
+}
+
+const FIELD_NAMES: Record<string, string> = { item: 'Item chosen', 'within.item': 'Chosen in', items: 'Option chosen', date: 'Date', state: 'Ticked or not' }
+
+/** What a value of a step is called: a form field's label, or the names given to a marked list. */
+export function fieldName(s: RecordedStep, field: string): string {
+  const form = /^fields\.(\d+)\.value$/.exec(field)
+  if (form) {
+    const fields = s.step.input?.fields
+    const label = Array.isArray(fields) ? (fields[Number(form[1])] as { label?: unknown } | undefined)?.label : undefined
+    return typeof label === 'string' && label ? label : `Field ${Number(form[1]) + 1}`
+  }
+  const list = s.step.meta?.list
+  if (list?.named && field === 'item' && list.title) return list.title
+  if (list?.named && field === 'within.item' && list.withinTitle) return list.withinTitle
+  return FIELD_NAMES[field] ?? field
 }
 
 /** The name an input gets by default: the last words of the step's label, as a lowercase word. */
@@ -38,7 +59,7 @@ export function suggestInputName(s: RecordedStep, field: string): string {
   const list = s.step.meta?.list
   const offered = field === 'item' ? list?.inputName : field === 'within.item' ? list?.withinInputName : undefined
   if (offered && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(offered)) return offered
-  const quoted = /"([^"]+)"/.exec(s.step.label ?? '')?.[1] ?? field
+  const quoted = field.startsWith('fields.') ? fieldName(s, field) : /"([^"]+)"/.exec(s.step.label ?? '')?.[1] ?? field
   const words = quoted.replace(/[^A-Za-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
   if (words.length === 0) return field
   return words.map((w, i) => (i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())).join('')

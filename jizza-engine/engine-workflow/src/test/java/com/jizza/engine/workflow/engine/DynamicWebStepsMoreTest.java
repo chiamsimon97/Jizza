@@ -248,6 +248,34 @@ class DynamicWebStepsMoreTest {
   }
 
   @Test
+  void theNamesGivenWhileRecordingLabelTheCardAndReadTheCardsByTheirNamePattern() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "list":{"named":true,"title":"Showtime","withinTitle":"Theatre"},
+         "inputs":{"element":{"strategies":[{"by":"text","value":"07:20 PM"}]},
+                   "item":"{{ input.time }}","titleCss":"span.time",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}]},
+                             "item":"{{ input.theatre }}","itemCss":"div.venue","titleCss":"h3"}}}
+        """);
+    harness.toolRule = AutonomyRule.ASK;
+    var theatres = listing("PVR Phoenix", "INOX Nexus");
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        theatres, listing("11:30 AM", "07:30 PM"))));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "INOX Nexus").put("time", "07:30 PM"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    var lists = harness.deviceRequests.stream()
+        .filter(r -> r.action().equals("browser.listItems")).toList();
+    // The theatres are read with the theatres' own name pattern, the showtimes with theirs.
+    assertThat(lists.get(0).input().path("titleCss").asText()).isEqualTo("h3");
+    assertThat(lists.get(1).input().path("titleCss").asText()).isEqualTo("span.time");
+    assertThat(field(harness, "within.item").path("label").asText()).isEqualTo("Theatre");
+    assertThat(field(harness, "item").path("label").asText()).isEqualTo("Showtime");
+  }
+
+  @Test
   void aRememberedPickIsUsedNextTimeWithoutAsking() {
     EngineHarness harness = harness(click(""));
     harness.toolRule = AutonomyRule.JIZZA;

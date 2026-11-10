@@ -379,6 +379,42 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('shows the names given while recording as field names, with the recorded names to choose from', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      let body: unknown = []
+      if (url.includes('/api/devices/catalog')) body = [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element'], properties: {
+            element: locator, item: { type: 'string' }, itemCss: { type: 'string' }, titleCss: { type: 'string' }, within: { type: 'object' } } }, output: { type: 'object' } },
+      ]
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const show = { strategies: [{ by: 'text', value: '10:45 PM' }] }
+    const venue = { strategies: [{ by: 'css', value: 'div.venue' }] }
+    const inputs = { element: show, item: '10:45 PM', within: { element: venue, item: 'PVR Phoenix', itemCss: 'div.venue', titleCss: 'h3' } }
+    const list = { named: true, title: 'Showtime', withinTitle: 'Theatre',
+      groups: [{ label: 'PVR Phoenix', items: ['10:00 AM', '10:45 PM'] }, { label: 'INOX Nexus', items: ['11:30 AM', '07:30 PM'] }] }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs, list } } : n) }
+    const { onSave } = open(graph, made.id)
+    const theatre = await screen.findByRole('combobox', { name: 'Theatre (recorded)' })
+    expect(theatre).toHaveValue('PVR Phoenix')
+    expect(screen.getByRole('textbox', { name: 'Card name pattern (CSS)' })).toHaveValue('h3')
+    expect(screen.getByText('Showtime', { selector: 'label, span, p' })).toBeInTheDocument()
+    fireEvent.change(theatre, { target: { value: 'INOX Nexus' } })
+    const showtime = await screen.findByRole('combobox', { name: 'Showtime (recorded)' })
+    expect(Array.from((showtime as HTMLSelectElement).options).map(o => o.value)).toEqual(['', '11:30 AM', '07:30 PM'])
+    fireEvent.change(showtime, { target: { value: '07:30 PM' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ item: '07:30 PM', within: { item: 'INOX Nexus', titleCss: 'h3' } })
+    vi.unstubAllGlobals()
+  })
+
   describe('Advanced web options', () => {
     const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

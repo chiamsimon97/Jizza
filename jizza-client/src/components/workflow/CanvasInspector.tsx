@@ -1368,9 +1368,10 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
     !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
     && !(action === 'browser.fillForm' && key === 'fields')
-    && !(key === 'within' || key === 'loadMore' || key === 'itemCss'))
+    && !(key === 'within' || key === 'loadMore' || key === 'itemCss' || key === 'titleCss'))
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
+  const listNames = asInputs(node.config.list) as RecordedListNames
   const toggleRunTimeChoice = (on: boolean) => {
     setConfig(on
       ? { action: 'browser.clickItem', version: 1, actionTitle: 'Choose from a list', inputs: { element: inputs.element, item: recordedItem(inputs.element) } }
@@ -1432,7 +1433,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
 
     {(choosesAtRunTime || action === 'browser.listItems') && (
       <ListChoiceOptions inputs={inputs} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
-        setInput={setInput} />
+        list={listNames} setInput={setInput} />
     )}
 
     {action === 'browser.fillForm' && (
@@ -1452,6 +1453,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
           hasEarlierOpen mapping={mapping} required={required.has(key)} missing={isMissing(`inputs.${key}`)}
           onChange={value => setInput(key, value)} />
       : <WebSchemaField key={key} name={key} property={property} value={inputs[key]} required={required.has(key)}
+          label={key === 'item' && choosesAtRunTime && listNames.named && listNames.title ? listNames.title : undefined}
           mapping={mapping} onChange={value => setInput(key, value)} />
     )}
 
@@ -1548,12 +1550,23 @@ const WEB_INPUT_LABELS: Record<string, string> = {
   option: 'Suggestion to choose', date: 'Date', item: 'Item to choose',
 }
 
+/** What a recorded list choice kept about its list (config.list): the names the person gave its
+ *  items and cards while recording, and the names the list showed then. */
+interface RecordedListNames {
+  title?: string
+  withinTitle?: string
+  named?: boolean
+  options?: string[]
+  groups?: { label: string; items: string[] }[]
+}
+
 /**
  * The run-time list's own options: choosing inside one card of another list first (a showtime of
  * the theatre chosen), and loading more of a list that grows as you scroll.
  */
-function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
+function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput }: {
   inputs: Record<string, unknown>; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext
+  list?: RecordedListNames
   setInput: (key: string, value: unknown) => void
 }) {
   const within = asInputs(inputs.within)
@@ -1562,14 +1575,43 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
   const loads = inputs.loadMore !== undefined
   const fixedCard = typeof within.item === 'string' && within.item.trim() !== '' && !within.item.includes('{{')
   const cardList: Record<string, unknown> | undefined = within.element === undefined ? undefined
-    : { element: within.element, max: 100, ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}) }
+    : {
+        element: within.element, max: 100,
+        ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}),
+        ...(typeof within.titleCss === 'string' ? { titleCss: within.titleCss } : {}),
+      }
   const itemList: Record<string, unknown> | undefined = inputs.element === undefined || (inCard && !fixedCard) ? undefined
     : {
         element: inputs.element, max: 100,
         ...(typeof inputs.itemCss === 'string' ? { itemCss: inputs.itemCss } : {}),
-        ...(inCard ? { within: { element: within.element, item: within.item, ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}) } } : {}),
+        ...(typeof inputs.titleCss === 'string' ? { titleCss: inputs.titleCss } : {}),
+        ...(inCard ? { within: { element: within.element, item: within.item, ...(typeof within.itemCss === 'string' ? { itemCss: within.itemCss } : {}), ...(typeof within.titleCss === 'string' ? { titleCss: within.titleCss } : {}) } } : {}),
       }
+  const cardName = list.named && list.withinTitle ? list.withinTitle : undefined
+  const itemName = list.named && list.title ? list.title : undefined
+  const groups = list.groups ?? []
+  const savedItems = (inCard && fixedCard ? groups.find(g => g.label === within.item)?.items : undefined) ?? (inCard ? undefined : list.options)
   return <div className="space-y-2">
+    {(groups.length > 0 || (savedItems?.length ?? 0) > 0) && <div className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700" data-testid="recorded-list-names">
+      <p className="text-[11px] text-gray-500">Names the list showed when it was recorded. Pick one, or map the value from earlier steps below.</p>
+      {inCard && groups.length > 0 && <Labelled label={cardName ?? 'Card'}>
+        <select aria-label={`${cardName ?? 'Card'} (recorded)`} className={fieldClass}
+          value={fixedCard && groups.some(g => g.label === within.item) ? String(within.item) : ''}
+          onChange={e => { if (e.target.value) setInput('within', { ...within, item: e.target.value }) }}>
+          <option value="">Choose one of {groups.length}…</option>
+          {groups.map(g => <option key={g.label} value={g.label}>{g.label}</option>)}
+        </select>
+      </Labelled>}
+      {savedItems && savedItems.length > 0 && <Labelled label={itemName ?? 'Item'}>
+        <select aria-label={`${itemName ?? 'Item'} (recorded)`} className={fieldClass}
+          value={typeof inputs.item === 'string' && savedItems.includes(inputs.item) ? inputs.item : ''}
+          onChange={e => { if (e.target.value) setInput('item', e.target.value) }}>
+          <option value="">Choose one of {savedItems.length}…</option>
+          {savedItems.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      </Labelled>}
+      {inCard && !fixedCard && groups.length > 0 && <p className="text-[11px] text-gray-500">Choose a {(cardName ?? 'card').toLowerCase()} to see its {(itemName ?? 'item').toLowerCase()}s.</p>}
+    </div>}
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={inCard}
         onChange={e => setInput('within', e.target.checked ? { item: '' } : undefined)} />
@@ -1580,7 +1622,7 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
       <ElementField label="One card of the outer list" value={within.element} deviceId={deviceId} browsers={browsers}
         hasEarlierOpen mapping={mapping} required missing={within.element === undefined}
         onChange={value => setInput('within', { ...within, element: value })} />
-      <Labelled group label="Which card" required hint="Its name, such as a theatre. Map it from earlier steps.">
+      <Labelled group label={cardName ?? 'Which card'} required hint="Its name, such as a theatre. Map it from earlier steps.">
         <MappedField aria-label="Which card" mode="template" context={mapping}
           value={typeof within.item === 'string' ? within.item : ''}
           onChange={v => setInput('within', { ...within, item: v })} />
@@ -1589,12 +1631,16 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, setInput }: {
         onPick={v => setInput('within', { ...within, item: v })} />
       <PatternField label="Card pattern (CSS)" value={within.itemCss}
         onChange={v => setInput('within', { ...within, itemCss: v })} />
+      {typeof within.titleCss === 'string' && <PatternField label="Card name pattern (CSS)" value={within.titleCss}
+        onChange={v => setInput('within', { ...within, titleCss: v })} />}
     </div>}
     {inputs.element !== undefined && <div className="space-y-1">
       <LoadFromPage what="items" deviceId={deviceId} list={itemList}
         blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
         onPick={v => setInput('item', v)} />
       <PatternField label="Item pattern (CSS)" value={inputs.itemCss} onChange={v => setInput('itemCss', v)} />
+      {typeof inputs.titleCss === 'string' && <PatternField label="Item name pattern (CSS)" value={inputs.titleCss}
+        onChange={v => setInput('titleCss', v)} />}
     </div>}
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={loads}
@@ -1677,11 +1723,11 @@ function webInputLabel(name: string): string {
   return WEB_INPUT_LABELS[name] ?? name.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
 }
 
-function WebSchemaField({ name, property, value, required, mapping, onChange }: {
+function WebSchemaField({ name, property, value, required, mapping, label: named, onChange }: {
   name: string; property: WebProperty; value: unknown; required: boolean
-  mapping: MappingContext; onChange: (value: unknown) => void
+  mapping: MappingContext; label?: string; onChange: (value: unknown) => void
 }) {
-  const label = webInputLabel(name)
+  const label = named ?? webInputLabel(name)
   const hint = property.description
   const [fromData, setFromData] = useState(typeof value === 'string' && value.includes('{{'))
   if (property.enum && fromData) {

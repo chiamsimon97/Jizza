@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-06
+updated: 2026-11-10
 ---
 
 ## What it is
@@ -158,6 +158,19 @@ For long forms such as a train booking (stations, date, class, passengers, payme
 
 You can switch between **Auto** and **Manual** at any time while recording, and **Add field** works in Auto too. Password and card fields are never read: choose a saved login for them when you review the recording.
 
+### Group fields into one form step
+
+A form such as passenger details (first name, last name, age, berth) can be one step instead of one step per field (browser agent 0.8.0 or later):
+
+1. Press **Start form step** in the side panel, give it a name such as "Passenger details", and press **Start**.
+2. Fill the fields on the page as you normally would. Each value you type or choose goes into the form step, in Auto and in Manual. Typing in a field again changes its value, not adds another.
+3. Or press **Add field to form** and click a field, to check its kind and value or tick **Different each run** for it. A button added this way (such as Continue) becomes the form's send button, pressed after the fields are filled.
+4. Press **Finish form step**. The side panel shows one **Fill form** step with every field.
+
+While a form step is open, clicks are not recorded, so finish it before you click a button that moves the page on. Remove a field with × in the form card. Stopping the recording finishes an open form step. Password fields are kept as their own steps.
+
+In review, **Make this an input** lists each field of the form step by its name. In the workflow builder, the step shows every field under **Fill form**.
+
 ### Mark a list yourself
 
 Sometimes the recorder guesses wrong. A plain **Click** may appear where you expected **Choose from a list**, or the whole theatre may be chosen instead of its showtime. Tell it what the list is (browser agent 0.5.0 or later):
@@ -166,7 +179,10 @@ Sometimes the recorder guesses wrong. A plain **Click** may appear where you exp
 2. Click one item of the list on the page, such as a showtime. The click doesn't reach the site. Use the Up and Down arrow keys to widen the highlight to the whole item or narrow it.
 3. Click the card it sits in, such as the theatre: point at the theatre's name and press Up until the whole theatre is outlined, then press Enter. Press Esc if the list is not inside a card.
 4. The page briefly outlines every item found, and the side panel says how many, for example "is one of 4 items inside Rakki RGB Laser 4K (one of 12 cards)".
-5. Now click the item as usual. It is recorded as **Choose from a list**, and so is every later click in that list.
+5. **Name this list** opens (browser agent 0.8.0 or later). Type what each card is (such as "Theatre") and what each item is (such as "Showtime"); the page's own heading is filled in when it has one. Below each name the panel lists the names it found, such as every theatre and the showtimes of the one you marked. If the names read wrong (a whole card's text instead of its name), press **Names wrong? Point at the name in one card** and click the name inside one card: every card's name is then read from the same place. Press **Save names**, or **Skip**.
+6. Now click the item as usual. It is recorded as **Choose from a list**, and so is every later click in that list.
+
+The names you give become the field names in review and in the workflow builder ("Theatre" and "Showtime" instead of "Chosen in" and "Item chosen"), and the input names (`theatre`, `showtime`) that **Make reusable** offers. In the builder, the step also lists the theatres and their showtimes found while recording as drop-downs, so you can pick another one without opening the page.
 
 The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
 
