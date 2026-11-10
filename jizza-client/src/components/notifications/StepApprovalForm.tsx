@@ -23,13 +23,20 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
       {form.fields.map(field => {
         const options = optionsFor(field, values)
         // A field whose choices follow another one with no list for its value is typed instead.
-        const shown: StepField = field.dependsOn
-          ? { ...field, type: options ? 'select' : 'text', options }
-          : field
+        // Until the field it follows is chosen, it is a choice waiting on that one.
+        const leader = field.dependsOn && field.optionsBy && isEmpty(values[field.dependsOn])
+          ? form.fields.find(f => f.key === field.dependsOn)
+          : undefined
+        const shown: StepField = leader
+          ? { ...field, type: 'select', options: [] }
+          : field.dependsOn
+            ? { ...field, type: options ? 'select' : 'text', options }
+            : field
         return (
           <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data}
             missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && isEmpty(values[field.key])}
-            choicesAt={shown.type === 'select' && shown.options && form.choicesAt ? form.choicesAt : undefined}
+            choicesAt={shown.type === 'select' && shown.options && !leader && form.choicesAt ? form.choicesAt : undefined}
+            waitsOn={leader?.label}
             readOnly={readOnly}
             onChange={v => {
               onChange(field.key, v)
@@ -42,12 +49,14 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
   )
 }
 
-function FieldRow({ field, value, data, missing, choicesAt, readOnly, onChange }: {
+function FieldRow({ field, value, data, missing, choicesAt, waitsOn, readOnly, onChange }: {
   field: StepField
   value: FormValues[string] | undefined
   data: StepForm['data']
   missing: boolean
   choicesAt?: string
+  /** The label of the field this one's choices follow, while that one is still empty. */
+  waitsOn?: string
   readOnly?: boolean
   onChange: (value: string | boolean | string[]) => void
 }) {
@@ -82,9 +91,9 @@ function FieldRow({ field, value, data, missing, choicesAt, readOnly, onChange }
       </div>
 
       {field.type === 'select' && field.options ? (
-        <select id={id} aria-label={field.label} disabled={readOnly} className={`${fieldClass} ${border}`}
-          value={typeof value === 'string' ? value : ''} onChange={e => onChange(e.target.value)}>
-          <option value="">{field.options.length ? 'Choose one…' : 'Nothing to choose from'}</option>
+        <select id={id} aria-label={field.label} disabled={readOnly || waitsOn !== undefined} className={`${fieldClass} ${border}`}
+          value={waitsOn !== undefined ? '' : typeof value === 'string' ? value : ''} onChange={e => onChange(e.target.value)}>
+          <option value="">{waitsOn !== undefined ? `Choose ${waitsOn} first` : field.options.length ? 'Choose one…' : 'Nothing to choose from'}</option>
           {field.options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : field.type === 'list' ? (

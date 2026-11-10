@@ -248,6 +248,75 @@ class DynamicWebStepsMoreTest {
   }
 
   @Test
+  void aTheatreNotOnThePageIsAskedWithTheShowtimesOfEveryTheatre() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"07:20 PM"}],"label":"Showtime"},
+                   "item":"{{ input.time }}",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}],
+                             "label":"Theatres"},
+                             "item":"{{ input.theatre }}"}}}
+        """);
+    harness.toolRule = AutonomyRule.JIZZA;
+    var theatres = listing("PVR Phoenix", "INOX Nexus");
+    var first = (com.fasterxml.jackson.databind.node.ObjectNode) listing("10:00 AM", "07:00 PM");
+    var groups = first.putArray("groups");
+    groups.addObject().put("index", 0).put("label", "PVR Phoenix")
+        .set("items", listing("10:00 AM", "07:00 PM").get("items"));
+    groups.addObject().put("index", 1).put("label", "INOX Nexus")
+        .set("items", listing("11:30 AM", "06:30 PM").get("items"));
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        theatres, first, theatres, listing("11:30 AM", "06:30 PM"))));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "Rakki Cinemas").put("time", "06:30 PM"), "manual");
+
+    // One question: the theatre from the page's theatres, the showtime following it.
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    var lists = harness.deviceRequests.stream()
+        .filter(r -> r.action().equals("browser.listItems")).toList();
+    assertThat(lists).hasSize(2);
+    assertThat(lists.get(1).input().path("groups").asBoolean()).isTrue();
+    JsonNode theatre = field(harness, "within.item");
+    assertThat(theatre.path("type").asText()).isEqualTo("select");
+    assertThat(theatre.path("options").toString()).isEqualTo("[\"PVR Phoenix\",\"INOX Nexus\"]");
+    JsonNode time = field(harness, "item");
+    assertThat(time.path("dependsOn").asText()).isEqualTo("within.item");
+    assertThat(time.path("optionsBy").path("INOX Nexus").toString())
+        .isEqualTo("[\"11:30 AM\",\"06:30 PM\"]");
+
+    harness.engine.resume(run.id(), Json.obj().put("approved", true).set("inputs",
+        Json.obj().put("within.item", "INOX Nexus").put("item", "06:30 PM")));
+    var sent = harness.deviceRequests.get(harness.deviceRequests.size() - 1);
+    assertThat(sent.action()).isEqualTo("browser.clickItem");
+    assertThat(sent.input().path("within").path("item").asText()).isEqualTo("INOX Nexus");
+    assertThat(sent.input().path("item").asText()).isEqualTo("06:30 PM");
+  }
+
+  @Test
+  void aTheatreNotOnThePageIsStillAskedWhenItsShowtimesCannotBeRead() {
+    EngineHarness harness = harness("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "inputs":{"element":{"strategies":[{"by":"text","value":"07:20 PM"}],"label":"Showtime"},
+                   "item":"{{ input.time }}",
+                   "within":{"element":{"strategies":[{"by":"css","value":".venue"}],
+                             "label":"Theatres"},
+                             "item":"{{ input.theatre }}"}}}
+        """);
+    harness.toolRule = AutonomyRule.JIZZA;
+    harness.deviceOutputQueues.put("browser.listItems", new ArrayDeque<>(List.of(
+        listing("PVR Phoenix", "INOX Nexus"), listing())));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("theatre", "Rakki Cinemas").put("time", "06:30 PM"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    JsonNode theatre = field(harness, "within.item");
+    assertThat(theatre.path("type").asText()).isEqualTo("select");
+    assertThat(theatre.path("options").toString()).isEqualTo("[\"PVR Phoenix\",\"INOX Nexus\"]");
+  }
+
+  @Test
   void theNamesGivenWhileRecordingLabelTheCardAndReadTheCardsByTheirNamePattern() {
     EngineHarness harness = harness("""
         {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
