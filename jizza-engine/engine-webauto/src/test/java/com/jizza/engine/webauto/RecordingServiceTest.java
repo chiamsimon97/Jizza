@@ -389,7 +389,9 @@ class RecordingServiceTest {
         "{\"title\":\"Showtime\",\"withinTitle\":\"Theatre\",\"named\":true,\"kind\":\"time\","
             + "\"count\":2,\"options\":[\"07:15 PM\",\"10:45 PM\"],"
             + "\"groups\":[{\"label\":\"PVR\",\"items\":[\"07:15 PM\",\"10:45 PM\"]},"
-            + "{\"label\":\"INOX\",\"items\":[\"01:00 PM\"]}]}"));
+            + "{\"label\":\"INOX\",\"items\":[\"01:00 PM\"]}],"
+            + "\"dependsOn\":{\"title\":\"Theatre\",\"inputName\":\"theatre\","
+            + "\"relation\":\"inside\"}}"));
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id, step));
     service.stop(access, id);
     service.save(access, id, new Recordings.SaveRequest("Book", null, null));
@@ -404,6 +406,9 @@ class RecordingServiceTest {
     assertThat(list.path("withinTitle").asText()).isEqualTo("Theatre");
     assertThat(list.path("named").asBoolean()).isTrue();
     assertThat(list.path("groups").get(1).path("label").asText()).isEqualTo("INOX");
+    assertThat(list.path("dependsOn").path("title").asText()).isEqualTo("Theatre");
+    assertThat(list.path("dependsOn").path("inputName").asText()).isEqualTo("theatre");
+    assertThat(list.path("dependsOn").path("relation").asText()).isEqualTo("inside");
     assertThat(node.path("config").path("inputs").path("within").path("titleCss").asText())
         .isEqualTo("h3");
   }

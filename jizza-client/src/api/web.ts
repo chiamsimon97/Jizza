@@ -61,6 +61,8 @@ export interface RecordedList {
   /** The item names the list showed, and each card's name with its items' names. */
   options?: string[]
   groups?: { label: string; items: string[] }[]
+  /** Mapped before recording (browser agent 0.9.0+): the list this one follows. */
+  dependsOn?: { title: string; inputName?: string; relation: 'inside' | 'after' }
 }
 
 export interface RecordedStep {
