@@ -207,6 +207,17 @@ final class StepCompiler {
     if (list.path("named").asBoolean(false)) out.put("named", true);
     if (list.path("options").isArray()) out.set("options", list.get("options"));
     if (list.path("groups").isArray()) out.set("groups", list.get("groups"));
+    // Mapped before recording (browser agent 0.9.0+): the list this one follows.
+    JsonNode follows = list.path("dependsOn");
+    if (follows.isObject() && follows.path("title").isTextual()) {
+      ObjectNode dependsOn = out.putObject("dependsOn");
+      dependsOn.put("title", follows.get("title").asText());
+      if (follows.path("inputName").isTextual()) {
+        dependsOn.put("inputName", follows.get("inputName").asText());
+      }
+      String relation = follows.path("relation").asText("after");
+      dependsOn.put("relation", "inside".equals(relation) ? "inside" : "after");
+    }
     return out.isEmpty() ? null : out;
   }
 

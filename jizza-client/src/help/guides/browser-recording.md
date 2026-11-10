@@ -171,6 +171,21 @@ While a form step is open, clicks are not recorded, so finish it before you clic
 
 In review, **Make this an input** lists each field of the form step by its name. In the workflow builder, the step shows every field under **Fill form**.
 
+### Scan and map the page first
+
+From browser agent 0.9.0, a recording starts with **Scan and map** in the extension's side panel. Nothing you do on the page is recorded yet, so you can look around, open the right page and map its fields first.
+
+1. Press **Full page scan** to find every text box, dropdown, date, checkbox and option group on the page, and every list you choose from: cards, `ul`/`li` lists and rows of look-alike boxes such as a date strip. Menus, the header and the footer are left out.
+2. Or press **Partial page scan** to scan only parts of the page. Tick parts in the page's tree (hover a row to see it outlined on the page), type a **CSS selector** and press **Add** (for example `div[id^="2026"]` for date cells whose ids are dates, or a class every item has), or press **Pick on page** and click one. The **Selected** list shows what will be scanned. Press **Scan**.
+3. Or press **Add from page** and click one field, or one item of a list, to add just that.
+4. Each field and list gets a card. Give it a **Title**: type it, or press **Pick title on page** and click the text that names it (usually above or to the left of it). **Static** keeps the title as it is. **Dynamic** reads it from the page again each time a page loads; when the page doesn't show it, the last title read is kept and the card warns you.
+5. A list becomes one field: a dropdown whose choices are its items' names. A list with no title on the page (such as the theatres) asks you to name it. If each item is listed by all its text, press **Pick the name inside one item** and click the name, such as a theatre's name in its card. If the list found is not quite right, change its **Item pattern (CSS)** and press **Apply**: the card shows how many items the pattern finds.
+6. Lists that follow other lists: set **Depends on**. A list found inside the cards of another list (the showtimes in each theatre) is set to follow it already. For a list the page loads again when another changes (the theatres after the date), choose that list; **Suggest the order from the page** sets each list to follow the one above it. Use **Preview** to choose a date: it is clicked on the page (not recorded) and every list below it is read again.
+7. Untick **Different each run** for a field that should keep its value. The others become module inputs with the names shown.
+8. Press **Done mapping, start recording**, then do the task. A step on a mapped field or list is named by your title, and its value becomes the input you named. **Skip mapping** records as before. While recording, **Scan this page** pauses recording to map the next page.
+
+In review, a list that follows another list shows "after Date". In the workflow builder, each list is a single dropdown of its names, with **Map from earlier steps or type…** to map it instead; the showtimes follow the theatre chosen, and a list that follows another one says so.
+
 ### Mark a list yourself
 
 Sometimes the recorder guesses wrong. A plain **Click** may appear where you expected **Choose from a list**, or the whole theatre may be chosen instead of its showtime. Tell it what the list is (browser agent 0.5.0 or later):

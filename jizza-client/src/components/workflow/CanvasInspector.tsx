@@ -1335,10 +1335,13 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   const [testError, setTestError] = useState('')
   const concrete = browsers?.find(b => b.id === target)
 
-  const setInput = (key: string, value: unknown) => {
+  const setInput = (key: string, value: unknown) => setInputs({ [key]: value })
+  const setInputs = (patch: Record<string, unknown>) => {
     const next = { ...inputs }
-    if (value === undefined || value === '') delete next[key]
-    else next[key] = value
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined || value === '') delete next[key]
+      else next[key] = value
+    }
     setConfig({ inputs: next })
   }
   const switchAction = (nextAction: string) => {
@@ -1368,7 +1371,9 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
     !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
     && !(action === 'browser.fillForm' && key === 'fields')
-    && !(key === 'within' || key === 'loadMore' || key === 'itemCss' || key === 'titleCss'))
+    && !(key === 'within' || key === 'loadMore' || key === 'itemCss' || key === 'titleCss')
+    // A run-time list choice has one field for its item: the list's own dropdown (below).
+    && !(key === 'item' && action === 'browser.clickItem'))
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
   const listNames = asInputs(node.config.list) as RecordedListNames
@@ -1433,7 +1438,8 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
 
     {(choosesAtRunTime || action === 'browser.listItems') && (
       <ListChoiceOptions inputs={inputs} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
-        list={listNames} setInput={setInput} />
+        list={listNames} setInput={setInput} setInputs={setInputs} withItem={choosesAtRunTime}
+        itemRequired={required.has('item')} itemMissing={isMissing('inputs.item')} />
     )}
 
     {action === 'browser.fillForm' && (
@@ -1558,21 +1564,31 @@ interface RecordedListNames {
   named?: boolean
   options?: string[]
   groups?: { label: string; items: string[] }[]
+  /** Mapped before recording: the list whose choice this one follows (browser agent 0.9.0+). */
+  dependsOn?: { title?: string; inputName?: string; relation?: 'inside' | 'after' }
 }
 
 /**
  * The run-time list's own options: choosing inside one card of another list first (a showtime of
- * the theatre chosen), and loading more of a list that grows as you scroll.
+ * the theatre chosen), and loading more of a list that grows as you scroll. Each list is one field:
+ * a dropdown of the names it showed when recorded (or loaded from the page now), which can also be
+ * mapped from earlier steps. The items follow the card chosen.
  */
-function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput }: {
+function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput, setInputs, withItem, itemRequired, itemMissing }: {
   inputs: Record<string, unknown>; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext
   list?: RecordedListNames
   setInput: (key: string, value: unknown) => void
+  setInputs: (patch: Record<string, unknown>) => void
+  /** The step chooses an item (Choose from a list), not only reads the list. */
+  withItem: boolean
+  itemRequired?: boolean; itemMissing?: boolean
 }) {
   const within = asInputs(inputs.within)
   const loadMore = asInputs(inputs.loadMore)
   const inCard = inputs.within !== undefined
   const loads = inputs.loadMore !== undefined
+  const [loadedCards, setLoadedCards] = useState<string[] | undefined>()
+  const [loadedItems, setLoadedItems] = useState<{ card: string; items: string[] } | undefined>()
   const fixedCard = typeof within.item === 'string' && within.item.trim() !== '' && !within.item.includes('{{')
   const cardList: Record<string, unknown> | undefined = within.element === undefined ? undefined
     : {
@@ -1590,54 +1606,57 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   const cardName = list.named && list.withinTitle ? list.withinTitle : undefined
   const itemName = list.named && list.title ? list.title : undefined
   const groups = list.groups ?? []
-  const savedItems = (inCard && fixedCard ? groups.find(g => g.label === within.item)?.items : undefined) ?? (inCard ? undefined : list.options)
+  const cardChoices = loadedCards ?? groups.map(g => g.label)
+  // The items of the card chosen; with the card mapped (chosen each run), the items of every card.
+  const currentCard = typeof within.item === 'string' ? within.item : ''
+  const itemChoices = loadedItems && (!inCard || loadedItems.card === currentCard)
+    ? loadedItems.items
+    : inCard
+      ? fixedCard ? groups.find(g => g.label === within.item)?.items ?? [] : [...new Set(groups.flatMap(g => g.items))]
+      : list.options ?? []
+  const chooseCard = (value: string) => {
+    // A new card has other items: an item chosen from the old card's names goes.
+    const item = typeof inputs.item === 'string' ? inputs.item : ''
+    const items = groups.find(g => g.label === value)?.items
+    const stale = item !== '' && !item.includes('{{') && items !== undefined && !items.includes(item)
+    setInputs({ within: { ...within, item: value }, ...(stale ? { item: undefined } : {}) })
+  }
+  const follows = list.dependsOn?.title
   return <div className="space-y-2">
-    {(groups.length > 0 || (savedItems?.length ?? 0) > 0) && <div className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700" data-testid="recorded-list-names">
-      <p className="text-[11px] text-gray-500">Names the list showed when it was recorded. Pick one, or map the value from earlier steps below.</p>
-      {inCard && groups.length > 0 && <Labelled label={cardName ?? 'Card'}>
-        <select aria-label={`${cardName ?? 'Card'} (recorded)`} className={fieldClass}
-          value={fixedCard && groups.some(g => g.label === within.item) ? String(within.item) : ''}
-          onChange={e => { if (e.target.value) setInput('within', { ...within, item: e.target.value }) }}>
-          <option value="">Choose one of {groups.length}…</option>
-          {groups.map(g => <option key={g.label} value={g.label}>{g.label}</option>)}
-        </select>
-      </Labelled>}
-      {savedItems && savedItems.length > 0 && <Labelled label={itemName ?? 'Item'}>
-        <select aria-label={`${itemName ?? 'Item'} (recorded)`} className={fieldClass}
-          value={typeof inputs.item === 'string' && savedItems.includes(inputs.item) ? inputs.item : ''}
-          onChange={e => { if (e.target.value) setInput('item', e.target.value) }}>
-          <option value="">Choose one of {savedItems.length}…</option>
-          {savedItems.map(v => <option key={v} value={v}>{v}</option>)}
-        </select>
-      </Labelled>}
-      {inCard && !fixedCard && groups.length > 0 && <p className="text-[11px] text-gray-500">Choose a {(cardName ?? 'card').toLowerCase()} to see its {(itemName ?? 'item').toLowerCase()}s.</p>}
+    {follows && list.dependsOn?.relation !== 'inside' && <p className="rounded-lg border border-gray-200 p-2 text-[11px] text-gray-500 dark:border-gray-700" data-testid="list-follows">
+      Follows {follows}{list.dependsOn?.inputName ? ` (input ${list.dependsOn.inputName})` : ''}: the page loads these choices again when {follows} changes. After changing {follows}, load them from the page.
+    </p>}
+    {inCard && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
+      <ListValueField label={cardName ?? 'Which card'} choices={cardChoices} value={within.item} mapping={mapping} required
+        hint={cardChoices.length > 0 ? `Chosen first, such as a theatre. Its ${(itemName ?? 'item').toLowerCase()}s follow it.` : 'Its name, such as a theatre. Map it from earlier steps.'}
+        onChange={chooseCard} />
+      <LoadFromPage what="cards" deviceId={deviceId} list={cardList} onLoaded={setLoadedCards} />
     </div>}
+    {withItem && <ListValueField label={itemName ?? 'Item to choose'} choices={itemChoices} value={inputs.item} mapping={mapping}
+      required={itemRequired} missing={itemMissing}
+      hint={inCard && !fixedCard && groups.length > 0 && itemChoices.length > 0
+        ? `The ${(itemName ?? 'item').toLowerCase()}s of every ${(cardName ?? 'card').toLowerCase()}: choose one above to see only its own.`
+        : 'Map it from earlier steps, or choose one of the names the list showed.'}
+      onChange={v => setInput('item', v)} />}
+    {inputs.element !== undefined && <LoadFromPage what="items" deviceId={deviceId} list={itemList}
+      blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
+      onLoaded={labels => setLoadedItems({ card: currentCard, items: labels })} />}
     <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
       <input type="checkbox" checked={inCard}
         onChange={e => setInput('within', e.target.checked ? { item: '' } : undefined)} />
       Choose inside a card of another list first
     </label>
     {inCard && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
-      <p className="text-[11px] text-gray-500">Such as a showtime inside the theatre you choose: pick one card of the outer list (a theatre), then say which card to choose in.</p>
+      <p className="text-[11px] text-gray-500">Such as a showtime inside the theatre you choose: pick one card of the outer list (a theatre).</p>
       <ElementField label="One card of the outer list" value={within.element} deviceId={deviceId} browsers={browsers}
         hasEarlierOpen mapping={mapping} required missing={within.element === undefined}
         onChange={value => setInput('within', { ...within, element: value })} />
-      <Labelled group label={cardName ?? 'Which card'} required hint="Its name, such as a theatre. Map it from earlier steps.">
-        <MappedField aria-label="Which card" mode="template" context={mapping}
-          value={typeof within.item === 'string' ? within.item : ''}
-          onChange={v => setInput('within', { ...within, item: v })} />
-      </Labelled>
-      <LoadFromPage what="cards" deviceId={deviceId} list={cardList}
-        onPick={v => setInput('within', { ...within, item: v })} />
       <PatternField label="Card pattern (CSS)" value={within.itemCss}
         onChange={v => setInput('within', { ...within, itemCss: v })} />
       {typeof within.titleCss === 'string' && <PatternField label="Card name pattern (CSS)" value={within.titleCss}
         onChange={v => setInput('within', { ...within, titleCss: v })} />}
     </div>}
     {inputs.element !== undefined && <div className="space-y-1">
-      <LoadFromPage what="items" deviceId={deviceId} list={itemList}
-        blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
-        onPick={v => setInput('item', v)} />
       <PatternField label="Item pattern (CSS)" value={inputs.itemCss} onChange={v => setInput('itemCss', v)} />
       {typeof inputs.titleCss === 'string' && <PatternField label="Item name pattern (CSS)" value={inputs.titleCss}
         onChange={v => setInput('titleCss', v)} />}
@@ -1660,28 +1679,67 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   </div>
 }
 
+const MAP_CHOICE = '__map'
+
 /**
- * Reads a list from the page as the chosen browser shows it now (List items, run as a test), so a
- * card or item can be chosen from what is there instead of typed: a theatre, then its showtimes.
+ * One list's one field: a dropdown of its names (and the value set now, when it is not one of
+ * them), with "Map from earlier steps or type…" to map it instead. A mapped value, or a list with
+ * no names to offer, is a mapped text field.
  */
-function LoadFromPage({ what, deviceId, list, blocked, onPick }: {
+function ListValueField({ label, choices, value, mapping, required, missing, hint, onChange }: {
+  label: string; choices: string[]; value: unknown; mapping: MappingContext
+  required?: boolean; missing?: boolean; hint?: string
+  onChange: (value: string) => void
+}) {
+  const text = typeof value === 'string' ? value : ''
+  const [typing, setTyping] = useState(false)
+  const mapped = text.includes('{{')
+  if (choices.length === 0 || mapped || typing) {
+    return <Labelled group label={label} required={required} hint={hint}>
+      <MappedField aria-label={label} mode="template" context={mapping} value={text} invalid={missing}
+        onChange={v => onChange(v)} />
+      {choices.length > 0 && <button type="button" className="self-start text-[11px] text-brand-600 hover:underline dark:text-brand-300"
+        onClick={() => { setTyping(false); if (mapped) onChange('') }}>Choose from the list instead</button>}
+    </Labelled>
+  }
+  const extra = text !== '' && !choices.includes(text)
+  return <Labelled label={label} required={required} hint={hint}>
+    <select aria-label={label} className={fieldClass} value={text}
+      onChange={e => {
+        if (e.target.value === MAP_CHOICE) { setTyping(true); return }
+        onChange(e.target.value)
+      }}>
+      <option value="">Choose one of {choices.length}…</option>
+      {extra && <option value={text}>{text}</option>}
+      {choices.map(v => <option key={v} value={v}>{v}</option>)}
+      <option value={MAP_CHOICE}>Map from earlier steps or type…</option>
+    </select>
+  </Labelled>
+}
+
+/**
+ * Reads a list from the page as the chosen browser shows it now (List items, run as a test): its
+ * names become the choices of the list's own dropdown (a theatre, then its showtimes).
+ */
+function LoadFromPage({ what, deviceId, list, blocked, onLoaded }: {
   what: 'cards' | 'items'; deviceId?: string; list?: Record<string, unknown>; blocked?: string
-  onPick: (label: string) => void
+  onLoaded: (labels: string[]) => void
 }) {
   const [loading, setLoading] = useState(false)
-  const [labels, setLabels] = useState<string[] | undefined>()
+  const [found, setFound] = useState<number | undefined>()
   const [error, setError] = useState<string | undefined>()
   const reason = blocked ?? (!deviceId ? 'Choose a browser above to load from its page.' : undefined)
   const load = async () => {
     if (!deviceId || !list) return
-    setLoading(true); setError(undefined); setLabels(undefined)
+    setLoading(true); setError(undefined); setFound(undefined)
     try {
       const result = await webApi.testStep({ deviceId, action: 'browser.listItems', version: 1, inputs: list })
       const items = (result.output as { items?: { label?: string }[] } | undefined)?.items
       if (result.status === 'succeeded' && items) {
-        const found = [...new Set(items.map(i => i.label ?? '').filter(Boolean))]
-        setLabels(found)
-        if (found.length === 0) setError('The page shows no such list now.')
+        const labels = [...new Set(items.map(i => i.label ?? '').filter(Boolean))]
+        setFound(labels.length)
+        if (labels.length === 0) setError('The page shows no such list now.')
+        else onLoaded(labels)
       } else {
         setError(result.error?.detail ?? result.message ?? 'The list could not be read.')
       }
@@ -1701,11 +1759,7 @@ function LoadFromPage({ what, deviceId, list, blocked, onPick }: {
       {loading && <Loader2 className="h-3 w-3 animate-spin" />}Load {noun} from the page
     </button>
     {reason && <p className="text-[11px] text-gray-500">{reason}</p>}
-    {labels && labels.length > 0 && <select aria-label={what === 'cards' ? 'Card on the page' : 'Item on the page'}
-      className={fieldClass} defaultValue="" onChange={e => { if (e.target.value) onPick(e.target.value) }}>
-      <option value="" disabled>Choose one of {labels.length} on the page</option>
-      {labels.map(l => <option key={l} value={l}>{l}</option>)}
-    </select>}
+    {found !== undefined && found > 0 && <p className="text-[11px] text-gray-500">{found} loaded: choose one above.</p>}
     {error && <p className="text-[11px] text-red-600">{error} Open the page in that browser first.</p>}
   </div>
 }

@@ -367,9 +367,12 @@ describe('CanvasInspector', () => {
     const { onSave } = open(graph, made.id)
     expect(await screen.findByRole('textbox', { name: 'Item pattern (CSS)' })).toHaveValue('div.times > div')
     fireEvent.click(await screen.findByRole('button', { name: 'Load cards from the page' }))
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Card on the page' }), { target: { value: 'Meenakshi Cinemas' } })
+    // The names loaded become the choices of the list's one field.
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Which card' }), { target: { value: 'Meenakshi Cinemas' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Load items from the page' }))
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Item on the page' }), { target: { value: '07:15 PM' } })
+    const item = await screen.findByRole('combobox', { name: 'Item to choose' })
+    expect(Array.from((item as HTMLSelectElement).options).map(o => o.value)).toEqual(['', '10:45 PM', '03:40 PM', '07:15 PM', '__map'])
+    fireEvent.change(item, { target: { value: '07:15 PM' } })
     expect(sent[0]).toMatchObject({ element: venue, itemCss: 'div.venue' })
     expect(sent[1]).toMatchObject({ element: show, itemCss: 'div.times > div', within: { item: 'Meenakshi Cinemas', itemCss: 'div.venue' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -400,18 +403,54 @@ describe('CanvasInspector', () => {
       groups: [{ label: 'PVR Phoenix', items: ['10:00 AM', '10:45 PM'] }, { label: 'INOX Nexus', items: ['11:30 AM', '07:30 PM'] }] }
     const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs, list } } : n) }
     const { onSave } = open(graph, made.id)
-    const theatre = await screen.findByRole('combobox', { name: 'Theatre (recorded)' })
+    // One field per list: no separate recorded dropdown beside a text field.
+    expect(screen.queryByRole('textbox', { name: 'Item to choose' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Which card' })).toBeNull()
+    const theatre = await screen.findByRole('combobox', { name: 'Theatre' })
     expect(theatre).toHaveValue('PVR Phoenix')
     expect(screen.getByRole('textbox', { name: 'Card name pattern (CSS)' })).toHaveValue('h3')
     expect(screen.getByText('Showtime', { selector: 'label, span, p' })).toBeInTheDocument()
     fireEvent.change(theatre, { target: { value: 'INOX Nexus' } })
-    const showtime = await screen.findByRole('combobox', { name: 'Showtime (recorded)' })
-    expect(Array.from((showtime as HTMLSelectElement).options).map(o => o.value)).toEqual(['', '11:30 AM', '07:30 PM'])
+    const showtime = await screen.findByRole('combobox', { name: 'Showtime' })
+    // The showtimes follow the theatre: the old one (10:45 PM, at PVR) is gone.
+    expect(showtime).toHaveValue('')
+    expect(Array.from((showtime as HTMLSelectElement).options).map(o => o.value)).toEqual(['', '11:30 AM', '07:30 PM', '__map'])
     fireEvent.change(showtime, { target: { value: '07:30 PM' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
     expect(saved.config.inputs).toMatchObject({ item: '07:30 PM', within: { item: 'INOX Nexus', titleCss: 'h3' } })
+    vi.unstubAllGlobals()
+  })
+
+  it('gives a list one dropdown that can be mapped instead, and says which list it follows', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: {
+            element: locator, item: { type: 'string' }, itemCss: { type: 'string' } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const venue = { strategies: [{ by: 'css', value: 'div.venue' }] }
+    const inputs = { element: venue, item: 'Rakki Cinemas', itemCss: 'div.venue' }
+    const list = { named: true, title: 'Theatre', options: ['Rakki Cinemas', 'Vijay Park'],
+      dependsOn: { title: 'Date', inputName: 'date', relation: 'after' } }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs, list } } : n) }
+    const { onSave } = open(graph, made.id)
+    const theatre = await screen.findByRole('combobox', { name: 'Theatre' })
+    expect(theatre).toHaveValue('Rakki Cinemas')
+    expect(screen.getAllByRole('combobox', { name: /Theatre/ })).toHaveLength(1)
+    expect(screen.getByTestId('list-follows')).toHaveTextContent('Follows Date (input date)')
+    fireEvent.change(theatre, { target: { value: '__map' } })
+    type(await screen.findByRole('textbox', { name: 'Theatre' }), '{{ input.theatre }}')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ item: '{{ input.theatre }}' })
     vi.unstubAllGlobals()
   })
 

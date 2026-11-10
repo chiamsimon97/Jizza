@@ -68,6 +68,9 @@ export function RecordingReview({ recording, busy, onEdit }: {
                 {isListChoice(s) && s.step.meta?.list?.named && (
                   <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>
                 )}
+                {isListChoice(s) && s.step.meta?.list?.dependsOn?.relation === 'after' && (
+                  <Badge>after {s.step.meta.list.dependsOn.title}</Badge>
+                )}
                 {Object.entries(s.step.mappings ?? {}).map(([field, m]) => <Badge key={field}>input: {m.name}</Badge>)}
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
