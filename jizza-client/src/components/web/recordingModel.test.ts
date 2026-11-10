@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordedStep } from '@/api/web'
-import { hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
+import { fieldName, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
 
 const step = (seq: number, over: Partial<RecordedStep['step']> = {}, deleted = false, position = seq): RecordedStep =>
   ({ seq, position, deleted, step: { action: 'browser.setText', label: 'Set "Invoice number" to "INV-2041"', input: { text: 'INV-2041', clearFirst: true }, ...over } })
@@ -22,6 +22,23 @@ describe('recordingModel', () => {
       .toEqual([{ field: 'date', value: '20 Nov 2026' }])
     expect(mappableFields(step(5, { action: 'browser.setCheckbox', input: { state: 'checked' } })))
       .toEqual([{ field: 'state', value: 'checked' }])
+  })
+
+  it("offers each field of a form step, named by the field's label", () => {
+    const form = step(6, { action: 'browser.fillForm', label: 'Passenger details', input: { fields: [
+      { kind: 'text', label: 'First name', value: 'Asha' }, { kind: 'text', label: 'Last name', value: '' },
+      { kind: 'select', label: 'Berth preference', value: 'Lower' }] } })
+    expect(mappableFields(form)).toEqual([{ field: 'fields.0.value', value: 'Asha' }, { field: 'fields.2.value', value: 'Lower' }])
+    expect(fieldName(form, 'fields.2.value')).toBe('Berth preference')
+    expect(suggestInputName(form, 'fields.0.value')).toBe('firstName')
+  })
+
+  it('names the choices of a list by the names given while recording', () => {
+    const chosen = step(7, { action: 'browser.clickItem', input: { item: '07:15 PM', within: { item: 'PVR' } },
+      meta: { list: { named: true, title: 'Showtime', withinTitle: 'Theatre', inputName: 'showtime', withinInputName: 'theatre' } } })
+    expect(fieldName(chosen, 'item')).toBe('Showtime')
+    expect(fieldName(chosen, 'within.item')).toBe('Theatre')
+    expect(suggestInputName(chosen, 'within.item')).toBe('theatre')
   })
 
   it('names an input from the quoted label', () => {

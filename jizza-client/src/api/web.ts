@@ -56,6 +56,11 @@ export interface RecordedList {
   withinInputName?: string
   /** Marked by the person while recording (Mark a list): read with its saved patterns. */
   marked?: boolean
+  /** title and withinTitle are names the person gave the items and cards (browser agent 0.8.0+). */
+  named?: boolean
+  /** The item names the list showed, and each card's name with its items' names. */
+  options?: string[]
+  groups?: { label: string; items: string[] }[]
 }
 
 export interface RecordedStep {

@@ -30,7 +30,7 @@ final class WebStepForm {
   private static final Set<String> PLUMBING = Set.of("session", "element", "timeoutMs", "trusted",
       "screenshotOnError", "highlight", "secretRef", "waitElement", "to", "offset", "modifiers",
       "steps", "fields", "group", "in", "waitAfter", "by", "max", "within", "loadMore", "submit",
-      "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss");
+      "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss", "titleCss");
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";
@@ -253,6 +253,23 @@ final class WebStepForm {
           ? "Card to choose in" : what, "text",
           inputs.path("within").get("item"), true,
           template(configured.path("within").get("item")), null));
+    }
+    return CLICK_ITEMS.contains(spec.action()) ? named(out, config.path("list")) : out;
+  }
+
+  /**
+   * The names the person gave a marked list while recording (config {@code list}: "Showtime"
+   * for its items, "Theatre" for its cards) as the labels of the fields that choose them.
+   */
+  private static List<Field> named(List<Field> fields, JsonNode list) {
+    if (!list.path("named").asBoolean(false)) return fields;
+    String item = list.path("title").asText("").strip();
+    String card = list.path("withinTitle").asText("").strip();
+    List<Field> out = new ArrayList<>(fields.size());
+    for (Field f : fields) {
+      String name = "item".equals(f.key()) ? item : "within.item".equals(f.key()) ? card : "";
+      out.add(name.isEmpty() ? f : new Field(f.key(), name, f.type(), f.value(), f.required(),
+          f.source(), f.options(), f.error()));
     }
     return out;
   }

@@ -356,6 +356,59 @@ class RecordingServiceTest {
   }
 
   @Test
+  void eachFieldOfAFormStepCanBecomeAnInput() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillForm", "Passenger details",
+            "{\"fields\":[{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#n\"}]},"
+                + "\"kind\":\"text\",\"label\":\"Name\",\"value\":\"Asha\"},"
+                + "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#a\"}]},"
+                + "\"kind\":\"text\",\"label\":\"Age\",\"value\":\"34\"}]}", false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map")
+        .put("seq", 1).put("field", "fields.1.value");
+    map.putObject("input").put("name", "age").put("type", "text");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+
+    var step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("mappings").path("fields.1.value").path("default").asText())
+        .isEqualTo("34");
+    service.stop(access, id);
+    service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+    var graph = savedWorkflows.get(0).graph().toString();
+    assertThat(graph).contains("\"value\":\"{{ input.age }}\"").contains("\"value\":\"Asha\"");
+  }
+
+  @Test
+  void aNamedListKeepsItsNamesAndChoicesForTheBuilder() {
+    var id = started().id();
+    var step = (com.fasterxml.jackson.databind.node.ObjectNode) step(1, "browser.clickItem",
+        "Choose Showtime", "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\".t\"}]},"
+            + "\"item\":\"07:15 PM\",\"within\":{\"element\":{\"strategies\":[{\"by\":\"css\","
+            + "\"value\":\".v\"}]},\"item\":\"PVR\",\"titleCss\":\"h3\"}}", false);
+    ((com.fasterxml.jackson.databind.node.ObjectNode) step.get("meta")).set("list", Json.read(
+        "{\"title\":\"Showtime\",\"withinTitle\":\"Theatre\",\"named\":true,\"kind\":\"time\","
+            + "\"count\":2,\"options\":[\"07:15 PM\",\"10:45 PM\"],"
+            + "\"groups\":[{\"label\":\"PVR\",\"items\":[\"07:15 PM\",\"10:45 PM\"]},"
+            + "{\"label\":\"INOX\",\"items\":[\"01:00 PM\"]}]}"));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id, step));
+    service.stop(access, id);
+    service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+
+    JsonNode node = null;
+    for (JsonNode n : savedWorkflows.get(0).graph().path("nodes")) {
+      if ("browser.clickItem".equals(n.path("config").path("action").asText())) node = n;
+    }
+    assertThat(node).isNotNull();
+    JsonNode list = node.path("config").path("list");
+    assertThat(list.path("title").asText()).isEqualTo("Showtime");
+    assertThat(list.path("withinTitle").asText()).isEqualTo("Theatre");
+    assertThat(list.path("named").asBoolean()).isTrue();
+    assertThat(list.path("groups").get(1).path("label").asText()).isEqualTo("INOX");
+    assertThat(node.path("config").path("inputs").path("within").path("titleCss").asText())
+        .isEqualTo("h3");
+  }
+
+  @Test
   void theItemAndCardOfAListChoiceBecomeInputs() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

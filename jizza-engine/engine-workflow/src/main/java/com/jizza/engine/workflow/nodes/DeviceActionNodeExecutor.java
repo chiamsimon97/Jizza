@@ -201,7 +201,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           parentInput.set("element", within.get("element"));
           // The cards' own pattern (Mark a list), never the items'.
           parentInput.remove("itemCss");
+          parentInput.remove("titleCss");
           if (within.hasNonNull("itemCss")) parentInput.set("itemCss", within.get("itemCss"));
+          if (within.hasNonNull("titleCss")) parentInput.set("titleCss", within.get("titleCss"));
           return listChoices(execution, broker, state, target, workspaceId,
               WebStepForm.listAction(spec.action()), parentInput, "parents");
         }
@@ -460,7 +462,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private static ObjectNode listInput(JsonNode inputs, boolean withinAndMore) {
     ObjectNode out = Json.obj();
     for (String key : List.of("session", "element", "timeoutMs", "highlight", "app", "max",
-        "itemCss")) {
+        "itemCss", "titleCss")) {
       if (inputs.has(key)) out.set(key, inputs.get(key));
     }
     if (withinAndMore) {
