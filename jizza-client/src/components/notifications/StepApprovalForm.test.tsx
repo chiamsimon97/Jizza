@@ -57,4 +57,26 @@ describe('a choice inside a card of another list', () => {
     expect(optionsFor(item, { 'within.item': 'Somewhere else' })).toBeUndefined()
     expect(optionsFor(item, { 'within.item': 'INOX Nexus' })).toEqual(['11:30 AM', '07:30 PM'])
   })
+
+  it('waits for the theatre when the one asked for is not on the page', () => {
+    const notOnPage = structuredClone(SHOWTIME) as unknown as { context: { form: { fields: { value?: string; missing?: boolean }[]; missing: string[] } } }
+    notOnPage.context.form.fields[0].value = 'Rakki Cinemas'
+    notOnPage.context.form.fields[0].missing = true
+    notOnPage.context.form.missing = ['within.item', 'item']
+    const form = stepFormOf(notOnPage as unknown as NotificationDto)!
+    function Missing() {
+      const [values, setValues] = useState<FormValues>(() => initialValues(form))
+      return <StepApprovalForm form={form} values={values} onChange={(k, v) => setValues(old => ({ ...old, [k]: v }))} />
+    }
+    render(<Missing />)
+    // A choice, not a text box, that waits on the theatre.
+    const time = screen.getByLabelText('Item to choose') as HTMLSelectElement
+    expect(time.tagName).toBe('SELECT')
+    expect(time.disabled).toBe(true)
+    expect(options('Item to choose')).toEqual(['Choose Card to choose in first'])
+
+    fireEvent.change(screen.getByLabelText('Card to choose in'), { target: { value: 'INOX Nexus' } })
+    expect((screen.getByLabelText('Item to choose') as HTMLSelectElement).disabled).toBe(false)
+    expect(options('Item to choose')).toEqual(['Choose one…', '11:30 AM', '07:30 PM'])
+  })
 })

@@ -215,6 +215,16 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         if (!parent.found()) {
           // Which card to choose inside is the person's call before anything else.
           state.put("wantedWithin", wantedParent);
+          if (listed && !parents.isEmpty() && !state.path("groupsTried").asBoolean(false)) {
+            // Read the items of every card first (through the first card), so the card the
+            // person answers on lists the showtimes of whichever theatre they pick.
+            state.put("groupsTried", true);
+            state.put("parentUnmatched", true);
+            state.put("parent", parents.get(0).label());
+            ((ObjectNode) within).put("item", parents.get(0).label());
+            return listChoices(execution, broker, state, target, workspaceId,
+                WebStepForm.listAction(spec.action()), listInput(inputs, true), "choices");
+          }
           List<WebStepForm.Field> form = WebStepForm.fields(spec, config, (ObjectNode) inputs, null)
               .stream().map(f -> "within.item".equals(f.key())
                   ? f.withOptions("select", ordered(parents, parent.tied()), true) : f).toList();
@@ -241,6 +251,22 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
             WebStepForm.listAction(spec.action()), listInput(inputs, true), "choices");
       }
       choices = ItemMatch.items(state.get("choices"));
+      if (state.path("parentUnmatched").asBoolean(false)) {
+        // The card asked for is not on the page: the person picks the card, and the items
+        // follow it from the items read for every card.
+        List<ItemMatch.Item> parents = ItemMatch.items(state.get("parents"));
+        String wantedParent = state.path("wantedWithin").asText("");
+        if (within.isObject()) ((ObjectNode) within).put("item", wantedParent);
+        ItemMatch.Pick parent = ItemMatch.match(parents, wantedParent, null);
+        List<WebStepForm.Field> form = WebStepForm.fields(spec, config, (ObjectNode) inputs,
+                labels(choices)).stream()
+            .map(f -> "within.item".equals(f.key())
+                ? f.withOptions("select", ordered(parents, parent.tied()), true) : f)
+            .toList();
+        form = withRemember(execution, form, wantedParent);
+        return ask(execution, state, spec, target, form, labels(parents),
+            pickReason(wantedParent, parent, "the list"));
+      }
     }
 
     String wanted = !pick ? null : inputs.path(pickKey).asText(
@@ -425,7 +451,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
                       DeviceTarget target, List<WebStepForm.Field> form, List<String> choices,
                       String why) {
     ObjectNode byCard = optionsByCard(state, WebStepForm.pickKey(spec.action()), form);
-    state.remove(List.of("choices", "parents", "parent", "parentDisplay", "groups"));
+    state.remove(List.of("choices", "parents", "parent", "parentDisplay", "groups",
+        "parentUnmatched", "groupsTried"));
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
     ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
@@ -487,7 +514,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   private static String pickReason(String wanted, ItemMatch.Pick pick, String where) {
-    if (wanted == null || wanted.isBlank()) return "Choose which one; the step was not told which";
+    if (wanted == null || wanted.isBlank()) return "Choose one of what it lists now";
     if (!pick.tied().isEmpty()) {
       List<String> some = pick.tied().subList(0, Math.min(pick.tied().size(), 4));
       return "Several items match \"" + wanted + "\" (" + String.join(", ", some)
@@ -588,6 +615,15 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       }
       if (!listing.status().finished()) return Outcome.awaitDevice(listing.deadlineAt());
       state.remove("listCommandId");
+      boolean throughFirstCard = "choices".equals(into)
+          && state.path("parentUnmatched").asBoolean(false);
+      if (throughFirstCard && (listing.status()
+          != com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED
+          || ItemMatch.items(listing.output().path("items")).isEmpty())) {
+        // The items could not be read through the first card: ask for the card on its own.
+        state.remove(List.of("parentUnmatched", "parent", "choices", "groups"));
+        return execute(execution);
+      }
       if (listing.status() != com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED) {
         preserveError(state, listing);
         return Outcome.retryable("Could not read the list on the page: "

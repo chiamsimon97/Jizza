@@ -561,9 +561,23 @@ public class RecordingService implements Recordings, RecordingIntake {
     String type = op.input().type() == null ? "text" : op.input().type();
     if (!TYPES.contains(type)) throw new ValidationException("Unknown input type '" + type + "'");
     ObjectNode mapping = Json.obj().put("name", name).put("type", type);
-    mapping.set("default", op.input().defaultValue() != null ? op.input().defaultValue() : value);
+    if (listChoice(target.node, op.field())) {
+      // A choice from a list the page reads again on each run (a theatre, a showtime): the item
+      // recorded is not carried as a default, so a run without a value chooses from what the
+      // page lists then, never from what it listed while recording.
+      mapping.put("default", "");
+    } else {
+      mapping.set("default", op.input().defaultValue() != null ? op.input().defaultValue() : value);
+    }
     mappings.set(op.field(), mapping);
     target.changed = true;
+  }
+
+  /** The item, or the card it is in, of a choice from a marked or mapped list. */
+  static boolean listChoice(JsonNode step, String field) {
+    return "browser.clickItem".equals(step.path("action").asText())
+        && ("item".equals(field) || "within.item".equals(field))
+        && step.path("meta").path("list").isObject();
   }
 
   private void secret(Held target, String secretRef) {
