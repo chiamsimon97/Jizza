@@ -127,6 +127,12 @@ public class WorkflowController {
     return workflows.library(CurrentUser.userId());
   }
 
+  /** Every workflow the user can run from a chat ({@code /run}), newest first, with its inputs. */
+  @GetMapping("/workflows/runnable")
+  public List<WorkflowLibrary.Match> runnable() {
+    return workflows.runnable(CurrentUser.userId());
+  }
+
   /** Sets when Jizza may reuse a workflow; allowing scheduled runs holds for its current steps. */
   @PutMapping("/workflows/{id}/reuse")
   public WorkflowLibrary.Match describe(@PathVariable UUID id, @RequestBody JsonNode reuse) {

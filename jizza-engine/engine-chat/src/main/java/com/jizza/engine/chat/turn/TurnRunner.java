@@ -17,6 +17,7 @@ import com.jizza.engine.api.error.FriendlyErrors;
 import com.jizza.engine.api.error.JizzaException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.chat.ChatShortcut;
 import com.jizza.engine.api.llm.Msg;
 import com.jizza.engine.api.memory.MemoryLearner;
 import com.jizza.engine.api.memory.OutputLearner;
@@ -91,6 +92,13 @@ public class TurnRunner implements ChatService {
   private final ObjectProvider<ThreadService> threads;
   private final ObjectProvider<ThreadGuideKeeper> guides;
   private final ObjectProvider<com.jizza.engine.chat.thread.ThreadCoordinator> coordinator;
+  private ObjectProvider<ChatShortcut> shortcuts;
+
+  /** Slash commands the app answers itself, such as {@code /run}; optional for isolated tests. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setShortcuts(ObjectProvider<ChatShortcut> shortcuts) {
+    this.shortcuts = shortcuts;
+  }
 
   public TurnRunner(TurnStore store, Orchestrator orchestrator, JobEventRepository events,
                     AuditLog audit, ObjectProvider<RealtimeGateway> realtime,
@@ -248,6 +256,9 @@ public class TurnRunner implements ChatService {
     boolean persist = !ref.incognito();
     Orchestrator.Turn turn = null;
     try {
+      // A slash command such as /run is answered here, with no model call at all.
+      Optional<Orchestrator.Turn> direct = continuation == null
+          ? shortcut(userId, ref.conversationId(), s.text()) : Optional.empty();
       String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
       // Where this turn is: the main chat, where Jizza coordinates, or a thread and its lead.
       ThreadService.Framing framing = ref.conversationId() == null ? null
@@ -263,7 +274,8 @@ public class TurnRunner implements ChatService {
               : orchestrator.respond(userId, turnInput));
       // Jizza coordinates the conversation's threads: a message the user typed goes first to
       // where it belongs, and is answered there instead of here.
-      Optional<Orchestrator.Turn> routed = continuation == null && framing != null
+      Optional<Orchestrator.Turn> routed = direct.isPresent() ? direct
+          : continuation == null && framing != null
           ? coordinator.getIfAvailable() == null ? Optional.empty()
               : Activity.run(recorder, () -> coordinator.getObject().coordinate(framing.scope(), s.text(), history))
           : Optional.empty();
@@ -312,7 +324,7 @@ public class TurnRunner implements ChatService {
           boolean movedAway = answer.actions() != null && answer.actions().stream()
               .anyMatch(a -> UiAction.THREAD_OPENED.equals(a.type())
                   || UiAction.THREAD_HANDBACK.equals(a.type()));
-          if ((continuation == null || moved) && !movedAway) {
+          if ((continuation == null || moved) && !movedAway && direct.isEmpty()) {
             learner.ifAvailable(l -> l.afterTurn(new MemoryLearner.Turn(userId, ref.conversationId(),
                 ref.userMessageId(), s.text(), done.text())));
           }
@@ -366,6 +378,15 @@ public class TurnRunner implements ChatService {
     } finally {
       if (persist) active.remove(ref.jobId());
     }
+  }
+
+  private Optional<Orchestrator.Turn> shortcut(UUID userId, UUID conversationId, String text) {
+    if (shortcuts == null || text == null || !text.stripLeading().startsWith("/")) return Optional.empty();
+    for (ChatShortcut shortcut : shortcuts.orderedStream().toList()) {
+      Optional<Orchestrator.Turn> turn = shortcut.handle(userId, conversationId, text);
+      if (turn.isPresent()) return turn;
+    }
+    return Optional.empty();
   }
 
   @Override
