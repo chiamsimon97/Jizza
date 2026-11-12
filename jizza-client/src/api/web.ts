@@ -43,6 +43,9 @@ export interface RecordedStepData {
   input?: Record<string, unknown>
   mappings?: Record<string, { name: string; type: string; default?: unknown }>
   secretRef?: string | null
+  /** Edit recording: turned off (not run), or optional (skipped when not on the page). */
+  disabled?: boolean
+  optional?: boolean
   meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean; list?: RecordedList }
 }
 
@@ -88,12 +91,39 @@ export interface Recording {
   kind?: 'web' | 'desktop'
   /** The app a desktop recording started in. */
   app?: string | null
+  /** Edit recording: the saved recording these steps came from, and its version then. */
+  sourceWorkflowId?: string | null
+  sourceVersion?: number | null
+}
+
+/** A workflow with steps that run a saved recording. */
+export interface LinkedWorkflow {
+  workflowId: string
+  name: string
+  status: string
+  stepLabels: string[]
+  /** Inputs the recording needs that those steps do not give. */
+  missingInputs: string[]
+  /** Values those steps give for inputs the recording no longer has. */
+  unknownInputs: string[]
+  canUpdate: boolean
+  note?: string | null
+}
+
+export interface LinkedUpdate { workflowId: string; name: string; updated: boolean; version?: number | null; note?: string | null }
+
+export interface SaveRecordingResult {
+  workflowId: string
+  version: number
+  /** An existing recording got a new version (Edit recording). */
+  updated?: boolean
+  linked?: LinkedWorkflow[]
 }
 
 export interface RecordingEvent { recordingId: string; status: string; stepCount: number; lastStep?: RecordedStep }
 
 export interface EditOp {
-  op: 'delete' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck'
+  op: 'delete' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck' | 'update'
   seq: number
   toIndex?: number
   label?: string
@@ -101,6 +131,8 @@ export interface EditOp {
   input?: { name: string; type: string; default?: unknown } | null
   secretRef?: string | null
   check?: { action: string; afterSeq: number }
+  /** op update: step settings to change. */
+  patch?: { disabled?: boolean; optional?: boolean; timeoutMs?: number; when?: 'shown' | 'missing' }
 }
 
 export interface FixCandidate {
@@ -130,8 +162,15 @@ export const webApi = {
   editRecording: (id: string, ops: EditOp[]) => api.patch<Recording>(`/api/web/recordings/${id}/steps`, { ops }),
   stopRecording: (id: string) => api.post<Recording>(`/api/web/recordings/${id}/stop`, {}),
   discardRecording: (id: string) => api.delete<void>(`/api/web/recordings/${id}`),
-  saveRecording: (id: string, body: { name: string; description?: string }) =>
-    api.post<{ workflowId: string; version: number }>(`/api/web/recordings/${id}/save`, body),
+  /** asNew: an edited recording is saved as a new recording instead of a new version. */
+  saveRecording: (id: string, body: { name: string; description?: string; asNew?: boolean }) =>
+    api.post<SaveRecordingResult>(`/api/web/recordings/${id}/save`, body),
+  /** Edit recording: opens a saved recording in a browser to step through and change it. */
+  editSavedRecording: (body: { workflowId: string; deviceId: string; testValues: Record<string, unknown> }) =>
+    api.post<Recording>('/api/web/recordings/edit', body),
+  linkedWorkflows: (workflowId: string) => api.get<LinkedWorkflow[]>(`/api/web/recordings/linked/${workflowId}`),
+  updateLinkedWorkflows: (workflowId: string, workflowIds: string[]) =>
+    api.post<LinkedUpdate[]>(`/api/web/recordings/linked/${workflowId}/update`, { workflowIds }),
   insertRecording: (id: string) =>
     api.post<{ nodes: unknown[]; edges: unknown[] }>(`/api/web/recordings/${id}/insert`, {}),
 

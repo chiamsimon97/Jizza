@@ -64,33 +64,92 @@ final class StepCompiler {
   private static ObjectNode compile(String startUrl, UUID desktop, List<JsonNode> steps,
                                     boolean inline) {
     boolean web = desktop == null;
+    steps = withoutEmptyConditions(steps);
     ArrayNode nodes = Json.mapper().createArrayNode();
     ArrayNode edges = Json.mapper().createArrayNode();
     ArrayNode inputs = Json.mapper().createArrayNode();
     ArrayNode outputs = Json.mapper().createArrayNode();
     Set<String> inputNames = new HashSet<>();
     Set<String> outputNames = new HashSet<>();
+    // Node ids a step brought from the workflow it was opened from (Edit recording) stay the same,
+    // so a later step's {{ nodes.step_3.text }} still finds what it reads.
+    Set<String> ids = new HashSet<>(List.of("start", "end"));
+    for (JsonNode step : steps) {
+      String kept = keptId(step);
+      if (kept != null) ids.add(kept);
+      String branch = step.path("meta").path("branchId").asText("");
+      if (FIELD_ID.matcher(branch).matches()) ids.add(branch);
+    }
+    Set<String> placed = new HashSet<>(List.of("start", "end"));
+    Tails tails = new Tails(edges);
+    java.util.Deque<String[]> openConditions = new java.util.ArrayDeque<>();
 
-    String previous = null;
     if (!inline) {
       nodes.add(node("start", "TRIGGER", "Start", Json.obj().set("inputs", inputs), 0));
-      previous = "start";
+      tails.from("start");
     }
     int row = 1;
 
     if (web && (steps.isEmpty() || !OPEN.equals(steps.get(0).path("action").asText()))) {
       ObjectNode config = webConfig(OPEN, 2, Json.obj().put("url", startUrl));
-      nodes.add(node("open", "DEVICE_ACTION", "Open " + startUrl, config, row++));
-      if (previous != null) edges.add(edge(previous, "open"));
-      previous = "open";
+      String id = fresh("open", ids, placed);
+      nodes.add(node(id, "DEVICE_ACTION", "Open " + startUrl, config, row++));
+      tails.to(id);
     }
 
     int index = 0;
     for (JsonNode step : steps) {
       index++;
-      String id = "step_" + index;
       String action = step.path("action").asText();
       String label = step.path("label").asText(action);
+
+      if (IF.equals(action)) {
+        String checkId = placedId(step, "if_" + index, ids, placed);
+        String branchId = step.path("meta").path("branchId").asText("");
+        branchId = FIELD_ID.matcher(branchId).matches() && !placed.contains(branchId)
+            ? branchId : fresh(checkId + "_when", ids, placed);
+        placed.add(branchId);
+        ObjectNode checkInputs = Json.obj();
+        JsonNode element = step.path("input").get("element");
+        if (element == null || !element.isObject()) {
+          throw new ValidationException("The condition '" + label + "' needs an element to look for");
+        }
+        checkInputs.set("element", element.deepCopy());
+        checkInputs.put("timeoutMs", Math.max(0, Math.min(60_000,
+            step.path("input").path("timeoutMs").asInt(DEFAULT_IF_WAIT_MS))));
+        checkInputs.put("visibleOnly", true);
+        ObjectNode checkConfig = web ? webConfig("browser.exists", 1, checkInputs)
+            : deviceConfig(desktop, "browser.exists", 1, checkInputs);
+        checkConfig.put("ifCheck", true);
+        nodes.add(node(checkId, "DEVICE_ACTION", "Look for " + elementName(step), checkConfig, row++));
+        tails.to(checkId);
+        boolean shown = !"missing".equals(step.path("input").path("when").asText("shown"));
+        ObjectNode branchConfig = Json.obj()
+            .put("condition", "nodes." + checkId + ".exists " + (shown ? "==" : "!=") + " true")
+            .put("recordedIf", true).put("when", shown ? "shown" : "missing");
+        nodes.add(node(branchId, "BRANCH", label, branchConfig, row++));
+        tails.to(branchId);
+        tails.only(branchId, "true");
+        openConditions.push(new String[] {branchId, "false"});
+        continue;
+      }
+      if (END_IF.equals(action)) {
+        if (!openConditions.isEmpty()) tails.add(openConditions.pop());
+        continue;
+      }
+      if (KEEP.equals(action)) {
+        // A step made in the builder that a recording cannot show (a Notify): kept as it was.
+        JsonNode kept = step.path("input").path("node");
+        if (!kept.isObject() || !kept.path("type").isTextual()) continue;
+        ObjectNode copy = ((ObjectNode) kept).deepCopy();
+        String id = placedId(step, "kept_" + index, ids, placed);
+        copy.put("id", id).put("x", 300).put("y", 60 + row++ * 140);
+        nodes.add(copy);
+        tails.to(id);
+        continue;
+      }
+
+      String id = placedId(step, "step_" + index, ids, placed);
       ObjectNode stepInputs = step.path("input").isObject()
           ? ((ObjectNode) step.get("input")).deepCopy() : Json.obj();
       boolean sensitive = step.path("meta").path("sensitive").asBoolean(false);
@@ -129,38 +188,142 @@ final class StepCompiler {
       int version = step.path("version").asInt(1);
       ObjectNode config = web ? webConfig(action, version, stepInputs)
           : deviceConfig(desktop, action, version, stepInputs);
+      // What the builder had set on a step opened for editing (retries, guardrails, timeouts).
+      JsonNode extra = step.path("meta").path("config");
+      for (Iterator<Map.Entry<String, JsonNode>> it = extra.fields(); it.hasNext(); ) {
+        Map.Entry<String, JsonNode> field = it.next();
+        if (!RESERVED_CONFIG.contains(field.getKey())) config.set(field.getKey(), field.getValue().deepCopy());
+      }
       ObjectNode list = listFacts(step.path("meta"));
       if (list != null) config.set("list", list);
+      boolean disabled = step.path("disabled").asBoolean(false);
+      if (disabled) config.put("disabled", true);
+      if (step.path("optional").asBoolean(false)) config.put("optional", true);
       nodes.add(node(id, "DEVICE_ACTION", label, config, row++));
-      if (previous != null) edges.add(edge(previous, id));
-      previous = id;
+      tails.to(id);
 
       String outputKey = readsData(action);
-      if (!inline && outputKey != null) {
+      if (!inline && outputKey != null && !disabled) {
         String name = unique(nameFrom(label, outputKey), outputNames);
         outputs.add(Json.obj().put("name", name)
             .put("type", "rows".equals(outputKey) ? "list" : "text")
             .put("value", "{{ nodes." + id + "." + outputKey + " }}"));
       }
     }
+    // A condition left open ends with the steps.
+    while (!openConditions.isEmpty()) tails.add(openConditions.pop());
 
-    boolean closes = !steps.isEmpty()
-        && CLOSE.equals(steps.get(steps.size() - 1).path("action").asText());
+    JsonNode last = lastAction(steps);
+    boolean closes = last != null && CLOSE.equals(last.path("action").asText());
     if (web && !inline && !closes) {
-      nodes.add(node("close", "DEVICE_ACTION", "Close browser",
+      String id = fresh("close", ids, placed);
+      nodes.add(node(id, "DEVICE_ACTION", "Close browser",
           webConfig(CLOSE, 1, Json.obj().put("what", "session")), row++));
-      edges.add(edge(previous, "close"));
-      previous = "close";
+      tails.to(id);
     }
 
     if (!inline) {
       nodes.add(node("end", "END", "End", Json.obj().set("outputs", outputs), row));
-      edges.add(edge(previous, "end"));
+      tails.to("end");
     }
     ObjectNode graph = Json.obj();
     graph.set("nodes", nodes);
     graph.set("edges", edges);
     return graph;
+  }
+
+  static final String IF = "flow.if";
+  static final String END_IF = "flow.endIf";
+  static final String KEEP = "flow.keep";
+  static final int DEFAULT_IF_WAIT_MS = 3_000;
+  private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
+  private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
+      "preset", "target", "disabled", "optional", "ifCheck");
+
+  /** The paths still open at the point the next node goes: each edge it gets, and its outlet. */
+  private static final class Tails {
+    private final ArrayNode edges;
+    private List<String[]> open = new java.util.ArrayList<>();
+
+    Tails(ArrayNode edges) {
+      this.edges = edges;
+    }
+
+    void from(String id) {
+      open = new java.util.ArrayList<>();
+      open.add(new String[] {id, null});
+    }
+
+    void only(String id, String branch) {
+      open = new java.util.ArrayList<>();
+      open.add(new String[] {id, branch});
+    }
+
+    void add(String[] tail) {
+      open.add(tail);
+    }
+
+    void to(String id) {
+      for (String[] tail : open) {
+        ObjectNode edge = edge(tail[0], id);
+        if (tail[1] != null) edge.put("branch", tail[1]);
+        edges.add(edge);
+      }
+      from(id);
+    }
+  }
+
+  private static String keptId(JsonNode step) {
+    String id = step.path("nodeId").asText("");
+    return FIELD_ID.matcher(id).matches() ? id : null;
+  }
+
+  /** The step's own node id when it has one not yet used, else a new one. */
+  private static String placedId(JsonNode step, String fallback, Set<String> ids, Set<String> placed) {
+    String kept = keptId(step);
+    if (kept != null && placed.add(kept)) return kept;
+    return fresh(fallback, ids, placed);
+  }
+
+  private static String fresh(String base, Set<String> ids, Set<String> placed) {
+    String id = base;
+    for (int i = 2; ids.contains(id) || placed.contains(id); i++) id = base + "_" + i;
+    ids.add(id);
+    placed.add(id);
+    return id;
+  }
+
+  /** A condition with no steps inside does nothing, so it is left out. */
+  private static List<JsonNode> withoutEmptyConditions(List<JsonNode> steps) {
+    List<JsonNode> out = new java.util.ArrayList<>(steps);
+    boolean removed = true;
+    while (removed) {
+      removed = false;
+      for (int i = 0; i + 1 < out.size(); i++) {
+        if (IF.equals(out.get(i).path("action").asText())
+            && END_IF.equals(out.get(i + 1).path("action").asText())) {
+          out.remove(i + 1);
+          out.remove(i);
+          removed = true;
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  private static JsonNode lastAction(List<JsonNode> steps) {
+    for (int i = steps.size() - 1; i >= 0; i--) {
+      String action = steps.get(i).path("action").asText();
+      if (!END_IF.equals(action)) return IF.equals(action) ? null : steps.get(i);
+    }
+    return null;
+  }
+
+  private static String elementName(JsonNode step) {
+    String name = step.path("input").path("element").path("label").asText("").strip();
+    if (name.isEmpty()) name = "the element";
+    return name.length() > 80 ? name.substring(0, 80) : name;
   }
 
   /**

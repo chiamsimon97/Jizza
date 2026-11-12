@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Circle, CircleDashed, PictureInPicture2, Square } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { webApi, type EditOp, type Recording } from '@/api/web'
+import { webApi, type EditOp, type LinkedWorkflow, type Recording } from '@/api/web'
+import { workflowsApi } from '@/api/workflows'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useFloatingWindow } from '@/hooks/useFloatingWindow'
 import { SlideOver } from '@/components/ui/SlideOver'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { RecordingReview } from './RecordingReview'
+import { LinkedWorkflowsDialog } from './EditRecording'
 import { hostOf, liveSteps, missingLogins, siteAllowed } from './recordingModel'
 import type { BrowserAgent } from '@/api/web'
 
@@ -48,13 +50,24 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
   const stop = useMutation({ mutationFn: () => webApi.stopRecording(id!), onSuccess: set, onError: fail })
   const edit = useMutation({ mutationFn: (ops: EditOp[]) => webApi.editRecording(id!, ops), onSuccess: r => { setError(null); set(r) }, onError: fail })
   const discard = useMutation({ mutationFn: () => webApi.discardRecording(id!), onSuccess: () => { void client.invalidateQueries({ queryKey: ['web-recordings'] }); close() }, onError: fail })
-  const save = useMutation({ mutationFn: () => webApi.saveRecording(id!, { name: name.trim() || r!.name, description: description.trim() || undefined }),
-    onSuccess: res => { void client.invalidateQueries({ queryKey: ['web-recordings'] }); void client.invalidateQueries({ queryKey: ['workflows'] }); onSaved?.(res.workflowId); close() }, onError: fail })
+  // Edit recording: after its new version is saved, the workflows that run it, to offer updating.
+  const [linked, setLinked] = useState<{ workflowId: string; linked: LinkedWorkflow[] } | null>(null)
+  const save = useMutation({
+    mutationFn: (asNew: boolean) => webApi.saveRecording(id!, { name: name.trim() || r!.name, description: description.trim() || undefined, ...(asNew ? { asNew } : {}) }),
+    onSuccess: res => {
+      void client.invalidateQueries({ queryKey: ['web-recordings'] }); void client.invalidateQueries({ queryKey: ['workflows'] })
+      if (res.updated && res.linked?.length) { setLinked({ workflowId: res.workflowId, linked: res.linked }); return }
+      onSaved?.(res.workflowId); close()
+    }, onError: fail })
   const insert = useMutation({ mutationFn: () => webApi.insertRecording(id!),
     onSuccess: graph => { onInsert?.(graph); close() }, onError: fail })
 
   const close = () => { setId(recordingId); setError(null); float.close(); onClose() }
   const r = recording.data
+  const editing = !!r?.sourceWorkflowId
+  // Only a draft takes a new version here; one past draft is saved as a new recording.
+  const source = useQuery({ queryKey: ['workflow', r?.sourceWorkflowId], queryFn: () => workflowsApi.get(r!.sourceWorkflowId!), enabled: open && editing })
+  const sourceDraft = !source.data || source.data.status === 'DRAFT'
   const float = useFloatingWindow()
   const recordingNow = r?.status === 'recording'
   // The floating controls are only for while it records: they close once it stops.
@@ -64,15 +77,28 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
   const missing = missingLogins(r?.steps).length
   const canSave = !!r && r.status === 'review' && liveSteps(r.steps).length > 0 && missing === 0
 
+  if (linked) {
+    return <LinkedWorkflowsDialog recordingId={linked.workflowId} linked={linked.linked}
+      onClose={() => { const saved = linked.workflowId; setLinked(null); onSaved?.(saved); close() }} />
+  }
+
   return (
-    <SlideOver open={open} title={mode === 'insert' ? 'Record steps here' : r?.kind === 'desktop' ? 'Recorded on your PC' : 'Record a task in Chrome'} onClose={close}
-      description="Do the task once in your own Chrome. Jizza turns it into steps you can review."
+    <SlideOver open={open} title={editing ? `Editing ${r!.name}` : mode === 'insert' ? 'Record steps here' : r?.kind === 'desktop' ? 'Recorded on your PC' : 'Record a task in Chrome'} onClose={close}
+      description={editing ? 'Step through it in the browser\'s side panel and change what you need. Then review and save the changes here.' : 'Do the task once in your own Chrome. Jizza turns it into steps you can review.'}
       footer={r?.status === 'review' ? (
         <div className="flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={() => discard.mutate()} loading={discard.isPending}>Discard</Button>
           {mode === 'insert'
             ? <Button disabled={!canSave} loading={insert.isPending} onClick={() => insert.mutate()}>Add steps to workflow</Button>
-            : <Button disabled={!canSave || !(name.trim() || r.name)} loading={save.isPending} onClick={() => save.mutate()}>Save as module</Button>}
+            : editing
+              ? (
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" disabled={!canSave || !(name.trim() || r.name)} loading={save.isPending && save.variables} onClick={() => save.mutate(true)}>Save as new recording</Button>
+                  <Button disabled={!canSave || !sourceDraft} loading={save.isPending && !save.variables} onClick={() => save.mutate(false)}
+                    title={sourceDraft ? 'Saves a new version of the recording' : 'It is past draft, so changes go through review: save it as a new recording'}>Save changes</Button>
+                </div>
+              )
+              : <Button disabled={!canSave || !(name.trim() || r.name)} loading={save.isPending} onClick={() => save.mutate(false)}>Save as module</Button>}
         </div>
       ) : undefined}>
       {error && <p role="alert" className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">{error}</p>}
@@ -102,12 +128,18 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
 
       {r?.status === 'recording' && (
         <div className="space-y-3">
-          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />{r.kind === 'desktop' ? `Recording in Windows apps on ${r.deviceName ?? 'your PC'}. Press Ctrl+Alt+R on the PC to stop.` : `Recording in Chrome on ${r.deviceName ?? 'your browser'}`}</p>
+          {editing && (
+            <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-950/40 dark:text-brand-200">
+              Open the Jizza side panel in {r.deviceName ?? 'the browser'}. ▶ Next runs the next step, ● New action records new steps where the marker is,
+              and “Run these only if shown…” puts the selected steps in a condition. Press Finish editing there, or Finish editing below, when you are done.
+            </p>
+          )}
+          <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />{editing ? `Editing in ${r.deviceName ?? 'your browser'}` : r.kind === 'desktop' ? `Recording in Windows apps on ${r.deviceName ?? 'your PC'}. Press Ctrl+Alt+R on the PC to stop.` : `Recording in Chrome on ${r.deviceName ?? 'your browser'}`}</p>
           <ol className="space-y-1 text-sm" aria-label="Captured steps">
             {liveSteps(r.steps).map((s, i) => <li key={s.seq} className="truncate">{i + 1}. {s.step.label ?? s.step.action}</li>)}
           </ol>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" loading={stop.isPending} onClick={() => stop.mutate()}><Square className="h-4 w-4" />Stop</Button>
+            <Button variant="secondary" loading={stop.isPending} onClick={() => stop.mutate()}><Square className="h-4 w-4" />{editing ? 'Finish editing' : 'Stop'}</Button>
             {r.kind !== 'desktop' && float.supported && !float.floating && (
               <Button variant="ghost" onClick={() => { float.open({ width: 340, height: 420 }).catch(() => undefined) }}>
                 <PictureInPicture2 className="h-4 w-4" />Float controls over the site
@@ -128,6 +160,9 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
         <div className="space-y-4">
           {mode === 'module' && (
             <div className="space-y-2 text-sm">
+              {editing && !sourceDraft && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">“{source.data?.name}” is past draft, so its changes go through review. Save these as a new recording.</p>
+              )}
               <label className="block">Module name
                 <input aria-label="Module name" value={name || r.name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 dark:border-gray-600" />
               </label>

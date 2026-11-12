@@ -56,6 +56,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   private final ObjectProvider<WorkflowStorageRepository> storage;
   private FastReplay fastReplay = new FastReplay(false);
 
+  /** Failures an optional step treats as "not there this time" and skips. */
+  static final java.util.Set<String> SKIPPABLE_WHEN_OPTIONAL = java.util.Set.of(
+      "element_not_found", "not_actionable", "item_not_found", "frame_not_found");
+
   public DeviceActionNodeExecutor(ObjectProvider<DeviceCommands> commands,
                                   ObjectProvider<DeviceActionCatalog> catalog,
                                   AutonomyGate autonomyGate, JexlSandbox sandbox,
@@ -85,6 +89,11 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     DeviceActionCatalog actions = catalog.getIfAvailable();
     if (broker == null || actions == null) {
       return Outcome.permanentFailure("Devices are not available here");
+    }
+    JsonNode nodeConfig = execution.node().config();
+    if (nodeConfig != null && nodeConfig.path("disabled").asBoolean(false)) {
+      // Turned off while editing a recording: kept in the steps, never sent.
+      return Outcome.completed(Json.obj().put("skipped", true).put("reason", "turned off"));
     }
     ObjectNode state = execution.context().state(execution.node().id());
     if (state.has(FastReplay.BATCH_OUTPUT)) {
@@ -713,6 +722,13 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         String kind = command.output() == null ? null
             : command.output().path("error").path("kind").asText(null);
         String message = failureMessage(command);
+        JsonNode stepConfig = execution.node().config();
+        if (stepConfig != null && stepConfig.path("optional").asBoolean(false)
+            && kind != null && SKIPPABLE_WHEN_OPTIONAL.contains(kind)) {
+          // An optional step whose element is not on the page this time (a pop-up some pages
+          // show): the run goes on without it.
+          yield Outcome.completed(Json.obj().put("skipped", true).put("reason", message));
+        }
         JsonNode listedNow = command.output() == null ? null
             : command.output().path("error").path("items");
         if ("item_not_found".equals(kind) && WebStepForm.pickKey(command.action()) != null

@@ -67,6 +67,31 @@ public class WebAutomationUseCase {
     return started;
   }
 
+  public Recordings.Recording editSavedRecording(Access access, UUID workflowId, UUID deviceId,
+                                                 JsonNode testValues) {
+    Recordings.Recording opened = recordings.openForEdit(access, workflowId, deviceId, testValues);
+    audit.record(access.userId(), ActorType.USER, null, "web.recording_edit_started", opened.name(),
+        Json.obj().put("recordingId", opened.id().toString())
+            .put("workflowId", workflowId.toString()).put("deviceId", deviceId.toString()));
+    return opened;
+  }
+
+  public List<Recordings.Linked> linkedWorkflows(Access access, UUID workflowId) {
+    return recordings.linked(access, workflowId);
+  }
+
+  public List<Recordings.LinkedUpdate> updateLinkedWorkflows(Access access, UUID workflowId,
+                                                             List<UUID> targets) {
+    List<Recordings.LinkedUpdate> done = recordings.updateLinked(access, workflowId, targets);
+    for (Recordings.LinkedUpdate update : done) {
+      if (!update.updated()) continue;
+      audit.record(access.userId(), ActorType.USER, null, "workflow.saved", update.name(),
+          Json.obj().put("workflowId", update.workflowId().toString())
+              .put("version", update.version()).put("reason", "recording inputs updated"));
+    }
+    return done;
+  }
+
   public List<Recordings.Recording> recordings(Access access, Collection<String> statuses) {
     return recordings.list(access, statuses);
   }
