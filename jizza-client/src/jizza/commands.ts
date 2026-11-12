@@ -108,6 +108,7 @@ export interface SlashCommand {
 }
 
 const GENERAL: SlashCommand[] = [
+  { name: 'run', description: 'Run a saved workflow now (no AI, uses no tokens)', insert: '/run ' },
   { name: 'new', description: 'Start a new conversation', run: 'new' },
   { name: 'help', description: 'What I can do here', run: 'help' },
 ]
@@ -170,6 +171,29 @@ export function matchCommands(ctx: JizzaContext, typed: string): SlashCommand[] 
   const q = typed.toLowerCase()
   const all = commandsFor(ctx)
   return all.filter(c => c.name.startsWith(q)).concat(q ? all.filter(c => !c.name.startsWith(q) && c.description.toLowerCase().includes(q)) : [])
+}
+
+/** What is typed after "/run " on the first line, while the user is still picking a workflow. */
+export function runQuery(input: string): string | null {
+  const m = /^\/run[ \t]+([^\n]*)$/i.exec(input)
+  return m ? m[1] : null
+}
+
+/** The workflows whose name has what was typed, those that start with it first. */
+export function matchWorkflows<T extends { name: string }>(all: T[], typed: string): T[] {
+  const q = typed.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!q) return all
+  const named = all.filter(w => w.name.toLowerCase().replace(/\s+/g, ' ').includes(q))
+  return [...named.filter(w => w.name.toLowerCase().startsWith(q)), ...named.filter(w => !w.name.toLowerCase().startsWith(q))]
+}
+
+/**
+ * What a picked workflow puts in the message box: the command, and a "name: " line for each
+ * input it takes, to fill in before sending. Null when it takes none and can run at once.
+ */
+export function runTemplate(w: { name: string; profile?: { inputs?: { name: string }[] } }): string | null {
+  const inputs = w.profile?.inputs ?? []
+  return inputs.length ? `/run ${w.name}\n${inputs.map(i => `${i.name}: `).join('\n')}` : null
 }
 
 /** "/help": what the commands here do, as a reply. */

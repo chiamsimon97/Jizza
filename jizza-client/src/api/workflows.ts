@@ -38,6 +38,10 @@ export const workflowsApi = {
   library: () =>
     api.get<LibraryEntry[]>('/api/workflows/library'),
 
+  /** Every workflow that can be run from chat with /run, newest first, with the inputs each takes. */
+  runnable: () =>
+    api.get<LibraryEntry[]>('/api/workflows/runnable'),
+
   setReuse: (id: string, reuse: ReuseProfile) =>
     api.put<LibraryEntry>(`/api/workflows/${id}/reuse`, reuse),
 

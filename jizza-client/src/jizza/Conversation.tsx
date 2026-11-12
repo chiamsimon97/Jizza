@@ -15,7 +15,9 @@ import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { AgentProposalCard } from './AgentProposalCard'
 import { useDictation } from './useSpeech'
 import { ContextChip, useCurrentContext } from './ContextChip'
-import { commandsFor, helpText, matchCommands, type SlashCommand } from './commands'
+import { commandsFor, helpText, matchCommands, matchWorkflows, runQuery, runTemplate, type SlashCommand } from './commands'
+import { workflowsApi } from '@/api/workflows'
+import type { LibraryEntry } from '@/types'
 import { useContextStore } from './contextStore'
 import { Markdown } from './Markdown'
 import { UserStepsCard, cardLinks } from './UserStepsCard'
@@ -59,6 +61,14 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   const commands = slash && !menuClosed ? matchCommands(ctx, slash[1]) : []
   useEffect(() => { setMenuIndex(0) }, [slash?.[1]])
   useEffect(() => { if (!slash) setMenuClosed(false) }, [!!slash]) // eslint-disable-line react-hooks/exhaustive-deps
+  // "/run " and part of a name: the workflows it could be, to run without Jizza thinking about it.
+  const runTyped = runQuery(input)
+  const [runClosed, setRunClosed] = useState(false)
+  const runnable = useQuery({ queryKey: ['workflows', 'runnable'], queryFn: workflowsApi.runnable, enabled: runTyped !== null, staleTime: 30_000 })
+  const runChoices = runTyped !== null && !runClosed ? matchWorkflows(runnable.data ?? [], runTyped).slice(0, 8) : []
+  const runMenuOpen = runTyped !== null && !runClosed && (runnable.isLoading || runChoices.length > 0)
+  useEffect(() => { setMenuIndex(0) }, [runTyped])
+  useEffect(() => { if (runTyped === null) setRunClosed(false) }, [runTyped === null]) // eslint-disable-line react-hooks/exhaustive-deps
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // Files and folders from the "+" menu, tagged above the message box until sent (a linked folder stays).
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -144,6 +154,22 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   const reply = (msg: AssistantMessage) => {
     setReplyTo({ who: msg.role === 'user' ? 'yourself' : msg.lead?.name ?? 'Jizza', text: splitQuote(msg.text).body })
     inputRef.current?.focus()
+  }
+
+  /** A workflow picked after "/run": runs at once, or first asks for the inputs it takes. */
+  function pickWorkflow(w: LibraryEntry) {
+    const template = runTemplate(w)
+    if (!template) {
+      setInput('')
+      if (!thinking) void send(`/run ${w.name}`)
+      return
+    }
+    setInput(template)
+    const caret = template.indexOf('\n') + template.slice(template.indexOf('\n') + 1).split('\n')[0].length + 1
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); el.setSelectionRange(caret, caret) }
+    })
   }
 
   function runCommand(command: SlashCommand) {
@@ -240,6 +266,25 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
 
       <form onSubmit={submit} className={`${pad} pb-3 pt-2`}>
         <div className={`${width} relative`}>
+          {runMenuOpen && (
+            <ul role="listbox" aria-label="Workflows"
+              className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+              <li className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Run a workflow now · no AI, no tokens</li>
+              {runnable.isLoading && <li className="px-2.5 py-1.5 text-sm text-gray-500">Loading your workflows…</li>}
+              {runChoices.map((w, i) => (
+                <li key={w.workflowId} role="option" aria-selected={i === menuIndex}>
+                  <button type="button" onMouseEnter={() => setMenuIndex(i)} onMouseDown={e => e.preventDefault()} onClick={() => pickWorkflow(w)}
+                    className={`flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${i === menuIndex ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
+                    <span className="truncate font-medium text-gray-800 dark:text-gray-100">{w.name}</span>
+                    {(w.profile?.inputs?.length ?? 0) > 0 && (
+                      <span className="shrink-0 text-xs text-gray-400">asks for {w.profile!.inputs!.map(x => x.name).join(', ')}</span>
+                    )}
+                    {w.description && <span className="truncate text-xs text-gray-500 dark:text-gray-400">{w.description}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {commands.length > 0 && (
             <ul role="listbox" aria-label="Shortcuts"
               className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
@@ -324,6 +369,15 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             readOnly={dictation.listening}
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
             onKeyDown={e => {
+              if (runChoices.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMenuIndex(i => (i + (e.key === 'ArrowDown' ? 1 : runChoices.length - 1)) % runChoices.length)
+                  return
+                }
+                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); pickWorkflow(runChoices[menuIndex] ?? runChoices[0]); return }
+                if (e.key === 'Escape') { e.preventDefault(); setRunClosed(true); return }
+              }
               if (commands.length > 0) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault()
@@ -348,7 +402,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
         </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
-            Enter to send · Shift+Enter for a new line · / for shortcuts · + to add files or a folder · Ctrl+K opens Jizza anywhere
+            Enter to send · Shift+Enter for a new line · / for shortcuts · /run starts a workflow · + to add files or a folder · Ctrl+K opens Jizza anywhere
           </p>
         )}
       </form>

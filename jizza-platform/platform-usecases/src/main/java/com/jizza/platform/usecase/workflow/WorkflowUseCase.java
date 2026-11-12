@@ -162,6 +162,12 @@ public class WorkflowUseCase {
     return requireLibrary().list(userId);
   }
 
+  /** Every workflow the user can run from a chat, newest first, with the inputs each takes. */
+  @Transactional(readOnly = true)
+  public List<WorkflowLibrary.Match> runnable(UUID userId) {
+    return requireLibrary().runnable(userId);
+  }
+
   private WorkflowLibrary requireLibrary() {
     if (library == null) throw new IllegalStateException("The workflow library is not available");
     return library;
