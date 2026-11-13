@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { conditionDepths, fieldName, isCondition, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
+import { conditionDepths, emptyConditions, fieldName, isCondition, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
 
@@ -29,6 +29,8 @@ export function RecordingReview({ recording, busy, onEdit }: {
   // Edit recording: conditions and their steps are indented; steps can be turned off or made optional.
   const editing = !!recording.sourceWorkflowId
   const depth = conditionDepths(steps)
+  // A condition with nothing inside is left out on save: say so before, not after.
+  const empty = new Set(emptyConditions(steps))
 
   return (
     <>
@@ -44,6 +46,12 @@ export function RecordingReview({ recording, busy, onEdit }: {
           )}
         </div>
       )}
+      {empty.size > 0 && (
+        <p role="alert" className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+          {empty.size === 1 ? 'A condition has' : `${empty.size} conditions have`} no steps inside, so saving leaves {empty.size === 1 ? 'it' : 'them'} out.
+          Drag the step it is for (for example the pop-up's choice) between the condition and its end, or in the browser's side panel use the condition's Take in next step.
+        </p>
+      )}
       <ol className="space-y-2" aria-label="Recorded steps">
         {steps.map((s, i) => (
           <li key={s.seq} draggable onDragStart={() => setDragging(i)} onDragOver={e => e.preventDefault()}
@@ -56,6 +64,7 @@ export function RecordingReview({ recording, busy, onEdit }: {
               : <span className="h-12 w-16 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800" />}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
+              {empty.has(s.seq) && <p className="text-xs text-amber-700 dark:text-amber-300">Nothing inside: left out when saved</p>}
               <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
               {s.step.action === 'browser.fillForm' && Array.isArray(s.step.input?.fields) && (
                 <ul className="mt-1 space-y-0.5 text-xs text-gray-600 dark:text-gray-300" aria-label="Form fields">

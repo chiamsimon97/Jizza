@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordedStep } from '@/api/web'
-import { conditionDepths, fieldName, isCondition, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
+import { conditionDepths, emptyConditions, fieldName, isCondition, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
 
 const step = (seq: number, over: Partial<RecordedStep['step']> = {}, deleted = false, position = seq): RecordedStep =>
   ({ seq, position, deleted, step: { action: 'browser.setText', label: 'Set "Invoice number" to "INV-2041"', input: { text: 'INV-2041', clearFirst: true }, ...over } })
@@ -103,5 +103,14 @@ describe('conditionDepths', () => {
       at(5, 'browser.click'), at(6, 'flow.endIf'), at(7, 'browser.click')]
     expect(conditionDepths(steps)).toEqual([0, 0, 1, 0, 1, 0, 0])
     expect(steps.filter(isCondition).map(s => s.seq)).toEqual([2, 4, 6])
+  })
+})
+
+describe('emptyConditions', () => {
+  const at = (seq: number, action: string) => ({ seq, position: seq, deleted: false, step: { action, label: action, input: {} } }) as unknown as RecordedStep
+  it('finds the conditions a save leaves out because nothing is inside', () => {
+    expect(emptyConditions([at(1, 'browser.click'), at(2, 'flow.if'), at(3, 'flow.endIf'), at(4, 'browser.clickItem')])).toEqual([2])
+    expect(emptyConditions([at(1, 'flow.if'), at(2, 'flow.else'), at(3, 'flow.endIf')])).toEqual([1])
+    expect(emptyConditions([at(1, 'flow.if'), at(2, 'browser.click'), at(3, 'flow.endIf')])).toEqual([])
   })
 })

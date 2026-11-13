@@ -272,6 +272,8 @@ In the side panel:
 - **Add Otherwise** adds steps that run only when the element is not there. Press **● New action** with the marker under Otherwise to record them.
 - **Take in next step** and **Leave out last step** move the condition's end, to put more steps inside it or take one out.
 
+A condition with nothing inside does nothing, so saving leaves it out. The side panel marks one in red with **Take in next step** beside it, and the review in Jizza says so too; drag the step it is for between the condition and its end there.
+
 A condition waits up to 3 seconds for its element. **Missing** runs its steps only when the element is not there. An **optional** step is skipped when its element is not on the page, instead of failing the run. A step that is **turned off** stays in the recording but does not run.
 
 Press **■ Finish editing** at the top of the side panel (or **Finish editing** in Jizza), then review and save. **✕ Cancel editing** stops and keeps nothing; the saved recording stays as it was.
