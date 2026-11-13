@@ -96,8 +96,10 @@ A recording runs from **Record** to **Stop**, and gives you a list of steps to r
    - **Add check**: pick an element to check that it is there, or to read its text.
    - **Add table**: pick a table to extract its rows.
    - **Mark hover**: pick an element the run should hover over, such as a menu.
+   - **Add wait**: add a step that waits a few seconds, for a page that needs time before the next step.
 6. If you make a stray click, delete it in the side panel (×). You can also drag steps into a different order, rename a step (✎), and turn a typed value into an input (⇄) there, without waiting for the review. A step that became an input shows "input: name". Choosing a saved login for a password still happens in Jizza's review.
-7. Press **Stop**, in the side panel or in Jizza. Closing the last tab of the recording also stops it.
+7. To do something on the page without recording it, press **Pause** at the top of the side panel, then **Resume**. Come back to the page you paused on first: a run does not follow where you went while paused.
+8. Press **Stop**, at the top of the side panel or in Jizza. Closing the last tab of the recording also stops it. **Discard recording** at the bottom of the side panel stops it and keeps nothing.
 
 You can also start a recording in two other ways:
 
@@ -216,7 +218,7 @@ After you press **Stop**, the recording waits for you in review. Nothing runs un
 - **Move up / Move down** to change the order, and **Delete** steps you don't need.
 - **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
 - **Make reusable** turns every list choice (the movie, the date, the format, the showtime and its theatre) into an input in one go, with names such as `movie`, `date` and `time`. The recorded choices stay as the defaults, so the workflow still does what you recorded until a run, a form or a schedule passes other values. You can also make one choice an input with **Make this an input** (**Item chosen**, or **Chosen in** for the theatre).
-- **Saved login** on each password step: enter the saved login to use. A recording with a password step can't be saved without one. (For now this is a text field for the login's id; a picker is planned.)
+- **Saved login** on each password step: choose the saved login to use from the list of logins saved in that browser. A recording with a password step can't be saved without one. If the list is empty, add the login in the extension's Options first.
 
 Then give the module a name and a short description, and press **Save as module**. The description helps Jizza find the module when you ask for it in chat.
 
@@ -228,7 +230,7 @@ A saved recording is a workflow with the **Recorded** origin, so it works anywhe
 
 | Where | How | Good for |
 | --- | --- | --- |
-| Recordings page | **Run now** on the saved recording | A one-off run while you watch |
+| Recordings page | **Run now** on the saved recording; the run opens so you can follow its steps | A one-off run while you watch |
 | Chat | Ask for the task in your own words; Jizza offers the matching recording and runs it after you say yes | Doing the task without opening anything |
 | Another workflow | **Run a module** step, passing its inputs | One step of a bigger process |
 | Many items | **For each** over a list, running the module once per item | The same task for every invoice, order or row |
@@ -308,7 +310,7 @@ Recordings saved before 2 Nov 2026 have no Close browser step, so their pages no
 
 ## Sign-ins and when Jizza needs you
 
-Passwords never go into a recording. A password step types from a saved login, and only into a password field on that login's own site.
+Passwords never go into a recording. A password step types from a saved login, and only into a password field on that login's own site, over a secure (https) connection.
 
 Some pages need a person: a CAPTCHA, a one-time code, a "confirm it's you" check, or a sign-in form when no saved login fits. When a step can't go on because of one of these, the run pauses and:
 
@@ -326,7 +328,7 @@ The recorder only watches what you allow, and you can stop it at any time.
 - **Only allowed sites.** Steps on a site that isn't in your allowed list are not recorded, and the side panel says "Not recording on this site". Browser settings pages, extension pages and the Chrome Web Store are never recorded or automated.
 - **Only its own tabs.** The recorder watches only the tab group it opened, not your other tabs.
 - **Only real actions.** Only the clicks and keys you actually make are recorded, never ones a page fakes.
-- **No secrets stored.** Password, one-time-code and card fields are never read. They are blurred in every screenshot and step picture, and if the server ever receives one of their values, it removes it.
+- **No secrets stored.** Password, one-time-code and card fields are never read, also on pages that only name them that way (a box called "CVV", "OTP" or "Card number"), and a password stays unread after the page's "show password" turns it into plain text. They are blurred in every screenshot and step picture, and if the server ever receives one of their values, it removes it.
 - **Your approval.** Steps that change a site (submitting, typing) go through your [guardrails](/guardrails) like any other action. In chat, clicking or typing in your browser always asks first.
 - **Stop everything.** **Pause automation** in the extension popup refuses all commands until you resume. **Stop all** (Alt+Shift+S) ends whatever is running now.
 
@@ -369,7 +371,7 @@ Sites change, and a step may no longer find its element. When that happens, the 
 | "Not recording on this site" in the side panel | Add the site in the extension's Options, then grant access when Chrome asks |
 | Test says "It is not connected right now" | Keep the browser open, reload the extension on its extensions page, and check the server address it was paired with |
 | A step is missing after a scroll | This is on purpose: scrolls shorter than a screen, or followed by another step within 2 seconds, are left out |
-| "Choose a saved login for each password step" | Add the login in Options › Saved logins, then enter it on that step in review |
+| "Choose a saved login for each password step" | Add the login in Options › Saved logins, then choose it on that step in review |
 | A run stops at a sign-in, CAPTCHA or code | Finish it in the tab and press **Done, continue** in the side panel |
 | A run waits on a step until you open its tab | Update the extension: since 2 Nov 2026 it brings the run's tab to the front before each step. Also keep the browser window open, not minimised |
 | The run history shows a failed web step | Open it. It says what went wrong and, when the browser took one, shows a screenshot of the page |
