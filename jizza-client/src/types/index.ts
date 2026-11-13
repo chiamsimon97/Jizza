@@ -942,6 +942,8 @@ export interface GuardrailDecision {
   policyId?: string | null
   actionType?: ActionType | null
   budgeted?: boolean
+  /** Let Jizza decide was chosen, but Jizza is the agent acting, so the step asks instead. */
+  jizzaActs?: boolean
 }
 
 export interface GuardrailCell {
@@ -987,7 +989,9 @@ export interface GuardrailStep {
   actionType?: ActionType | null
   decision?: GuardrailDecision | null
   /** The same step under each agent that maintains the workflow; the first one leads. */
-  perAgent?: { agentId: string; agentName?: string | null; decision: GuardrailDecision }[]
+  perAgent?: { agentId: string; agentName?: string | null; decision: GuardrailDecision; orchestrator?: boolean }[]
+  /** The step picks an item from a list the page shows at run time (such as a movie or a date). */
+  listChoice?: boolean
 }
 
 export interface WorkflowGuardrails {

@@ -293,6 +293,7 @@ Each workflow has a **Guardrails** panel on the [Workflows](/workflows) page.
 
 - **Maintained by**: pick one or more agents, the same way you pick agents for a connector. The first one you pick **leads**: its guardrails decide every run of this workflow. With none picked, Jizza (or the agent that made the workflow) leads.
 - **Each step, per agent**: every step that acts on your apps or your browser is listed, with what each maintaining agent's guardrails will do: **Auto**, **Ask me**, **Let Jizza decide** or **Never**.
+- **When Jizza leads**: Jizza never approves its own actions, so for Jizza **Let Jizza decide** is offered only on steps that choose from a list the page shows (such as a movie or a date). There it clicks the item the run names when the page lists it, and asks you when it doesn't. To let another agent decide on other steps, pick it under **Maintained by**.
 - **Skip the approval for a step**: set that step to **Auto** for the lead agent. The run then goes on without asking you at that step. It covers this version of the workflow only; after you edit the steps, they are asked about again.
 
 Changing who maintains a workflow, or a step's mode, asks you to confirm it's you.

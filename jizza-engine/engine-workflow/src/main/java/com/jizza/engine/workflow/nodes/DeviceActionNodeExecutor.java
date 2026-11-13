@@ -313,12 +313,14 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       decision = autonomyGate.evaluate(guardrail);
     } else if (pick) {
       // "Let Jizza decide" picks the item the run asked for when the page lists it; otherwise
-      // the person picks from what is there.
+      // the person picks from what is there. That is a plain match against the page, so it
+      // holds even when Jizza itself runs the step.
       decision = autonomyGate.evaluate(guardrail);
-      if ((decision.allowed() || decision.needsJizza()) && picked.found()) {
+      boolean letDecide = decision.needsJizza() || decision.jizzaActs();
+      if ((decision.allowed() || letDecide) && picked.found()) {
         decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ALLOW,
             "the page lists " + picked.chosen());
-      } else if (decision.allowed() || decision.needsJizza()) {
+      } else if (decision.allowed() || letDecide) {
         decision = decision.withRule(com.jizza.engine.api.enums.AutonomyRule.ASK,
             pickReason(wanted, picked, "the page"));
       }
