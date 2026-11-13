@@ -39,7 +39,10 @@ final class EditSteps {
       String name = mapping.getValue().path("name").asText("");
       mapped.put(mapping.getKey(), name);
       JsonNode value = testValues == null ? null : testValues.get(name);
-      if (value != null && value.isValueNode() && !value.isNull()) set(input, mapping.getKey(), value);
+      // An empty test value keeps what the step has (a list choice's recorded item).
+      if (value != null && value.isValueNode() && !value.isNull() && !value.asText("").isBlank()) {
+        set(input, mapping.getKey(), value);
+      }
     }
     if (!mapped.isEmpty()) out.set("mapped", mapped);
     String secretRef = step.path("secretRef").asText("");

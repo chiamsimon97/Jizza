@@ -302,6 +302,11 @@ page). While editing, the extension may send:
 {"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "update", "seq": 3, "patch": {"optional": true}}}
 ```
 
+A `flow.else` between them starts the steps that run when the condition does not hold (the
+branch gets `config.else: true`, and its false edge goes to those steps). Conditions may also be
+recorded the first time, appended like any step. `browser.recording.stopped` with
+`"discarded": true` (Cancel in the side panel) discards the recording.
+
 `after` is the seq of the step the new one goes after (`-1` for the start). `update` takes a
 `patch` of `disabled`, `optional`, `timeoutMs`, `when`, `element` or `value: {"field", "value"}`.
 Saving gives the workflow a new version (drafts only; `asNew: true` saves a new workflow instead)

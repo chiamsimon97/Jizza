@@ -154,6 +154,10 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
         </div>
       )}
 
+      {r?.status === 'discarded' && (
+        <p className="text-sm text-gray-600">{editing ? 'Editing was cancelled in the browser. The saved recording is unchanged.' : 'This recording was cancelled in the browser. Nothing was kept.'}</p>
+      )}
+
       {r?.status === 'failed' && <p className="text-sm text-gray-600">{r.kind === 'desktop' ? 'Nothing was captured. Press Ctrl+Alt+R on the PC and try again.' : 'Nothing was captured. Try again, and check Chrome is open on the page.'}</p>}
 
       {r?.status === 'review' && (

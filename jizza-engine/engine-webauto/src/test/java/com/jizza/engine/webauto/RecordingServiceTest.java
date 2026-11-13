@@ -225,6 +225,16 @@ class RecordingServiceTest {
   }
 
   @Test
+  void cancellingInTheSidePanelDiscardsTheRecording() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step",
+        event(id, step(0, "browser.click", "Click", "{}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.stopped",
+        Json.obj().put("recordingId", id.toString()).put("discarded", true));
+    assertThat(recordingRows.get(id).getStatus()).isEqualTo("discarded");
+  }
+
+  @Test
   void aStepHandledJustAfterStoppedIsStillKept() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.stopped",
@@ -644,6 +654,77 @@ class RecordingServiceTest {
     assertThat(seats.path("input").path("text").asText()).isEqualTo("4");
     assertThat(seats.path("mapped").path("text").asText()).isEqualTo("seats");
     assertThat(stepRows.stream().filter(r -> r.getRecordingId().equals(opened.id()))).hasSize(6);
+  }
+
+  /** A saved recording whose one step chooses a showtime in a theatre, both run-time inputs. */
+  private WorkflowDto savedListChoice() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(0, "browser.open", "Open", "{\"url\":\"https://portal.example.com\"}", false)));
+    var step = (com.fasterxml.jackson.databind.node.ObjectNode) step(1, "browser.clickItem",
+        "Choose Showtime \\\"07:15 PM\\\" in \\\"PVR\\\"", "{\"element\":" + ELEMENT
+            + ",\"item\":\"07:15 PM\",\"within\":{\"element\":" + ELEMENT
+            + ",\"item\":\"PVR\"}}", false);
+    ((com.fasterxml.jackson.databind.node.ObjectNode) step.get("meta")).set("list", Json.read(
+        "{\"title\":\"Showtime\",\"withinTitle\":\"Theatre\",\"kind\":\"time\",\"count\":2,"
+            + "\"groups\":[{\"label\":\"PVR\",\"items\":[\"07:15 PM\",\"10:45 PM\"]}]}"));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id, step));
+    service.stop(access, id);
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("map", 1, null, null, "item",
+            new Recordings.Input("time", "text", null), null, null),
+        new Recordings.EditOp("map", 1, null, null, "within.item",
+            new Recordings.Input("theatre", "text", null), null, null)));
+    var saved = service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+    WorkflowDto made = savedWorkflows.get(savedWorkflows.size() - 1);
+    return new WorkflowDto(saved.workflowId(), access.userId(), made.name(), made.description(),
+        made.graph(), null, null, WorkflowOrigin.RECORDED,
+        com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 1, null, Instant.now());
+  }
+
+  private JsonNode stepsHandedForEdit(WorkflowDto workflow, JsonNode testValues) {
+    when(workflows.find(workflow.id())).thenReturn(Optional.of(workflow));
+    var handed = new java.util.concurrent.atomic.AtomicReference<byte[]>();
+    when(devices.handFile(any(), anyString(), anyString(), any())).thenAnswer(i -> {
+      handed.set(i.getArgument(3));
+      return UUID.randomUUID();
+    });
+    service.openForEdit(access, workflow.id(), browser.id(), testValues);
+    return Json.read(new String(handed.get(), java.nio.charset.StandardCharsets.UTF_8)).path("steps");
+  }
+
+  @Test
+  void aListChoiceOpensForEditingWithTheItemRecorded() {
+    WorkflowDto workflow = savedListChoice();
+    JsonNode node = null;
+    for (JsonNode n : workflow.graph().path("nodes")) {
+      if ("browser.clickItem".equals(n.path("config").path("action").asText())) node = n;
+    }
+    // Runs still choose from the page: the inputs keep no default, the item is kept beside them.
+    assertThat(node.path("config").path("inputs").path("item").asText()).isEqualTo("{{ input.time }}");
+    assertThat(node.path("config").path("recorded").path("item").asText()).isEqualTo("07:15 PM");
+    assertThat(node.path("config").path("recorded").path("within.item").asText()).isEqualTo("PVR");
+
+    // An empty test value runs the step with what was recorded; a typed one with that.
+    JsonNode choose = stepsHandedForEdit(workflow, Json.obj().put("time", "").put("theatre", "INOX")).get(1);
+    assertThat(choose.path("input").path("item").asText()).isEqualTo("07:15 PM");
+    assertThat(choose.path("input").path("within").path("item").asText()).isEqualTo("INOX");
+    assertThat(choose.path("mapped").path("item").asText()).isEqualTo("time");
+  }
+
+  @Test
+  void anOlderListChoiceGetsItsItemBackFromTheStepName() {
+    WorkflowDto saved = savedListChoice();
+    var graph = (com.fasterxml.jackson.databind.node.ObjectNode) saved.graph().deepCopy();
+    graph.path("nodes").forEach(n -> ((com.fasterxml.jackson.databind.node.ObjectNode) n.path("config"))
+        .remove("recorded"));
+    WorkflowDto older = new WorkflowDto(saved.id(), saved.userId(), saved.name(),
+        saved.description(), graph, null, null, WorkflowOrigin.RECORDED,
+        com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 1, null, Instant.now());
+
+    JsonNode choose = stepsHandedForEdit(older, Json.obj()).get(1);
+    assertThat(choose.path("input").path("item").asText()).isEqualTo("07:15 PM");
+    assertThat(choose.path("input").path("within").path("item").asText()).isEqualTo("PVR");
   }
 
   @Test

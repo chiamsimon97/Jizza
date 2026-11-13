@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordedStep } from '@/api/web'
-import { fieldName, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
+import { conditionDepths, fieldName, isCondition, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
 
 const step = (seq: number, over: Partial<RecordedStep['step']> = {}, deleted = false, position = seq): RecordedStep =>
   ({ seq, position, deleted, step: { action: 'browser.setText', label: 'Set "Invoice number" to "INV-2041"', input: { text: 'INV-2041', clearFirst: true }, ...over } })
@@ -93,5 +93,15 @@ describe('list choices', () => {
       { op: 'map', seq: 3, field: 'item', input: { name: 'date', type: 'text', default: '10' } },
       { op: 'map', seq: 4, field: 'item', input: { name: 'movie2', type: 'text', default: 'Ramayana' } },
     ])
+  })
+})
+
+describe('conditionDepths', () => {
+  it('indents a condition\'s steps on both sides of Otherwise', () => {
+    const at = (seq: number, action: string) => ({ seq, position: seq, deleted: false, step: { action } })
+    const steps = [at(1, 'browser.click'), at(2, 'flow.if'), at(3, 'browser.click'), at(4, 'flow.else'),
+      at(5, 'browser.click'), at(6, 'flow.endIf'), at(7, 'browser.click')]
+    expect(conditionDepths(steps)).toEqual([0, 0, 1, 0, 1, 0, 0])
+    expect(steps.filter(isCondition).map(s => s.seq)).toEqual([2, 4, 6])
   })
 })

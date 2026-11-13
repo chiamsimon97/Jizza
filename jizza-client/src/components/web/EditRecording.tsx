@@ -56,11 +56,11 @@ export function EditRecordingStart({ workflow, onClose, onStarted }: {
         {inputs.length > 0 && (
           <fieldset className="space-y-2">
             <legend className="text-xs font-semibold text-gray-700 dark:text-gray-200">Test values</legend>
-            <p className="text-xs text-gray-500">The steps run with these while you edit. Saving keeps each input's own default.</p>
+            <p className="text-xs text-gray-500">The steps run with these while you edit. Leave one empty to use what was recorded (a choice from a list, such as a movie or showtime). Saving keeps each input's own default.</p>
             {inputs.map(f => (
               <label key={f.name} className="block">
                 <span className="text-xs text-gray-600 dark:text-gray-300">{f.name}{f.description ? `: ${f.description}` : ''}</span>
-                <input aria-label={`Test value for ${f.name}`} value={values[f.name] ?? ''}
+                <input aria-label={`Test value for ${f.name}`} value={values[f.name] ?? ''} placeholder="Empty: the value recorded"
                   onChange={e => setValues(v => ({ ...v, [f.name]: e.target.value }))}
                   className="mt-0.5 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-1.5 dark:border-gray-600" />
               </label>

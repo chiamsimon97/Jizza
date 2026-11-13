@@ -82,7 +82,9 @@ final class StepCompiler {
     }
     Set<String> placed = new HashSet<>(List.of("start", "end"));
     Tails tails = new Tails(edges);
-    java.util.Deque<String[]> openConditions = new java.util.ArrayDeque<>();
+    // Each open condition: its branch, and once its "Otherwise" starts, where the steps run when
+    // it holds ended.
+    java.util.Deque<Condition> openConditions = new java.util.ArrayDeque<>();
 
     if (!inline) {
       nodes.add(node("start", "TRIGGER", "Start", Json.obj().set("inputs", inputs), 0));
@@ -130,11 +132,26 @@ final class StepCompiler {
         nodes.add(node(branchId, "BRANCH", label, branchConfig, row++));
         tails.to(branchId);
         tails.only(branchId, "true");
-        openConditions.push(new String[] {branchId, "false"});
+        openConditions.push(new Condition(branchId, branchConfig));
+        continue;
+      }
+      if (ELSE.equals(action)) {
+        // Otherwise: the steps until the end run when the condition does not hold.
+        Condition open = openConditions.peek();
+        if (open == null || open.whenHolds != null) continue;
+        open.whenHolds = tails.open();
+        open.config.put("else", true);
+        tails.only(open.branchId, "false");
         continue;
       }
       if (END_IF.equals(action)) {
-        if (!openConditions.isEmpty()) tails.add(openConditions.pop());
+        Condition open = openConditions.poll();
+        if (open == null) continue;
+        if (open.whenHolds == null) {
+          tails.add(new String[] {open.branchId, "false"});
+        } else {
+          open.whenHolds.forEach(tails::add);
+        }
         continue;
       }
       if (KEEP.equals(action)) {
@@ -168,6 +185,9 @@ final class StepCompiler {
       }
 
       JsonNode mappings = step.path("mappings");
+      // A run-time list choice keeps no default, so the item recorded is kept beside it for Edit
+      // recording to run the step with.
+      ObjectNode recorded = Json.obj();
       for (Iterator<Map.Entry<String, JsonNode>> it = mappings.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> mapping = it.next();
         String name = mapping.getValue().path("name").asText("");
@@ -179,6 +199,14 @@ final class StepCompiler {
           JsonNode kept = mapping.getValue().get("default");
           if (kept != null && !kept.isNull()) setAt(stepInputs, mapping.getKey(), kept);
           continue;
+        }
+        JsonNode def = mapping.getValue().get("default");
+        if (def == null || def.isNull() || def.asText("").isBlank()) {
+          JsonNode value = valueAt(stepInputs, mapping.getKey());
+          if (value != null && value.isArray() && value.size() == 1) value = value.get(0);
+          if (value != null && value.isValueNode() && !value.asText("").isBlank()) {
+            recorded.set(mapping.getKey(), value.deepCopy());
+          }
         }
         setAt(stepInputs, mapping.getKey(),
             Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
@@ -196,6 +224,7 @@ final class StepCompiler {
       }
       ObjectNode list = listFacts(step.path("meta"));
       if (list != null) config.set("list", list);
+      if (!recorded.isEmpty()) config.set("recorded", recorded);
       boolean disabled = step.path("disabled").asBoolean(false);
       if (disabled) config.put("disabled", true);
       if (step.path("optional").asBoolean(false)) config.put("optional", true);
@@ -211,7 +240,14 @@ final class StepCompiler {
       }
     }
     // A condition left open ends with the steps.
-    while (!openConditions.isEmpty()) tails.add(openConditions.pop());
+    while (!openConditions.isEmpty()) {
+      Condition open = openConditions.pop();
+      if (open.whenHolds == null) {
+        tails.add(new String[] {open.branchId, "false"});
+      } else {
+        open.whenHolds.forEach(tails::add);
+      }
+    }
 
     JsonNode last = lastAction(steps);
     boolean closes = last != null && CLOSE.equals(last.path("action").asText());
@@ -234,11 +270,25 @@ final class StepCompiler {
 
   static final String IF = "flow.if";
   static final String END_IF = "flow.endIf";
+  static final String ELSE = "flow.else";
   static final String KEEP = "flow.keep";
   static final int DEFAULT_IF_WAIT_MS = 3_000;
   private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
   private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
-      "preset", "target", "disabled", "optional", "ifCheck");
+      "preset", "target", "disabled", "optional", "ifCheck", "recorded");
+
+  /** A condition being compiled: its branch node, and the open paths where its steps run when
+   *  it holds ended, once its "Otherwise" starts. */
+  private static final class Condition {
+    final String branchId;
+    final ObjectNode config;
+    List<String[]> whenHolds;
+
+    Condition(String branchId, ObjectNode config) {
+      this.branchId = branchId;
+      this.config = config;
+    }
+  }
 
   /** The paths still open at the point the next node goes: each edge it gets, and its outlet. */
   private static final class Tails {
@@ -261,6 +311,10 @@ final class StepCompiler {
 
     void add(String[] tail) {
       open.add(tail);
+    }
+
+    List<String[]> open() {
+      return new java.util.ArrayList<>(open);
     }
 
     void to(String id) {
@@ -293,19 +347,26 @@ final class StepCompiler {
     return id;
   }
 
-  /** A condition with no steps inside does nothing, so it is left out. */
+  /** A condition with no steps inside does nothing, so it is left out; so is an empty
+   *  "Otherwise", and one that is not in a condition. */
   private static List<JsonNode> withoutEmptyConditions(List<JsonNode> steps) {
     List<JsonNode> out = new java.util.ArrayList<>(steps);
     boolean removed = true;
     while (removed) {
       removed = false;
-      for (int i = 0; i + 1 < out.size(); i++) {
-        if (IF.equals(out.get(i).path("action").asText())
-            && END_IF.equals(out.get(i + 1).path("action").asText())) {
+      int depth = 0;
+      for (int i = 0; i < out.size() && !removed; i++) {
+        String action = out.get(i).path("action").asText();
+        String next = i + 1 < out.size() ? out.get(i + 1).path("action").asText() : "";
+        if (IF.equals(action)) depth++;
+        if (END_IF.equals(action)) depth = Math.max(0, depth - 1);
+        if (ELSE.equals(action) && (depth == 0 || END_IF.equals(next) || ELSE.equals(next))) {
+          out.remove(i);
+          removed = true;
+        } else if (IF.equals(action) && END_IF.equals(next)) {
           out.remove(i + 1);
           out.remove(i);
           removed = true;
-          break;
         }
       }
     }
@@ -315,7 +376,7 @@ final class StepCompiler {
   private static JsonNode lastAction(List<JsonNode> steps) {
     for (int i = steps.size() - 1; i >= 0; i--) {
       String action = steps.get(i).path("action").asText();
-      if (!END_IF.equals(action)) return IF.equals(action) ? null : steps.get(i);
+      if (!END_IF.equals(action) && !ELSE.equals(action)) return IF.equals(action) ? null : steps.get(i);
     }
     return null;
   }
@@ -347,7 +408,7 @@ final class StepCompiler {
   }
 
   /** Sets a field of a step's inputs by the same dotted path, when its parent object exists. */
-  private static void setAt(ObjectNode inputs, String field, JsonNode value) {
+  static void setAt(ObjectNode inputs, String field, JsonNode value) {
     int dot = field.lastIndexOf('.');
     JsonNode parent = dot < 0 ? inputs : valueAt(inputs, field.substring(0, dot));
     if (parent instanceof ObjectNode object) object.set(field.substring(dot + 1), value);
