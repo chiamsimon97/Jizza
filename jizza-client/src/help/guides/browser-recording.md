@@ -243,6 +243,35 @@ What a step reads, such as a table's rows or an element's text, is available to 
 
 By default, a saved recording asks before Jizza runs it on its own and does not run on a schedule. When you ask Jizza in chat to run it, your request is the yes, so it runs straight away. You can change that in the workflow's reuse settings.
 
+### Edit a recording
+
+When a site changes, or a page only sometimes appears (BookMyShow shows "Select language and format" only for films with more than one format), edit the saved recording instead of recording it again. Edit needs the Jizza Browser Agent 0.10.0 or later.
+
+1. On the Recordings page, press **Edit** next to the saved recording.
+2. Choose the browser and check the **Test values**. Each input starts with its default. The steps run with these while you edit; saving keeps the inputs' own defaults.
+3. The start page opens and the extension's side panel shows the steps with a marker after the one that ran last. Test runs while editing skip guardrails (the allowed sites still apply), and **Close browser** is never run.
+
+In the side panel:
+
+| Button | What it does |
+| --- | --- |
+| **▶ Next** | Runs the next step and moves the marker past it |
+| **⏩ Run to end** | Runs steps until one fails or the end; **⏸ Pause** stops after the current step |
+| **⏭ Skip** | Moves the marker past a step without running it |
+| **● New action** | Records what you do on the page as new steps where the marker is; **■ Stop adding** ends it |
+| **Run these only if shown…** | Tick the steps that only sometimes apply, press it, then click the element that tells (such as the pop-up's title). They run only when it is on the page |
+| **Add wait** | Waits a number of seconds at the marker |
+| **⋯** on a step | Run from here, Shown/Missing for a condition, Rename, Turn off, Make optional, Pick element again, change the test value, move or delete |
+
+A condition waits up to 3 seconds for its element. **Missing** runs its steps only when the element is not there. An **optional** step is skipped when its element is not on the page, instead of failing the run. A step that is **turned off** stays in the recording but does not run.
+
+Press **Finish editing** in the side panel (or in Jizza), then review and save:
+
+- **Save changes** saves a new version of the same recording. Workflows that run it as a module run the new version from now on. If its inputs changed, Jizza lists those workflows so you can update their steps: new inputs are added empty and inputs it no longer has are removed.
+- **Save as new recording** keeps the old one as it is. A recording that is past draft can only be saved this way, because its changes go through review.
+
+A recording that was changed in the builder with branches that the recorder does not make (Paths, Parallel) can only be changed in the builder.
+
 ### Delete a recording
 
 On the Recordings page, **Delete** next to a saved recording removes it after you confirm. The same button is on each workflow on the Workflows page. Deleting stops any run of it still in progress, and its schedule or form no longer starts it. Past runs stay in the run history, shown as **Deleted workflow**. A workflow that runs it as a module fails at that step, so update those first. A draft that is still being recorded or reviewed has **Discard** instead.

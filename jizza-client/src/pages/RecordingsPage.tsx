@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Circle, Play, Trash2, Video } from 'lucide-react'
+import { Circle, Pencil, Play, Trash2, Video } from 'lucide-react'
 import { webApi } from '@/api/web'
 import { workflowsApi } from '@/api/workflows'
 import { RecordFlow } from '@/components/web/RecordFlow'
+import { EditRecordingStart } from '@/components/web/EditRecording'
+import type { WorkflowDto } from '@/types'
 import { DeleteWorkflowButton } from '@/components/workflow/DeleteWorkflowButton'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -35,6 +37,8 @@ export function RecordingsPage() {
     mutationFn: (id: string) => webApi.discardRecording(id),
     onSuccess: () => void drafts.refetch(),
   })
+  // Edit recording: the saved recording whose browser and test values are being chosen.
+  const [editing, setEditing] = useState<WorkflowDto | null>(null)
   const loading = drafts.isLoading || modules.isLoading
 
   return (
@@ -42,6 +46,8 @@ export function RecordingsPage() {
       <RecordFlow key={resume ?? 'new'} open={recording} mode="module" recordingId={resume}
         onClose={() => { setRecording(false); setResume(undefined); void drafts.refetch() }}
         onSaved={id => navigate(`/workflows?open=${id}`)} />
+      {editing && <EditRecordingStart workflow={editing} onClose={() => setEditing(null)}
+        onStarted={id => { setEditing(null); setResume(id); setRecording(true); void drafts.refetch() }} />}
       <PageHeader icon={Video} title="Recordings" description="Tasks you did once in Chrome or a Windows app, kept as modules. On a PC with the Jizza Windows agent, press Ctrl+Alt+R to record."
         actions={<Button size="sm" onClick={() => setRecording(true)}><Circle className="h-4 w-4 fill-current" />Record</Button>} />
       {loading && <div className="grid place-items-center py-16"><Spinner /></div>}
@@ -54,7 +60,8 @@ export function RecordingsPage() {
               {drafts.data!.map(d => (
                 <Card key={d.id} className="flex items-center gap-3 p-3">
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{d.name}</p><p className="truncate text-xs text-gray-500">{d.kind === 'desktop' ? `${d.app ?? 'Windows apps'} on ${d.deviceName ?? 'your PC'}` : d.startUrl}, {d.stepCount} steps</p></div>
-                  <Badge>{d.status === 'recording' ? 'Recording' : 'Ready to review'}</Badge>
+                  {d.sourceWorkflowId && <Badge>Edit of a saved recording</Badge>}
+                  <Badge>{d.status === 'recording' ? (d.sourceWorkflowId ? 'Editing' : 'Recording') : 'Ready to review'}</Badge>
                   <Button size="sm" variant="secondary" onClick={() => { setResume(d.id); setRecording(true) }}>{d.status === 'recording' ? 'Open' : 'Review'}</Button>
                   <Button size="sm" variant="ghost" aria-label={`Discard ${d.name}`} title="Discard draft"
                     className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40"
@@ -74,6 +81,7 @@ export function RecordingsPage() {
                 <Card key={w.id} className="flex items-center gap-3 p-3">
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{w.name}</p><p className="truncate text-xs text-gray-500">{w.description}</p></div>
                   <Button size="sm" variant="secondary" loading={run.isPending && run.variables === w.id} onClick={() => run.mutate(w.id)}><Play className="h-4 w-4" />Run now</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditing(w)} title="Step through it in your browser and change it"><Pencil className="h-4 w-4" />Edit</Button>
                   <Link to={`/workflows?open=${w.id}`} className="text-sm font-medium text-brand-600 hover:underline">Open in builder</Link>
                   <DeleteWorkflowButton workflowId={w.id} name={w.name} what="recording" />
                 </Card>

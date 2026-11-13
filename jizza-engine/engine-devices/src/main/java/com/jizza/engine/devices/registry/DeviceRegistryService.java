@@ -369,6 +369,26 @@ public class DeviceRegistryService implements Devices {
         encryption.decrypt(storage.get(f.getStorageRef()))));
   }
 
+  @Override
+  @Transactional
+  public UUID handFile(UUID deviceId, String name, String contentType, byte[] content) {
+    if (content == null || content.length == 0) throw new ValidationException("The file is empty");
+    if (content.length > props.getMaxFileBytes()) {
+      throw new ValidationException("A file can be at most "
+          + props.getMaxFileBytes() / (1024 * 1024) + " MB");
+    }
+    devices.findById(deviceId).orElseThrow(() -> new NotFoundException("Device", deviceId));
+    com.jizza.engine.persistence.entity.DeviceFileEntity file =
+        new com.jizza.engine.persistence.entity.DeviceFileEntity();
+    file.setDeviceId(deviceId);
+    file.setName(name == null || name.isBlank() ? "file" : name);
+    file.setContentType(contentType == null ? "application/octet-stream" : contentType);
+    file.setSize(content.length);
+    file.setStorageRef(storage.put(encryption.encrypt(content), "device-" + UUID.randomUUID()));
+    files.save(file);
+    return file.getId();
+  }
+
   // ── The device side ───────────────────────────────────────────────────────────
 
   @Transactional

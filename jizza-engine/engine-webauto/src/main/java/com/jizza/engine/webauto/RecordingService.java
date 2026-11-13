@@ -174,6 +174,116 @@ public class RecordingService implements Recordings, RecordingIntake {
 
   @Override
   @Transactional
+  public Recording openForEdit(Access access, UUID workflowId, UUID deviceId, JsonNode testValues) {
+    WorkflowDto workflow = workflows.find(workflowId)
+        .filter(w -> access.userId().equals(w.userId()))
+        .orElseThrow(() -> new NotFoundException("Recording", workflowId));
+    RecordingGraph.Opened opened = RecordingGraph.open(workflow.graph());
+    DeviceDto device = devices.list(access.workspaceId(), access.userId()).stream()
+        .filter(candidate -> candidate.id().equals(deviceId))
+        .findFirst()
+        .orElseThrow(() -> new NotFoundException("Browser", deviceId));
+    DeviceActionSpec spec = catalog.resolve(RECORD_ACTION, 0)
+        .filter(candidate -> "browser".equals(candidate.capability()))
+        .orElseThrow(() -> new ValidationException("Recording is not available"));
+    if (!device.declares(spec.action())) throw new ValidationException(device.name() + " cannot record");
+    List<WebRecordingEntity> open = recordings.findByOwnerIdAndStatusInOrderByUpdatedAtDesc(
+        access.userId(), List.of(STATUS_RECORDING));
+    if (open.stream().anyMatch(r -> deviceId.equals(r.getDeviceId()))) {
+      throw new ConflictException(device.name() + " is already recording");
+    }
+    if (opened.steps().size() > MAX_STEPS) throw new ValidationException("This recording is too long to edit");
+
+    WebRecordingEntity recording = new WebRecordingEntity();
+    recording.setId(UUID.randomUUID());
+    recording.setOwnerId(access.userId());
+    recording.setWorkspaceId(access.workspaceId());
+    recording.setDeviceId(deviceId);
+    recording.setName(workflow.name().length() > 120 ? workflow.name().substring(0, 120) : workflow.name());
+    recording.setStartUrl(opened.startUrl());
+    recording.setStatus(STATUS_RECORDING);
+    recording.setSites(new String[] {host(opened.startUrl())});
+    recording.setSourceWorkflowId(workflow.id());
+    recording.setSourceVersion(workflow.version());
+    recording.setStepCount(opened.steps().size());
+    recording.setStartedAt(Instant.now());
+    recording.setUpdatedAt(Instant.now());
+    recordings.saveAndFlush(recording);
+    int position = 0;
+    for (ObjectNode step : opened.steps()) {
+      WebRecordingStepEntity entity = new WebRecordingStepEntity();
+      entity.setRecordingId(recording.getId());
+      entity.setSeq(step.path("seq").asInt());
+      entity.setPosition(position++);
+      entity.setStep(encryption.encryptString(Json.write(step)));
+      steps.save(entity);
+    }
+
+    // The steps go to the browser as a file: a long recording does not fit in one message.
+    ArrayNode forBrowser = Json.mapper().createArrayNode();
+    for (ObjectNode step : opened.steps()) forBrowser.add(EditSteps.forBrowser(step, testValues));
+    byte[] file = Json.write(Json.obj().put("name", recording.getName()).set("steps", forBrowser))
+        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    UUID fileId = devices.handFile(deviceId, "recording-steps.json", "application/json", file);
+
+    ObjectNode input = Json.obj().put("recordingId", recording.getId().toString())
+        .put("url", opened.startUrl()).put("maxMinutes", 30).put("mapFirst", false);
+    input.putObject("edit").put("stepsFile", fileId.toString()).put("stepCount", forBrowser.size())
+        .put("name", recording.getName());
+    guardrails.judge(access, device, spec, input, "Recording");
+    DeviceCommandDto sent = commands.submit(new DeviceCommandRequest(access.userId(),
+        access.workspaceId(), DeviceTarget.device(deviceId), spec.action(), spec.version(), input,
+        RECORD_TIMEOUT, null, null, "web-edit:" + recording.getId(), true));
+    recording.setCommandId(sent.id());
+    recordings.save(recording);
+    publish(recording, null);
+    return view(recording, device.name(), null);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Linked> linked(Access access, UUID workflowId) {
+    WorkflowDto module = workflows.find(workflowId)
+        .filter(w -> access.userId().equals(w.userId()))
+        .orElseThrow(() -> new NotFoundException("Recording", workflowId));
+    return LinkedWorkflows.find(module, workflows.list(access.userId()));
+  }
+
+  @Override
+  @Transactional
+  public List<LinkedUpdate> updateLinked(Access access, UUID workflowId, List<UUID> targets) {
+    WorkflowDto module = workflows.find(workflowId)
+        .filter(w -> access.userId().equals(w.userId()))
+        .orElseThrow(() -> new NotFoundException("Recording", workflowId));
+    List<LinkedUpdate> out = new ArrayList<>();
+    List<WorkflowDto> mine = workflows.list(access.userId());
+    for (UUID target : targets == null ? List.<UUID>of() : targets) {
+      WorkflowDto linkedWorkflow = mine.stream().filter(w -> w.id().equals(target)).findFirst()
+          .orElse(null);
+      if (linkedWorkflow == null) {
+        out.add(new LinkedUpdate(target, null, false, null, "Not found"));
+        continue;
+      }
+      if (linkedWorkflow.status() != WorkflowStatus.DRAFT) {
+        out.add(new LinkedUpdate(target, linkedWorkflow.name(), false, linkedWorkflow.version(),
+            "It is " + linkedWorkflow.status().name().toLowerCase().replace('_', ' ')
+                + ", so changes to it go through review"));
+        continue;
+      }
+      ObjectNode graph = LinkedWorkflows.update(module, linkedWorkflow.graph());
+      if (graph == null) {
+        out.add(new LinkedUpdate(target, linkedWorkflow.name(), false, linkedWorkflow.version(),
+            "Already up to date"));
+        continue;
+      }
+      WorkflowDto saved = workflows.saveNewVersion(target, graph);
+      out.add(new LinkedUpdate(target, saved.name(), true, saved.version(), null));
+    }
+    return out;
+  }
+
+  @Override
+  @Transactional
   public List<Recording> list(Access access, Collection<String> statuses) {
     List<WebRecordingEntity> found = statuses == null || statuses.isEmpty()
         ? recordings.findByOwnerIdOrderByUpdatedAtDesc(access.userId())
@@ -262,6 +372,10 @@ public class RecordingService implements Recordings, RecordingIntake {
     if (live.isEmpty()) throw new ValidationException("There are no steps to save");
 
     ObjectNode graph = compile(recording, live, false);
+    boolean asNew = request != null && Boolean.TRUE.equals(request.asNew());
+    if (recording.getSourceWorkflowId() != null && !asNew) {
+      return saveEdit(access, recording, graph, name, request);
+    }
     WorkflowDto saved = workflows.save(new WorkflowDto(null, access.userId(), name,
         request == null ? null : request.description(), graph, null, null,
         WorkflowOrigin.RECORDED, WorkflowStatus.DRAFT, null, 1, null, null));
@@ -276,6 +390,43 @@ public class RecordingService implements Recordings, RecordingIntake {
     steps.deleteAllFor(id);
     publish(recording, null);
     return new SaveResult(saved.id(), saved.version());
+  }
+
+  /** Edit recording: the edited steps become a new version of the recording they came from. */
+  private SaveResult saveEdit(Access access, WebRecordingEntity recording, ObjectNode graph,
+                              String name, SaveRequest request) {
+    WorkflowDto source = workflows.find(recording.getSourceWorkflowId())
+        .filter(w -> access.userId().equals(w.userId()))
+        .orElseThrow(() -> new ConflictException("The recording this was opened from is gone. "
+            + "Save it as a new recording instead"));
+    if (source.status() != WorkflowStatus.DRAFT) {
+      throw new ConflictException("'" + source.name() + "' is "
+          + source.status().name().toLowerCase().replace('_', ' ')
+          + ", so changes to it go through review. Save it as a new recording instead");
+    }
+    try {
+      RecordingGraph.Opened before = RecordingGraph.open(source.graph());
+      RecordingGraph.keepOutputs(graph, before.outputs());
+      RecordingGraph.keepInputDetails(graph, before.inputs());
+    } catch (ValidationException e) {
+      // Changed in the builder since it was opened: what the edit made is what is saved.
+    }
+    WorkflowDto saved = workflows.saveNewVersion(source.id(), graph);
+    String description = request == null || request.description() == null
+        ? saved.description() : request.description();
+    if (!name.equals(saved.name()) || !java.util.Objects.equals(description, saved.description())) {
+      saved = workflows.save(new WorkflowDto(saved.id(), access.userId(), name, description,
+          saved.graph(), saved.inputSchema(), saved.triggerConfig(), saved.origin(),
+          saved.status(), saved.owningAgentId(), saved.version(), saved.sourceTaskId(), null));
+    }
+    recording.setStatus(STATUS_SAVED);
+    recording.setWorkflowId(saved.id());
+    recording.setUpdatedAt(Instant.now());
+    recordings.save(recording);
+    steps.deleteAllFor(recording.getId());
+    publish(recording, null);
+    return new SaveResult(saved.id(), saved.version(), true,
+        LinkedWorkflows.find(saved, workflows.list(access.userId())));
   }
 
   @Override
@@ -322,7 +473,7 @@ public class RecordingService implements Recordings, RecordingIntake {
       return;
     }
     switch (event) {
-      case "step" -> addStep(recording, data.path("step"));
+      case "step" -> addStep(recording, data.path("step"), data.get("after"));
       case "edit" -> deviceEdit(recording, data);
       case "stopped" -> {
         if (STATUS_RECORDING.equals(recording.getStatus())) toReview(recording);
@@ -402,11 +553,16 @@ public class RecordingService implements Recordings, RecordingIntake {
     publish(recording, null);
   }
 
-  private void addStep(WebRecordingEntity recording, JsonNode raw) {
+  private void addStep(WebRecordingEntity recording, JsonNode raw, JsonNode after) {
     String prefix = KIND_DESKTOP.equals(recording.getKind()) ? "ui." : "browser.";
+    String action = raw.path("action").asText("");
+    // Edit recording adds conditions around steps: "If … is shown" and its end.
+    boolean condition = KIND_WEB.equals(recording.getKind())
+        && (StepCompiler.IF.equals(action) && raw.path("input").path("element").isObject()
+            || StepCompiler.END_IF.equals(action));
     if (!raw.isObject() || !raw.path("seq").isInt() || raw.path("seq").asInt() < 0
-        || !raw.path("action").asText("").startsWith(prefix)
-        || DESKTOP_RECORD_ACTION.equals(raw.path("action").asText())) {
+        || !(action.startsWith(prefix) || condition)
+        || DESKTOP_RECORD_ACTION.equals(action) || RECORD_ACTION.equals(action)) {
       log.info("Dropped a malformed step for recording {}", recording.getId());
       return;
     }
@@ -420,6 +576,11 @@ public class RecordingService implements Recordings, RecordingIntake {
 
     ObjectNode step = ((ObjectNode) raw).deepCopy();
     step.remove("mappings");
+    // Node ids belong to the steps read back from a saved recording, never to a device's step.
+    step.remove("nodeId");
+    if (step.path("meta").isObject()) {
+      ((ObjectNode) step.get("meta")).remove(List.of("config", "branchId"));
+    }
     boolean sensitive = step.path("meta").path("sensitive").asBoolean(false);
     if (sensitive) {
       if (step.path("input").isObject()) VALUE_FIELDS.forEach(((ObjectNode) step.get("input"))::remove);
@@ -433,10 +594,24 @@ public class RecordingService implements Recordings, RecordingIntake {
     WebRecordingStepEntity entity = new WebRecordingStepEntity();
     entity.setRecordingId(recording.getId());
     entity.setSeq(seq);
-    // seq only grows, so it orders steps; a review edit renumbers positions from 0
-    entity.setPosition(seq);
-    entity.setStep(encryption.encryptString(Json.write(step)));
-    steps.save(entity);
+    if (after != null && after.isInt()) {
+      // Edit recording: a step added where the person is in the steps, after step `after`
+      // (-1: first).
+      List<Held> held = load(recording.getId());
+      int at = 0;
+      for (int i = 0; i < held.size(); i++) {
+        if (held.get(i).entity.getSeq() == after.asInt()) at = i + 1;
+      }
+      Held added = new Held(entity, step);
+      added.changed = true;
+      held.add(at, added);
+      persist(recording, held);
+    } else {
+      // seq only grows, so it orders steps; a review edit renumbers positions from 0
+      entity.setPosition(seq);
+      entity.setStep(encryption.encryptString(Json.write(step)));
+      steps.save(entity);
+    }
 
     recording.setStepCount((int) stored.stream().filter(s -> !s.isDeleted()).count() + 1);
     if (KIND_WEB.equals(recording.getKind())) addSite(recording, step.path("meta").path("url").asText(null));
@@ -450,7 +625,8 @@ public class RecordingService implements Recordings, RecordingIntake {
     String op = data.path("op").asText("");
     // The side panel may delete, move, rename, and turn a typed value into an input (never a
     // password: map refuses those). Choosing a saved login stays with the person in Jizza.
-    if (!Set.of("delete", "move", "relabel", "map").contains(op) || !data.path("seq").isInt()) {
+    if (!Set.of("delete", "move", "relabel", "map", "update").contains(op)
+        || !data.path("seq").isInt()) {
       log.info("Dropped an unsupported recording edit for {}", recording.getId());
       return;
     }
@@ -467,8 +643,8 @@ public class RecordingService implements Recordings, RecordingIntake {
     try {
       apply(held, new EditOp(op, data.get("seq").asInt(),
           data.path("toIndex").isInt() ? data.get("toIndex").asInt() : null,
-          data.path("label").asText(null), data.path("field").asText(null), input, null, null),
-          false);
+          data.path("label").asText(null), data.path("field").asText(null), input, null, null,
+          data.get("patch")), false);
     } catch (RuntimeException e) {
       log.info("Dropped a recording edit for {}: {}", recording.getId(), e.getMessage());
       return;
@@ -518,8 +694,89 @@ public class RecordingService implements Recordings, RecordingIntake {
         if (!person) throw new ValidationException("Only the person chooses a saved login");
         secret(target, op.secretRef());
       }
+      case "update" -> update(target, op.patch());
       default -> throw new ValidationException("Unknown edit '" + op.op() + "'");
     }
+  }
+
+  /**
+   * Edit recording's step settings: turned off (kept, never run), optional (skipped when its
+   * element is not there), how long a step or a condition waits, what a condition looks for, a
+   * new element for the step, or a new typed value.
+   */
+  private void update(Held target, JsonNode patch) {
+    if (patch == null || !patch.isObject() || patch.isEmpty()) {
+      throw new ValidationException("Say what to change");
+    }
+    String action = target.node.path("action").asText();
+    boolean condition = StepCompiler.IF.equals(action);
+    boolean control = condition || StepCompiler.END_IF.equals(action)
+        || StepCompiler.KEEP.equals(action);
+    ObjectNode input = target.node.path("input").isObject() ? (ObjectNode) target.node.get("input")
+        : target.node.putObject("input");
+    for (var it = patch.fields(); it.hasNext(); ) {
+      var field = it.next();
+      JsonNode value = field.getValue();
+      switch (field.getKey()) {
+        case "disabled", "optional" -> {
+          if (control) throw new ValidationException("A condition can't be " + field.getKey());
+          if (!value.isBoolean()) throw new ValidationException(field.getKey() + " is on or off");
+          if (value.asBoolean()) target.node.put(field.getKey(), true);
+          else target.node.remove(field.getKey());
+        }
+        case "timeoutMs" -> {
+          if (!value.isInt() || value.asInt() < 0 || value.asInt() > 120_000) {
+            throw new ValidationException("A wait is 0 to 120 seconds");
+          }
+          if (control && !condition) throw new ValidationException("This step does not wait");
+          input.put("timeoutMs", value.asInt());
+        }
+        case "when" -> {
+          if (!condition || !Set.of("shown", "missing").contains(value.asText())) {
+            throw new ValidationException("A condition is 'shown' or 'missing'");
+          }
+          input.put("when", value.asText());
+        }
+        case "element" -> {
+          if (!value.isObject() || Json.write(value).length() > MAX_STEP_CHARS / 2) {
+            throw new ValidationException("That element can't be used");
+          }
+          if (!condition && !input.path("element").isObject()) {
+            throw new ValidationException("This step has no element to change");
+          }
+          input.set("element", value.deepCopy());
+        }
+        case "value" -> {
+          String path = value.path("field").asText("");
+          JsonNode now = StepCompiler.valueAt(input, path);
+          boolean typed = path.matches("fields\\.\\d{1,3}\\.value")
+              || Set.of("text", "value", "url", "keys", "query", "item", "within.item", "date",
+                  "state").contains(path);
+          if (!typed || now == null || !now.isValueNode()) {
+            throw new ValidationException("This step has no '" + path + "' value to change");
+          }
+          if (target.node.path("meta").path("sensitive").asBoolean(false)) {
+            throw new ValidationException("A password is never kept. Choose a saved login");
+          }
+          JsonNode next = value.get("value");
+          if (next == null || !next.isValueNode() || next.asText().length() > 10_000) {
+            throw new ValidationException("That value can't be used");
+          }
+          int dot = path.lastIndexOf('.');
+          JsonNode parent = dot < 0 ? input : StepCompiler.valueAt(input, path.substring(0, dot));
+          String key = path.substring(dot + 1);
+          if (parent instanceof ObjectNode object) object.set(key, next.deepCopy());
+          else if (parent instanceof ArrayNode array) array.set(Integer.parseInt(key), next.deepCopy());
+          JsonNode mapping = target.node.path("mappings").path(path);
+          // A list choice's input stays without a default: runs choose from the page then.
+          if (mapping.isObject() && !listChoice(target.node, path)) {
+            ((ObjectNode) mapping).set("default", next.deepCopy());
+          }
+        }
+        default -> throw new ValidationException("'" + field.getKey() + "' can't be changed here");
+      }
+    }
+    target.changed = true;
   }
 
   private void move(List<Held> held, Held target, Integer toIndex) {
@@ -761,7 +1018,7 @@ public class RecordingService implements Recordings, RecordingIntake {
   private Recording view(WebRecordingEntity r, String deviceName, List<RecordedStep> stepViews) {
     return new Recording(r.getId(), r.getName(), r.getStatus(), r.getDeviceId(), deviceName,
         r.getStartUrl(), r.getStepCount(), r.getWorkflowId(), r.getUpdatedAt(), stepViews,
-        r.getKind(), r.getApp());
+        r.getKind(), r.getApp(), r.getSourceWorkflowId(), r.getSourceVersion());
   }
 
   private String deviceName(WebRecordingEntity r) {

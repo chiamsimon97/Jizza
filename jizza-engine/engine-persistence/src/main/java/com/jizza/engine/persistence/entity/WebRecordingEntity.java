@@ -42,6 +42,9 @@ public class WebRecordingEntity {
 
   private UUID commandId;
   private UUID workflowId;
+  /** Edit recording: the saved recording (workflow) this was opened from, and its version then. */
+  private UUID sourceWorkflowId;
+  private Integer sourceVersion;
 
   @JdbcTypeCode(SqlTypes.ARRAY)
   @Column(columnDefinition = "text[]", nullable = false)
@@ -69,6 +72,10 @@ public class WebRecordingEntity {
   public void setName(String name) { this.name = name; }
   public String getKind() { return kind; }
   public void setKind(String kind) { this.kind = kind; }
+  public UUID getSourceWorkflowId() { return sourceWorkflowId; }
+  public void setSourceWorkflowId(UUID sourceWorkflowId) { this.sourceWorkflowId = sourceWorkflowId; }
+  public Integer getSourceVersion() { return sourceVersion; }
+  public void setSourceVersion(Integer sourceVersion) { this.sourceVersion = sourceVersion; }
   public String getApp() { return app; }
   public void setApp(String app) { this.app = app; }
   public String getStartUrl() { return startUrl; }

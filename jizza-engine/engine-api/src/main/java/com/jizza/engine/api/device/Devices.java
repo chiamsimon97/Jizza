@@ -94,6 +94,14 @@ public interface Devices {
   /** A file a device uploaded, for the person to download. */
   Optional<DeviceFile> file(UUID fileId);
 
+  /**
+   * Stores a file the server hands {@code deviceId} (it downloads it with {@code GET
+   * /agent/v1/files/{id}}), such as the steps of a recording it is to edit. Encrypted at rest.
+   */
+  default UUID handFile(UUID deviceId, String name, String contentType, byte[] content) {
+    throw new UnsupportedOperationException("Files for devices are not supported here");
+  }
+
   record DeviceFile(UUID id, UUID deviceId, UUID commandId, String name, String contentType,
                     long size, byte[] content) {}
 

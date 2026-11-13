@@ -37,6 +37,11 @@ public class WebAutomationController {
 
   public record EditStepsRequest(List<Recordings.EditOp> ops) {}
 
+  /** Edit recording: the saved recording, the browser to edit it in, and test values. */
+  public record EditSavedRequest(UUID workflowId, UUID deviceId, JsonNode testValues) {}
+
+  public record UpdateLinkedRequest(List<UUID> workflowIds) {}
+
   /** One of the suggestions by index, or the person's own pick on the page. */
   public record ApplyFixRequest(Integer candidateIndex, UUID pickCommandId) {}
 
@@ -77,6 +82,31 @@ public class WebAutomationController {
   public Recordings.Recording startRecording(@RequestBody StartRecordingRequest request) {
     return web.startRecording(CurrentWorkspace.access(), request.deviceId(), request.url(),
         request.name());
+  }
+
+  @RequiresPermission(Permissions.DEVICE_USE)
+  @PostMapping("/recordings/edit")
+  public Recordings.Recording editSavedRecording(@RequestBody EditSavedRequest request) {
+    if (request == null || request.workflowId() == null || request.deviceId() == null) {
+      throw new ValidationException("Choose the recording and the browser to edit it in");
+    }
+    return web.editSavedRecording(CurrentWorkspace.access(), request.workflowId(),
+        request.deviceId(), request.testValues());
+  }
+
+  /** The workflows that run a saved recording as a step. */
+  @RequiresPermission(Permissions.DEVICE_VIEW)
+  @GetMapping("/recordings/linked/{workflowId}")
+  public List<Recordings.Linked> linkedWorkflows(@PathVariable UUID workflowId) {
+    return web.linkedWorkflows(CurrentWorkspace.access(), workflowId);
+  }
+
+  @RequiresPermission(Permissions.DEVICE_USE)
+  @PostMapping("/recordings/linked/{workflowId}/update")
+  public List<Recordings.LinkedUpdate> updateLinkedWorkflows(@PathVariable UUID workflowId,
+                                                             @RequestBody UpdateLinkedRequest request) {
+    return web.updateLinkedWorkflows(CurrentWorkspace.access(), workflowId,
+        request == null ? List.of() : request.workflowIds());
   }
 
   @RequiresPermission(Permissions.DEVICE_VIEW)

@@ -254,6 +254,9 @@ final class FastReplay {
             || "sameBrowser".equals(target))
         && !config.path("inputs").has("session")
         && !config.has("workspaceId")
+        // Turned off or allowed to fail (recording edits): these run on their own.
+        && !config.path("disabled").asBoolean(false)
+        && !config.path("optional").asBoolean(false)
         && !READS_STEPS.matcher(Json.write(config.path("inputs"))).find();
   }
 

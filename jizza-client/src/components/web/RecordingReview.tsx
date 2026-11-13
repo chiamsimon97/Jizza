@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, KeyRound, ListChecks, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleOff, CircleSlash, KeyRound, ListChecks, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
 import type { EditOp, RecordedStep, Recording } from '@/api/web'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { fieldName, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
+import { conditionDepths, fieldName, isCondition, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
 
@@ -26,6 +26,9 @@ export function RecordingReview({ recording, busy, onEdit }: {
   if (steps.length === 0) return <p className="py-6 text-center text-sm text-gray-500">Nothing was captured.</p>
   const reusable = reusableOps(recording.steps)
   const choices = steps.filter(isListChoice).length
+  // Edit recording: conditions and their steps are indented; steps can be turned off or made optional.
+  const editing = !!recording.sourceWorkflowId
+  const depth = conditionDepths(steps)
 
   return (
     <>
@@ -45,7 +48,8 @@ export function RecordingReview({ recording, busy, onEdit }: {
         {steps.map((s, i) => (
           <li key={s.seq} draggable onDragStart={() => setDragging(i)} onDragOver={e => e.preventDefault()}
             onDrop={() => { if (dragging !== null && dragging !== i) onEdit([moveOp(steps[dragging], i)]); setDragging(null) }}
-            className="flex items-start gap-3 rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
+            style={depth[i] ? { marginLeft: `${depth[i] * 1.25}rem` } : undefined}
+            className={`flex items-start gap-3 rounded-xl border p-2.5 ${isCondition(s) ? 'border-dashed border-brand-300 bg-brand-50/40 dark:border-brand-700 dark:bg-brand-950/20' : 'border-gray-200 dark:border-gray-700'} ${s.step.disabled ? 'opacity-60' : ''}`}>
             {s.step.meta?.preview || s.step.meta?.pagePreview
               ? <ElementPreview deviceId={recording.deviceId} preview={s.step.meta.preview} pagePreview={s.step.meta.pagePreview} label=""
                   className="h-12 w-16 shrink-0 rounded-md border border-gray-200 object-cover dark:border-gray-700" />
@@ -64,6 +68,9 @@ export function RecordingReview({ recording, busy, onEdit }: {
                 </ul>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {s.step.disabled && <Badge>Off</Badge>}
+                {s.step.optional && <Badge>Optional</Badge>}
+                {s.step.action === 'flow.keep' && <Badge>Jizza step</Badge>}
                 {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
                 {isListChoice(s) && s.step.meta?.list?.named && (
                   <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>
@@ -85,6 +92,14 @@ export function RecordingReview({ recording, busy, onEdit }: {
             <div className="flex shrink-0 items-center gap-0.5">
               <Button size="sm" variant="ghost" aria-label="Move up" disabled={busy || i === 0} onClick={() => onEdit([moveOp(s, i - 1)])}><ArrowUp className="h-4 w-4" /></Button>
               <Button size="sm" variant="ghost" aria-label="Move down" disabled={busy || i === steps.length - 1} onClick={() => onEdit([moveOp(s, i + 1)])}><ArrowDown className="h-4 w-4" /></Button>
+              {editing && !isCondition(s) && (
+                <>
+                  <Button size="sm" variant="ghost" aria-label={s.step.disabled ? 'Turn step on' : 'Turn step off'} title={s.step.disabled ? 'Turn on' : 'Turn off: kept, but not run'}
+                    disabled={busy} onClick={() => onEdit([{ op: 'update', seq: s.seq, patch: { disabled: !s.step.disabled } }])}><CircleOff className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="ghost" aria-label={s.step.optional ? 'Make step required' : 'Make step optional'} title={s.step.optional ? 'Make required' : 'Optional: skipped when it is not on the page'}
+                    disabled={busy} onClick={() => onEdit([{ op: 'update', seq: s.seq, patch: { optional: !s.step.optional } }])}><CircleSlash className="h-4 w-4" /></Button>
+                </>
+              )}
               <Button size="sm" variant="ghost" aria-label="Rename step" onClick={() => setRenaming(s)}><Pencil className="h-4 w-4" /></Button>
               {mappableFields(s).length > 0 && <Button size="sm" variant="ghost" aria-label="Make this an input" onClick={() => setMapping(s)}><SlidersHorizontal className="h-4 w-4" /></Button>}
               <Button size="sm" variant="ghost" aria-label="Delete step" disabled={busy} onClick={() => onEdit([{ op: 'delete', seq: s.seq }])}><Trash2 className="h-4 w-4" /></Button>

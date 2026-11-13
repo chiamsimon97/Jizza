@@ -71,4 +71,29 @@ describe('RecordingsPage', () => {
     await waitFor(() => expect(discard).toHaveBeenCalledWith('r1'))
     expect(confirm).toHaveBeenCalledTimes(2)
   })
+
+  it('edits a saved recording in a chosen browser with test values from its inputs', async () => {
+    vi.spyOn(webApi, 'listRecordings').mockResolvedValue([])
+    const graph = { nodes: [{ id: 'start', type: 'TRIGGER', config: { inputs: [{ name: 'movie', type: 'text', default: 'Ramayana' }] } }] }
+    vi.spyOn(workflowsApi, 'list').mockResolvedValue([wf({ graph })])
+    vi.spyOn(webApi, 'browsers').mockResolvedValue([
+      { id: 'b1', workspaceId: null, name: 'Chromium browser', online: true, family: 'chrome', version: '0.10.0', allowedSites: [], sessions: 0 } as never,
+    ])
+    const edit = vi.spyOn(webApi, 'editSavedRecording').mockResolvedValue(
+      { id: 'r5', name: 'Download invoices', status: 'recording', deviceId: 'b1', startUrl: 'https://x.example.com', stepCount: 2, updatedAt: '2026-01-01T00:00:00Z', sourceWorkflowId: 'w1', steps: [] } as never)
+    vi.spyOn(webApi, 'getRecording').mockResolvedValue(
+      { id: 'r5', name: 'Download invoices', status: 'recording', deviceId: 'b1', deviceName: 'Chromium browser', startUrl: 'https://x.example.com', stepCount: 2, updatedAt: '2026-01-01T00:00:00Z', sourceWorkflowId: 'w1', steps: [] } as never)
+    vi.spyOn(workflowsApi, 'get').mockResolvedValue(wf({ graph }))
+    renderWithSnapshot(<RecordingsPage />, makeSnapshot())
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit "Download invoices"' })
+    expect(within(dialog).getByLabelText('Test value for movie')).toHaveValue('Ramayana')
+    fireEvent.change(within(dialog).getByLabelText('Test value for movie'), { target: { value: 'Kantara' } })
+    await within(dialog).findByRole('option', { name: 'Chromium browser' })
+    fireEvent.change(within(dialog).getByLabelText('Browser agent'), { target: { value: 'b1' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Edit in browser' }))
+    await waitFor(() => expect(edit).toHaveBeenCalledWith({ workflowId: 'w1', deviceId: 'b1', testValues: { movie: 'Kantara' } }))
+    expect(await screen.findByText('Editing Download invoices')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Finish editing' })).toBeInTheDocument()
+  })
 })

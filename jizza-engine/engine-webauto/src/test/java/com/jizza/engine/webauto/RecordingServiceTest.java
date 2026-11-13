@@ -59,6 +59,8 @@ class RecordingServiceTest {
   private final List<WorkflowDto> savedWorkflows = new ArrayList<>();
 
   private DeviceCommands commands;
+  private WorkflowRegistry workflows;
+  private Devices devices;
   private Access access;
   private DeviceDto browser;
   private RecordingService service;
@@ -95,7 +97,7 @@ class RecordingServiceTest {
         DevicePlatform.BROWSER, null, null, 1, DeviceStatus.ACTIVE, List.of(), "browser", true,
         "idle", Json.obj(), List.of("browser.record@1"), false, List.of(), Instant.now(),
         Instant.now());
-    Devices devices = mock(Devices.class);
+    devices = mock(Devices.class);
     when(devices.list(access.workspaceId(), access.userId())).thenReturn(List.of(browser));
     when(devices.find(browser.id())).thenReturn(Optional.of(browser));
 
@@ -120,7 +122,7 @@ class RecordingServiceTest {
       public byte[] encrypt(byte[] plain) { return java.util.Base64.getEncoder().encode(plain); }
       public byte[] decrypt(byte[] ct) { return java.util.Base64.getDecoder().decode(ct); }
     };
-    WorkflowRegistry workflows = mock(WorkflowRegistry.class);
+    workflows = mock(WorkflowRegistry.class);
     when(workflows.save(any())).thenAnswer(i -> {
       WorkflowDto w = i.getArgument(0);
       savedWorkflows.add(w);
@@ -580,5 +582,210 @@ class RecordingServiceTest {
     var field = RecordingService.class.getDeclaredField("devices");
     field.setAccessible(true);
     return (Devices) field.get(service);
+  }
+
+  // ---- Edit recording ----------------------------------------------------------------------
+
+  private static final String ELEMENT = "{\"strategies\":[{\"by\":\"css\",\"value\":\"#x\"}],\"label\":\"Language popup\"}";
+
+  /** A recording saved the usual way, and the workflow it became. */
+  private WorkflowDto savedRecording() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(0, "browser.open", "Open", "{\"url\":\"https://portal.example.com\"}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.click", "Book tickets", "{\"element\":" + ELEMENT + "}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(2, "browser.click", "Tamil 2D", "{\"element\":" + ELEMENT + "}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(3, "browser.getText", "Total", "{\"element\":" + ELEMENT + "}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(4, "browser.setText", "Seats", "{\"element\":" + ELEMENT + ",\"text\":\"2\"}", false)));
+    service.stop(access, id);
+    service.edit(access, id, List.of(new Recordings.EditOp("map", 4, null, null, "text",
+        new Recordings.Input("seats", "text", null), null, null)));
+    var saved = service.save(access, id, new Recordings.SaveRequest("Book", null, null));
+    WorkflowDto made = savedWorkflows.get(savedWorkflows.size() - 1);
+    WorkflowDto workflow = new WorkflowDto(saved.workflowId(), access.userId(), made.name(),
+        made.description(), made.graph(), null, null, WorkflowOrigin.RECORDED,
+        com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 1, null, Instant.now());
+    when(workflows.find(workflow.id())).thenReturn(Optional.of(workflow));
+    return workflow;
+  }
+
+  @Test
+  void aSavedRecordingOpensForEditingWithItsStepsAndTestValues() {
+    WorkflowDto workflow = savedRecording();
+    var handed = new java.util.concurrent.atomic.AtomicReference<byte[]>();
+    UUID fileId = UUID.randomUUID();
+    when(devices.handFile(any(), anyString(), anyString(), any())).thenAnswer(i -> {
+      handed.set(i.getArgument(3));
+      return fileId;
+    });
+
+    var opened = service.openForEdit(access, workflow.id(), browser.id(),
+        Json.obj().put("seats", "4"));
+
+    assertThat(opened.sourceWorkflowId()).isEqualTo(workflow.id());
+    assertThat(opened.status()).isEqualTo("recording");
+    var sent = org.mockito.ArgumentCaptor.forClass(com.jizza.engine.api.device.DeviceCommandRequest.class);
+    verify(commands, org.mockito.Mockito.atLeastOnce()).submit(sent.capture());
+    JsonNode input = sent.getValue().input();
+    assertThat(input.path("mapFirst").asBoolean(true)).isFalse();
+    assertThat(input.path("url").asText()).isEqualTo("https://portal.example.com");
+    assertThat(input.path("edit").path("stepsFile").asText()).isEqualTo(fileId.toString());
+
+    JsonNode file = Json.read(new String(handed.get(), java.nio.charset.StandardCharsets.UTF_8));
+    List<String> actions = new ArrayList<>();
+    file.path("steps").forEach(s -> actions.add(s.path("action").asText()));
+    assertThat(actions).containsExactly("browser.open", "browser.click", "browser.click",
+        "browser.getText", "browser.setText", "browser.close");
+    JsonNode seats = file.path("steps").get(4);
+    assertThat(seats.path("input").path("text").asText()).isEqualTo("4");
+    assertThat(seats.path("mapped").path("text").asText()).isEqualTo("seats");
+    assertThat(stepRows.stream().filter(r -> r.getRecordingId().equals(opened.id()))).hasSize(6);
+  }
+
+  @Test
+  void editsAddAConditionAStepAndSettingsThenSaveANewVersionKeepingNodeIds() {
+    WorkflowDto workflow = savedRecording();
+    when(devices.handFile(any(), anyString(), anyString(), any())).thenReturn(UUID.randomUUID());
+    when(workflows.saveNewVersion(any(), any())).thenAnswer(i -> new WorkflowDto(i.getArgument(0),
+        access.userId(), workflow.name(), null, i.getArgument(1), null, null,
+        WorkflowOrigin.RECORDED, com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 2, null,
+        Instant.now()));
+    when(workflows.list(access.userId())).thenReturn(List.of());
+    var opened = service.openForEdit(access, workflow.id(), browser.id(), Json.obj());
+    List<Integer> seqs = new ArrayList<>();
+    service.get(access, opened.id()).steps().forEach(s -> seqs.add(s.seq()));
+    int bookSeq = seqs.get(1);
+    int tamilSeq = seqs.get(2);
+    int totalSeq = seqs.get(3);
+    int next = seqs.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+
+    // The language pop-up step runs only when the pop-up is there.
+    var ifData = event(opened.id(), Json.read("{\"seq\":" + next + ",\"action\":\"flow.if\","
+        + "\"version\":1,\"label\":\"If the language pop-up is shown\",\"input\":{\"element\":"
+        + ELEMENT + ",\"timeoutMs\":2000},\"meta\":{\"sensitive\":false}}"));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) ifData).put("after", bookSeq);
+    service.accept(browser.id(), access.userId(), "browser.recording.step", ifData);
+    var endData = event(opened.id(), Json.read("{\"seq\":" + (next + 1) + ",\"action\":\"flow.endIf\","
+        + "\"version\":1,\"label\":\"End\",\"input\":{},\"meta\":{\"sensitive\":false}}"));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) endData).put("after", tamilSeq);
+    service.accept(browser.id(), access.userId(), "browser.recording.step", endData);
+    // A new action inserted where the person was, a step turned off, another made optional.
+    var waitData = event(opened.id(), step(next + 2, "browser.click", "Accept cookies",
+        "{\"element\":" + ELEMENT + "}", false));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) waitData).put("after", seqs.get(0));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", waitData);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", Json.obj()
+        .put("recordingId", opened.id().toString()).put("op", "update").put("seq", totalSeq)
+        .set("patch", Json.obj().put("disabled", true)));
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", Json.obj()
+        .put("recordingId", opened.id().toString()).put("op", "update").put("seq", tamilSeq)
+        .set("patch", Json.obj().put("optional", true)));
+    service.accept(browser.id(), access.userId(), "browser.recording.stopped",
+        Json.obj().put("recordingId", opened.id().toString()));
+
+    var labels = service.get(access, opened.id()).steps().stream()
+        .map(s -> s.step().path("label").asText()).toList();
+    assertThat(labels).containsExactly("Open", "Accept cookies", "Book tickets",
+        "If the language pop-up is shown", "Tamil 2D", "End", "Total", "Seats", "Close browser");
+
+    var saved = service.save(access, opened.id(), new Recordings.SaveRequest(null, null, null));
+    assertThat(saved.updated()).isTrue();
+    assertThat(saved.version()).isEqualTo(2);
+    var graph = org.mockito.ArgumentCaptor.forClass(JsonNode.class);
+    verify(workflows).saveNewVersion(org.mockito.ArgumentMatchers.eq(workflow.id()), graph.capture());
+    JsonNode g = graph.getValue();
+    Map<String, JsonNode> byLabel = new HashMap<>();
+    g.path("nodes").forEach(n -> byLabel.put(n.path("label").asText(), n));
+    JsonNode branch = byLabel.get("If the language pop-up is shown");
+    assertThat(branch.path("type").asText()).isEqualTo("BRANCH");
+    assertThat(byLabel.get("Tamil 2D").path("config").path("optional").asBoolean()).isTrue();
+    assertThat(byLabel.get("Total").path("config").path("disabled").asBoolean()).isTrue();
+    // Steps kept their node ids, so {{ nodes.step_4.text }} still reads the Total.
+    assertThat(byLabel.get("Total").path("id").asText()).isEqualTo("step_4");
+    assertThat(byLabel.get("Accept cookies").path("id").asText()).isNotIn("step_1", "step_2",
+        "step_3", "step_4", "step_5");
+    // The pop-up branch: true runs Tamil 2D, false goes straight to Total; both meet there.
+    List<String> fromBranch = new ArrayList<>();
+    g.path("edges").forEach(e -> {
+      if (e.path("from").asText().equals(branch.path("id").asText())) {
+        fromBranch.add(e.path("branch").asText() + "->" + e.path("to").asText());
+      }
+    });
+    assertThat(fromBranch).containsExactlyInAnyOrder(
+        "true->" + byLabel.get("Tamil 2D").path("id").asText(),
+        "false->" + byLabel.get("Total").path("id").asText());
+    // Reading it back gives the same steps.
+    var again = RecordingGraph.open(g);
+    assertThat(again.steps().stream().map(s -> s.path("action").asText()).toList())
+        .containsExactly("browser.open", "browser.click", "browser.click", "flow.if",
+            "browser.click", "flow.endIf", "browser.getText", "browser.setText", "browser.close");
+    assertThat(recordingRows.get(opened.id()).getStatus()).isEqualTo("saved");
+  }
+
+  @Test
+  void anEditedRecordingPastDraftCanOnlyBeSavedAsANewOne() {
+    WorkflowDto draft = savedRecording();
+    WorkflowDto approved = new WorkflowDto(draft.id(), draft.userId(), draft.name(), null,
+        draft.graph(), null, null, WorkflowOrigin.RECORDED,
+        com.jizza.engine.api.enums.WorkflowStatus.APPROVED, null, 1, null, Instant.now());
+    when(workflows.find(draft.id())).thenReturn(Optional.of(approved));
+    when(devices.handFile(any(), anyString(), anyString(), any())).thenReturn(UUID.randomUUID());
+    var opened = service.openForEdit(access, draft.id(), browser.id(), null);
+    service.stop(access, opened.id());
+
+    assertThatThrownBy(() -> service.save(access, opened.id(), new Recordings.SaveRequest(null, null, null)))
+        .isInstanceOf(ConflictException.class).hasMessageContaining("Save it as a new recording");
+    var copy = service.save(access, opened.id(), new Recordings.SaveRequest("Book copy", null, null, true));
+    assertThat(copy.updated()).isFalse();
+    assertThat(savedWorkflows.get(savedWorkflows.size() - 1).name()).isEqualTo("Book copy");
+  }
+
+  @Test
+  void aGraphForkedInTheBuilderIsRefusedForEditing() {
+    var graph = Json.read("{\"nodes\":[{\"id\":\"start\",\"type\":\"TRIGGER\",\"config\":{}},"
+        + "{\"id\":\"open\",\"type\":\"DEVICE_ACTION\",\"config\":{\"preset\":\"web\",\"action\":\"browser.open\",\"target\":\"sameBrowser\",\"inputs\":{\"url\":\"https://a.example.com\"}}},"
+        + "{\"id\":\"b\",\"type\":\"BRANCH\",\"config\":{\"condition\":\"true\"}},"
+        + "{\"id\":\"end\",\"type\":\"END\",\"config\":{}}],"
+        + "\"edges\":[{\"from\":\"start\",\"to\":\"open\"},{\"from\":\"open\",\"to\":\"b\"},"
+        + "{\"from\":\"b\",\"to\":\"end\",\"branch\":\"true\"},{\"from\":\"b\",\"to\":\"end\",\"branch\":\"false\"}]}");
+    assertThatThrownBy(() -> RecordingGraph.open(graph)).isInstanceOf(ValidationException.class)
+        .hasMessageContaining("only be changed in the builder");
+  }
+
+  @Test
+  void workflowsRunningTheRecordingAreFoundAndTheirInputsUpdated() {
+    WorkflowDto module = savedRecording();
+    var parentGraph = Json.read("{\"nodes\":[{\"id\":\"start\",\"type\":\"TRIGGER\",\"config\":{}},"
+        + "{\"id\":\"run\",\"type\":\"SUB_WORKFLOW\",\"label\":\"Book it\",\"config\":{\"workflowId\":\""
+        + module.id() + "\",\"inputs\":{\"oldInput\":\"x\"}}},"
+        + "{\"id\":\"end\",\"type\":\"END\",\"config\":{}}],"
+        + "\"edges\":[{\"from\":\"start\",\"to\":\"run\"},{\"from\":\"run\",\"to\":\"end\"}]}");
+    WorkflowDto parent = new WorkflowDto(UUID.randomUUID(), access.userId(), "Friday booking", null,
+        parentGraph, null, null, WorkflowOrigin.USER_BUILT,
+        com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 3, null, Instant.now());
+    when(workflows.list(access.userId())).thenReturn(List.of(module, parent));
+    when(workflows.saveNewVersion(any(), any())).thenAnswer(i -> new WorkflowDto(parent.id(),
+        access.userId(), parent.name(), null, i.getArgument(1), null, null,
+        WorkflowOrigin.USER_BUILT, com.jizza.engine.api.enums.WorkflowStatus.DRAFT, null, 4, null,
+        Instant.now()));
+
+    var linked = service.linked(access, module.id());
+    assertThat(linked).hasSize(1);
+    assertThat(linked.get(0).stepLabels()).containsExactly("Book it");
+    assertThat(linked.get(0).missingInputs()).containsExactly("seats");
+    assertThat(linked.get(0).unknownInputs()).containsExactly("oldInput");
+    assertThat(linked.get(0).canUpdate()).isTrue();
+
+    var done = service.updateLinked(access, module.id(), List.of(parent.id()));
+    assertThat(done.get(0).updated()).isTrue();
+    var graph = org.mockito.ArgumentCaptor.forClass(JsonNode.class);
+    verify(workflows).saveNewVersion(org.mockito.ArgumentMatchers.eq(parent.id()), graph.capture());
+    JsonNode inputs = graph.getValue().path("nodes").get(1).path("config").path("inputs");
+    assertThat(inputs.has("oldInput")).isFalse();
+    assertThat(inputs.has("seats")).isTrue();
   }
 }

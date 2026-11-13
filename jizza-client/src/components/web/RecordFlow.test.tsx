@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { makeSnapshot, renderWithSnapshot } from '@/test/utils'
 import { webApi, type Recording } from '@/api/web'
+import { workflowsApi } from '@/api/workflows'
+import type { WorkflowDto } from '@/types'
 import { RecordFlow, SetupChecklist } from './RecordFlow'
 import type { BrowserAgent } from '@/api/web'
 
@@ -71,5 +73,60 @@ describe('SetupChecklist', () => {
     const b = browser()
     renderWithSnapshot(<SetupChecklist browsers={[b]} chosen={b} url="https://portal.example.com/x" />, makeSnapshot())
     expect(screen.queryByRole('region', { name: 'Before you record' })).not.toBeInTheDocument()
+  })
+})
+
+describe('RecordFlow editing a saved recording', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+  const edited = recording({
+    status: 'review', sourceWorkflowId: 'w1', sourceVersion: 3, stepCount: 4,
+    steps: [
+      { seq: 1, position: 1, deleted: false, step: { action: 'browser.open', label: 'Open portal', input: {} } },
+      { seq: 2, position: 2, deleted: false, step: { action: 'flow.if', label: 'Only if "Select language" is shown', input: {} } },
+      { seq: 3, position: 3, deleted: false, step: { action: 'browser.click', label: 'Click "Tamil 2D"', input: {}, optional: true } },
+      { seq: 4, position: 4, deleted: false, step: { action: 'flow.endIf', label: 'End', input: {} } },
+    ],
+  })
+  const source = (status: string) => ({ id: 'w1', name: 'Invoices', graph: {}, origin: 'RECORDED', status, version: 3, createdAt: '' }) as WorkflowDto
+
+  it('saves changes as a new version, then offers to update the workflows that use it', async () => {
+    vi.spyOn(webApi, 'getRecording').mockResolvedValue(edited)
+    vi.spyOn(workflowsApi, 'get').mockResolvedValue(source('DRAFT'))
+    const save = vi.spyOn(webApi, 'saveRecording').mockResolvedValue({ workflowId: 'w1', version: 4, updated: true, linked: [
+      { workflowId: 'w9', name: 'Weekend plans', status: 'DRAFT', stepLabels: ['Book'], missingInputs: ['format'], unknownInputs: [], canUpdate: true },
+    ] })
+    const update = vi.spyOn(webApi, 'updateLinkedWorkflows').mockResolvedValue([{ workflowId: 'w9', name: 'Weekend plans', updated: true, version: 2 }])
+    const saved = vi.fn()
+    renderWithSnapshot(<RecordFlow open mode="module" recordingId="r1" onClose={() => {}} onSaved={saved} />, makeSnapshot())
+    expect(await screen.findByText('Editing Invoices')).toBeInTheDocument()
+    expect(screen.getByText('Optional')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('r1', { name: 'Invoices', description: undefined }))
+    const dialog = await screen.findByRole('dialog', { name: 'Update the workflows that use it?' })
+    expect(within(dialog).getByText('New inputs: format')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Update 1' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('w1', ['w9']))
+    expect(await within(dialog).findByText('Updated (version 2)')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+    expect(saved).toHaveBeenCalledWith('w1')
+  })
+
+  it('turns a step off with an update edit', async () => {
+    vi.spyOn(webApi, 'getRecording').mockResolvedValue(edited)
+    vi.spyOn(workflowsApi, 'get').mockResolvedValue(source('DRAFT'))
+    const edit = vi.spyOn(webApi, 'editRecording').mockResolvedValue(edited)
+    renderWithSnapshot(<RecordFlow open mode="module" recordingId="r1" onClose={() => {}} />, makeSnapshot())
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Turn step off' }))[1])
+    await waitFor(() => expect(edit).toHaveBeenCalledWith('r1', [{ op: 'update', seq: 3, patch: { disabled: true } }]))
+  })
+
+  it('only saves as a new recording once the recording is past draft', async () => {
+    vi.spyOn(webApi, 'getRecording').mockResolvedValue(edited)
+    vi.spyOn(workflowsApi, 'get').mockResolvedValue(source('PUBLISHED'))
+    const save = vi.spyOn(webApi, 'saveRecording').mockResolvedValue({ workflowId: 'w2', version: 1 })
+    renderWithSnapshot(<RecordFlow open mode="module" recordingId="r1" onClose={() => {}} />, makeSnapshot())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Save as new recording' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('r1', { name: 'Invoices', description: undefined, asNew: true }))
   })
 })

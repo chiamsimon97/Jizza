@@ -281,6 +281,34 @@ The side panel may send `delete`, `move`, `relabel` and `map` (turn a typed valu
 input; the value becomes its default). The server refuses `map` on a sensitive step, and choosing
 a saved login (`secret`) is only done by the person in Jizza.
 
+### Editing a saved recording
+
+Jizza's **Edit** on a saved recording (`POST /api/web/recordings/edit` with the workflow, the
+browser and test values) reads the workflow's graph back into steps and opens a new recording
+linked to it (`web_recordings.source_workflow_id`, V43). The steps go to the browser as a file the
+server hands it (`GET /agent/v1/files/{id}`, no command attached), each with the test values in
+place of `{{ input.X }}` and `mapped` naming the input, and `browser.record@1` gets
+`mapFirst: false` and `edit: {"stepsFile": "<file id>", "stepCount": 6, "name": "Book a movie"}`.
+
+Conditions are marker steps in the list: `flow.if` (`input.element`, `timeoutMs`, `when`:
+`shown` or `missing`) and `flow.endIf`. They compile to a `browser.exists` step and a branch whose
+true edge runs the steps inside. `flow.keep` carries a step made in the builder unchanged. Steps
+may be `disabled` (not run) or `optional` (completes as skipped when the element is not on the
+page). While editing, the extension may send:
+
+```json
+{"name": "browser.recording.step", "data": {"recordingId": "9a7c…", "after": 3, "step": {"seq": 7, "action": "browser.click", "version": 2, "input": {}}}}
+{"name": "browser.recording.step", "data": {"recordingId": "9a7c…", "after": 2, "step": {"seq": 8, "action": "flow.if", "version": 1, "input": {"element": {}, "timeoutMs": 3000, "when": "shown"}}}}
+{"name": "browser.recording.edit", "data": {"recordingId": "9a7c…", "op": "update", "seq": 3, "patch": {"optional": true}}}
+```
+
+`after` is the seq of the step the new one goes after (`-1` for the start). `update` takes a
+`patch` of `disabled`, `optional`, `timeoutMs`, `when`, `element` or `value: {"field", "value"}`.
+Saving gives the workflow a new version (drafts only; `asNew: true` saves a new workflow instead)
+and keeps node ids, so data mapping to earlier steps still works. The save result lists the
+workflows that run it in a Run a module or For each step; `POST
+/api/web/recordings/linked/{id}/update` fits their inputs to the recording's.
+
 ### Desktop recordings (Windows agent → server)
 
 The Jizza Windows agent records in Windows apps with a hotkey (Ctrl+Alt+R by default). The PC
