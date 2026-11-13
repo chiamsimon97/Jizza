@@ -168,6 +168,9 @@ final class StepCompiler {
       }
 
       JsonNode mappings = step.path("mappings");
+      // A run-time list choice keeps no default, so the item recorded is kept beside it for Edit
+      // recording to run the step with.
+      ObjectNode recorded = Json.obj();
       for (Iterator<Map.Entry<String, JsonNode>> it = mappings.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> mapping = it.next();
         String name = mapping.getValue().path("name").asText("");
@@ -179,6 +182,14 @@ final class StepCompiler {
           JsonNode kept = mapping.getValue().get("default");
           if (kept != null && !kept.isNull()) setAt(stepInputs, mapping.getKey(), kept);
           continue;
+        }
+        JsonNode def = mapping.getValue().get("default");
+        if (def == null || def.isNull() || def.asText("").isBlank()) {
+          JsonNode value = valueAt(stepInputs, mapping.getKey());
+          if (value != null && value.isArray() && value.size() == 1) value = value.get(0);
+          if (value != null && value.isValueNode() && !value.asText("").isBlank()) {
+            recorded.set(mapping.getKey(), value.deepCopy());
+          }
         }
         setAt(stepInputs, mapping.getKey(),
             Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
@@ -196,6 +207,7 @@ final class StepCompiler {
       }
       ObjectNode list = listFacts(step.path("meta"));
       if (list != null) config.set("list", list);
+      if (!recorded.isEmpty()) config.set("recorded", recorded);
       boolean disabled = step.path("disabled").asBoolean(false);
       if (disabled) config.put("disabled", true);
       if (step.path("optional").asBoolean(false)) config.put("optional", true);
@@ -238,7 +250,7 @@ final class StepCompiler {
   static final int DEFAULT_IF_WAIT_MS = 3_000;
   private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
   private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
-      "preset", "target", "disabled", "optional", "ifCheck");
+      "preset", "target", "disabled", "optional", "ifCheck", "recorded");
 
   /** The paths still open at the point the next node goes: each edge it gets, and its outlet. */
   private static final class Tails {
@@ -347,7 +359,7 @@ final class StepCompiler {
   }
 
   /** Sets a field of a step's inputs by the same dotted path, when its parent object exists. */
-  private static void setAt(ObjectNode inputs, String field, JsonNode value) {
+  static void setAt(ObjectNode inputs, String field, JsonNode value) {
     int dot = field.lastIndexOf('.');
     JsonNode parent = dot < 0 ? inputs : valueAt(inputs, field.substring(0, dot));
     if (parent instanceof ObjectNode object) object.set(field.substring(dot + 1), value);

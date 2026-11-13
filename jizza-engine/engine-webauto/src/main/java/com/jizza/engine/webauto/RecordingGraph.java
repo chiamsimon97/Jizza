@@ -31,6 +31,9 @@ import java.util.regex.Pattern;
  */
 final class RecordingGraph {
 
+  /** The item, and the card it is in, a list choice's name ends with. */
+  private static final Pattern LABEL_CHOICE =
+      Pattern.compile("\"([^\"]+)\"(?: in \"([^\"]+)\")?\s*$");
   private static final Pattern WHOLE_INPUT =
       Pattern.compile("^\\{\\{\\s*input\\.([A-Za-z][A-Za-z0-9_]{0,63})\\s*}}$");
   private static final int MAX_STEPS = 500;
@@ -194,13 +197,14 @@ final class RecordingGraph {
       ObjectNode mappings = Json.obj();
       unmap(input, "", mappings);
       if (!mappings.isEmpty()) step.set("mappings", mappings);
+      restoreRecorded(input, mappings, config, node.path("label").asText(""));
       step.set("input", input);
       if (config.path("list").isObject()) meta.set("list", config.get("list").deepCopy());
       ObjectNode extra = Json.obj();
       for (Iterator<Map.Entry<String, JsonNode>> it = config.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> field = it.next();
         if (!Set.of("action", "version", "inputs", "list", "preset", "target", "disabled",
-            "optional").contains(field.getKey())) {
+            "optional", "recorded").contains(field.getKey())) {
           extra.set(field.getKey(), field.getValue().deepCopy());
         }
       }
@@ -244,6 +248,53 @@ final class RecordingGraph {
           }
         }
       }
+    }
+
+    /**
+     * A run-time list choice is saved with no default, so its value comes back empty. Steps can
+     * run with the item recorded: kept in {@code config.recorded} since Edit recording, and for
+     * older recordings read from the step's name ({@code Choose Time "06:30 PM" in "Rakki"}), when
+     * the list it read had that name.
+     */
+    static void restoreRecorded(ObjectNode input, ObjectNode mappings, JsonNode config, String label) {
+      Matcher named = LABEL_CHOICE.matcher(label.strip());
+      boolean fromLabel = named.find();
+      for (Iterator<String> it = mappings.fieldNames(); it.hasNext(); ) {
+        String field = it.next();
+        JsonNode current = StepCompiler.valueAt(input, field);
+        if (current == null || !current.isValueNode() || !current.asText("").isBlank()) continue;
+        JsonNode kept = config.path("recorded").get(field);
+        String value = kept != null && kept.isValueNode() ? kept.asText("") : "";
+        if (value.isBlank() && fromLabel && "browser.clickItem".equals(config.path("action").asText())) {
+          String guess = "item".equals(field) ? named.group(1)
+              : "within.item".equals(field) ? named.group(2) : null;
+          if (guess != null && listed(config.path("list"), field, guess)) value = guess;
+        }
+        if (!value.isBlank()) StepCompiler.setAt(input, field, Json.mapper().getNodeFactory().textNode(value));
+      }
+    }
+
+    /** Whether a list's names include {@code value}; true when it kept no names. */
+    private static boolean listed(JsonNode list, String field, String value) {
+      boolean known = false;
+      if ("item".equals(field)) {
+        for (JsonNode option : list.path("options")) {
+          known = true;
+          if (value.equals(option.asText())) return true;
+        }
+        for (JsonNode group : list.path("groups")) {
+          for (JsonNode item : group.path("items")) {
+            known = true;
+            if (value.equals(item.asText())) return true;
+          }
+        }
+      } else {
+        for (JsonNode group : list.path("groups")) {
+          known = true;
+          if (value.equals(group.path("label").asText())) return true;
+        }
+      }
+      return !known;
     }
 
     private static String inputName(JsonNode value) {
