@@ -135,3 +135,29 @@ export function conditionDepths(steps: RecordedStep[]): number[] {
     return at
   })
 }
+
+/**
+ * Conditions a save leaves out because nothing is inside them (straight followed by their end, or
+ * by an "Otherwise" with nothing under it), as the server's step compiler does. Their seqs.
+ */
+export function emptyConditions(steps: RecordedStep[]): number[] {
+  const left = steps.map(s => ({ action: s.step.action, seq: s.seq }))
+  const empty: number[] = []
+  let removed = true
+  while (removed) {
+    removed = false
+    let depth = 0
+    for (let i = 0; i < left.length && !removed; i++) {
+      const { action } = left[i]
+      const next = left[i + 1]?.action ?? ''
+      if (action === 'flow.if') depth++
+      if (action === 'flow.endIf') depth = Math.max(0, depth - 1)
+      if (action === 'flow.else' && (depth === 0 || next === 'flow.endIf' || next === 'flow.else')) {
+        left.splice(i, 1); removed = true
+      } else if (action === 'flow.if' && next === 'flow.endIf') {
+        empty.push(left[i].seq); left.splice(i, 2); removed = true
+      }
+    }
+  }
+  return empty
+}
