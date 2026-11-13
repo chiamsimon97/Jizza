@@ -489,16 +489,17 @@ public class PolicyAutonomyGate implements AutonomyGate {
       out = out.withRule(AutonomyRule.ASK, fellThrough);
     }
     if (out.needsJizza()) {
-      if (agent.isOrchestrator()) {
-        // Jizza never approves its own actions.
-        out = out.withRule(AutonomyRule.ASK, "Jizza doesn't approve its own actions, so this "
-            + "needs your approval");
-      } else if ((type == ActionType.MONEY || type == ActionType.DELETE)
+      if ((type == ActionType.MONEY || type == ActionType.DELETE)
           && (policy == null || !GuardrailConditions.hasCondition(policy.getLimits())
               || !GuardrailConditions.hasBudget(policy.getLimits()))) {
         out = out.withRule(AutonomyRule.ASK, "Jizza can only decide on "
             + type.name().toLowerCase(Locale.ROOT) + " actions when the rule has a condition "
             + "and a budget, so this needs your approval");
+      } else if (agent.isOrchestrator()) {
+        // Jizza never approves its own actions. The decision remembers why, so a step that only
+        // matches an item against the page's list can still pick it on its own.
+        out = out.askedBecauseJizzaActs("Jizza doesn't approve its own actions, so this "
+            + "needs your approval");
       }
     }
     if (ceiling != null && ceiling.strictness() > out.rule().strictness()) {

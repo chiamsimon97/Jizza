@@ -50,17 +50,23 @@ public class GuardrailsUseCase {
   public record Overview(List<AutonomyRuleDto> rules, List<AgentGuardrails> agents,
                          String defaultRule, boolean paused, QuietHours quietHours) {}
 
-  /** What one maintaining agent's guardrails decide for a step. */
-  public record AgentDecision(UUID agentId, String agentName, Decision decision) {}
+  /**
+   * What one maintaining agent's guardrails decide for a step. {@code orchestrator} is true for
+   * Jizza itself, which never approves its own actions, so Let Jizza decide only means something
+   * for it on a step that picks from a list.
+   */
+  public record AgentDecision(UUID agentId, String agentName, Decision decision,
+                              boolean orchestrator) {}
 
   /**
    * One step of a workflow as the guardrails will judge it on the current version. {@code agentId}
    * and {@code decision} are the lead maintainer's, which is whose guardrails a run follows;
-   * {@code perAgent} has the same step under each maintaining agent.
+   * {@code perAgent} has the same step under each maintaining agent. {@code listChoice} is true
+   * for a step that picks an item from a list the page shows at run time.
    */
   public record Step(String nodeId, String label, NodeType type, UUID agentId, String agentName,
                      String toolName, ActionType actionType, Decision decision,
-                     List<AgentDecision> perAgent) {}
+                     List<AgentDecision> perAgent, boolean listChoice) {}
 
   /** An agent that maintains the workflow; the first one leads. */
   public record Maintainer(UUID id, String name) {}
@@ -138,30 +144,39 @@ public class GuardrailsUseCase {
   public WorkflowGuardrails workflow(UUID userId, UUID workflowId) {
     WorkflowDto workflow = ownWorkflow(userId, workflowId);
     List<UUID> chosen = maintainersOf(userId, workflow);
+    UUID jizza = agents.orchestrator(userId).id();
     List<Step> steps = new ArrayList<>();
     for (WorkflowNode node : WorkflowGraph.from(workflow.graph()).nodes()) {
       if (node.type() == NodeType.AGENT_STEP) {
         UUID agentId = uuid(node.config() == null ? null : node.config().path("agentId"));
         // An agent step chooses its tools as it runs; each is judged then, inside this workflow.
         steps.add(new Step(node.id(), node.label(), node.type(), agentId,
-            agentId == null ? null : agents.nameOf(agentId), null, null, null, List.of()));
+            agentId == null ? null : agents.nameOf(agentId), null, null, null, List.of(), false));
         continue;
       }
       Judged judged = judgeable(node);
       if (judged == null) continue;
+      boolean listChoice = judged.missing() == null && isListChoice(node);
       List<AgentDecision> perAgent = new ArrayList<>();
       for (UUID actor : chosen) {
         Decision d = judged.missing() != null ? Decision.deny(judged.missing(), "no-tool")
             : gate.evaluate(new GuardrailContext(actor, judged.toolRef(), null, workflow.id(),
                 workflow.version(), node.id(), true, judged.knownType())
                 .withConnection(judged.connectionId()));
-        perAgent.add(new AgentDecision(actor, agents.nameOf(actor), d));
+        if (listChoice && d.jizzaActs()) {
+          // Let Jizza decide on a list choice is a plain match against the page, which Jizza
+          // may make for itself: the step runs as chosen.
+          d = new Decision(AutonomyRule.JIZZA, "Jizza picks the item the run names when the page "
+              + "lists it, and asks you when it doesn't", d.matchedPolicy(), d.policyId(),
+              d.actionType(), false);
+        }
+        perAgent.add(new AgentDecision(actor, agents.nameOf(actor), d, actor.equals(jizza)));
       }
       AgentDecision lead = perAgent.get(0);
       steps.add(new Step(node.id(), node.label(), node.type(), lead.agentId(), lead.agentName(),
           judged.missing() != null ? null : judged.toolName(),
           judged.missing() != null ? null : lead.decision().actionType(), lead.decision(),
-          perAgent));
+          perAgent, listChoice));
     }
     List<AutonomyRuleDto> rules = policies.list(userId).stream()
         .filter(rule -> workflowId.equals(rule.workflowId())).toList();
@@ -202,6 +217,16 @@ public class GuardrailsUseCase {
     return List.of(workflow.owningAgentId() != null ? workflow.owningAgentId()
         : agents.orchestrator(userId).id());
   }
+
+  /** A step that picks, at run time, an item from a list the page or app shows. */
+  private static boolean isListChoice(WorkflowNode node) {
+    if (node.type() != NodeType.DEVICE_ACTION || node.config() == null) return false;
+    String action = node.config().path("action").asText("");
+    return LIST_CHOICES.contains(action);
+  }
+
+  private static final java.util.Set<String> LIST_CHOICES =
+      java.util.Set.of("browser.clickItem", "ui.clickItem", "browser.chooseOption");
 
   /** How the gate names a step's call; {@code missing} says why it can't be judged. */
   private record Judged(String toolName, String toolRef, ActionType knownType, UUID connectionId,

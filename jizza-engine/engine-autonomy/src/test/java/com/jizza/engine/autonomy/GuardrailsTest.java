@@ -431,7 +431,28 @@ class GuardrailsTest {
   @Test
   void jizzaNeverApprovesItsOwnActions() {
     rule(jizza.getId(), "notes_update", AutonomyRule.JIZZA, 0, null);
-    assertThat(gate.evaluate(jizza.getId(), "notes_update", null).needsPermission()).isTrue();
+    Decision d = gate.evaluate(jizza.getId(), "notes_update", null);
+    assertThat(d.needsPermission()).isTrue();
+    // The decision says why, so a step that only matches a list item may still go on its own.
+    assertThat(d.jizzaActs()).isTrue();
+  }
+
+  @Test
+  void letJizzaDecideOnMoneyWithoutABudgetAsksEvenWhenJizzaActs() {
+    rule(jizza.getId(), "broker_place_order", AutonomyRule.JIZZA, 0, null);
+    Decision d = gate.evaluate(jizza.getId(), "broker_place_order", order(1));
+    assertThat(d.needsPermission()).isTrue();
+    assertThat(d.jizzaActs()).isFalse();
+  }
+
+  @Test
+  void aLockAboveLetJizzaDecideIsNotTreatedAsJizzaActing() {
+    rule(jizza.getId(), "notes_update", AutonomyRule.JIZZA, 0, null);
+    AutonomyPolicyEntity lock = rule(null, "notes_update", AutonomyRule.DENY, 0, null);
+    lock.setLocked(true);
+    Decision d = gate.evaluate(jizza.getId(), "notes_update", null);
+    assertThat(d.denied()).isTrue();
+    assertThat(d.jizzaActs()).isFalse();
   }
 
   @Test

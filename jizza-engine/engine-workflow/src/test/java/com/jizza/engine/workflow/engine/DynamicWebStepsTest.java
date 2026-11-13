@@ -133,6 +133,24 @@ class DynamicWebStepsTest {
   }
 
   @Test
+  void letJizzaDecideStillPicksTheListedItemWhenJizzaRunsTheStep() {
+    // Jizza never approves its own actions, but matching a named item against the page's list
+    // is not a judgement call, so the choice holds when Jizza leads the workflow.
+    EngineHarness harness = harness(CLICK_MOVIE);
+    harness.jizzaActs = true;
+    harness.deviceOutputs.put("browser.listItems", listing("Kantara", "Ramayana (Hindi)", "Dune"));
+    harness.deviceOutputs.put("browser.clickItem", Json.obj().put("clicked", true));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("movie", "ramayana"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.deviceRequests.get(1).input().path("item").asText())
+        .isEqualTo("Ramayana (Hindi)");
+    assertThat(harness.raised).isEmpty();
+  }
+
+  @Test
   void letJizzaDecideAsksWithTheLiveListWhenTheItemIsNotThere() {
     EngineHarness harness = harness(CLICK_MOVIE);
     harness.toolRule = AutonomyRule.JIZZA;

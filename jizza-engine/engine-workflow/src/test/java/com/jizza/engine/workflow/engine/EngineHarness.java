@@ -100,6 +100,8 @@ public final class EngineHarness {
   public ToolResult nextToolResult = ToolResult.ok(Json.obj().put("sent", true));
   public boolean paused;
   public AutonomyRule toolRule = AutonomyRule.ALLOW;
+  /** Let Jizza decide was chosen, but Jizza runs the step, so the gate asks instead. */
+  public boolean jizzaActs;
   public final List<com.jizza.engine.api.device.DeviceCommandRequest> deviceRequests =
       new ArrayList<>();
   public com.jizza.engine.api.device.DeviceCommandStatus nextDeviceStatus =
@@ -240,6 +242,10 @@ public final class EngineHarness {
 
     AutonomyGate gate = new AutonomyGate() {
       @Override public Decision evaluate(UUID agent, String toolRef, JsonNode args) {
+        if (jizzaActs) {
+          return new Decision(AutonomyRule.JIZZA, "Jizza decides", "test")
+              .askedBecauseJizzaActs("Jizza doesn't approve its own actions");
+        }
         return switch (toolRule) {
           case ALLOW -> Decision.allow("test");
           case ASK -> Decision.ask("needs approval", "test");

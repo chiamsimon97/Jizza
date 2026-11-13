@@ -79,6 +79,9 @@ export function WorkflowGuardrails({ workflowId }: { workflowId: string }) {
                 .map((row, i) => (
                   <AgentRow key={row.agentId || i} name={row.agentName ?? 'Jizza'} lead={i === 0}
                     decision={row.decision} busy={save.isPending}
+                    // Jizza never approves its own actions, so for it Let Jizza decide would only
+                    // ask you. It still fits a step that picks an item from the page's list.
+                    canLetJizzaDecide={!row.orchestrator || !!step.listChoice}
                     onChange={mode => save.mutate({ step, agentId: row.agentId, mode })} />
                 ))}
             </div>
@@ -129,19 +132,25 @@ function Maintainers({ data, agents, chosen, busy, onToggle }: {
   )
 }
 
-function AgentRow({ name, lead, decision, busy, onChange }: {
-  name: string; lead: boolean; decision: GuardrailDecision; busy: boolean; onChange: (mode: GuardrailMode) => void
+function AgentRow({ name, lead, decision, busy, canLetJizzaDecide, onChange }: {
+  name: string; lead: boolean; decision: GuardrailDecision; busy: boolean; canLetJizzaDecide: boolean
+  onChange: (mode: GuardrailMode) => void
 }) {
   const fixed = decision.reason.includes('no longer exists') || decision.reason.includes('no action called')
+  const reason = decision.jizzaActs && !canLetJizzaDecide
+    ? 'Jizza runs this step and doesn\'t approve its own actions, so it asks you. To let an agent '
+      + 'decide, choose it under Maintained by.'
+    : decision.reason
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-xs text-gray-700 dark:text-gray-300">{name}{lead ? ' (leads)' : ''}</p>
-        <p className="text-xs text-gray-400">{decision.reason}</p>
+        <p className="text-xs text-gray-400">{reason}</p>
       </div>
       {fixed
         ? <Badge variant={MODE_BADGE[decision.rule]}>{MODE_LABELS[decision.rule]}</Badge>
-        : <ModeSelect label={`${name}: step mode`} value={decision.rule} disabled={busy} onChange={onChange} />}
+        : <ModeSelect label={`${name}: step mode`} value={decision.rule} disabled={busy} onChange={onChange}
+            exclude={canLetJizzaDecide ? [] : ['JIZZA']} />}
     </div>
   )
 }
