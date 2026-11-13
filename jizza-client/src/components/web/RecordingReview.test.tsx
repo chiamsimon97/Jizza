@@ -77,4 +77,20 @@ describe('RecordingReview list choices', () => {
       { op: 'map', seq: 2, field: 'within.item', input: { name: 'cinema', type: 'text', default: 'Vijay Park' } },
     ])
   })
+
+  it('offers the browser\'s saved logins by name for a password step', () => {
+    const onEdit = vi.fn()
+    render(<RecordingReview recording={recording} onEdit={onEdit}
+      logins={[{ id: 'login-7', name: 'Portal', description: 'portal.example.com' }]} />)
+    const picker = screen.getByLabelText('Saved login') as HTMLSelectElement
+    expect(picker.tagName).toBe('SELECT')
+    expect(screen.getByRole('option', { name: 'Portal (portal.example.com)' })).toBeTruthy()
+    fireEvent.change(picker, { target: { value: 'login-7' } })
+    expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 3, secretRef: 'login-7' }])
+  })
+
+  it('says so when the browser has no saved login yet', () => {
+    render(<RecordingReview recording={recording} onEdit={vi.fn()} logins={[]} />)
+    expect(screen.getByText(/No saved logins in this browser yet/)).toBeTruthy()
+  })
 })

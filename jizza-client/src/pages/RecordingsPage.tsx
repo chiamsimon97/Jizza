@@ -31,7 +31,11 @@ export function RecordingsPage() {
   const drafts = useQuery({ queryKey: ['web-recordings', 'drafts'], queryFn: () => webApi.listRecordings(['recording', 'review']) })
   const modules = useQuery({ queryKey: ['workflows'], queryFn: () => workflowsApi.list() })
   const saved = (modules.data ?? []).filter(w => w.origin === 'RECORDED')
-  const run = useMutation({ mutationFn: (id: string) => workflowsApi.run(id) })
+  // Run now opens the run, so the person sees its steps and any question it asks.
+  const run = useMutation({
+    mutationFn: (id: string) => workflowsApi.run(id),
+    onSuccess: started => { if (started?.id) navigate(`/runs?run=${started.id}`) },
+  })
   // A draft is only notes until it is saved, so it goes with one confirm, no dialog.
   const discard = useMutation({
     mutationFn: (id: string) => webApi.discardRecording(id),
@@ -75,6 +79,7 @@ export function RecordingsPage() {
           )}
           <section aria-label="Saved recordings" className="space-y-2">
             <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Saved</h2>
+            {run.isError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">That recording could not be started: {run.error instanceof Error ? run.error.message : 'try again'}.</p>}
             {saved.length === 0
               ? <EmptyState icon={Video} title="No recordings yet" description="Press Record and do a task in Chrome, or press Ctrl+Alt+R on a Windows PC, then save it as a module." />
               : saved.map(w => (

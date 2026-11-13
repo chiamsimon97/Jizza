@@ -7,15 +7,20 @@ import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
 import { conditionDepths, emptyConditions, fieldName, isCondition, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
+/** A login saved in the browser extension, as its device lists it. */
+export interface SavedLogin { id: string; name: string; description?: string | null }
+
 const TYPES = ['text', 'number', 'boolean', 'date'] as const
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,
  * turn a typed value into an input, and choose a saved login for each password.
  */
-export function RecordingReview({ recording, busy, onEdit }: {
+export function RecordingReview({ recording, busy, logins, onEdit }: {
   recording: Recording
   busy?: boolean
+  /** The logins saved in the browser it was recorded in (name and site only, never a password). */
+  logins?: SavedLogin[]
   onEdit: (ops: EditOp[]) => void
 }) {
   const steps = liveSteps(recording.steps)
@@ -63,7 +68,7 @@ export function RecordingReview({ recording, busy, onEdit }: {
                   className="h-12 w-16 shrink-0 rounded-md border border-gray-200 object-cover dark:border-gray-700" />
               : <span className="h-12 w-16 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800" />}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {s.step.label ?? s.step.action}</p>
+              <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100" title={s.step.label ?? s.step.action}>{i + 1}. {s.step.label ?? s.step.action}</p>
               {empty.has(s.seq) && <p className="text-xs text-amber-700 dark:text-amber-300">Nothing inside: left out when saved</p>}
               <p className="truncate text-[11px] text-gray-500">{s.step.meta?.url ?? s.step.meta?.window}</p>
               {s.step.action === 'browser.fillForm' && Array.isArray(s.step.input?.fields) && (
@@ -91,10 +96,24 @@ export function RecordingReview({ recording, busy, onEdit }: {
                 {isPassword(s) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                     <KeyRound className="h-3.5 w-3.5" />{recording.kind === 'desktop' ? 'Secret on the PC' : 'Saved login'}
-                    <input aria-label="Saved login" defaultValue={s.step.secretRef ?? ''} placeholder={recording.kind === 'desktop' ? 'Secret name' : 'Saved login id'}
-                      onBlur={e => { const v = e.target.value.trim(); if (v !== (s.step.secretRef ?? '')) onEdit([{ op: 'secret', seq: s.seq, secretRef: v || null }]) }}
-                      className="w-40 rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600" />
+                    {recording.kind !== 'desktop' && logins && logins.length > 0 ? (
+                      // Chosen by name: nobody should have to know a saved login's id.
+                      <select aria-label="Saved login" value={s.step.secretRef ?? ''} disabled={busy}
+                        onChange={e => onEdit([{ op: 'secret', seq: s.seq, secretRef: e.target.value || null }])}
+                        className="max-w-[14rem] rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600">
+                        <option value="">Choose…</option>
+                        {s.step.secretRef && !logins.some(l => l.id === s.step.secretRef) && <option value={s.step.secretRef}>{s.step.secretRef}</option>}
+                        {logins.map(l => <option key={l.id} value={l.id}>{l.name}{l.description ? ` (${l.description})` : ''}</option>)}
+                      </select>
+                    ) : (
+                      <input aria-label="Saved login" defaultValue={s.step.secretRef ?? ''} placeholder={recording.kind === 'desktop' ? 'Secret name' : 'Saved login id'}
+                        onBlur={e => { const v = e.target.value.trim(); if (v !== (s.step.secretRef ?? '')) onEdit([{ op: 'secret', seq: s.seq, secretRef: v || null }]) }}
+                        className="w-40 rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600" />
+                    )}
                   </label>
+                )}
+                {isPassword(s) && recording.kind !== 'desktop' && logins && logins.length === 0 && (
+                  <span className="text-xs text-amber-700 dark:text-amber-300">No saved logins in this browser yet: add one in the extension's Settings.</span>
                 )}
               </div>
             </div>

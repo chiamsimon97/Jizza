@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, CircleDashed, PictureInPicture2, Square } from 'l
 import { Link } from 'react-router-dom'
 import { webApi, type EditOp, type LinkedWorkflow, type Recording } from '@/api/web'
 import { workflowsApi } from '@/api/workflows'
+import { devicesApi } from '@/api/devices'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useFloatingWindow } from '@/hooks/useFloatingWindow'
 import { SlideOver } from '@/components/ui/SlideOver'
@@ -64,6 +65,11 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
 
   const close = () => { setId(recordingId); setError(null); float.close(); onClose() }
   const r = recording.data
+  // The logins saved in the browser it was recorded in, so a password step's login is chosen by
+  // name. Asked for only when a step needs one.
+  const needsLogin = r?.status === 'review' && r.kind !== 'desktop' && liveSteps(r.steps).some(s => s.step.meta?.sensitive === true)
+  const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list, enabled: open && !!needsLogin })
+  const logins = devices.data?.find(d => d.id === r?.deviceId)?.items?.logins
   const editing = !!r?.sourceWorkflowId
   // Only a draft takes a new version here; one past draft is saved as a new recording.
   const source = useQuery({ queryKey: ['workflow', r?.sourceWorkflowId], queryFn: () => workflowsApi.get(r!.sourceWorkflowId!), enabled: open && editing })
@@ -176,7 +182,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
             </div>
           )}
           {missing > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">{r.kind === 'desktop' ? 'Name the secret saved on the PC (Jizza Agent › Secrets) for each password step before saving.' : 'Choose a saved login for each password step before saving.'}</p>}
-          <RecordingReview recording={r} busy={edit.isPending} onEdit={ops => edit.mutate(ops)} />
+          <RecordingReview recording={r} busy={edit.isPending} logins={logins} onEdit={ops => edit.mutate(ops)} />
         </div>
       )}
     </SlideOver>
