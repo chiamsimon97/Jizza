@@ -190,4 +190,52 @@ class StepCompilerTest {
     assertThatThrownBy(() -> StepCompiler.compileDesktop(pc, List.of(password), false))
         .isInstanceOf(ValidationException.class).hasMessageContaining("Secrets");
   }
+
+  private static JsonNode click(int seq, String css) {
+    return step("{\"seq\":" + seq + ",\"action\":\"browser.click\",\"version\":2,\"label\":\"Click "
+        + css + "\",\"input\":{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"" + css
+        + "\"}]}},\"meta\":{}}");
+  }
+
+  private static final JsonNode IF_POPUP = step("""
+      {"seq":10,"action":"flow.if","version":1,"label":"Only if \\"Select format\\" is shown",
+       "input":{"element":{"strategies":[{"by":"css","value":"#popup"}]},"timeoutMs":2000,"when":"shown"},
+       "meta":{}}""");
+  private static final JsonNode ELSE = step("""
+      {"seq":11,"action":"flow.else","version":1,"label":"Otherwise","input":{},"meta":{}}""");
+  private static final JsonNode END_IF = step("""
+      {"seq":12,"action":"flow.endIf","version":1,"label":"End","input":{},"meta":{}}""");
+
+  @Test
+  void aConditionWithOtherwiseRunsOneOfItsTwoPathsThenTheStepsAfter() {
+    var graph = StepCompiler.compile("https://portal.example.com", List.of(OPEN, IF_POPUP,
+        click(3, "#tamil-3d"), ELSE, click(4, "#skip"), END_IF, click(5, "#date")));
+
+    String branch = null;
+    for (JsonNode n : graph.path("nodes")) {
+      if ("BRANCH".equals(n.path("type").asText())) branch = n.path("id").asText();
+    }
+    assertThat(graph.path("nodes").toString()).contains("\"else\":true");
+    List<String> edges = new java.util.ArrayList<>();
+    graph.path("edges").forEach(e -> edges.add(e.path("from").asText() + ">" + e.path("to").asText()
+        + (e.has("branch") ? ":" + e.path("branch").asText() : "")));
+    assertThat(edges).contains(branch + ">step_3:true", branch + ">step_5:false",
+        "step_3>step_7", "step_5>step_7");
+
+    // Opened again for editing, it reads back as the same steps.
+    var steps = RecordingGraph.open(graph).steps();
+    assertThat(steps.stream().map(st -> st.path("action").asText()).toList()).containsExactly(
+        "browser.open", "flow.if", "browser.click", "flow.else", "browser.click", "flow.endIf",
+        "browser.click", "browser.close");
+  }
+
+  @Test
+  void anEmptyOtherwiseOrOneOutsideAConditionIsLeftOut() {
+    var graph = StepCompiler.compile("https://portal.example.com", List.of(OPEN, ELSE, IF_POPUP,
+        click(3, "#tamil-3d"), ELSE, END_IF, click(5, "#date")));
+    assertThat(graph.path("nodes").toString()).doesNotContain("\"else\":true");
+    var steps = RecordingGraph.open(graph).steps();
+    assertThat(steps.stream().map(st -> st.path("action").asText()).toList()).containsExactly(
+        "browser.open", "flow.if", "browser.click", "flow.endIf", "browser.click", "browser.close");
+  }
 }

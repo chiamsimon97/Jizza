@@ -243,6 +243,10 @@ What a step reads, such as a table's rows or an element's text, is available to 
 
 By default, a saved recording asks before Jizza runs it on its own and does not run on a schedule. When you ask Jizza in chat to run it, your request is the yes, so it runs straight away. You can change that in the workflow's reuse settings.
 
+### Conditions while recording
+
+While you record for the first time, **Only if shown…** in the side panel starts a condition: click what must be on the page (a pop-up's title), and the steps you record next go inside it. **Otherwise** starts the steps for when it is not there, and **End condition** goes back to steps that always run.
+
 ### Edit a recording
 
 When a site changes, or a page only sometimes appears (BookMyShow shows "Select language and format" only for films with more than one format), edit the saved recording instead of recording it again. Edit needs the Jizza Browser Agent 0.10.0 or later.
@@ -263,9 +267,16 @@ In the side panel:
 | **Add wait** | Waits a number of seconds at the marker |
 | **⋯** on a step | Run from here, Shown/Missing for a condition, Rename, Turn off, Make optional, Pick element again, change the test value, move or delete |
 
+**Only if shown…** with no steps ticked puts the next step to run in the condition, so the steps after it run either way. That is how to skip one pop-up step: move the marker to that step, press **Only if shown…**, and click the pop-up's title (click the title text itself, not the whole pop-up). In a condition's **⋯** menu:
+
+- **Add Otherwise** adds steps that run only when the element is not there. Press **● New action** with the marker under Otherwise to record them.
+- **Take in next step** and **Leave out last step** move the condition's end, to put more steps inside it or take one out.
+
 A condition waits up to 3 seconds for its element. **Missing** runs its steps only when the element is not there. An **optional** step is skipped when its element is not on the page, instead of failing the run. A step that is **turned off** stays in the recording but does not run.
 
-Press **Finish editing** in the side panel (or in Jizza), then review and save:
+Press **■ Finish editing** at the top of the side panel (or **Finish editing** in Jizza), then review and save. **✕ Cancel editing** stops and keeps nothing; the saved recording stays as it was.
+
+When you save:
 
 - **Save changes** saves a new version of the same recording. Workflows that run it as a module run the new version from now on. If its inputs changed, Jizza lists those workflows so you can update their steps: new inputs are added empty and inputs it no longer has are removed.
 - **Save as new recording** keeps the old one as it is. A recording that is past draft can only be saved this way, because its changes go through review.

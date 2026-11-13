@@ -225,6 +225,16 @@ class RecordingServiceTest {
   }
 
   @Test
+  void cancellingInTheSidePanelDiscardsTheRecording() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step",
+        event(id, step(0, "browser.click", "Click", "{}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.stopped",
+        Json.obj().put("recordingId", id.toString()).put("discarded", true));
+    assertThat(recordingRows.get(id).getStatus()).isEqualTo("discarded");
+  }
+
+  @Test
   void aStepHandledJustAfterStoppedIsStillKept() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.stopped",

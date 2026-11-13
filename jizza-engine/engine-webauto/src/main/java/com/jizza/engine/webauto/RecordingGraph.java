@@ -135,9 +135,19 @@ final class RecordingGraph {
           }
           if (whenTrue == null || whenFalse == null) throw forked(branchId);
           steps.add(condition(node, branch));
-          steps.addAll(line(whenTrue, whenFalse));
-          steps.add(endCondition(++seq));
-          at = whenFalse;
+          if (branch.path("config").path("else").asBoolean(false)) {
+            // With "Otherwise": both paths meet at the first step they share.
+            String join = join(whenTrue, whenFalse);
+            steps.addAll(line(whenTrue, join));
+            steps.add(otherwise(++seq));
+            steps.addAll(line(whenFalse, join));
+            steps.add(endCondition(++seq));
+            at = join;
+          } else {
+            steps.addAll(line(whenTrue, whenFalse));
+            steps.add(endCondition(++seq));
+            at = whenFalse;
+          }
           continue;
         }
         steps.add(step(node));
@@ -158,6 +168,34 @@ final class RecordingGraph {
           .put("nodeId", check.path("id").asText());
       step.set("input", input);
       step.set("meta", Json.obj().put("sensitive", false).put("branchId", branch.path("id").asText()));
+      return step;
+    }
+
+    /** The nearest node the path from {@code b} reaches that the path from {@code a} reaches too. */
+    String join(String a, String b) {
+      Set<String> fromA = new HashSet<>();
+      java.util.ArrayDeque<String> queue = new java.util.ArrayDeque<>(List.of(a));
+      while (!queue.isEmpty() && fromA.size() <= MAX_STEPS * 4) {
+        String id = queue.poll();
+        if (!fromA.add(id)) continue;
+        outgoing.getOrDefault(id, List.of()).forEach(e -> queue.add(e.path("to").asText()));
+      }
+      Set<String> visited = new HashSet<>();
+      queue.add(b);
+      while (!queue.isEmpty() && visited.size() <= MAX_STEPS * 4) {
+        String id = queue.poll();
+        if (!visited.add(id)) continue;
+        if (fromA.contains(id)) return id;
+        outgoing.getOrDefault(id, List.of()).forEach(e -> queue.add(e.path("to").asText()));
+      }
+      throw new ValidationException("This recording's steps are not joined up");
+    }
+
+    ObjectNode otherwise(int at) {
+      ObjectNode step = Json.obj().put("seq", at).put("action", StepCompiler.ELSE).put("version", 1)
+          .put("label", "Otherwise");
+      step.set("input", Json.obj());
+      step.set("meta", Json.obj().put("sensitive", false));
       return step;
     }
 

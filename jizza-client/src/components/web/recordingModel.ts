@@ -118,9 +118,9 @@ export function reusableOps(steps: RecordedStep[] | undefined): EditOp[] {
   return ops
 }
 
-/** Edit recording: a condition's start (`flow.if`) or end (`flow.endIf`) marker. */
+/** A condition's start (`flow.if`), its "Otherwise" (`flow.else`) or its end (`flow.endIf`). */
 export function isCondition(step: RecordedStep): boolean {
-  return step.step.action === 'flow.if' || step.step.action === 'flow.endIf'
+  return step.step.action === 'flow.if' || step.step.action === 'flow.else' || step.step.action === 'flow.endIf'
 }
 
 /** How deep in conditions each step is: a condition's own steps are one deeper than it. */
@@ -128,6 +128,8 @@ export function conditionDepths(steps: RecordedStep[]): number[] {
   let depth = 0
   return steps.map(s => {
     if (s.step.action === 'flow.endIf') { depth = Math.max(0, depth - 1); return depth }
+    // "Otherwise" lines up with its condition; the steps after it are inside again.
+    if (s.step.action === 'flow.else') return Math.max(0, depth - 1)
     const at = depth
     if (s.step.action === 'flow.if') depth += 1
     return at

@@ -476,7 +476,18 @@ public class RecordingService implements Recordings, RecordingIntake {
       case "step" -> addStep(recording, data.path("step"), data.get("after"));
       case "edit" -> deviceEdit(recording, data);
       case "stopped" -> {
-        if (STATUS_RECORDING.equals(recording.getStatus())) toReview(recording);
+        if (data.path("discarded").asBoolean(false)
+            && (STATUS_RECORDING.equals(recording.getStatus())
+                || STATUS_REVIEW.equals(recording.getStatus()))) {
+          // Cancel in the side panel: nothing is kept; a saved recording being edited stays as it was.
+          recording.setStatus(STATUS_DISCARDED);
+          recording.setStoppedAt(Instant.now());
+          recording.setUpdatedAt(Instant.now());
+          recordings.save(recording);
+          publish(recording, null);
+        } else if (STATUS_RECORDING.equals(recording.getStatus())) {
+          toReview(recording);
+        }
       }
       default -> log.info("Dropped unknown recording event {}", name);
     }
@@ -559,7 +570,7 @@ public class RecordingService implements Recordings, RecordingIntake {
     // Edit recording adds conditions around steps: "If … is shown" and its end.
     boolean condition = KIND_WEB.equals(recording.getKind())
         && (StepCompiler.IF.equals(action) && raw.path("input").path("element").isObject()
-            || StepCompiler.END_IF.equals(action));
+            || StepCompiler.END_IF.equals(action) || StepCompiler.ELSE.equals(action));
     if (!raw.isObject() || !raw.path("seq").isInt() || raw.path("seq").asInt() < 0
         || !(action.startsWith(prefix) || condition)
         || DESKTOP_RECORD_ACTION.equals(action) || RECORD_ACTION.equals(action)) {
@@ -711,7 +722,7 @@ public class RecordingService implements Recordings, RecordingIntake {
     String action = target.node.path("action").asText();
     boolean condition = StepCompiler.IF.equals(action);
     boolean control = condition || StepCompiler.END_IF.equals(action)
-        || StepCompiler.KEEP.equals(action);
+        || StepCompiler.ELSE.equals(action) || StepCompiler.KEEP.equals(action);
     ObjectNode input = target.node.path("input").isObject() ? (ObjectNode) target.node.get("input")
         : target.node.putObject("input");
     for (var it = patch.fields(); it.hasNext(); ) {
