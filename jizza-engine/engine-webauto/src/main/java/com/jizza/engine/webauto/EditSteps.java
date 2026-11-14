@@ -46,7 +46,10 @@ final class EditSteps {
     }
     if (!mapped.isEmpty()) out.set("mapped", mapped);
     String secretRef = step.path("secretRef").asText("");
-    if (!secretRef.isBlank()) input.put("secretRef", secretRef);
+    if (!secretRef.isBlank()) {
+      input.set("secretRef", StepCompiler.secretInput(secretRef,
+          step.path("meta").path("sensitive").asBoolean(false), true));
+    }
     out.set("input", input);
     if (step.path("meta").path("list").isObject()) out.set("list", step.path("meta").get("list"));
     if (step.path("meta").path("preview").isTextual()) {

@@ -114,7 +114,8 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | --- | --- |
 | Type an address or open a bookmark | Open URL |
 | Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
-| Click one card of a list: a movie, a date in a date strip, a showtime, a choice in a pop-up (browser agent 0.4.0 or later) | Choose from a list, with the item you clicked |
+| Click one card of a list you mapped (Scan) or marked (Mark a list): a movie, a date in a date strip, a showtime | Choose from a list, with the item you clicked |
+| Click one of the buttons you grouped (Group buttons) | Click one of these buttons, with the button you clicked |
 | Type in a field | Set text, one step per field when you leave it |
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
 | Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
@@ -203,6 +204,21 @@ The names you give become the field names in review and in the workflow builder 
 
 The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
 
+### Lists are only what you define
+
+From browser agent 0.13.0, a click becomes **Choose from a list** only in a list you mapped with Scan or marked with **Mark a list**. Two buttons side by side, or cards that happen to look alike, are recorded as plain clicks. To get the old behaviour back, where any click on one of several look-alike items was guessed to be a list, tick **Guess lists** under Auto and Manual in the side panel.
+
+### Group buttons that are not a list
+
+Some pages ask you to choose between a few different buttons that aren't a list, such as हिंदी and English on IRCTC, or Accept and Decline. Group them so either one is one step:
+
+1. Press **Group buttons** in the side panel.
+2. Click each button of the group on the page. The clicks don't reach the site. Press Esc when you have clicked them all.
+3. **Name this group** opens and lists the buttons. Type what the choice is, such as "Language", and press **Save group**.
+4. Click the button you want, as usual. It is recorded as **Click one of these buttons**, named "Choose Language "English"".
+
+In review the step shows "one of 2 buttons: Language", and its choice becomes the module input `language`, with the button you clicked as its default. In the workflow builder, **Language** is a drop-down of the buttons: pick one, map it from earlier steps, or leave it on **Choose…** so each run clicks whichever of the buttons the page shows. When a run asks for a button that isn't one of them, Jizza asks you which to click.
+
 ### Choose the theatre and showtime from the page
 
 In the workflow builder, a **Choose from a list** step has **Load cards from the page** and **Load items from the page**. With the site open in the chosen browser, these read what the page shows now and offer a drop-down: pick a theatre, then load and pick one of its showtimes. When a run reaches the step and the chosen theatre or showtime isn't there, Jizza asks you, listing what the page shows then: theatres first, then the showtimes of the theatre you pick.
@@ -219,6 +235,7 @@ After you press **Stop**, the recording waits for you in review. Nothing runs un
 - **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
 - **Make reusable** turns every list choice (the movie, the date, the format, the showtime and its theatre) into an input in one go, with names such as `movie`, `date` and `time`. The recorded choices stay as the defaults, so the workflow still does what you recorded until a run, a form or a schedule passes other values. You can also make one choice an input with **Make this an input** (**Item chosen**, or **Chosen in** for the theatre).
 - **Saved login** on each password step: choose the saved login to use from the list of logins saved in that browser. A recording with a password step can't be saved without one. If the list is empty, add the login in the extension's Options first.
+- **Username from** on a username box (any box you typed into that is not a password): choose a saved login to type its username instead of what you typed while recording. Choose **What was typed** to go back.
 
 Then give the module a name and a short description, and press **Save as module**. The description helps Jizza find the module when you ask for it in chat.
 

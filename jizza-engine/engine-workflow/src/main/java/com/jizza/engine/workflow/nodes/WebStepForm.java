@@ -30,18 +30,21 @@ final class WebStepForm {
   private static final Set<String> PLUMBING = Set.of("session", "element", "timeoutMs", "trusted",
       "screenshotOnError", "highlight", "secretRef", "waitElement", "to", "offset", "modifiers",
       "steps", "fields", "group", "in", "waitAfter", "by", "max", "within", "loadMore", "submit",
-      "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss", "titleCss");
+      "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss", "titleCss",
+      "options");
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";
   static final String CHOOSE_OPTION = "browser.chooseOption";
+  /** A click on one of the buttons the person grouped while recording, chosen by name. */
+  static final String CLICK_ONE_OF = "browser.clickOneOf";
   /** Choices made from a list the page or app shows at run time. */
   static final Set<String> CLICK_ITEMS = Set.of(CLICK_ITEM, "ui.clickItem");
   static final Set<String> FILL_FORMS = Set.of(FILL_FORM, "ui.fillForm");
 
   /** The input that names the item chosen, for an action that chooses from a list. */
   static String pickKey(String action) {
-    if (CLICK_ITEMS.contains(action)) return "item";
+    if (CLICK_ITEMS.contains(action) || CLICK_ONE_OF.equals(action)) return "item";
     if (CHOOSE_OPTION.equals(action)) return "option";
     return null;
   }
@@ -109,7 +112,7 @@ final class WebStepForm {
         if (inputs.has("state")) inputs.put("state", checkboxState(inputs.get("state")));
       }
       case "browser.setText", "browser.setDate", "browser.pickDate", CHOOSE_OPTION, CLICK_ITEM,
-          "ui.clickItem" -> {
+          "ui.clickItem", CLICK_ONE_OF -> {
         for (String key : List.of("text", "value", "item", "date", "option")) {
           JsonNode value = inputs.get(key);
           if (value != null && (value.isNumber() || value.isBoolean())) {
@@ -240,8 +243,11 @@ final class WebStepForm {
       if (!required.contains(key) && !configured.has(key) && !chosen) continue;
       if ("object".equals(property.path("type").asText())) continue;
       boolean pick = key.equals(pickKey(spec.action())) && choices != null;
-      List<String> options = pick ? choices : enumOptions(property);
-      String type = pick ? "select" : typeOf(spec.action(), key, property);
+      // The grouped buttons are the choices: their names, as the step keeps them.
+      List<String> buttons = CLICK_ONE_OF.equals(spec.action()) && "item".equals(key)
+          ? optionNames(inputs.path("options")) : null;
+      List<String> options = pick ? choices : buttons != null ? buttons : enumOptions(property);
+      String type = pick || buttons != null ? "select" : typeOf(spec.action(), key, property);
       out.add(new Field(key, label(key, spec.action()), type, inputs.get(key),
           required.contains(key), template(configured.get(key)), options));
     }
@@ -254,7 +260,19 @@ final class WebStepForm {
           inputs.path("within").get("item"), true,
           template(configured.path("within").get("item")), null));
     }
-    return CLICK_ITEMS.contains(spec.action()) ? named(out, config.path("list")) : out;
+    return CLICK_ITEMS.contains(spec.action()) || CLICK_ONE_OF.equals(spec.action())
+        ? named(out, config.path("list")) : out;
+  }
+
+  /** The names of a grouped-buttons step's buttons, or null when it has none. */
+  static List<String> optionNames(JsonNode options) {
+    if (!options.isArray() || options.isEmpty()) return null;
+    List<String> names = new ArrayList<>();
+    for (JsonNode option : options) {
+      String name = option.path("name").asText("");
+      if (!name.isBlank()) names.add(name);
+    }
+    return names.isEmpty() ? null : names;
   }
 
   /**

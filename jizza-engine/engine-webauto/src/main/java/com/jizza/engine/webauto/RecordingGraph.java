@@ -228,9 +228,11 @@ final class RecordingGraph {
       ObjectNode input = config.path("inputs").isObject()
           ? ((ObjectNode) config.get("inputs")).deepCopy() : Json.obj();
       if (input.hasNonNull("secretRef")) {
-        step.put("secretRef", input.get("secretRef").asText());
+        JsonNode ref = input.get("secretRef");
+        step.put("secretRef", StepCompiler.secretId(ref));
         input.remove("secretRef");
-        meta.put("sensitive", true);
+        // A username typed from a saved login is not a password box.
+        meta.put("sensitive", !"username".equals(ref.path("field").asText("")));
       }
       ObjectNode mappings = Json.obj();
       unmap(input, "", mappings);

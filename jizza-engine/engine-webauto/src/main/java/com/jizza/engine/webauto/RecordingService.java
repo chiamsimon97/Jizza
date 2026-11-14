@@ -851,9 +851,23 @@ public class RecordingService implements Recordings, RecordingIntake {
   private void secret(Held target, String secretRef) {
     String ref = secretRef == null ? "" : secretRef.strip();
     if (ref.length() > 200) throw new ValidationException("That saved login is not valid");
+    boolean sensitive = target.node.path("meta").path("sensitive").asBoolean(false);
     if (ref.isEmpty()) {
       target.node.putNull("secretRef");
+      // A username box gets back the text it was recorded with.
+      JsonNode typed = target.node.path("meta").path("typedText");
+      if (!sensitive && typed.isTextual() && target.node.path("input").isObject()) {
+        ((ObjectNode) target.node.get("input")).put("text", typed.asText());
+        ((ObjectNode) target.node.get("meta")).remove("typedText");
+      }
     } else {
+      // A username box typed from a saved login keeps its recorded text aside, for taking the
+      // login off again. A password box never has any.
+      JsonNode text = target.node.path("input").path("text");
+      if (!sensitive && text.isTextual()) {
+        if (!target.node.path("meta").isObject()) target.node.set("meta", Json.obj());
+        ((ObjectNode) target.node.get("meta")).put("typedText", text.asText());
+      }
       if (target.node.path("input").isObject()) {
         VALUE_FIELDS.forEach(((ObjectNode) target.node.get("input"))::remove);
       }

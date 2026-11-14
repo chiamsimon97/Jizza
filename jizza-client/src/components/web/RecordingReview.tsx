@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { conditionDepths, emptyConditions, fieldName, isCondition, isListChoice, isPassword, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
+import { conditionDepths, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, moveOp, reusableOps, suggestInputName } from './recordingModel'
 
 /** A login saved in the browser extension, as its device lists it. */
 export interface SavedLogin { id: string; name: string; description?: string | null }
@@ -85,6 +85,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                 {s.step.disabled && <Badge>Off</Badge>}
                 {s.step.optional && <Badge>Optional</Badge>}
                 {s.step.action === 'flow.keep' && <Badge>Jizza step</Badge>}
+                {s.step.action === 'browser.clickOneOf' && <Badge>one of {s.step.meta?.list?.count ?? 'several'} buttons{s.step.meta?.list?.title ? `: ${s.step.meta.list.title}` : ''}</Badge>}
                 {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
                 {isListChoice(s) && s.step.meta?.list?.named && (
                   <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>
@@ -110,6 +111,19 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                         onBlur={e => { const v = e.target.value.trim(); if (v !== (s.step.secretRef ?? '')) onEdit([{ op: 'secret', seq: s.seq, secretRef: v || null }]) }}
                         className="w-40 rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600" />
                     )}
+                  </label>
+                )}
+                {isUsernameBox(s) && recording.kind !== 'desktop' && logins && logins.length > 0 && (
+                  // A username box can type the username of a saved login instead of what was typed.
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                    <KeyRound className="h-3.5 w-3.5" />Username from
+                    <select aria-label="Username from saved login" value={s.step.secretRef ?? ''} disabled={busy}
+                      onChange={e => onEdit([{ op: 'secret', seq: s.seq, secretRef: e.target.value || null }])}
+                      className="max-w-[14rem] rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-xs dark:border-gray-600">
+                      <option value="">What was typed</option>
+                      {s.step.secretRef && !logins.some(l => l.id === s.step.secretRef) && <option value={s.step.secretRef}>{s.step.secretRef}</option>}
+                      {logins.map(l => <option key={l.id} value={l.id}>{l.name}{l.description ? ` (${l.description})` : ''}</option>)}
+                    </select>
                   </label>
                 )}
                 {isPassword(s) && recording.kind !== 'desktop' && logins && logins.length === 0 && (

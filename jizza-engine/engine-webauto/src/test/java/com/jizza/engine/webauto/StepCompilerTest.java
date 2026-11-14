@@ -125,9 +125,33 @@ class StepCompilerTest {
     JsonNode withLogin = step(password.toString().replace("\"secretRef\":null", "\"secretRef\":\"login-1\""));
     var graph = StepCompiler.compile("https://x.test", List.of(OPEN, withLogin));
     var inputs = graph.path("nodes").get(2).path("config").path("inputs");
-    assertThat(inputs.path("secretRef").asText()).isEqualTo("login-1");
+    // The browser agent takes the login and which of its fields to type.
+    assertThat(inputs.path("secretRef").path("login").asText()).isEqualTo("login-1");
+    assertThat(inputs.path("secretRef").path("field").asText()).isEqualTo("password");
     assertThat(inputs.has("text")).isFalse();
     assertThat(graph.toString()).doesNotContain("hunter2");
+  }
+
+  @Test
+  void aUsernameBoxCanTypeTheSavedLoginsUsername() {
+    JsonNode user = step("""
+        {"seq":1,"action":"browser.setText","version":1,"label":"User Name",
+         "input":{"element":{"strategies":[{"by":"css","value":"#user"}]},"text":"chiam"},
+         "meta":{"sensitive":false},"secretRef":"login-1"}""");
+
+    var graph = StepCompiler.compile("https://x.test", List.of(OPEN, user));
+    var inputs = graph.path("nodes").get(2).path("config").path("inputs");
+    assertThat(inputs.path("secretRef").path("login").asText()).isEqualTo("login-1");
+    assertThat(inputs.path("secretRef").path("field").asText()).isEqualTo("username");
+    assertThat(inputs.has("text")).isFalse();
+  }
+
+  @Test
+  void aSavedLoginReadsBackFromTheWorkflowInEitherShape() {
+    assertThat(StepCompiler.secretId(Json.obj().put("login", "login-1").put("field", "password")))
+        .isEqualTo("login-1");
+    assertThat(StepCompiler.secretId(Json.mapper().getNodeFactory().textNode("login-2")))
+        .isEqualTo("login-2");
   }
 
   @Test

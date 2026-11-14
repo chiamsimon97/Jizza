@@ -303,6 +303,28 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aUsernameBoxTypesASavedLoginsUsernameAndGetsItsTextBack() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "User Name", "{\"text\":\"chiam\"}", false)));
+    service.stop(access, id);
+
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("secret", 1, null, null, null, null, "login-1", null)));
+    var user = service.get(access, id).steps().stream().filter(s -> s.seq() == 1)
+        .findFirst().orElseThrow().step();
+    assertThat(user.path("secretRef").asText()).isEqualTo("login-1");
+    assertThat(user.path("input").has("text")).isFalse();
+
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("secret", 1, null, null, null, null, null, null)));
+    user = service.get(access, id).steps().stream().filter(s -> s.seq() == 1)
+        .findFirst().orElseThrow().step();
+    assertThat(user.path("secretRef").isNull()).isTrue();
+    assertThat(user.path("input").path("text").asText()).isEqualTo("chiam");
+  }
+
+  @Test
   void theSidePanelRenamesAndMakesInputsButNeverFromAPassword() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
