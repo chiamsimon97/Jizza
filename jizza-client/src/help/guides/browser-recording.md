@@ -219,6 +219,17 @@ Some pages ask you to choose between a few different buttons that aren't a list,
 
 In review the step shows "one of 2 buttons: Language", and its choice becomes the module input `language`, with the button you clicked as its default. In the workflow builder, **Language** is a drop-down of the buttons: pick one, map it from earlier steps, or leave it on **Choose…** so each run clicks whichever of the buttons the page shows. When a run asks for a button that isn't one of them, Jizza asks you which to click.
 
+#### Run different steps for each button
+
+After the recording is saved, you can make the workflow go a different way depending on which button was clicked:
+
+1. Open the workflow in the builder and select the **Click one of these buttons** step (or right-click it).
+2. Press **Branch by button clicked**. A **Paths** step, "Which Language was clicked", goes right after it, with one path per button and an **otherwise** path.
+3. Every path starts out connected to the step that came next, so nothing changes yet. To give a button its own steps, hover its path's connection and press **+** to add a step, or **Record** to record them in the browser. The path joins the rest of the workflow again after those steps.
+4. A button that needs nothing different keeps its straight connection, or remove its path in the Paths step: it then carries on with **otherwise**. **Add a path for** brings a button's path back.
+
+The Paths step reads the button from the step's output, `nodes.<step>.clicked`, so it works whether the button was chosen at run time, mapped, or picked by the page. A workflow with paths can no longer be opened with **Edit recording**; change it in the builder.
+
 ### Choose the theatre and showtime from the page
 
 In the workflow builder, a **Choose from a list** step has **Load cards from the page** and **Load items from the page**. With the site open in the chosen browser, these read what the page shows now and offer a drop-down: pick a theatre, then load and pick one of its showtimes. When a run reaches the step and the chosen theatre or showtime isn't there, Jizza asks you, listing what the page shows then: theatres first, then the showtimes of the theatre you pick.

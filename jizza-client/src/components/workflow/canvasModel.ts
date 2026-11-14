@@ -27,8 +27,8 @@ export const LANES = ['a', 'b', 'c'] as const
 /** One of a paths step's cases. The id is the exit's key and stays put when the label changes. */
 export interface SwitchCase { id: string; label: string; condition: string }
 
-/** The most cases a paths step can have, besides "else". */
-export const MAX_CASES = 5
+/** The most cases a paths step can have, besides "else" (the engine allows the same). */
+export const MAX_CASES = 10
 
 export const NODE_W = 200
 export const NODE_H = 92
@@ -456,6 +456,53 @@ export function casesOf(config: Record<string, unknown>): SwitchCase[] {
 export function nextCaseId(cases: SwitchCase[]): string {
   const top = Math.max(0, ...cases.map(c => Number(/^case(\d+)$/.exec(c.id)?.[1] ?? 0)))
   return `case${top + 1}`
+}
+
+/** The buttons of a "one of these buttons" web step (browser.clickOneOf), by name. */
+export function groupButtonsOf(node: Pick<CanvasNode, 'type' | 'config'> | undefined): string[] {
+  if (!node || node.type !== 'DEVICE_ACTION' || node.config.action !== 'browser.clickOneOf') return []
+  const inputs = node.config.inputs as Record<string, unknown> | undefined
+  const options = Array.isArray(inputs?.options) ? inputs!.options as Array<{ name?: unknown }> : []
+  return [...new Set(options.map(o => (typeof o?.name === 'string' ? o.name.trim() : '')).filter(Boolean))]
+}
+
+/** The condition of a paths case that holds when {@code button} was the one the step clicked. */
+export function clickedCondition(stepId: string, button: string): string {
+  return `nodes.${stepId}.clicked == "${button.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+/** The paths step that branches on which button {@code stepId} clicked, if one follows it. */
+export function buttonPathsAfter(graph: CanvasGraph, stepId: string): CanvasNode | undefined {
+  return graph.nodes.find(n => n.type === 'SWITCH' && n.config.byButton === stepId
+    && graph.edges.some(e => e.from === stepId && e.to === n.id))
+}
+
+/**
+ * Branches the flow on which of a group's buttons was clicked: a paths step goes right after the
+ * step, with one path per button and "otherwise" for the rest. Every path starts out connected to
+ * what followed the step, so the workflow runs as before until steps are put on a path; a button
+ * that needs nothing of its own just keeps that connection (or its path is removed).
+ */
+export function branchByButton(graph: CanvasGraph, stepId: string, buttons?: string[]): { graph: CanvasGraph; id: string } | null {
+  const step = graph.nodes.find(n => n.id === stepId)
+  const names = (buttons ?? groupButtonsOf(step)).slice(0, MAX_CASES)
+  if (!step || names.length === 0) return null
+  const existing = buttonPathsAfter(graph, stepId)
+  if (existing) return { graph, id: existing.id }
+  const list = step.config.list as { title?: unknown } | undefined
+  const title = typeof list?.title === 'string' && list.title.trim() ? list.title.trim() : 'button'
+  const cases: SwitchCase[] = names.map((name, i) => ({ id: `case${i + 1}`, label: name, condition: clickedCondition(stepId, name) }))
+  const at = freeSpot(graph, step.x + COL_W, step.y)
+  const node: CanvasNode = {
+    ...newNode('SWITCH', at.x, at.y),
+    label: `Which ${title} was clicked`,
+    config: { cases, byButton: stepId },
+  }
+  const onward = graph.edges.filter(e => e.from === stepId).map(e => e.to)
+  const edges = graph.edges.filter(e => e.from !== stepId)
+  edges.push({ from: stepId, to: node.id, branch: null })
+  for (const to of onward) for (const exit of exitsOf(node)) edges.push({ from: node.id, to, branch: exit })
+  return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 /** Points one exit of a node at another node, or clears it. */

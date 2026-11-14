@@ -615,4 +615,38 @@ describe('CanvasInspector', () => {
       vi.unstubAllGlobals()
     }, 10000)
   })
+
+  it('branches by the button a group clicked: a path per button, more added from the buttons left', () => {
+    const graph: CanvasGraph = {
+      nodes: [
+        { id: 'start', type: 'TRIGGER', label: 'Start', config: {}, x: 0, y: 0 },
+        { id: 'lang', type: 'DEVICE_ACTION', label: 'Choose Language', x: 0, y: 130, config: {
+          preset: 'web', action: 'browser.clickOneOf', version: 1,
+          inputs: { options: [{ name: 'हिंदी', element: {} }, { name: 'English', element: {} }] },
+        } },
+        { id: 'paths', type: 'SWITCH', label: 'Which Language was clicked', x: 250, y: 130, config: {
+          byButton: 'lang', cases: [{ id: 'case1', label: 'हिंदी', condition: 'nodes.lang.clicked == "हिंदी"' }],
+        } },
+        { id: 'next', type: 'NOTIFY', label: 'Tell me', config: { title: 'Done' }, x: 0, y: 260 },
+      ],
+      edges: [
+        { from: 'start', to: 'lang', branch: null }, { from: 'lang', to: 'paths', branch: null },
+        { from: 'paths', to: 'next', branch: 'case1' }, { from: 'paths', to: 'next', branch: 'else' },
+      ],
+    }
+    const { onSave } = open(graph, 'paths')
+    expect(screen.getByText(/Each path runs when its button was the one "Choose Language" clicked/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add a path/ })).not.toBeInTheDocument()
+    const add = screen.getByRole('combobox', { name: 'Add a path for button' })
+    expect([...add.querySelectorAll('option')].map(o => o.textContent)).toEqual(['Choose a button…', 'English'])
+    fireEvent.change(add, { target: { value: 'English' } })
+    expect(screen.queryByRole('combobox', { name: 'Add a path for button' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const saved = onSave.mock.calls[0][0] as CanvasGraph
+    expect(saved.nodes.find(n => n.id === 'paths')!.config.cases).toEqual([
+      { id: 'case1', label: 'हिंदी', condition: 'nodes.lang.clicked == "हिंदी"' },
+      { id: 'case2', label: 'English', condition: 'nodes.lang.clicked == "English"' },
+    ])
+    expect(saved.edges).toContainEqual({ from: 'paths', to: 'next', branch: 'case2' })
+  })
 })

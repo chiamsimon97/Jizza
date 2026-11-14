@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
-  toDuration, toGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
+  addAfter, addNode, applyStepEdit, branchByButton, buttonPathsAfter, clickedCondition, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
+  toDuration, toGraph, type CanvasGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
 } from './canvasModel'
 
 describe('canvasModel', () => {
@@ -293,5 +293,41 @@ describe('recordedItem', () => {
     expect(recordedItem({ strategies: [{ by: 'css', value: '.x' }, { by: 'role', role: 'button', name: '2D' }] })).toBe('2D')
     expect(recordedItem({ strategies: [{ by: 'text', value: 'Book tickets' }] })).toBe('Book tickets')
     expect(recordedItem(undefined)).toBe('')
+  })
+
+  describe('branch by button clicked', () => {
+    const group = (): CanvasGraph => ({
+      nodes: [
+        { id: 'start', type: 'TRIGGER', label: 'Start', config: {}, x: 0, y: 0 },
+        { id: 'lang', type: 'DEVICE_ACTION', label: 'Choose Language', x: 0, y: 130, config: {
+          preset: 'web', action: 'browser.clickOneOf', version: 1, list: { title: 'Language' },
+          inputs: { options: [{ name: 'हिंदी', element: {} }, { name: 'English', element: {} }, { name: 'Say "hi"', element: {} }], item: 'English' },
+        } },
+        { id: 'next', type: 'NOTIFY', label: 'Log in', config: { title: 'Done', message: 'Logged in' }, x: 0, y: 260 },
+      ],
+      edges: [{ from: 'start', to: 'lang', branch: null }, { from: 'lang', to: 'next', branch: null }],
+    })
+
+    it('puts a paths step after the group with a path per button, each carrying on as before', () => {
+      const made = branchByButton(group(), 'lang')!
+      const paths = made.graph.nodes.find(n => n.id === made.id)!
+      expect(paths).toMatchObject({ type: 'SWITCH', label: 'Which Language was clicked', config: { byButton: 'lang' } })
+      expect(paths.config.cases).toEqual([
+        { id: 'case1', label: 'हिंदी', condition: 'nodes.lang.clicked == "हिंदी"' },
+        { id: 'case2', label: 'English', condition: 'nodes.lang.clicked == "English"' },
+        { id: 'case3', label: 'Say "hi"', condition: 'nodes.lang.clicked == "Say \\"hi\\""' },
+      ])
+      expect(made.graph.edges.filter(e => e.from === 'lang')).toEqual([{ from: 'lang', to: made.id, branch: null }])
+      expect(made.graph.edges.filter(e => e.from === made.id).map(e => `${e.branch}>${e.to}`).sort())
+        .toEqual(['case1>next', 'case2>next', 'case3>next', 'else>next'])
+      expect(problems(made.graph)).toEqual([])
+      expect(buttonPathsAfter(made.graph, 'lang')?.id).toBe(made.id)
+      expect(branchByButton(made.graph, 'lang')).toEqual({ graph: made.graph, id: made.id })
+    })
+
+    it('only branches a group of buttons', () => {
+      expect(branchByButton(group(), 'next')).toBeNull()
+      expect(clickedCondition('a', 'back\\slash')).toBe('nodes.a.clicked == "back\\\\slash"')
+    })
   })
 })

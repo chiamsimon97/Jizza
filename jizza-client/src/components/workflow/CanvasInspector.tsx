@@ -10,7 +10,7 @@ import { devicesApi } from '@/api/devices'
 import { ElementPreview } from '@/components/web/PageView'
 import { webApi, type BrowserAgent, type WebTestResult } from '@/api/web'
 import {
-  MAX_CASES, NODE_META, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, recordedItem, toDuration, updateNode,
+  MAX_CASES, NODE_META, buttonPathsAfter, clickedCondition, groupButtonsOf, WEB_ELEMENT_ACTIONS, WEB_ELEMENT_INPUT_ACTIONS, WEB_PALETTE, casesOf, fieldIssues, fromDuration, isInlineScript, issues as findIssues, nextCaseId, recordedItem, toDuration, updateNode,
   type CanvasGraph, type CanvasNode, type FieldIssue, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
@@ -90,7 +90,7 @@ function usePanelWidth() {
   return { panel, width, handle: { onPointerDown, onKeyDown } }
 }
 
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, functions, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, functions, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onBranchByButton, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
   /** The MCP servers added under Connectors, for the MCP tool step. */
   mcpServers?: McpServer[]
@@ -108,6 +108,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   /** Told whether there are unsaved changes, so leaving the step can ask first. */
   onDirty: (dirty: boolean) => void
   onSave: (edited: CanvasGraph) => void
+  /** Saves the step and puts a paths step after it, one path per button of its group. */
+  onBranchByButton?: (edited: CanvasGraph) => void
   onClose: () => void
 }) {
   const [graph, setGraph] = useState(canvas)
@@ -290,7 +292,10 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
 
         {node.type === 'MCP_TOOL' && <McpToolFields node={node} servers={mcpServers} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
         {node.type === 'DEVICE_ACTION' && (node.config.preset === 'web'
-          ? <WebStepFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />
+          ? <WebStepFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping}
+              branch={node.config.action === 'browser.clickOneOf' && !readOnly && onBranchByButton
+                ? { existing: buttonPathsAfter(graph, node.id)?.label, disabled: missing.length > 0, onClick: () => onBranchByButton(graph) }
+                : undefined} />
           : <DeviceActionFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />)}
 
         {node.type === 'TRANSFORM' && (
@@ -717,7 +722,23 @@ function SwitchFields({ node, graph, onChange, mapping }: { node: CanvasNode; gr
   const edit = (i: number, patch: Partial<SwitchCase>, key: string) => save(cases.map((c, j) => (j === i ? { ...c, ...patch } : c)), `${key}:${cases[i].id}`)
   // A removed case's wire goes with it.
   const remove = (id: string) => save(cases.filter(c => c.id !== id), 'removeCase', { ...graph, edges: graph.edges.filter(e => !(e.from === node.id && e.branch === id)) })
+  // Paths made by "Branch by button": one per button of the group step before it.
+  const byButton = typeof node.config.byButton === 'string' ? node.config.byButton : ''
+  const group = byButton ? graph.nodes.find(n => n.id === byButton) : undefined
+  const unused = groupButtonsOf(group).filter(b => !cases.some(c => c.condition === clickedCondition(byButton, b)))
+  // A new path starts where "otherwise" goes, so the run carries on as before until steps go on it.
+  const addFor = (button: string) => {
+    const id = nextCaseId(cases)
+    const onward = graph.edges.filter(e => e.from === node.id && e.branch === 'else').map(e => ({ from: node.id, to: e.to, branch: id }))
+    save([...cases, { id, label: button, condition: clickedCondition(byButton, button) }], 'addCase', { ...graph, edges: [...graph.edges, ...onward] })
+  }
   return <>
+    {group && (
+      <p className="rounded-lg bg-green-50 p-2 text-[11px] text-green-900 dark:bg-green-500/10 dark:text-green-200">
+        Each path runs when its button was the one "{group.label}" clicked. Put steps on a path's connection for that button.
+        A button without a path of its own (or whose path goes straight on) carries on with "otherwise".
+      </p>
+    )}
     <p className="text-[11px] text-gray-500">Checked from the top; the first path whose condition is true runs. If none is, the "otherwise" path runs.</p>
     {cases.map((c, i) => (
       <div key={c.id} className="flex flex-col gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
@@ -730,7 +751,16 @@ function SwitchFields({ node, graph, onChange, mapping }: { node: CanvasNode; gr
           onChange={v => edit(i, { condition: v }, 'caseCondition')} />
       </div>
     ))}
-    {cases.length < MAX_CASES && (
+    {group && unused.length > 0 && cases.length < MAX_CASES && (
+      <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+        Add a path for
+        <select aria-label="Add a path for button" className={fieldClass} value="" onChange={e => { if (e.target.value) addFor(e.target.value) }}>
+          <option value="">Choose a button…</option>
+          {unused.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </label>
+    )}
+    {!group && cases.length < MAX_CASES && (
       <button type="button" onClick={() => save([...cases, { id: nextCaseId(cases), label: `Path ${cases.length + 1}`, condition: '' }], 'addCase')}
         className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline dark:text-brand-300"><Plus className="h-3.5 w-3.5" /> Add a path</button>
     )}
@@ -1316,9 +1346,11 @@ const asInputs = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 /** Browser-specific device action settings. Includes Pick on page. */
-export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: {
+export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, branch }: {
   node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: SetConfig
   isMissing: (f: string) => boolean; mapping: MappingContext
+  /** A group of buttons: branching the flow on which one was clicked. */
+  branch?: { existing?: string; disabled: boolean; onClick: () => void }
 }) {
   const { data: browsers } = useQuery({ queryKey: ['web', 'browsers'], queryFn: webApi.browsers }, queryClient)
   const action = typeof node.config.action === 'string' ? node.config.action : WEB_PALETTE[0].config!.action as string
@@ -1456,6 +1488,18 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
       <p className="text-xs text-gray-600 dark:text-gray-300">
         Buttons in this group: {groupButtons.length > 0 ? groupButtons.join(', ') : 'none'}. Record the group again to change them.
       </p>
+    )}
+
+    {branch && groupButtons.length > 0 && (
+      <div className="space-y-1 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+        <p className="text-xs font-medium text-gray-800 dark:text-gray-200">Different steps for each button</p>
+        {branch.existing
+          ? <p className="text-[11px] text-gray-500">The paths step "{branch.existing}" after this step picks the path by the button clicked. Open it to add or remove a button's path.</p>
+          : <>
+              <p className="text-[11px] text-gray-500">Adds a paths step after this one with a path per button. Every path carries on as now until you put steps on it, so buttons that need nothing different just continue.</p>
+              <Button type="button" size="sm" variant="secondary" disabled={branch.disabled} onClick={branch.onClick}>Branch by button clicked</Button>
+            </>}
+      </div>
     )}
 
     {ordinary.map(([key, property]) => key === 'item' && action === 'browser.clickOneOf'

@@ -14,7 +14,7 @@ import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { api } from '@/lib/api'
 import type { AgentDto, ConnectionDto, GeneratedToolDto, McpServer, RunDto, RunStepDto, WorkflowDto } from '@/types'
 import {
-  NODE_H, NODE_META, NODE_W, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
+  NODE_H, NODE_META, NODE_W, PALETTE_GROUPS, addAfter, branchByButton, buttonPathsAfter, groupButtonsOf, addNode, applyStepEdit, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, exitsOf, freeSpot,
   insertChain, insertOnEdge, issues as findIssues, reaches, removeNode, setNext, tidy, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type CanvasNode, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import {
@@ -571,6 +571,9 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         { label: 'Open settings', onSelect: () => select([node.id]) },
         { label: 'Duplicate', shortcut: `${MOD}+D`, disabled: onlyStart, onSelect: () => duplicate(ids) },
         { label: 'Copy', shortcut: `${MOD}+C`, disabled: onlyStart, onSelect: () => copy(ids) },
+        ...(ids.length === 1 && groupButtonsOf(graph.nodes.find(n => n.id === node.id)).length > 0 && !buttonPathsAfter(graph, node.id) ? [
+          { label: 'Branch by button clicked', onSelect: () => { const made = branchByButton(graph, node.id); if (made) { commit(made.graph); select([made.id]) } } },
+        ] : []),
         { label: 'Disconnect', onSelect: () => commit({ ...graph, edges: graph.edges.filter(x => !ids.includes(x.from) && !ids.includes(x.to)) }) },
         ...(ids.length === 1 && branchesFrom(graph, node.id) ? [
           { label: 'Select steps from here', onSelect: () => select([node.id, ...descendantsOf(graph, node.id)]) },
@@ -732,6 +735,13 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows} readOnly={readOnly}
           issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} askJizza={askJizza === selected.id} onDirty={onDirty}
           onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
+          onBranchByButton={edited => {
+            unsaved.current = false
+            const saved = applyStepEdit(graph, edited, selected.id)
+            const made = branchByButton(saved, selected.id)
+            commit(made?.graph ?? saved)
+            select(made ? [made.id] : [])
+          }}
           onClose={() => { unsaved.current = false; select([]) }} />
         )}
 
@@ -747,7 +757,8 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         }} />
       {picker && (
         <StepPicker at={picker.at} onClose={() => setPicker(null)} onPick={pick} agents={agents}
-          onRecord={readOnly ? undefined : () => { setRecordAt(picker.kind === 'after' ? { from: picker.from, branch: picker.branch } : { from: selNodes[0] ?? null, branch: null }); setPicker(null) }}
+          onRecord={readOnly ? undefined : () => { setRecordAt(picker.kind === 'after' ? { from: picker.from, branch: picker.branch }
+            : picker.kind === 'wire' ? { from: picker.edge.from, branch: picker.edge.branch } : { from: selNodes[0] ?? null, branch: null }); setPicker(null) }}
           title={picker.kind === 'wire' ? 'Insert a step' : picker.kind === 'after' ? 'Add the next step' : 'Add a step'}
           allowEnd={picker.kind !== 'wire'} />
       )}
