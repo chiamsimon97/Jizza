@@ -2,7 +2,7 @@ import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { formatDate, kindOf, pickerValue } from '@/lib/dateFormat'
-import { type FormValues, type StepField, type StepForm, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
+import { type FormValues, type StepField, type StepForm, type StepShots, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
 
 /**
  * The step's settings as they will be sent, on its approval card: each value as it resolved from
@@ -22,6 +22,13 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
         {form.title}: {readOnly ? 'what it sent' : 'check or change what it will send'}
       </p>
       {form.fields.map(field => {
+        if (field.type === 'note') {
+          return (
+            <p key={field.key} className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">
+              {field.label}
+            </p>
+          )
+        }
         const options = optionsFor(field, values)
         // A field whose choices follow another one with no list for its value is typed instead.
         // Until the field it follows is chosen, it is a choice waiting on that one.
@@ -34,7 +41,7 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
             ? { ...field, type: options ? 'select' : 'text', options }
             : field
         return (
-          <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data}
+          <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data} shots={form.shots}
             missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && isEmpty(values[field.key])}
             choicesAt={shown.type === 'select' && shown.options && !leader && form.choicesAt ? form.choicesAt : undefined}
             waitsOn={leader?.label}
@@ -50,10 +57,11 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
   )
 }
 
-function FieldRow({ field, value, data, missing, choicesAt, waitsOn, readOnly, onChange }: {
+function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, readOnly, onChange }: {
   field: StepField
   value: FormValues[string] | undefined
   data: StepForm['data']
+  shots?: StepShots
   missing: boolean
   choicesAt?: string
   /** The label of the field this one's choices follow, while that one is still empty. */
@@ -111,6 +119,12 @@ function FieldRow({ field, value, data, missing, choicesAt, waitsOn, readOnly, o
           placeholder={field.type === 'date' ? 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30' : undefined}
           value={typeof value === 'string' ? value : value == null ? '' : String(value)}
           onChange={e => onChange(e.target.value)} />
+      )}
+
+      {field.type === 'select' && typeof value === 'string' && shots?.byOption[value] && (
+        <img src={`/api/devices/${shots.device}/files/${shots.byOption[value]}`} alt={value}
+          data-testid="option-shot"
+          className="mt-1 max-h-64 w-full rounded-lg border border-gray-200 bg-white object-contain dark:border-gray-700 dark:bg-gray-900" />
       )}
 
       {field.error && (

@@ -102,6 +102,11 @@ final class FastReplay {
           || NOT_BATCHED.contains(spec.get().action())) {
         return null;
       }
+      // A step with details attached stops for the person's answers, so it runs on its own.
+      if (config.path("details").path("blocks").isArray()
+          && !config.path("details").path("blocks").isEmpty()) {
+        return null;
+      }
       JsonNode inputs;
       try {
         inputs = render.apply(config.path("inputs"), context.variables());

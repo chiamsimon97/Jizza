@@ -326,6 +326,55 @@ final class WebStepForm {
     return names.isEmpty() ? null : names;
   }
 
+  /** The types a detail question may take; anything else is asked as plain text. */
+  private static final Set<String> DETAIL_TYPES = Set.of("text", "number", "checkbox", "select",
+      "date", "datetime");
+  private static final int MAX_DETAILS = 20;
+
+  /**
+   * The notes and questions the person attached to this step while building it (config
+   * {@code details.blocks}), as extra fields on the approval card: a note is shown as it is, and
+   * a question must be answered before the step goes on. Answers are kept as the step's
+   * {@code details} output, never sent to the site.
+   */
+  static List<Field> detailFields(JsonNode config, JsonNode inputs) {
+    JsonNode blocks = config.path("details").path("blocks");
+    if (!blocks.isArray() || blocks.isEmpty()) return List.of();
+    List<Field> out = new ArrayList<>();
+    int index = 0;
+    for (JsonNode block : blocks) {
+      if (out.size() >= MAX_DETAILS) break;
+      int at = index++;
+      if ("note".equals(block.path("kind").asText("field"))) {
+        String text = block.path("text").asText("").strip();
+        if (!text.isEmpty()) {
+          out.add(new Field("_note." + at, text.length() > 500 ? text.substring(0, 500) : text,
+              "note", null, false, null, null));
+        }
+        continue;
+      }
+      String name = detailName(block);
+      if (name == null) continue;
+      String label = block.path("label").asText("").strip();
+      String type = block.path("type").asText("text");
+      if (!DETAIL_TYPES.contains(type)) type = "text";
+      List<String> options = optionNames(block.path("options"));
+      if ("select".equals(type) && options == null) type = "text";
+      Field field = new Field("details." + name, label.isEmpty() ? name : label, type,
+          inputs.path("details").get(name), block.path("required").asBoolean(true), null,
+          "select".equals(type) ? options : null);
+      out.add(field.withFormat(block.path("format").asText(null)));
+    }
+    return out;
+  }
+
+  /** A detail question's key, from its name: letters, digits and underscores only. */
+  static String detailName(JsonNode block) {
+    String name = block.path("name").asText("").strip().replaceAll("[^A-Za-z0-9_]", "_");
+    if (name.isEmpty() || name.chars().allMatch(c -> c == '_')) return null;
+    return name.length() > 60 ? name.substring(0, 60) : name;
+  }
+
   /**
    * The names the person gave a marked list while recording (config {@code list}: "Showtime"
    * for its items, "Theatre" for its cards) as the labels of the fields that choose them.

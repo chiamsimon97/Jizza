@@ -143,3 +143,36 @@ describe('a date on the approval card', () => {
     expect(screen.getByTestId('date-as-sent').textContent).toBe('The site gets 20/11/2026 06:30 PM')
   })
 })
+
+const TRAINS = {
+  id: 'n2', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-14T10:00:00Z',
+  context: {
+    node: 'step',
+    form: {
+      action: 'browser.clickItem', title: 'Choose from a list',
+      fields: [
+        { key: '_note.0', label: 'Check the running days before booking', type: 'note', required: false, missing: false },
+        { key: 'item', label: 'Train', type: 'select', value: 'CDG MDU SF EXP', required: true, missing: false, options: ['CDG MDU SF EXP', 'TEJAS EXPRESS'] },
+      ],
+      missing: [],
+      shots: { device: 'dev-1', byOption: { 'CDG MDU SF EXP': 'file-1', 'TEJAS EXPRESS': 'file-2' } },
+    },
+  },
+} as unknown as NotificationDto
+
+function TrainCard() {
+  const form = stepFormOf(TRAINS)!
+  const [values, setValues] = useState<FormValues>(() => initialValues(form))
+  return <StepApprovalForm form={form} values={values} onChange={(k, v) => setValues(old => ({ ...old, [k]: v }))} />
+}
+
+describe('notes and pictures on the card', () => {
+  it('shows the note as text and the picture of the item chosen', () => {
+    render(<TrainCard />)
+    expect(screen.getByText('Check the running days before booking')).toBeTruthy()
+    const shot = () => screen.getByTestId('option-shot') as HTMLImageElement
+    expect(shot().getAttribute('src')).toBe('/api/devices/dev-1/files/file-1')
+    fireEvent.change(screen.getByLabelText('Train'), { target: { value: 'TEJAS EXPRESS' } })
+    expect(shot().getAttribute('src')).toBe('/api/devices/dev-1/files/file-2')
+  })
+})

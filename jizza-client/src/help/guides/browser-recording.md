@@ -401,6 +401,34 @@ do more than a recording can:
 
 These need the browser extension from 5 Nov 2026 or later.
 
+## Details the step asks you for
+
+A choice made at run time often needs more than a name: before booking a train you might want to
+check its days, or say which berth you prefer. On any web step, open **Ask on the approval card**
+in the step's settings:
+
+- **Add a note** writes a line of text on the card, for things the person should read before
+  deciding.
+- **Add a question** adds an input to the card: text, a number, a choice (with its options), a
+  checkbox, a date, or a date and time. A question can start from a value mapped from earlier
+  steps, and by default it **must be answered** before the run goes on — the card's buttons read
+  **Submit** and **Cancel**.
+
+A step with notes or questions always stops and asks, even when your guardrails would let it run
+on its own. The answers are never typed into the site; they become the step's `details` output,
+so later steps can use `{{ nodes.<step>.details.<name> }}` — for example to fill a passenger form
+with the berth preference, or to put the remark in a notification.
+
+## A picture of each card with the question
+
+On a **Choose from a list** step, turn on **Send a picture of each item with the question**.
+When the run reads the list, it also takes a picture of each card (the first 20) exactly as the
+page draws it, and the approval card shows the picture of whichever item is picked — switch the
+choice and the picture follows. That way you see the train's timings, classes and price as the
+site shows them, without mapping every detail as a field.
+
+Pictures need the browser extension from 14 Nov 2026 or later, and the phone apps show them too.
+
 ## Limits and troubleshooting
 
 ### Limits

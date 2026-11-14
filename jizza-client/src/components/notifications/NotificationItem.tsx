@@ -76,6 +76,8 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const stepForm = useMemo(() => n.kind === 'PERMISSION_REQUEST' ? stepFormOf(n) : null, [n])
   const [values, setValues] = useState<FormValues>(() => stepForm ? initialValues(stepForm) : {})
   const stillEmpty = stepForm && open ? unfilled(stepForm, values) : []
+  // A step with details attached asks like a small form: its buttons read Submit and Cancel.
+  const asksDetails = !!stepForm?.fields.some(f => f.key.startsWith('details.') || f.type === 'note')
   const canApprove = stillEmpty.length === 0
   const approvedValues = () => (stepForm ? answerValues(stepForm, values) : undefined)
 
@@ -309,10 +311,10 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                   <Button size="sm" loading={busy === 'approve'} disabled={busy !== null || !canApprove}
                     title={canApprove ? undefined : `Fill in ${stillEmpty.join(', ')} first`}
                     onClick={() => void run('approve', () => actions.approve(n, approvedValues()))}>
-                    <Check className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Approve procedure' : 'Approve'}
+                    <Check className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Approve procedure' : asksDetails ? 'Submit' : 'Approve'}
                   </Button>
                   <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => setMode('declining')}>
-                    <X className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Request changes' : 'Decline'}
+                    <X className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Request changes' : asksDetails ? 'Cancel' : 'Decline'}
                   </Button>
                   {canAlwaysAllow && (
                     <Button size="sm" variant="ghost" disabled={busy !== null || !canApprove} onClick={() => setMode('confirmAlways')}>

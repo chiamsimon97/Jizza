@@ -310,6 +310,42 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('attaches notes, questions and item pictures to the approval card', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: { element: locator, item: { type: 'string' } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const inputs = { element: { strategies: [{ by: 'css', value: '.train' }], label: 'Train' }, item: '{{ input.train }}' }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs } } : n) }
+    const { onSave } = open(graph, made.id)
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Send a picture of each item with the question' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a note' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note 1' }), { target: { value: 'Check the running days' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add a question' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Question 2' }), { target: { value: 'Berth preference' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Answer type of question 2' }), { target: { value: 'select' } })
+    const choices = screen.getByRole('textbox', { name: 'Choices of question 2' })
+    fireEvent.change(choices, { target: { value: 'Lower, Upper' } })
+    fireEvent.blur(choices)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.screenshots).toBe(true)
+    expect(saved.config.details).toEqual({ blocks: [
+      { kind: 'note', text: 'Check the running days' },
+      { kind: 'field', label: 'Berth preference', name: 'berth_preference', type: 'select', options: ['Lower', 'Upper'] },
+    ] })
+    vi.unstubAllGlobals()
+  })
+
   it('chooses inside a card of another list and loads more of a growing list', async () => {
     queryClient.clear()
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
