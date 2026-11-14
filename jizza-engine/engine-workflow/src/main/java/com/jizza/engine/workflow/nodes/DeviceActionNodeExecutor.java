@@ -173,6 +173,20 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     }
 
     if (browserAction) WebStepForm.normalize(spec.action(), (ObjectNode) inputs);
+    // The details the person attached to this step: their defaults, then their answers below.
+    JsonNode detailBlocks = config.path("details").path("blocks");
+    boolean detailStep = detailBlocks.isArray() && !detailBlocks.isEmpty();
+    if (detailStep && !inputs.path("details").isObject()) {
+      ObjectNode seeded = ((ObjectNode) inputs).putObject("details");
+      for (JsonNode block : detailBlocks) {
+        String name = WebStepForm.detailName(block);
+        if (name == null || !block.hasNonNull("value")) continue;
+        JsonNode value = render(block.get("value"), execution.context().variables());
+        if (value.isValueNode() && !value.isNull() && !value.asText().isEmpty()) {
+          seeded.set(name, value);
+        }
+      }
+    }
     String nodeId = execution.node().id();
     WebStepForm.apply((ObjectNode) inputs, execution.context().approvedInputs(nodeId),
         offered(state));
@@ -209,6 +223,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       }
     }
     boolean pick = pickKey != null && (listed || state.has("choices"));
+    // A picture of each listed item, taken with the list, so the card can show the one chosen.
+    boolean itemShots = config.path("screenshots").asBoolean(false);
     String prefer = inputs.path("prefer").asText(null);
     List<ItemMatch.Item> choices = null;
     if (pick) {
@@ -226,6 +242,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           parentInput.remove("titleCss");
           if (within.hasNonNull("itemCss")) parentInput.set("itemCss", within.get("itemCss"));
           if (within.hasNonNull("titleCss")) parentInput.set("titleCss", within.get("titleCss"));
+          if (itemShots) parentInput.put("captureItems", true);
           return listChoices(execution, broker, state, target, workspaceId,
               WebStepForm.listAction(spec.action()), parentInput, "parents");
         }
@@ -244,8 +261,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
             state.put("parentUnmatched", true);
             state.put("parent", parents.get(0).label());
             ((ObjectNode) within).put("item", parents.get(0).label());
+            ObjectNode through = listInput(inputs, true);
+            if (itemShots) through.put("captureItems", true);
             return listChoices(execution, broker, state, target, workspaceId,
-                WebStepForm.listAction(spec.action()), listInput(inputs, true), "choices");
+                WebStepForm.listAction(spec.action()), through, "choices");
           }
           List<WebStepForm.Field> form = WebStepForm.fields(spec, config, (ObjectNode) inputs, null)
               .stream().map(f -> "within.item".equals(f.key())
@@ -269,8 +288,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
             return Outcome.permanentFailure("Blocked by your guardrails: " + first.reason());
           }
         }
+        ObjectNode choicesInput = listInput(inputs, true);
+        if (itemShots) choicesInput.put("captureItems", true);
         return listChoices(execution, broker, state, target, workspaceId,
-            WebStepForm.listAction(spec.action()), listInput(inputs, true), "choices");
+            WebStepForm.listAction(spec.action()), choicesInput, "choices");
       }
       choices = ItemMatch.items(state.get("choices"));
       if (state.path("parentUnmatched").asBoolean(false)) {
@@ -347,6 +368,13 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     List<WebStepForm.Field> form = formAction
         ? WebStepForm.fields(spec, config, (ObjectNode) inputs, pick ? labels(choices) : null)
         : List.of();
+    List<WebStepForm.Field> details = formAction && detailStep
+        ? WebStepForm.detailFields(config, inputs) : List.of();
+    if (!details.isEmpty()) {
+      List<WebStepForm.Field> joined = new java.util.ArrayList<>(form);
+      joined.addAll(details);
+      form = joined;
+    }
     if (pick && state.has("parents") && state.hasNonNull("parentDisplay")) {
       // The card chosen inside (the theatre) stays a choice from the page's cards, so the person
       // can switch it on the card; the items follow it (optionsBy).
@@ -394,16 +422,25 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         .filter(f -> !f.key().startsWith("_"))
         .map(WebStepForm.Field::label).toList();
     boolean asks = !approved && (decision.needsPermission() || decision.needsJizza());
-    if (asks || fixing || !missing.isEmpty()) {
+    // A step with details attached always stops: the person reads them and answers, then it
+    // goes on with their answers as its details output.
+    boolean asksDetails = !details.isEmpty() && !approved;
+    if (asks || asksDetails || fixing || !missing.isEmpty()) {
       String why = fixing ? siteSaid
           : pick && !picked.found() ? pickReason(wanted, picked, "the page")
           : !missing.isEmpty() && !asks
           ? (missing.size() == 1 ? missing.get(0) + " has" : String.join(", ", missing) + " have")
               + " no value, so fill " + (missing.size() == 1 ? "it" : "them") + " in to go on"
+          : asksDetails && !asks ? "Answer what it asks for to go on"
           : decision.reason();
       return ask(execution, state, spec, target, form, pick ? labels(choices) : null, why);
     }
     state.remove("choices");
+    // The answers to the step's details are its own output, never sent to the device.
+    JsonNode detailAnswers = ((ObjectNode) inputs).remove("details");
+    if (detailAnswers != null && detailAnswers.isObject() && !detailAnswers.isEmpty()) {
+      state.set("details", detailAnswers);
+    }
     Duration timeout = config.path("timeoutSec").asInt(0) > 0
         ? Duration.ofSeconds(config.get("timeoutSec").asInt()) : null;
     DeviceCommandDto command;
@@ -475,11 +512,15 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
                       DeviceTarget target, List<WebStepForm.Field> form, List<String> choices,
                       String why) {
     ObjectNode byCard = optionsByCard(state, WebStepForm.pickKey(spec.action()), form);
+    ObjectNode shots = itemShots(state);
     state.remove(List.of("choices", "parents", "parent", "parentDisplay", "groups",
         "parentUnmatched", "groupsTried"));
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
     ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
+    if (shots != null && detail.path("form").isObject()) {
+      ((ObjectNode) detail.get("form")).set("shots", shots);
+    }
     if (byCard != null && detail.path("form").path("fields").isArray()) {
       for (JsonNode field : detail.path("form").path("fields")) {
         if (field.path("key").asText().equals(WebStepForm.pickKey(spec.action()))) {
@@ -489,6 +530,33 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     }
     return Outcome.awaitPermission("This step needs your approval before it asks "
         + target.describe() + " to " + lower(spec.title()) + ". " + why + ".", detail);
+  }
+
+  /**
+   * The pictures taken of the listed items while the list was read, option name to file id, with
+   * the device that keeps them; null when none were taken. The card shows the picture of the
+   * option chosen and switches it with the choice.
+   */
+  private static ObjectNode itemShots(ObjectNode state) {
+    if (!state.hasNonNull("shotsDevice")) return null;
+    ObjectNode byOption = Json.obj();
+    for (String key : List.of("choices", "parents")) {
+      JsonNode array = state.path(key);
+      if (!array.isArray()) continue;
+      java.util.Map<Integer, String> ids = new java.util.HashMap<>();
+      for (JsonNode raw : array) {
+        if (raw.path("shot").isTextual()) ids.put(raw.path("index").asInt(-1), raw.get("shot").asText());
+      }
+      if (ids.isEmpty()) continue;
+      for (ItemMatch.Item item : ItemMatch.items(array)) {
+        String id = ids.get(item.index());
+        if (id != null && !byOption.has(item.display())) byOption.put(item.display(), id);
+      }
+    }
+    if (byOption.isEmpty()) return null;
+    ObjectNode out = Json.obj().put("device", state.get("shotsDevice").asText());
+    out.set("byOption", byOption);
+    return out;
   }
 
   /** What the approval card shows: the step's values, what is missing, and data to map from. */
@@ -654,9 +722,22 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
             + (listing.error() == null ? listing.status().name().toLowerCase() : listing.error()));
       }
       ArrayNode items = state.putArray(into);
+      java.util.Map<Integer, String> shots = new java.util.HashMap<>();
+      for (JsonNode raw : listing.output().path("items")) {
+        if (raw.path("shot").isTextual() && !raw.path("shot").asText().isBlank()) {
+          shots.put(raw.path("index").asInt(-1), raw.get("shot").asText());
+        }
+      }
+      if (!shots.isEmpty() && listing.deviceId() != null) {
+        state.put("shotsDevice", listing.deviceId().toString());
+      }
       ItemMatch.items(listing.output().path("items")).stream().limit(200)
-          .forEach(i -> items.addObject().put("label", i.label()).put("text", i.text())
-              .put("index", i.index()));
+          .forEach(i -> {
+            ObjectNode item = items.addObject().put("label", i.label()).put("text", i.text())
+                .put("index", i.index());
+            String shot = shots.get(i.index());
+            if (shot != null) item.put("shot", shot);
+          });
       if (items.isEmpty()) {
         state.remove(into);
         return Outcome.retryable("The list on the page has no items to choose from");
@@ -725,10 +806,15 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           state.put("errorRounds", state.path("errorRounds").asInt(0) + 1);
           yield execute(execution);
         }
-        yield Outcome.completed(outputOf(command,
-          state.path("browserAction").asBoolean(false),
-          state.path("browserOpened").asBoolean(true),
-          state.path("browserWorkspace").asText(null)));
+        JsonNode output = outputOf(command,
+            state.path("browserAction").asBoolean(false),
+            state.path("browserOpened").asBoolean(true),
+            state.path("browserWorkspace").asText(null));
+        // The person's answers to the step's details ride along as its `details` output.
+        if (state.path("details").isObject() && output instanceof ObjectNode object) {
+          object.set("details", state.get("details"));
+        }
+        yield Outcome.completed(output);
       }
       case FAILED -> {
         // The next attempt sends a new command rather than reading this one again.

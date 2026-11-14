@@ -5,6 +5,7 @@ import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.authz.Access;
 import com.jizza.engine.api.device.DeviceAgentGateway.Companion;
 import com.jizza.engine.api.device.DeviceDto;
+import com.jizza.engine.api.device.Devices;
 import com.jizza.engine.api.device.PhoneAccess;
 import com.jizza.engine.api.dto.AgentDto;
 import com.jizza.engine.api.dto.AutonomyRuleDto;
@@ -228,6 +229,22 @@ public class PhoneController {
   @GetMapping("/notifications/{id}")
   public NotificationDto notification(@PathVariable UUID id, HttpServletRequest http) {
     return notifications.get(phones.read(http).userId(), id);
+  }
+
+  /** A picture a device sent with a question (the card's {@code form.shots}), as raw bytes. */
+  @PublicEndpoint
+  @GetMapping("/device-files/{deviceId}/{fileId}")
+  public org.springframework.http.ResponseEntity<byte[]> deviceFile(
+      @PathVariable UUID deviceId, @PathVariable UUID fileId, HttpServletRequest http) {
+    Companion phone = phones.read(http);
+    Devices.DeviceFile file = devices.file(access(phone), deviceId, fileId);
+    return org.springframework.http.ResponseEntity.ok()
+        .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+        .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+            org.springframework.http.ContentDisposition.attachment().filename(file.name())
+                .build().toString())
+        .header("X-Content-Type-Options", "nosniff")
+        .body(file.content());
   }
 
   @PublicEndpoint

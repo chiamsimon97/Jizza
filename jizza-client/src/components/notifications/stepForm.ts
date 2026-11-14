@@ -7,7 +7,7 @@ import { kindOf, pickerValue } from '@/lib/dateFormat'
  * made at run time, the items the page lists now. Pure, so it can be tested without a browser.
  */
 
-export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime'
+export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime' | 'note'
 
 export interface StepField {
   key: string
@@ -29,6 +29,9 @@ export interface StepField {
   optionsBy?: Record<string, string[]>
 }
 
+/** The pictures taken of the listed items: which device keeps them, and one per option name. */
+export interface StepShots { device: string; byOption: Record<string, string> }
+
 export interface StepForm {
   action: string
   title: string
@@ -38,11 +41,13 @@ export interface StepForm {
   choicesAt?: string
   /** The run's values so far, to map an empty field from. */
   data: { path: string; value: string }[]
+  /** Pictures of the listed items, shown for the option chosen. */
+  shots?: StepShots
 }
 
 export type FormValues = Record<string, string | boolean | string[]>
 
-const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date', 'datetime']
+const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date', 'datetime', 'note']
 
 /** The approval card's values, or null for an item that has none. */
 export function stepFormOf(n: NotificationDto): StepForm | null {
@@ -67,6 +72,7 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
         : {}),
     })
   }
+  const shots = shotsOf(raw.shots)
   const data = Array.isArray(raw.data)
     ? (raw.data as Record<string, unknown>[])
       .filter(d => typeof d?.path === 'string' && d.value != null)
@@ -79,7 +85,19 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
     missing: Array.isArray(raw.missing) ? (raw.missing as unknown[]).map(String) : [],
     ...(typeof raw.choicesAt === 'string' ? { choicesAt: raw.choicesAt } : {}),
     data,
+    ...(shots ? { shots } : {}),
   }
+}
+
+function shotsOf(raw: unknown): StepShots | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { device, byOption } = raw as Record<string, unknown>
+  if (typeof device !== 'string' || !byOption || typeof byOption !== 'object') return undefined
+  const out: Record<string, string> = {}
+  for (const [option, id] of Object.entries(byOption as Record<string, unknown>)) {
+    if (typeof id === 'string' && id) out[option] = id
+  }
+  return Object.keys(out).length ? { device, byOption: out } : undefined
 }
 
 function optionsByOf(raw: Record<string, unknown>): Record<string, string[]> {
@@ -140,7 +158,7 @@ export function isEmpty(value: unknown): boolean {
 /** The mandatory fields still empty, by label: Approve waits until there are none. */
 export function unfilled(form: StepForm, values: FormValues): string[] {
   return form.fields
-    .filter(f => (f.required || form.missing.includes(f.key)) && f.type !== 'checkbox' && isEmpty(values[f.key]))
+    .filter(f => (f.required || form.missing.includes(f.key)) && f.type !== 'checkbox' && f.type !== 'note' && isEmpty(values[f.key]))
     .map(f => f.label)
 }
 

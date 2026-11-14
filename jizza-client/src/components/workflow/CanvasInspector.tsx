@@ -1531,6 +1531,21 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
       </div>
     )}
 
+    <Section title="Ask on the approval card">
+      {choosesAtRunTime && (
+        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input type="checkbox" checked={node.config.screenshots === true}
+            onChange={e => setConfig({ screenshots: e.target.checked || undefined })} />
+          Send a picture of each item with the question
+        </label>
+      )}
+      {choosesAtRunTime && node.config.screenshots === true && (
+        <p className="text-[11px] text-gray-500">Reading the list also takes a picture of each card (the first 20), and the question shows the picture of whichever one you pick.</p>
+      )}
+      <StepDetailsEditor nodeId={node.id} value={node.config.details} mapping={mapping}
+        onChange={details => setConfig({ details })} />
+    </Section>
+
     {ordinary.map(([key, property]) => key === 'item' && action === 'browser.clickOneOf'
       ? <WebSchemaField key={key} name={key} required={required.has(key)}
           property={{ ...property, enum: groupButtons, description: 'Choose… leaves it to the page: whichever of the buttons is there is clicked.' }}
@@ -1916,6 +1931,109 @@ function DropdownItems({ inputs, deviceId, setInputs }: {
         list={inputs.element ? { element: inputs.element } : undefined} onLoaded={keep} />
     )}
   </Section>
+}
+
+type DetailBlock = {
+  kind: 'note' | 'field'; text?: string; name?: string; label?: string; type?: string
+  options?: string[]; required?: boolean; value?: unknown; format?: string
+}
+
+const DETAIL_FIELD_TYPES = [
+  { type: 'text', label: 'Text' }, { type: 'number', label: 'Number' },
+  { type: 'select', label: 'Choice' }, { type: 'checkbox', label: 'Checkbox' },
+  { type: 'date', label: 'Date' }, { type: 'datetime', label: 'Date and time' },
+]
+
+function detailName(label: string, blocks: DetailBlock[], at: number): string {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'answer'
+  let name = base
+  for (let n = 2; blocks.some((b, j) => j !== at && b.kind === 'field' && b.name === name); n += 1) name = `${base}_${n}`
+  return name
+}
+
+/**
+ * Notes and questions the step puts on its approval card: the details a person needs before
+ * letting it go on (a berth preference, a remark), asked with the step's question and kept as
+ * the step's `details` output for later steps.
+ */
+function StepDetailsEditor({ nodeId, value, mapping, onChange }: {
+  nodeId: string; value: unknown; mapping: MappingContext; onChange: (value: unknown) => void
+}) {
+  const blocks: DetailBlock[] = Array.isArray((value as { blocks?: unknown } | undefined)?.blocks)
+    ? ((value as { blocks: unknown[] }).blocks.filter(b => b && typeof b === 'object') as DetailBlock[])
+    : []
+  const keep = (next: DetailBlock[]) => onChange(next.length ? { blocks: next } : undefined)
+  const update = (at: number, patch: Partial<DetailBlock>) => keep(blocks.map((b, j) => j === at ? { ...b, ...patch } : b))
+  return <div className="space-y-2">
+    <p className="text-[11px] text-gray-500">
+      Notes to read and questions to answer when this step stops for you. The run goes on only once every question is answered; the answers are this step's output, as {'{{'} nodes.{nodeId}.details.name {'}}'}. Nothing here is typed into the site.
+    </p>
+    {blocks.map((block, i) => (
+      <div key={i} className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{block.kind === 'note' ? 'Note' : 'Question'}</span>
+          <button type="button" aria-label={`Remove ${block.kind === 'note' ? 'note' : 'question'} ${i + 1}`}
+            className="text-[11px] text-red-600 hover:underline dark:text-red-400"
+            onClick={() => keep(blocks.filter((_, j) => j !== i))}>Remove</button>
+        </div>
+        {block.kind === 'note' ? (
+          <textarea aria-label={`Note ${i + 1}`} className={`${fieldClass} min-h-[52px]`} value={block.text ?? ''}
+            placeholder="What the person should read before deciding, e.g. Check the running days before booking."
+            onChange={e => update(i, { text: e.target.value.slice(0, 500) })} />
+        ) : <>
+          <div className="grid grid-cols-2 gap-2">
+            <Labelled label="Question">
+              <input aria-label={`Question ${i + 1}`} className={fieldClass} value={block.label ?? ''}
+                placeholder="e.g. Berth preference"
+                onChange={e => update(i, { label: e.target.value.slice(0, 200), name: detailName(e.target.value, blocks, i) })} />
+            </Labelled>
+            <Labelled label="Answer type">
+              <select aria-label={`Answer type of question ${i + 1}`} className={fieldClass} value={block.type ?? 'text'}
+                onChange={e => update(i, { type: e.target.value, options: e.target.value === 'select' ? block.options : undefined })}>
+                {DETAIL_FIELD_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+              </select>
+            </Labelled>
+          </div>
+          {block.type === 'select' && (
+            <DetailOptionsInput index={i} options={block.options} onChange={options => update(i, { options })} />
+          )}
+          <Labelled group label="Starts as (optional)" hint="A value or a mapping from earlier steps; the person can change it.">
+            <MappedField aria-label={`Default answer of question ${i + 1}`} mode="template" context={mapping}
+              value={typeof block.value === 'string' ? block.value : block.value == null ? '' : String(block.value)}
+              onChange={v => update(i, { value: v || undefined })} />
+          </Labelled>
+          <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+            <input type="checkbox" checked={block.required !== false}
+              onChange={e => update(i, { required: e.target.checked ? undefined : false })} />
+            Must be answered before the run goes on
+          </label>
+        </>}
+      </div>
+    ))}
+    <div className="flex gap-2">
+      <Button type="button" size="sm" variant="secondary"
+        onClick={() => keep([...blocks, { kind: 'note', text: '' }])}>Add a note</Button>
+      <Button type="button" size="sm" variant="secondary"
+        onClick={() => keep([...blocks, { kind: 'field', label: '', name: detailName('', blocks, blocks.length), type: 'text' }])}>Add a question</Button>
+    </div>
+  </div>
+}
+
+/** The choices of a Choice question, typed comma-separated and kept as a list. */
+function DetailOptionsInput({ index, options, onChange }: {
+  index: number; options: string[] | undefined; onChange: (options: string[] | undefined) => void
+}) {
+  const items = Array.isArray(options) ? options : []
+  const [text, setText] = useState(items.join(', '))
+  useEffect(() => setText(items.join(', ')), [items.join('\u0000')])
+  return <Labelled group label="Choices" hint="Comma-separated, e.g. Lower, Middle, Upper.">
+    <input aria-label={`Choices of question ${index + 1}`} className={fieldClass} value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={() => {
+        const list = text.split(',').map(t => t.trim()).filter(Boolean).slice(0, 50)
+        onChange(list.length ? list : undefined)
+      }} />
+  </Labelled>
 }
 
 /** The CSS pattern Mark a list saved, editable for a site whose markup changed. */

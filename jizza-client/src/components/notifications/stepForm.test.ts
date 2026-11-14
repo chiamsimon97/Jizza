@@ -68,4 +68,38 @@ describe('step approval form', () => {
     expect(unfilled(form, values)).toEqual([])
     expect(answerValues(form, values)).toEqual({ _remember: true })
   })
+
+  it('reads notes and detail questions: a note never blocks, an empty question does', () => {
+    const form = stepFormOf(approval({
+      action: 'browser.clickItem', title: 'Choose from a list',
+      fields: [
+        { key: '_note.0', label: 'Check the running days before booking', type: 'note', required: false, missing: false },
+        { key: 'details.berth', label: 'Berth preference', type: 'select', required: true, missing: true, options: ['Lower', 'Upper'] },
+      ],
+      missing: ['details.berth'],
+    }))!
+    expect(form.fields[0].type).toBe('note')
+    const values = initialValues(form)
+    expect(unfilled(form, values)).toEqual(['Berth preference'])
+    values['details.berth'] = 'Lower'
+    expect(unfilled(form, values)).toEqual([])
+    expect(answerValues(form, values)).toEqual({ 'details.berth': 'Lower' })
+  })
+
+  it('keeps the pictures of the listed items by option name', () => {
+    const form = stepFormOf(approval({
+      action: 'browser.clickItem', title: 'Choose from a list',
+      fields: [{ key: 'item', label: 'Train', type: 'select', required: true, missing: true, options: ['A', 'B'] }],
+      missing: ['item'],
+      shots: { device: 'd1', byOption: { A: 'f1' } },
+    }))!
+    expect(form.shots).toEqual({ device: 'd1', byOption: { A: 'f1' } })
+    // Pictures without a device, or ids that are not text, are left out.
+    const bad = stepFormOf(approval({
+      action: 'browser.clickItem', title: 'Choose',
+      fields: [{ key: 'item', label: 'Train', type: 'select', required: true, missing: true }],
+      missing: [], shots: { byOption: { A: 'f1' } },
+    }))!
+    expect(bad.shots).toBeUndefined()
+  })
 })
