@@ -85,6 +85,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                 {s.step.disabled && <Badge>Off</Badge>}
                 {s.step.optional && <Badge>Optional</Badge>}
                 {s.step.action === 'flow.keep' && <Badge>Jizza step</Badge>}
+                {s.step.action === 'browser.clickOneOf' && <Badge>one of {s.step.meta?.list?.count ?? 'several'} buttons{s.step.meta?.list?.title ? `: ${s.step.meta.list.title}` : ''}</Badge>}
                 {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
                 {isListChoice(s) && s.step.meta?.list?.named && (
                   <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>

@@ -114,7 +114,8 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | --- | --- |
 | Type an address or open a bookmark | Open URL |
 | Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
-| Click one card of a list: a movie, a date in a date strip, a showtime, a choice in a pop-up (browser agent 0.4.0 or later) | Choose from a list, with the item you clicked |
+| Click one card of a list you mapped (Scan) or marked (Mark a list): a movie, a date in a date strip, a showtime | Choose from a list, with the item you clicked |
+| Click one of the buttons you grouped (Group buttons) | Click one of these buttons, with the button you clicked |
 | Type in a field | Set text, one step per field when you leave it |
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
 | Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
@@ -202,6 +203,21 @@ Sometimes the recorder guesses wrong. A plain **Click** may appear where you exp
 The names you give become the field names in review and in the workflow builder ("Theatre" and "Showtime" instead of "Chosen in" and "Item chosen"), and the input names (`theatre`, `showtime`) that **Make reusable** offers. In the builder, the step also lists the theatres and their showtimes found while recording as drop-downs, so you can pick another one without opening the page.
 
 The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
+
+### Lists are only what you define
+
+From browser agent 0.13.0, a click becomes **Choose from a list** only in a list you mapped with Scan or marked with **Mark a list**. Two buttons side by side, or cards that happen to look alike, are recorded as plain clicks. To get the old behaviour back, where any click on one of several look-alike items was guessed to be a list, tick **Guess lists** under Auto and Manual in the side panel.
+
+### Group buttons that are not a list
+
+Some pages ask you to choose between a few different buttons that aren't a list, such as हिंदी and English on IRCTC, or Accept and Decline. Group them so either one is one step:
+
+1. Press **Group buttons** in the side panel.
+2. Click each button of the group on the page. The clicks don't reach the site. Press Esc when you have clicked them all.
+3. **Name this group** opens and lists the buttons. Type what the choice is, such as "Language", and press **Save group**.
+4. Click the button you want, as usual. It is recorded as **Click one of these buttons**, named "Choose Language "English"".
+
+In review the step shows "one of 2 buttons: Language", and its choice becomes the module input `language`, with the button you clicked as its default. In the workflow builder, **Language** is a drop-down of the buttons: pick one, map it from earlier steps, or leave it on **Choose…** so each run clicks whichever of the buttons the page shows. When a run asks for a button that isn't one of them, Jizza asks you which to click.
 
 ### Choose the theatre and showtime from the page
 

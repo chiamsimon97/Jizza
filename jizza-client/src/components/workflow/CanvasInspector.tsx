@@ -1373,7 +1373,12 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
     && !(action === 'browser.fillForm' && key === 'fields')
     && !(key === 'within' || key === 'loadMore' || key === 'itemCss' || key === 'titleCss')
     // A run-time list choice has one field for its item: the list's own dropdown (below).
-    && !(key === 'item' && action === 'browser.clickItem'))
+    && !(key === 'item' && action === 'browser.clickItem')
+    // Grouped buttons keep their elements as recorded; only which one to click is chosen.
+    && !(key === 'options' && action === 'browser.clickOneOf'))
+  const groupButtons = action === 'browser.clickOneOf' && Array.isArray(inputs.options)
+    ? (inputs.options as { name?: unknown }[]).map(o => typeof o?.name === 'string' ? o.name : '').filter(Boolean)
+    : []
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
   const listNames = asInputs(node.config.list) as RecordedListNames
@@ -1447,7 +1452,18 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping }: 
         missing={isMissing('inputs.fields')} onChange={value => setInput('fields', value)} />
     )}
 
-    {ordinary.map(([key, property]) => key === 'items' && property.type === 'array'
+    {action === 'browser.clickOneOf' && (
+      <p className="text-xs text-gray-600 dark:text-gray-300">
+        Buttons in this group: {groupButtons.length > 0 ? groupButtons.join(', ') : 'none'}. Record the group again to change them.
+      </p>
+    )}
+
+    {ordinary.map(([key, property]) => key === 'item' && action === 'browser.clickOneOf'
+      ? <WebSchemaField key={key} name={key} required={required.has(key)}
+          property={{ ...property, enum: groupButtons, description: 'Choose… leaves it to the page: whichever of the buttons is there is clicked.' }}
+          value={inputs[key]} label={listNames.named && listNames.title ? listNames.title : 'Button to click'}
+          mapping={mapping} onChange={value => setInput(key, value)} />
+      : key === 'items' && property.type === 'array'
       ? <Labelled key={key} group label={action === 'browser.checkItems' ? 'Boxes to tick' : 'Items'} required={required.has(key)}
           hint={property.description ?? 'Comma-separated, or map a list from earlier steps.'}>
           <MappedField aria-label={action === 'browser.checkItems' ? 'Boxes to tick' : 'Items'} mode="template" context={mapping}

@@ -100,6 +100,17 @@ describe('RecordingReview list choices', () => {
     expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 2, secretRef: null }])
   })
 
+  it('shows a grouped-buttons step as one of its buttons, with its choice as an input', () => {
+    const onEdit = vi.fn()
+    render(<RecordingReview recording={{ ...recording, steps: [
+      { seq: 1, position: 1, deleted: false, step: { action: 'browser.clickOneOf', label: 'Choose Language "English"',
+        input: { item: 'English', options: [{ name: 'हिंदी' }, { name: 'English' }] },
+        meta: { list: { title: 'Language', count: 2, named: true, options: ['हिंदी', 'English'] } } } },
+    ] }} onEdit={onEdit} />)
+    expect(screen.getByText('one of 2 buttons: Language')).toBeTruthy()
+    expect(screen.getByLabelText('Make this an input')).toBeTruthy()
+  })
+
   it('says so when the browser has no saved login yet', () => {
     render(<RecordingReview recording={recording} onEdit={vi.fn()} logins={[]} />)
     expect(screen.getByText(/No saved logins in this browser yet/)).toBeTruthy()

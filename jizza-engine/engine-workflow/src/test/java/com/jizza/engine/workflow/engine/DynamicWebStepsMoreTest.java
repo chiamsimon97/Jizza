@@ -62,6 +62,9 @@ class DynamicWebStepsMoreTest {
     harness.deviceInputSchemas.put("browser.fillForm", Json.read("{\"type\":\"object\","
         + "\"properties\":{\"fields\":{\"type\":\"array\"},\"submit\":{\"type\":\"object\"}},"
         + "\"required\":[\"fields\"]}"));
+    harness.deviceInputSchemas.put("browser.clickOneOf", Json.read("{\"type\":\"object\","
+        + "\"properties\":{\"options\":{\"type\":\"array\"},\"item\":{\"type\":\"string\"}},"
+        + "\"required\":[\"options\"]}"));
     harness.deviceOutputs.put("browser.clickItem", Json.obj().put("clicked", true));
     return harness;
   }
@@ -459,5 +462,62 @@ class DynamicWebStepsMoreTest {
     JsonNode fields = harness.deviceRequests.get(1).input().path("fields");
     assertThat(fields.get(0).path("value").asText()).isEqualTo("Asha");
     assertThat(fields.get(1).path("value").asText()).isEqualTo("9876543210");
+  }
+
+  private static final String CLICK_LANGUAGE = """
+      {"preset":"web","action":"browser.clickOneOf","version":1,"target":"sameBrowser",
+       "list":{"title":"Language","named":true,"options":["हिंदी","English"]},
+       "inputs":{"options":[
+         {"name":"हिंदी","element":{"strategies":[{"by":"css","value":"#hi"}]}},
+         {"name":"English","element":{"strategies":[{"by":"css","value":"#en"}]}}],
+         "item":"{{ input.language }}"}}
+      """;
+
+  @Test
+  void groupedButtonsAreChosenByNameAndTheCardOffersTheirNames() {
+    EngineHarness harness = harness(CLICK_LANGUAGE);
+    harness.toolRule = AutonomyRule.ASK;
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("language", "English"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    JsonNode item = field(harness, "item");
+    assertThat(item.path("label").asText()).isEqualTo("Language");
+    assertThat(item.path("type").asText()).isEqualTo("select");
+    assertThat(item.path("options").toString()).isEqualTo("[\"हिंदी\",\"English\"]");
+    assertThat(item.path("value").asText()).isEqualTo("English");
+    assertThat(field(harness, "options")).isNull();
+
+    harness.deviceOutputs.put("browser.clickOneOf", Json.obj().put("clicked", "हिंदी"));
+    harness.engine.resume(run.id(), Json.obj().put("approved", true)
+        .set("inputs", Json.obj().put("item", "हिंदी")));
+    var sent = harness.deviceRequests.get(harness.deviceRequests.size() - 1);
+    assertThat(sent.action()).isEqualTo("browser.clickOneOf");
+    assertThat(sent.input().path("item").asText()).isEqualTo("हिंदी");
+    assertThat(sent.input().path("options").size()).isEqualTo(2);
+  }
+
+  @Test
+  void aButtonThatIsNotInTheGroupIsChosenFromItsNames() {
+    EngineHarness harness = harness(CLICK_LANGUAGE);
+    harness.toolRule = AutonomyRule.ALLOW;
+    harness.deviceFailures.put("browser.clickOneOf", Json.read("""
+        {"error":{"kind":"item_not_found","message":"None of the buttons is \\"Tamil\\"",
+                  "items":["हिंदी","English"]}}"""));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().put("language", "Tamil"), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    JsonNode item = field(harness, "item");
+    assertThat(item.path("type").asText()).isEqualTo("select");
+    assertThat(item.path("options").size()).isEqualTo(2);
+
+    harness.deviceOutputs.put("browser.clickOneOf", Json.obj().put("clicked", "English"));
+    harness.engine.resume(run.id(), Json.obj().put("approved", true)
+        .set("inputs", Json.obj().put("item", "English")));
+    var sent = harness.deviceRequests.get(harness.deviceRequests.size() - 1);
+    assertThat(sent.input().path("item").asText()).isEqualTo("English");
   }
 }
