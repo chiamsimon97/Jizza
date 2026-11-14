@@ -202,6 +202,48 @@ class BuiltInStepsTest {
         .isEqualTo("else");
   }
 
+  /**
+   * "Branch by button clicked" in the builder: a paths step after a group of buttons, one path per
+   * button, reading the button's name from nodes.<step>.clicked. A button with no steps of its own
+   * goes straight on, like "otherwise", and every path meets again at the step after.
+   */
+  private static WorkflowGraph byButton(String clicked) {
+    String cases = "{\"byButton\":\"lang\",\"cases\":["
+        + "{\"id\":\"case1\",\"label\":\"\u0939\u093f\u0902\u0926\u0940\",\"condition\":\"nodes.lang.clicked == \\\"\u0939\u093f\u0902\u0926\u0940\\\"\"},"
+        + "{\"id\":\"case2\",\"label\":\"English\",\"condition\":\"nodes.lang.clicked == \\\"English\\\"\"}]}";
+    return new WorkflowGraph(
+        List.of(node("start", NodeType.TRIGGER, null),
+            transform("lang", "{'clicked': '" + clicked + "'}"),
+            node("route", NodeType.SWITCH, cases),
+            transform("hindi", "'hindi steps'"),
+            transform("after", "'carried on'"),
+            node("finish", NodeType.END, null)),
+        List.of(edge("start", "lang"), edge("lang", "route"),
+            edge("route", "hindi", "case1"), edge("hindi", "after"),
+            edge("route", "after", "case2"), edge("route", "after", "else"),
+            edge("after", "finish")));
+  }
+
+  @Test
+  void pathsBranchOnTheButtonAGroupClicked() {
+    EngineHarness harness = new EngineHarness(byButton("\u0939\u093f\u0902\u0926\u0940"));
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(run.status()).as(String.valueOf(harness.run(run.id()).getError())).isEqualTo(RunStatus.DONE);
+    assertThat(harness.step(run.id(), "route").orElseThrow().getOutput().path("path").asText()).isEqualTo("case1");
+    assertThat(harness.step(run.id(), "hindi").orElseThrow().getStatus()).isEqualTo(RunStepStatus.DONE);
+    assertThat(harness.step(run.id(), "after").orElseThrow().getStatus()).isEqualTo(RunStepStatus.DONE);
+  }
+
+  @Test
+  void aButtonWithoutAPathOfItsOwnCarriesOn() {
+    EngineHarness harness = new EngineHarness(byButton("English"));
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(run.status()).as(String.valueOf(harness.run(run.id()).getError())).isEqualTo(RunStatus.DONE);
+    assertThat(harness.step(run.id(), "route").orElseThrow().getOutput().path("path").asText()).isEqualTo("case2");
+    assertThat(harness.step(run.id(), "hindi").orElseThrow().getStatus()).isEqualTo(RunStepStatus.SKIPPED);
+    assertThat(harness.step(run.id(), "after").orElseThrow().getStatus()).isEqualTo(RunStepStatus.DONE);
+  }
+
   @Test
   void aPathsConnectionToACaseThatDoesNotExistIsRefused() {
     WorkflowGraph graph = new WorkflowGraph(
