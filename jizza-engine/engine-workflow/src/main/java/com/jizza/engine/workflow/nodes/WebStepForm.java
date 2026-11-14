@@ -31,26 +31,32 @@ final class WebStepForm {
       "screenshotOnError", "highlight", "secretRef", "waitElement", "to", "offset", "modifiers",
       "steps", "fields", "group", "in", "waitAfter", "by", "max", "within", "loadMore", "submit",
       "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss", "titleCss",
-      "options");
+      "options", "format", "mode");
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";
   static final String CHOOSE_OPTION = "browser.chooseOption";
   /** A click on one of the buttons the person grouped while recording, chosen by name. */
   static final String CLICK_ONE_OF = "browser.clickOneOf";
+  /** A choice in a dropdown, native or built by the site, chosen by name. */
+  static final String SELECT_OPTION = "browser.selectOption";
   /** Choices made from a list the page or app shows at run time. */
   static final Set<String> CLICK_ITEMS = Set.of(CLICK_ITEM, "ui.clickItem");
   static final Set<String> FILL_FORMS = Set.of(FILL_FORM, "ui.fillForm");
 
   /** The input that names the item chosen, for an action that chooses from a list. */
   static String pickKey(String action) {
-    if (CLICK_ITEMS.contains(action) || CLICK_ONE_OF.equals(action)) return "item";
+    if (CLICK_ITEMS.contains(action) || CLICK_ONE_OF.equals(action)
+        || SELECT_OPTION.equals(action)) {
+      return "item";
+    }
     if (CHOOSE_OPTION.equals(action)) return "option";
     return null;
   }
 
   /** The action that reads the list a choosing action chooses from. */
   static String listAction(String action) {
+    if (SELECT_OPTION.equals(action)) return "browser.listOptions";
     return action.startsWith("ui.") ? "ui.listItems" : "browser.listItems";
   }
   private static final int MAX_TEXT = 10_000;
@@ -59,20 +65,32 @@ final class WebStepForm {
 
   /** One value of the step, as the approval card shows it. */
   record Field(String key, String label, String type, JsonNode value, boolean required,
-               String source, List<String> options, String error) {
+               String source, List<String> options, String error, String format) {
+
+    Field(String key, String label, String type, JsonNode value, boolean required,
+          String source, List<String> options, String error) {
+      this(key, label, type, value, required, source, options, error, null);
+    }
 
     Field(String key, String label, String type, JsonNode value, boolean required,
           String source, List<String> options) {
-      this(key, label, type, value, required, source, options, null);
+      this(key, label, type, value, required, source, options, null, null);
     }
 
     Field withError(String message) {
-      return new Field(key, label, type, value, required, source, options, message);
+      return new Field(key, label, type, value, required, source, options, message, format);
     }
 
     Field withOptions(String newType, List<String> newOptions, boolean blank) {
       return new Field(key, label, newType, blank ? null : value, blank || required, source,
-          newOptions, error);
+          newOptions, error, format);
+    }
+
+    /** A date field that writes its value the site's way (DD/MM/YYYY, YYYY-MM-DD HH:mm). */
+    Field withFormat(String newFormat) {
+      if (newFormat == null || newFormat.isBlank()) return this;
+      String newType = "date".equals(type) && hasTime(newFormat) ? "datetime" : type;
+      return new Field(key, label, newType, value, required, source, options, error, newFormat);
     }
 
     boolean missing() { return required && empty(value); }
@@ -83,6 +101,7 @@ final class WebStepForm {
       if (value != null && !value.isMissingNode() && !value.isNull()) out.set("value", value);
       if (source != null) out.put("source", source);
       if (error != null) out.put("error", error);
+      if (format != null) out.put("format", format);
       if (options != null) {
         ArrayNode list = out.putArray("options");
         options.forEach(list::add);
@@ -112,7 +131,7 @@ final class WebStepForm {
         if (inputs.has("state")) inputs.put("state", checkboxState(inputs.get("state")));
       }
       case "browser.setText", "browser.setDate", "browser.pickDate", CHOOSE_OPTION, CLICK_ITEM,
-          "ui.clickItem", CLICK_ONE_OF -> {
+          "ui.clickItem", CLICK_ONE_OF, SELECT_OPTION -> {
         for (String key : List.of("text", "value", "item", "date", "option")) {
           JsonNode value = inputs.get(key);
           if (value != null && (value.isNumber() || value.isBoolean())) {
@@ -215,7 +234,8 @@ final class WebStepForm {
             : field.path("element").path("label").asText("Field " + (index + 1)));
         out.add(new Field("fields." + index + ".value", label, formType(kind),
             field.get("value"), field.path("required").asBoolean(false),
-            template(source == null ? null : source.get("value")), null));
+            template(source == null ? null : source.get("value")), null)
+            .withFormat(field.path("format").asText(null)));
         index++;
       }
       return out;
@@ -244,12 +264,17 @@ final class WebStepForm {
       if ("object".equals(property.path("type").asText())) continue;
       boolean pick = key.equals(pickKey(spec.action())) && choices != null;
       // The grouped buttons are the choices: their names, as the step keeps them.
-      List<String> buttons = CLICK_ONE_OF.equals(spec.action()) && "item".equals(key)
+      // A dropdown's items read while recording are its choices too.
+      List<String> buttons = (CLICK_ONE_OF.equals(spec.action())
+          || SELECT_OPTION.equals(spec.action())) && "item".equals(key)
           ? optionNames(inputs.path("options")) : null;
       List<String> options = pick ? choices : buttons != null ? buttons : enumOptions(property);
       String type = pick || buttons != null ? "select" : typeOf(spec.action(), key, property);
-      out.add(new Field(key, label(key, spec.action()), type, inputs.get(key),
-          required.contains(key), template(configured.get(key)), options));
+      String name = SELECT_OPTION.equals(spec.action()) && "item".equals(key)
+          ? dropdownName(inputs) : label(key, spec.action());
+      Field field = new Field(key, name, type, inputs.get(key),
+          required.contains(key), template(configured.get(key)), options);
+      out.add("date".equals(type) ? field.withFormat(dateFormat(inputs, key)) : field);
     }
     if (CLICK_ITEMS.contains(spec.action()) && inputs.path("within").isObject()
         && out.stream().noneMatch(f -> "within.item".equals(f.key()))) {
@@ -261,15 +286,41 @@ final class WebStepForm {
           template(configured.path("within").get("item")), null));
     }
     return CLICK_ITEMS.contains(spec.action()) || CLICK_ONE_OF.equals(spec.action())
-        ? named(out, config.path("list")) : out;
+        || SELECT_OPTION.equals(spec.action()) ? named(out, config.path("list")) : out;
   }
 
-  /** The names of a grouped-buttons step's buttons, or null when it has none. */
+  /** What a dropdown step's field is called: the dropdown's own label, else "Option to choose". */
+  private static String dropdownName(JsonNode inputs) {
+    String label = inputs.path("element").path("label").asText("").strip();
+    return label.isEmpty() || label.length() > 60 ? "Option to choose" : label;
+  }
+
+  /**
+   * The format a date field is written in on the site: the step's own, else read from a recorded
+   * ISO value (with a time, 2026-11-14T18:30, it is a date and time).
+   */
+  private static String dateFormat(JsonNode inputs, String key) {
+    String format = inputs.path("format").asText("").strip();
+    if (!format.isEmpty()) return format;
+    return inputs.path(key).asText("").matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}.*")
+        ? "YYYY-MM-DDTHH:mm" : null;
+  }
+
+  /** Whether a date format has a time of day in it. */
+  static boolean hasTime(String format) {
+    return format != null && format.matches(".*[Hh].*");
+  }
+
+  /**
+   * The names of a grouped-buttons step's buttons, or a dropdown step's items, or null when it
+   * has none. Plain text items are taken as they are.
+   */
   static List<String> optionNames(JsonNode options) {
     if (!options.isArray() || options.isEmpty()) return null;
     List<String> names = new ArrayList<>();
     for (JsonNode option : options) {
-      String name = option.path("name").asText("");
+      String name = option.isTextual() ? option.asText("").strip()
+          : option.path("name").asText("");
       if (!name.isBlank()) names.add(name);
     }
     return names.isEmpty() ? null : names;
@@ -287,7 +338,7 @@ final class WebStepForm {
     for (Field f : fields) {
       String name = "item".equals(f.key()) ? item : "within.item".equals(f.key()) ? card : "";
       out.add(name.isEmpty() ? f : new Field(f.key(), name, f.type(), f.value(), f.required(),
-          f.source(), f.options(), f.error()));
+          f.source(), f.options(), f.error(), f.format()));
     }
     return out;
   }

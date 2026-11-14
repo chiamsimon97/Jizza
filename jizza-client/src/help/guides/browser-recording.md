@@ -230,6 +230,30 @@ After the recording is saved, you can make the workflow go a different way depen
 
 The Paths step reads the button from the step's output, `nodes.<step>.clicked`, so it works whether the button was chosen at run time, mapped, or picked by the page. A workflow with paths can no longer be opened with **Edit recording**; change it in the builder.
 
+### Dropdowns the site built
+
+Many sites, IRCTC among them, draw their own dropdowns instead of the browser's: closed, such a dropdown is only the choice shown and a small arrow. From browser agent 0.14.0 these are found as **Dropdown** fields by **Full page scan**, **Partial page scan**, **Add from page** and **Add field**, whether they are open or closed, and choosing an option in one is recorded as **Choose in a dropdown**.
+
+1. Scan the page, or press **Add field** and click the dropdown (its text or its arrow).
+2. If a field was found as something else, set its **Kind** to **Dropdown**.
+3. Press **Read items from page**. The dropdown opens, its items are read, and it closes again.
+4. Choose where the items come from:
+   - **Static** keeps the items read now with the step. Use it for lists that do not change, such as Quota or Class. Runs choose from these items, and the builder and approval card offer them.
+   - **Dynamic** reads the items from the page each time a run gets to the step. Use it for lists that depend on earlier choices. If the value given is not on the page, Jizza asks you and lists what the page shows then.
+5. Tick **Different each run** to make the choice a module input.
+
+In the workflow builder, a **Choose in a dropdown** step has **Static items** and **Dynamic items**. With **Static items**, you can edit the items or press **Load items from the page**, and the item is a drop-down of them. In review the step shows "dropdown, 4 items kept" or "dropdown, items read on each run".
+
+### Dates in the site's format
+
+Sites write dates their own way, such as 20/11/2026, 11/20/2026 or 20-Nov-2026 18:30. From browser agent 0.14.0, a date box whose label or placeholder shows the format (such as "DD/MM/YYYY") keeps that format with the step. So does a box that already holds a date when you record it. If you pick the day in the site's calendar, those clicks become one **Set date** step.
+
+- When the date becomes a module input, it is a **date**, or a **date and time** when the format has a time, and it keeps the format.
+- Run forms, a module's inputs in the builder, the Start step's default and the approval card all show a date picker (or a date and time picker). Under it you see how the site will get the date, for example "The site gets 20/11/2026".
+- Whichever way the date is given (picked, mapped from an earlier step as 2026-11-20, or typed), the browser writes it in the site's format. Press **Type it instead** on the approval card to type a date by hand.
+
+The phone apps show the same pickers on the approval card (Android and iPhone).
+
 ### Choose the theatre and showtime from the page
 
 In the workflow builder, a **Choose from a list** step has **Load cards from the page** and **Load items from the page**. With the site open in the chosen browser, these read what the page shows now and offer a drop-down: pick a theatre, then load and pick one of its showtimes. When a run reaches the step and the chosen theatre or showtime isn't there, Jizza asks you, listing what the page shows then: theatres first, then the showtimes of the theatre you pick.

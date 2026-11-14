@@ -19,6 +19,7 @@ import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type Modu
 import type { ValueType } from './formula/functions'
 import { schemaFields } from '@/components/connectors/ResultView'
 import { MappedField, type MappingContext } from './MappedField'
+import { DateValueInput } from '@/components/ui/DateValueInput'
 import { ScriptEditor } from './formula/ScriptEditor'
 import { formulaApi, type FormulaPreview } from '@/api/formula'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
@@ -959,7 +960,8 @@ function sampleOf(graph: CanvasGraph, outputs: ReadonlyMap<string, unknown>): Re
 }
 
 const TYPE_HINT: Partial<Record<ValueType, string>> = {
-  number: 'A number.', boolean: 'true or false.', date: 'A date, such as 2026-10-24.', list: 'A list.', map: 'A set of fields.',
+  number: 'A number.', boolean: 'true or false.', date: 'A date, such as 2026-10-24.',
+  datetime: 'A date and time, such as 2026-10-24T18:30.', list: 'A list.', map: 'A set of fields.',
 }
 
 /**
@@ -995,6 +997,10 @@ function ModuleCallFields({ node, module, setConfig, isMissing, mapping, str }: 
             hint={[f.description, TYPE_HINT[f.type], f.default !== undefined ? `Leave empty for ${JSON.stringify(f.default)}.` : ''].filter(Boolean).join(' ') || TEMPLATE_HINT}>
             <MappedField aria-label={`Input ${f.name}`} mode="template" context={mapping} mono={f.type !== 'text'} invalid={isMissing(`inputs.${f.name}`)}
               value={values[f.name] ?? ''} onChange={v => set(f.name, v)} />
+            {(f.type === 'date' || f.type === 'datetime') && !(values[f.name] ?? '').includes('{{') && (
+              <DateValueInput type={f.type} format={f.format} className={`${NARROW_FIELD} text-xs`} aria-label={`Pick ${f.name}`}
+                value={values[f.name] ?? ''} onChange={v => set(f.name, v)} />
+            )}
           </Labelled>
         ))}
         <p className="text-[11px] text-gray-400">A value that is just {'{{ … }}'} keeps its type. Text is read as the type the module asks for.</p>
@@ -1060,11 +1066,24 @@ function ContractFields({ kind, node, setConfig, isMissing, mapping }: {
               </label>
               <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
                 <span className="shrink-0">Default</span>
-                <input aria-label={`Default for input ${i + 1}`} placeholder="none" className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs`}
-                  value={r.default === undefined ? '' : typeof r.default === 'string' ? r.default : JSON.stringify(r.default)}
-                  onChange={e => edit(i, { default: e.target.value === '' ? undefined : e.target.value })} />
+                {r.type === 'date' || r.type === 'datetime' ? (
+                  <DateValueInput type={r.type} format={r.format} aria-label={`Default for input ${i + 1}`} className={`${NARROW_FIELD} min-w-0 flex-1 text-xs`}
+                    value={typeof r.default === 'string' ? r.default : ''}
+                    onChange={v => edit(i, { default: v === '' ? undefined : v })} />
+                ) : (
+                  <input aria-label={`Default for input ${i + 1}`} placeholder="none" className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs`}
+                    value={r.default === undefined ? '' : typeof r.default === 'string' ? r.default : JSON.stringify(r.default)}
+                    onChange={e => edit(i, { default: e.target.value === '' ? undefined : e.target.value })} />
+                )}
               </label>
             </div>
+            {(r.type === 'date' || r.type === 'datetime') && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                <span className="shrink-0">Site's format</span>
+                <input aria-label={`Date format of input ${i + 1}`} placeholder="e.g. DD/MM/YYYY" className={`${NARROW_FIELD} min-w-0 flex-1 font-mono text-xs`}
+                  value={r.format ?? ''} onChange={e => edit(i, { format: e.target.value.trim() ? e.target.value : undefined })} />
+              </label>
+            )}
           </> : (
             <MappedField aria-label={`Value of output ${i + 1}`} placeholder="Map data from earlier steps" mode="template" context={mapping} mono
               invalid={isMissing(`${kind}.${i}.value`)} value={r.value ?? ''} onChange={v => edit(i, { value: v })} />
@@ -1407,9 +1426,15 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     // A run-time list choice has one field for its item: the list's own dropdown (below).
     && !(key === 'item' && action === 'browser.clickItem')
     // Grouped buttons keep their elements as recorded; only which one to click is chosen.
-    && !(key === 'options' && action === 'browser.clickOneOf'))
+    && !(key === 'options' && action === 'browser.clickOneOf')
+    // A dropdown's items and where they come from have their own section (below).
+    && !((key === 'options' || key === 'mode') && action === 'browser.selectOption'))
   const groupButtons = action === 'browser.clickOneOf' && Array.isArray(inputs.options)
     ? (inputs.options as { name?: unknown }[]).map(o => typeof o?.name === 'string' ? o.name : '').filter(Boolean)
+    : []
+  const dropdown = action === 'browser.selectOption'
+  const dropdownItems = dropdown && inputs.mode !== 'dynamic' && Array.isArray(inputs.options)
+    ? (inputs.options as unknown[]).map(String).filter(Boolean)
     : []
   const pickable = action === 'browser.click' || action === 'browser.clickItem'
   const choosesAtRunTime = action === 'browser.clickItem'
@@ -1490,6 +1515,10 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
       </p>
     )}
 
+    {dropdown && (
+      <DropdownItems inputs={inputs} deviceId={concrete?.id} setInputs={setInputs} />
+    )}
+
     {branch && groupButtons.length > 0 && (
       <div className="space-y-1 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
         <p className="text-xs font-medium text-gray-800 dark:text-gray-200">Different steps for each button</p>
@@ -1507,6 +1536,24 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
           property={{ ...property, enum: groupButtons, description: 'Choose… leaves it to the page: whichever of the buttons is there is clicked.' }}
           value={inputs[key]} label={listNames.named && listNames.title ? listNames.title : 'Button to click'}
           mapping={mapping} onChange={value => setInput(key, value)} />
+      : key === 'item' && dropdown && dropdownItems.length > 0
+      ? <WebSchemaField key={key} name={key} required={required.has(key)}
+          property={{ ...property, enum: dropdownItems, description: 'One of the items kept with the step, or map it: a value that is not one of them is asked.' }}
+          value={inputs[key]} label={dropdownLabel(inputs.element)}
+          mapping={mapping} onChange={value => setInput(key, value)} />
+      : key === 'item' && dropdown
+      ? <WebSchemaField key={key} name={key} property={{ ...property, description: 'The item to choose. Map it from earlier steps; the run reads the items the dropdown shows then and asks when none matches.' }}
+          value={inputs[key]} required={required.has(key)} label={dropdownLabel(inputs.element)}
+          mapping={mapping} onChange={value => setInput(key, value)} />
+      : key === 'value' && (action === 'browser.setDate' || action === 'browser.pickDate')
+        && !(typeof inputs[key] === 'string' && (inputs[key] as string).includes('{{'))
+      ? <div key={key} className="space-y-1">
+          <WebSchemaField name={key} property={property} value={inputs[key]} required={required.has(key)}
+            mapping={mapping} onChange={value => setInput(key, value)} />
+          <DateValueInput type="date" format={typeof inputs.format === 'string' ? inputs.format : undefined}
+            className={`${NARROW_FIELD} text-xs`} aria-label="Pick the date"
+            value={typeof inputs[key] === 'string' ? inputs[key] as string : ''} onChange={v => setInput(key, v || undefined)} />
+        </div>
       : key === 'items' && property.type === 'array'
       ? <Labelled key={key} group label={action === 'browser.checkItems' ? 'Boxes to tick' : 'Items'} required={required.has(key)}
           hint={property.description ?? 'Comma-separated, or map a list from earlier steps.'}>
@@ -1781,9 +1828,11 @@ function ListValueField({ label, choices, value, mapping, required, missing, hin
  * Reads a list from the page as the chosen browser shows it now (List items, run as a test): its
  * names become the choices of the list's own dropdown (a theatre, then its showtimes).
  */
-function LoadFromPage({ what, deviceId, list, blocked, onLoaded }: {
+function LoadFromPage({ what, deviceId, list, blocked, onLoaded, action = 'browser.listItems' }: {
   what: 'cards' | 'items'; deviceId?: string; list?: Record<string, unknown>; blocked?: string
   onLoaded: (labels: string[]) => void
+  /** The action that reads the list: List items, or List dropdown items for a dropdown. */
+  action?: string
 }) {
   const [loading, setLoading] = useState(false)
   const [found, setFound] = useState<number | undefined>()
@@ -1793,7 +1842,7 @@ function LoadFromPage({ what, deviceId, list, blocked, onLoaded }: {
     if (!deviceId || !list) return
     setLoading(true); setError(undefined); setFound(undefined)
     try {
-      const result = await webApi.testStep({ deviceId, action: 'browser.listItems', version: 1, inputs: list })
+      const result = await webApi.testStep({ deviceId, action, version: 1, inputs: list })
       const items = (result.output as { items?: { label?: string }[] } | undefined)?.items
       if (result.status === 'succeeded' && items) {
         const labels = [...new Set(items.map(i => i.label ?? '').filter(Boolean))]
@@ -1822,6 +1871,51 @@ function LoadFromPage({ what, deviceId, list, blocked, onLoaded }: {
     {found !== undefined && found > 0 && <p className="text-[11px] text-gray-500">{found} loaded: choose one above.</p>}
     {error && <p className="text-[11px] text-red-600">{error} Open the page in that browser first.</p>}
   </div>
+}
+
+/** What a dropdown step's item is called: the dropdown's recorded label. */
+function dropdownLabel(element: unknown): string {
+  const label = (element as { label?: unknown } | undefined)?.label
+  return typeof label === 'string' && label.trim() && label.length <= 60 ? label.trim() : 'Item to choose'
+}
+
+/**
+ * Where a dropdown step's items come from. Static: the items kept with the step (read while
+ * recording or loaded here), offered as the choices. Dynamic: read from the page on each run, and
+ * offered on the approval card as the page shows them then.
+ */
+function DropdownItems({ inputs, deviceId, setInputs }: {
+  inputs: Record<string, unknown>; deviceId?: string; setInputs: (patch: Record<string, unknown>) => void
+}) {
+  const dynamic = inputs.mode === 'dynamic'
+  const items = Array.isArray(inputs.options) ? (inputs.options as unknown[]).map(String) : []
+  const [text, setText] = useState(items.join(', '))
+  useEffect(() => setText(items.join(', ')), [items.join('\u0000')])
+  const keep = (list: string[]) => setInputs({ options: list.length ? list : undefined, mode: 'static' })
+  return <Section title="Dropdown items">
+    <div role="radiogroup" aria-label="Dropdown items" className="flex flex-wrap gap-3 text-xs text-gray-700 dark:text-gray-300">
+      <label className="flex items-center gap-1.5">
+        <input type="radio" name="dropdown-items" checked={!dynamic} onChange={() => setInputs({ mode: 'static' })} />Static items
+      </label>
+      <label className="flex items-center gap-1.5">
+        <input type="radio" name="dropdown-items" checked={dynamic} onChange={() => setInputs({ mode: 'dynamic', options: undefined })} />Dynamic items
+      </label>
+    </div>
+    <p className="text-[11px] text-gray-500">{dynamic
+      ? 'Each run reads the items the dropdown shows then, chooses the one named and asks you when none matches.'
+      : 'The items below are kept with the step and offered as its choices. A value that is not one of them is asked.'}</p>
+    {!dynamic && (
+      <Labelled group label="Items" hint="Comma-separated. Load them from the page, or type them.">
+        <input aria-label="Dropdown items" className={fieldClass} value={text}
+          onChange={e => setText(e.target.value)}
+          onBlur={() => keep(text.split(',').map(s => s.trim()).filter(Boolean))} />
+      </Labelled>
+    )}
+    {!dynamic && (
+      <LoadFromPage what="items" action="browser.listOptions" deviceId={deviceId}
+        list={inputs.element ? { element: inputs.element } : undefined} onLoaded={keep} />
+    )}
+  </Section>
 }
 
 /** The CSS pattern Mark a list saved, editable for a site whose markup changed. */

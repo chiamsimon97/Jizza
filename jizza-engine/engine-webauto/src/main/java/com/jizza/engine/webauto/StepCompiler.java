@@ -504,6 +504,9 @@ final class StepCompiler {
     boolean hasDefault = def != null && !def.isNull();
     field.put("required", !hasDefault);
     if (hasDefault) field.set("default", def);
+    // A date the site writes its own way: the module's input keeps that format.
+    String format = mapping.path("format").asText("");
+    if (!format.isBlank()) field.put("format", format);
     return field;
   }
 

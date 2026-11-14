@@ -80,3 +80,66 @@ describe('a choice inside a card of another list', () => {
     expect(options('Item to choose')).toEqual(['Choose one…', '11:30 AM', '07:30 PM'])
   })
 })
+
+const JOURNEY = {
+  id: 'n2', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-14T10:00:00Z',
+  context: {
+    node: 'step',
+    form: {
+      action: 'browser.setDate', title: 'Set date',
+      fields: [
+        { key: 'value', label: 'Date', type: 'date', format: 'DD/MM/YYYY', value: '20/11/2026', required: true, missing: false },
+      ],
+      missing: [],
+    },
+  },
+} as unknown as NotificationDto
+
+const DEPARTS = {
+  ...JOURNEY,
+  context: {
+    node: 'step',
+    form: {
+      action: 'browser.setDate', title: 'Set date',
+      fields: [
+        { key: 'value', label: 'Departs', type: 'datetime', format: 'DD/MM/YYYY hh:mm A', value: '2026-11-20T18:30', required: true, missing: false },
+      ],
+      missing: [],
+    },
+  },
+} as unknown as NotificationDto
+
+function DateCard({ n }: { n: NotificationDto }) {
+  const form = stepFormOf(n)!
+  const [values, setValues] = useState<FormValues>(() => initialValues(form))
+  return (
+    <>
+      <StepApprovalForm form={form} values={values} onChange={(k, v) => setValues(old => ({ ...old, [k]: v }))} />
+      <output data-testid="answer">{JSON.stringify(answerValues(form, values) ?? null)}</output>
+    </>
+  )
+}
+
+describe('a date on the approval card', () => {
+  it("shows a date picker, and how the site gets the date picked", () => {
+    render(<DateCard n={JOURNEY} />)
+    const picker = screen.getByLabelText('Date') as HTMLInputElement
+    expect(picker.type).toBe('date')
+    expect(picker.value).toBe('2026-11-20')
+    expect(screen.getByTestId('date-as-sent').textContent).toBe('The site gets 20/11/2026')
+    expect(JSON.parse(screen.getByTestId('answer').textContent!)).toBeNull()
+
+    fireEvent.change(picker, { target: { value: '2026-12-01' } })
+    expect(screen.getByTestId('date-as-sent').textContent).toBe('The site gets 01/12/2026')
+    // The date goes as ISO; the browser writes it the site's way.
+    expect(JSON.parse(screen.getByTestId('answer').textContent!)).toEqual({ value: '2026-12-01' })
+  })
+
+  it('shows a date and time picker for a format with a time', () => {
+    render(<DateCard n={DEPARTS} />)
+    const picker = screen.getByLabelText('Departs') as HTMLInputElement
+    expect(picker.type).toBe('datetime-local')
+    expect(picker.value).toBe('2026-11-20T18:30')
+    expect(screen.getByTestId('date-as-sent').textContent).toBe('The site gets 20/11/2026 06:30 PM')
+  })
+})
