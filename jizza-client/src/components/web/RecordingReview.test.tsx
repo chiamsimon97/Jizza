@@ -84,9 +84,20 @@ describe('RecordingReview list choices', () => {
       logins={[{ id: 'login-7', name: 'Portal', description: 'portal.example.com' }]} />)
     const picker = screen.getByLabelText('Saved login') as HTMLSelectElement
     expect(picker.tagName).toBe('SELECT')
-    expect(screen.getByRole('option', { name: 'Portal (portal.example.com)' })).toBeTruthy()
+    expect(screen.getAllByRole('option', { name: 'Portal (portal.example.com)' }).length).toBeGreaterThan(0)
     fireEvent.change(picker, { target: { value: 'login-7' } })
     expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 3, secretRef: 'login-7' }])
+  })
+
+  it('lets a username box type the username of a saved login', () => {
+    const onEdit = vi.fn()
+    render(<RecordingReview recording={recording} onEdit={onEdit}
+      logins={[{ id: 'login-7', name: 'Portal', description: 'portal.example.com' }]} />)
+    const picker = screen.getByLabelText('Username from saved login') as HTMLSelectElement
+    fireEvent.change(picker, { target: { value: 'login-7' } })
+    expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 2, secretRef: 'login-7' }])
+    fireEvent.change(picker, { target: { value: '' } })
+    expect(onEdit).toHaveBeenLastCalledWith([{ op: 'secret', seq: 2, secretRef: null }])
   })
 
   it('says so when the browser has no saved login yet', () => {

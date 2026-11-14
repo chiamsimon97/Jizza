@@ -219,6 +219,7 @@ After you press **Stop**, the recording waits for you in review. Nothing runs un
 - **Make this an input** on a typed value. Give it a name and a type. The value you typed becomes the default, and each run can pass a different one.
 - **Make reusable** turns every list choice (the movie, the date, the format, the showtime and its theatre) into an input in one go, with names such as `movie`, `date` and `time`. The recorded choices stay as the defaults, so the workflow still does what you recorded until a run, a form or a schedule passes other values. You can also make one choice an input with **Make this an input** (**Item chosen**, or **Chosen in** for the theatre).
 - **Saved login** on each password step: choose the saved login to use from the list of logins saved in that browser. A recording with a password step can't be saved without one. If the list is empty, add the login in the extension's Options first.
+- **Username from** on a username box (any box you typed into that is not a password): choose a saved login to type its username instead of what you typed while recording. Choose **What was typed** to go back.
 
 Then give the module a name and a short description, and press **Save as module**. The description helps Jizza find the module when you ask for it in chat.
 

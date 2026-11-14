@@ -21,9 +21,13 @@ export const liveSteps = (steps: RecordedStep[] | undefined): RecordedStep[] =>
 
 export const isPassword = (s: RecordedStep): boolean => s.step.meta?.sensitive === true
 
+/** A box typed into that is not a password (a username box): it can type a saved login's username. */
+export const isUsernameBox = (s: RecordedStep): boolean =>
+  !isPassword(s) && (s.step.action === 'browser.setText' || s.step.action === 'browser.typeInto')
+
 /** The values in a step that can become an input. A password never can; it takes a saved login. */
 export function mappableFields(s: RecordedStep): { field: string; value: string }[] {
-  if (isPassword(s)) return []
+  if (isPassword(s) || s.step.secretRef) return []
   const input = s.step.input ?? {}
   // A form step (browser agent 0.8.0+): each field's value.
   const form = (Array.isArray(input.fields) ? input.fields : []).flatMap((f, i) => {

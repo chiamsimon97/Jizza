@@ -37,6 +37,22 @@ final class StepCompiler {
   private StepCompiler() {}
 
   /**
+   * A step's saved login as the action takes it. The browser agent takes the login and which of
+   * its fields to type ({@code {"login","field"}}): a password box types the password, any other
+   * box the username. The PC agent takes the secret's name.
+   */
+  static JsonNode secretInput(String ref, boolean sensitive, boolean web) {
+    if (!web) return Json.mapper().getNodeFactory().textNode(ref);
+    return Json.obj().put("login", ref).put("field", sensitive ? "password" : "username");
+  }
+
+  /** The saved login id of a step's {@code secretRef} input, in either shape. */
+  static String secretId(JsonNode secretRef) {
+    if (secretRef == null || secretRef.isNull()) return "";
+    return secretRef.isObject() ? secretRef.path("login").asText("") : secretRef.asText("");
+  }
+
+  /**
    * @param steps the live steps in review order; each is the stored step JSON, with the person's
    *              {@code mappings} and {@code secretRef} from review
    */
@@ -181,7 +197,7 @@ final class StepCompiler {
       }
       if (!secretRef.isBlank()) {
         VALUE_FIELDS.forEach(stepInputs::remove);
-        stepInputs.put("secretRef", secretRef);
+        stepInputs.set("secretRef", secretInput(secretRef, sensitive, web));
       }
 
       JsonNode mappings = step.path("mappings");
