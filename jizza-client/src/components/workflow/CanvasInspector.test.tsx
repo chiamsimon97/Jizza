@@ -423,6 +423,35 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it("offers a dropdown's kept items as its choices, and Dynamic reads them on each run instead", async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.selectOption', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose in a dropdown', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: {
+            element: locator, item: { type: 'string' }, options: { type: 'array' }, mode: { enum: ['static', 'dynamic'] } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.selectOption')!)
+    const inputs = { element: { strategies: [{ by: 'css', value: '#quota-box' }], label: 'Quota' }, item: 'GENERAL', mode: 'static', options: ['GENERAL', 'TATKAL'] }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs } } : n) }
+    const { onSave } = open(graph, made.id)
+    const quota = await screen.findByRole('combobox', { name: 'Quota' })
+    expect(Array.from((quota as HTMLSelectElement).options).map(o => o.value)).toEqual(['', 'GENERAL', 'TATKAL', '__data'])
+    expect(screen.getByRole('textbox', { name: 'Dropdown items' })).toHaveValue('GENERAL, TATKAL')
+    fireEvent.click(screen.getByRole('radio', { name: 'Dynamic items' }))
+    expect(screen.queryByRole('textbox', { name: 'Dropdown items' })).toBeNull()
+    expect(await screen.findByRole('textbox', { name: 'Quota' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ item: 'GENERAL', mode: 'dynamic' })
+    expect((saved.config.inputs as Record<string, unknown>).options).toBeUndefined()
+    vi.unstubAllGlobals()
+  })
+
   it('gives a list one dropdown that can be mapped instead, and says which list it follows', async () => {
     queryClient.clear()
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

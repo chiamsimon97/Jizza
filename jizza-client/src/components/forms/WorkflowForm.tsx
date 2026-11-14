@@ -21,6 +21,7 @@ import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { moduleInputs } from '@/components/workflow/moduleContract'
+import { DateValueInput } from '@/components/ui/DateValueInput'
 
 interface Step {
   key: number
@@ -351,9 +352,13 @@ export function WorkflowForm() {
             <div className="grid gap-3 sm:grid-cols-2">
               {declaredInputs.map(f => (
                 <Field key={f.name} label={`${f.name}${f.required && f.default === undefined ? ' *' : ''}`} hint={f.description}>
-                  <input className={fieldClass} aria-label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
+                  {f.type === 'date' || f.type === 'datetime' ? (
+                    <DateValueInput type={f.type} format={f.format} className={fieldClass} aria-label={`Input ${f.name}`}
+                      value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}
+                      onChange={v => setRunInput(r => ({ ...r, [f.name]: v }))} />
+                  ) : <input className={fieldClass} aria-label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
                     placeholder={f.default !== undefined ? `Default: ${typeof f.default === 'string' ? f.default : JSON.stringify(f.default)}` : f.type === 'any' ? '' : f.type}
-                    onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))} />
+                    onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))} />}
                 </Field>
               ))}
             </div>

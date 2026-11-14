@@ -1,4 +1,5 @@
 import type { NotificationDto } from '@/types'
+import { kindOf, pickerValue } from '@/lib/dateFormat'
 
 /**
  * The values a web step stopped to have approved, as its approval card shows them: what each
@@ -6,7 +7,7 @@ import type { NotificationDto } from '@/types'
  * made at run time, the items the page lists now. Pure, so it can be tested without a browser.
  */
 
-export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date'
+export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime'
 
 export interface StepField {
   key: string
@@ -20,6 +21,8 @@ export interface StepField {
   options?: string[]
   /** What the site said is wrong with this value after the form was sent. */
   error?: string
+  /** For a date: how the site writes it (DD/MM/YYYY). The picker's date is written that way. */
+  format?: string
   /** The field this one's choices follow, such as the theatre a showtime is in. */
   dependsOn?: string
   /** The choices for each value of `dependsOn`: the showtimes of each theatre. */
@@ -39,7 +42,7 @@ export interface StepForm {
 
 export type FormValues = Record<string, string | boolean | string[]>
 
-const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date']
+const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date', 'datetime']
 
 /** The approval card's values, or null for an item that has none. */
 export function stepFormOf(n: NotificationDto): StepForm | null {
@@ -58,6 +61,7 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ...(typeof f.source === 'string' ? { source: f.source } : {}),
       ...(Array.isArray(f.options) ? { options: (f.options as unknown[]).map(String) } : {}),
       ...(typeof f.error === 'string' && f.error ? { error: f.error } : {}),
+      ...(typeof f.format === 'string' && f.format ? { format: f.format } : {}),
       ...(typeof f.dependsOn === 'string' && f.optionsBy && typeof f.optionsBy === 'object'
         ? { dependsOn: f.dependsOn, optionsBy: optionsByOf(f.optionsBy as Record<string, unknown>) }
         : {}),
@@ -112,7 +116,17 @@ function toInput(field: StepField, value: unknown): string | boolean | string[] 
     // A choice the page no longer offers is not a choice.
     return ''
   }
+  if (isDate(field) && typeof value === 'string') {
+    // A date the site wrote its way (20/11/2026) goes in the picker as ISO; the browser writes
+    // the date picked back the site's way. Text that is not a date is kept as it is.
+    return pickerValue(value, kindOf(field.type, field.format), field.format) || value
+  }
   return value == null ? '' : String(value)
+}
+
+/** Whether a field takes a date, or a date and time. */
+export function isDate(field: Pick<StepField, 'type'>): boolean {
+  return field.type === 'date' || field.type === 'datetime'
 }
 
 export function splitList(text: string): string[] {

@@ -26,7 +26,8 @@ import java.util.regex.Pattern;
 public final class ModuleContract {
 
   public static final int MAX_FIELDS = 30;
-  public static final Set<String> TYPES = Set.of("text", "number", "boolean", "date", "list", "map", "any");
+  public static final Set<String> TYPES = Set.of("text", "number", "boolean", "date", "datetime", "list", "map",
+      "any");
   private static final Pattern NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
 
   private ModuleContract() {}
@@ -41,9 +42,17 @@ public final class ModuleContract {
    *
    * @param value        for an output, what it gives: text with {@code {{ … }}} placeholders
    * @param defaultValue for an input, used when a run is not given it
+   * @param format       for a date or date and time, how the site it fills writes it (DD/MM/YYYY);
+   *                     the run may give it in any form and the step writes it that way
    */
   public record Field(String name, String type, boolean required, String description,
-                      JsonNode defaultValue, String value) {}
+                      JsonNode defaultValue, String value, String format) {
+
+    public Field(String name, String type, boolean required, String description,
+                 JsonNode defaultValue, String value) {
+      this(name, type, required, description, defaultValue, value, null);
+    }
+  }
 
   /** The inputs the start step declares, in order; empty when it declares none. */
   public static List<Field> inputsOf(WorkflowGraph graph) {
@@ -70,7 +79,8 @@ public final class ModuleContract {
       String type = f.path("type").asText("any");
       out.add(new Field(f.path("name").asText("").strip(), TYPES.contains(type) ? type : "any",
           f.path("required").asBoolean(false), f.path("description").asText(null),
-          f.hasNonNull("default") ? f.get("default") : null, f.path("value").asText(null)));
+          f.hasNonNull("default") ? f.get("default") : null, f.path("value").asText(null),
+          f.hasNonNull("format") ? f.get("format").asText() : null));
     }
     return out;
   }
@@ -161,11 +171,15 @@ public final class ModuleContract {
         case "boolean" -> "boolean";
         case "list" -> "array";
         case "map" -> "object";
-        case "text", "date" -> "string";
+        case "text", "date", "datetime" -> "string";
         default -> null;
       };
       if (jsonType != null) p.put("type", jsonType);
       if (f.type().equals("date")) p.put("format", "date-time");
+      // JSON Schema has one date-time format for both; the phone apps read which picker to show.
+      if (f.type().equals("datetime")) p.put("format", "date-time").put("x-type", "datetime");
+      // How the site writes it, for whoever fills the input in.
+      if (f.format() != null && !f.format().isBlank()) p.put("x-date-format", f.format());
       if (f.description() != null && !f.description().isBlank()) p.put("description", f.description());
       if (f.defaultValue() != null) p.set("default", f.defaultValue());
       if (f.required()) required.add(f.name());
@@ -202,7 +216,7 @@ public final class ModuleContract {
       case "map":
         if (value.isObject()) return value;
         return text != null && text.startsWith("{") ? parsed(text, false) : null;
-      case "text", "date":
+      case "text", "date", "datetime":
         return value.isValueNode() ? Json.toNode(value.asText()) : null;
       default:
         return value;
@@ -225,6 +239,7 @@ public final class ModuleContract {
       case "list" -> "a list";
       case "map" -> "a set of fields";
       case "date" -> "a date";
+      case "datetime" -> "a date and time";
       default -> "text";
     };
   }

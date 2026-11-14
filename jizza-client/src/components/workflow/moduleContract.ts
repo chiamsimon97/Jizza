@@ -17,6 +17,8 @@ export interface ModuleField {
   default?: unknown
   /** For an output: what it gives, as text with {{ }} placeholders. */
   value?: string
+  /** For a date input: how the site it fills writes it (DD/MM/YYYY), kept from the recording. */
+  format?: string
 }
 
 export const FIELD_TYPES: Array<{ value: ValueType; label: string }> = [
@@ -24,6 +26,7 @@ export const FIELD_TYPES: Array<{ value: ValueType; label: string }> = [
   { value: 'number', label: 'Number' },
   { value: 'boolean', label: 'True/false' },
   { value: 'date', label: 'Date' },
+  { value: 'datetime', label: 'Date and time' },
   { value: 'list', label: 'List' },
   { value: 'map', label: 'Fields (map)' },
   { value: 'any', label: 'Anything' },
@@ -47,6 +50,7 @@ export function fieldsOf(config: Record<string, unknown> | null | undefined, key
     ...(typeof f?.description === 'string' && f.description ? { description: f.description } : {}),
     ...(f?.default !== undefined && f?.default !== null ? { default: f.default } : {}),
     ...(typeof f?.value === 'string' ? { value: f.value } : {}),
+    ...(typeof f?.format === 'string' && f.format ? { format: f.format } : {}),
   }))
 }
 

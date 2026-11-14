@@ -55,6 +55,22 @@ class ModuleContractTest {
   }
 
   @Test
+  void aDateAndTimeInputKeepsTheSitesFormat() {
+    var g = graph("[{\"name\":\"departs\",\"type\":\"datetime\",\"format\":\"DD/MM/YYYY HH:mm\"},"
+        + "{\"name\":\"journey\",\"type\":\"date\",\"format\":\"DD/MM/YYYY\"}]", null);
+    var inputs = ModuleContract.inputsOf(g);
+    assertThat(inputs.get(0).type()).isEqualTo("datetime");
+    assertThat(inputs.get(0).format()).isEqualTo("DD/MM/YYYY HH:mm");
+    var schema = ModuleContract.inputSchema(g).path("properties");
+    assertThat(schema.path("departs").path("format").asText()).isEqualTo("date-time");
+    assertThat(schema.path("departs").path("x-type").asText()).isEqualTo("datetime");
+    assertThat(schema.path("departs").path("x-date-format").asText()).isEqualTo("DD/MM/YYYY HH:mm");
+    assertThat(schema.path("journey").has("x-type")).isFalse();
+    assertThat(ModuleContract.prepareInput(g, Json.read("{\"departs\":\"2026-11-20T18:30\"}"))
+        .path("departs").asText()).isEqualTo("2026-11-20T18:30");
+  }
+
+  @Test
   void refusesBadNamesRepeatsAndOutputsWithoutAValue() {
     assertThatThrownBy(() -> ModuleContract.validate(graph("[{\"name\":\"first name\"}]", null)))
         .hasMessageContaining("letters, digits and _");

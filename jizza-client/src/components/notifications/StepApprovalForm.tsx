@@ -1,7 +1,8 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { fieldClass } from '@/components/ui/SlideOver'
-import { type FormValues, type StepField, type StepForm, isEmpty, mapped, optionsFor, splitList } from './stepForm'
+import { formatDate, kindOf, pickerValue } from '@/lib/dateFormat'
+import { type FormValues, type StepField, type StepForm, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
 
 /**
  * The step's settings as they will be sent, on its approval card: each value as it resolved from
@@ -101,6 +102,9 @@ function FieldRow({ field, value, data, missing, choicesAt, waitsOn, readOnly, o
           placeholder="Comma-separated, e.g. Music, Travel"
           value={Array.isArray(value) ? value.join(', ') : ''}
           onChange={e => onChange(splitList(e.target.value))} />
+      ) : isDate(field) ? (
+        <DateInput id={id} field={field} value={typeof value === 'string' ? value : ''}
+          className={`${fieldClass} ${border}`} readOnly={readOnly} onChange={onChange} />
       ) : (
         <input id={id} aria-label={field.label} disabled={readOnly} className={`${fieldClass} ${border}`}
           inputMode={field.type === 'number' ? 'decimal' : undefined}
@@ -151,5 +155,48 @@ function SourceHint({ source }: { source: string }) {
     <span className="rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 dark:bg-gray-700/60 dark:text-gray-300" title="Mapped from">
       from {source}
     </span>
+  )
+}
+
+/**
+ * A date (or date and time) picker. The date picked goes to the site in its own format, shown
+ * under the picker; text that is not a date (typed earlier, or "next Friday") can still be typed.
+ */
+function DateInput({ id, field, value, className, readOnly, onChange }: {
+  id: string
+  field: StepField
+  value: string
+  className: string
+  readOnly?: boolean
+  onChange: (value: string) => void
+}) {
+  const kind = kindOf(field.type, field.format)
+  const picked = pickerValue(value, kind, field.format)
+  const [typing, setTyping] = useState(value !== '' && picked === '')
+  return (
+    <div className="space-y-1">
+      {typing ? (
+        <input id={id} aria-label={field.label} disabled={readOnly} className={className}
+          placeholder={field.format ? `e.g. ${formatDate(kind === 'datetime' ? '2026-11-20T18:30' : '2026-11-20', field.format)}`
+            : 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30'}
+          value={value} onChange={e => onChange(e.target.value)} />
+      ) : (
+        <input id={id} aria-label={field.label} disabled={readOnly} className={className}
+          type={kind === 'datetime' ? 'datetime-local' : 'date'}
+          value={picked} onChange={e => onChange(e.target.value)} />
+      )}
+      <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500 dark:text-gray-400">
+        {field.format && picked && (
+          <span data-testid="date-as-sent">The site gets {formatDate(picked, field.format)}</span>
+        )}
+        {field.format && !picked && <span>The site writes it as {field.format}</span>}
+        {!readOnly && (
+          <button type="button" className="font-medium text-brand-600 hover:underline dark:text-brand-400"
+            onClick={() => setTyping(t => !t)}>
+            {typing ? 'Use the picker' : 'Type it instead'}
+          </button>
+        )}
+      </p>
+    </div>
   )
 }

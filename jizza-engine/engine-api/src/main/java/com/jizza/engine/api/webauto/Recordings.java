@@ -105,9 +105,18 @@ public interface Recordings {
     }
   }
 
-  /** A typed value the person turns into a module input. */
+  /**
+   * A typed value the person turns into a module input. A date or date and time keeps the
+   * format the site writes it in (DD/MM/YYYY), so the value given is written that way.
+   */
   @JsonIgnoreProperties(ignoreUnknown = true)
-  record Input(String name, String type, @JsonProperty("default") JsonNode defaultValue) {}
+  record Input(String name, String type, @JsonProperty("default") JsonNode defaultValue,
+               String format) {
+
+    public Input(String name, String type, JsonNode defaultValue) {
+      this(name, type, defaultValue, null);
+    }
+  }
 
   /** A check step built from an earlier step's element. */
   @JsonIgnoreProperties(ignoreUnknown = true)

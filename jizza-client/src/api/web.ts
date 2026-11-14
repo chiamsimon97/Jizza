@@ -128,7 +128,8 @@ export interface EditOp {
   toIndex?: number
   label?: string
   field?: string
-  input?: { name: string; type: string; default?: unknown } | null
+  /** A date input keeps the site's format (DD/MM/YYYY), so any date given is written that way. */
+  input?: { name: string; type: string; default?: unknown; format?: string } | null
   secretRef?: string | null
   check?: { action: string; afterSeq: number }
   /** op update: step settings to change. */

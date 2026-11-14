@@ -88,7 +88,7 @@ public class RecordingService implements Recordings, RecordingIntake {
   private static final Duration EVENT_GRACE = Duration.ofSeconds(3);
   private static final Duration RECORD_TIMEOUT = Duration.ofMinutes(31);
   private static final Set<String> TYPES =
-      Set.of("text", "number", "boolean", "date", "list", "map", "any");
+      Set.of("text", "number", "boolean", "date", "datetime", "list", "map", "any");
   private static final Set<String> VALUE_FIELDS = Set.of("text", "value", "password", "secret");
   private static final Set<String> CHECKS = Set.of("browser.exists", "browser.getText");
   private static final Pattern NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
@@ -829,6 +829,11 @@ public class RecordingService implements Recordings, RecordingIntake {
     String type = op.input().type() == null ? "text" : op.input().type();
     if (!TYPES.contains(type)) throw new ValidationException("Unknown input type '" + type + "'");
     ObjectNode mapping = Json.obj().put("name", name).put("type", type);
+    String format = op.input().format() == null ? "" : op.input().format().strip();
+    if (!format.isEmpty() && ("date".equals(type) || "datetime".equals(type))) {
+      if (format.length() > 40) throw new ValidationException("That date format is too long");
+      mapping.put("format", format);
+    }
     if (listChoice(target.node, op.field())) {
       // A choice from a list the page reads again on each run (a theatre, a showtime): the item
       // recorded is not carried as a default, so a run without a value chooses from what the

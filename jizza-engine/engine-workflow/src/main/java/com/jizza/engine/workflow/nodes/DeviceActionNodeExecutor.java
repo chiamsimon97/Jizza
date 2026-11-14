@@ -193,8 +193,21 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
 
     // A choice made at run time: the page's list as it is now, read before anyone decides.
     String pickKey = WebStepForm.pickKey(spec.action());
+    boolean dropdown = WebStepForm.SELECT_OPTION.equals(spec.action());
+    // A dropdown marked dynamic is read from the page each run; a static one chooses from the
+    // items read while recording.
     boolean listed = WebStepForm.CLICK_ITEMS.contains(spec.action())
-        && !"index".equals(inputs.path("by").asText("text"));
+        && !"index".equals(inputs.path("by").asText("text"))
+        || dropdown && "dynamic".equals(inputs.path("mode").asText(""));
+    if (dropdown && !listed && !state.has("choices")) {
+      List<String> known = WebStepForm.optionNames(inputs.path("options"));
+      if (known != null) {
+        ArrayNode seeded = state.putArray("choices");
+        for (int i = 0; i < known.size() && i < 200; i++) {
+          seeded.addObject().put("label", known.get(i)).put("text", known.get(i)).put("index", i);
+        }
+      }
+    }
     boolean pick = pickKey != null && (listed || state.has("choices"));
     String prefer = inputs.path("prefer").asText(null);
     List<ItemMatch.Item> choices = null;

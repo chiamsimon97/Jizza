@@ -10,7 +10,7 @@ import { conditionDepths, emptyConditions, fieldName, isCondition, isListChoice,
 /** A login saved in the browser extension, as its device lists it. */
 export interface SavedLogin { id: string; name: string; description?: string | null }
 
-const TYPES = ['text', 'number', 'boolean', 'date'] as const
+const TYPES = ['text', 'number', 'boolean', 'date', 'datetime'] as const
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,
@@ -86,6 +86,12 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                 {s.step.optional && <Badge>Optional</Badge>}
                 {s.step.action === 'flow.keep' && <Badge>Jizza step</Badge>}
                 {s.step.action === 'browser.clickOneOf' && <Badge>one of {s.step.meta?.list?.count ?? 'several'} buttons{s.step.meta?.list?.title ? `: ${s.step.meta.list.title}` : ''}</Badge>}
+                {s.step.action === 'browser.selectOption' && (
+                  <Badge>dropdown, {s.step.input?.mode === 'dynamic'
+                    ? 'items read on each run'
+                    : Array.isArray(s.step.input?.options) ? `${(s.step.input.options as unknown[]).length} items kept` : 'items read on each run'}</Badge>
+                )}
+                {s.step.action === 'browser.setDate' && typeof s.step.input?.format === 'string' && <Badge>date as {s.step.input.format}</Badge>}
                 {isListChoice(s) && <Badge>list{s.step.meta?.list?.count ? ` of ${s.step.meta.list.count}` : ''}{s.step.meta?.list?.marked ? ', marked by you' : ''}</Badge>}
                 {isListChoice(s) && s.step.meta?.list?.named && (
                   <Badge>{[s.step.meta.list.withinTitle, s.step.meta.list.title].filter(Boolean).join(' › ')}</Badge>
@@ -177,7 +183,10 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
   const [field, setField] = useState(fields[0].field)
   const current = fields.find(f => f.field === field)!
   const [name, setName] = useState(suggestInputName(step, field))
-  const [type, setType] = useState<(typeof TYPES)[number]>('text')
+  // A date the site writes its own way keeps that format with the input.
+  const format = typeof step.step.input?.format === 'string' && step.step.input.format ? step.step.input.format : undefined
+  const dated = step.step.action === 'browser.setDate' || step.step.action === 'browser.pickDate'
+  const [type, setType] = useState<(typeof TYPES)[number]>(dated ? (format && /[Hh]/.test(format) ? 'datetime' : 'date') : 'text')
   const valid = /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
   return (
     <Dialog open title="Make this an input" description="The value you typed becomes the default; each run can change it." onClose={onClose}>
@@ -201,10 +210,13 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
           </select>
         </label>
         <p className="text-xs text-gray-500">Default: {current.value}</p>
+        {format && (type === 'date' || type === 'datetime') && (
+          <p className="text-xs text-gray-500">The site writes it as {format}. Any date given is written that way.</p>
+        )}
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" disabled={!valid} onClick={() => onSave({ op: 'map', seq: step.seq, field, input: { name, type, default: current.value } })}>Make input</Button>
+        <Button size="sm" disabled={!valid} onClick={() => onSave({ op: 'map', seq: step.seq, field, input: { name, type, default: current.value, ...(format && (type === 'date' || type === 'datetime') ? { format } : {}) } })}>Make input</Button>
       </div>
     </Dialog>
   )
