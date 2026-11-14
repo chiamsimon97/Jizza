@@ -176,7 +176,8 @@ public final class ModuleContract {
       };
       if (jsonType != null) p.put("type", jsonType);
       if (f.type().equals("date")) p.put("format", "date-time");
-      if (f.type().equals("datetime")) p.put("format", "date-time");
+      // JSON Schema has one date-time format for both; the phone apps read which picker to show.
+      if (f.type().equals("datetime")) p.put("format", "date-time").put("x-type", "datetime");
       // How the site writes it, for whoever fills the input in.
       if (f.format() != null && !f.format().isBlank()) p.put("x-date-format", f.format());
       if (f.description() != null && !f.description().isBlank()) p.put("description", f.description());
