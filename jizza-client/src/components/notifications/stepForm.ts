@@ -1,5 +1,6 @@
 import type { NotificationDto } from '@/types'
 import { kindOf, pickerValue } from '@/lib/dateFormat'
+import { rowsEmpty, type RowsColumn } from '@/components/ui/RowsInput'
 
 /**
  * The values a web step stopped to have approved, as its approval card shows them: what each
@@ -7,7 +8,7 @@ import { kindOf, pickerValue } from '@/lib/dateFormat'
  * made at run time, the items the page lists now. Pure, so it can be tested without a browser.
  */
 
-export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime' | 'note'
+export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime' | 'note' | 'rows'
 
 export interface StepField {
   key: string
@@ -27,6 +28,8 @@ export interface StepField {
   dependsOn?: string
   /** The choices for each value of `dependsOn`: the showtimes of each theatre. */
   optionsBy?: Record<string, string[]>
+  /** For a section the page repeats (passengers): the columns of its table, one row each. */
+  columns?: RowsColumn[]
 }
 
 /** The pictures taken of the listed items: which device keeps them, and one per option name. */
@@ -47,7 +50,7 @@ export interface StepForm {
 
 export type FormValues = Record<string, string | boolean | string[]>
 
-const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date', 'datetime', 'note']
+const TYPES: StepFieldType[] = ['text', 'number', 'checkbox', 'select', 'list', 'date', 'datetime', 'note', 'rows']
 
 /** The approval card's values, or null for an item that has none. */
 export function stepFormOf(n: NotificationDto): StepForm | null {
@@ -67,6 +70,10 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ...(Array.isArray(f.options) ? { options: (f.options as unknown[]).map(String) } : {}),
       ...(typeof f.error === 'string' && f.error ? { error: f.error } : {}),
       ...(typeof f.format === 'string' && f.format ? { format: f.format } : {}),
+      ...(Array.isArray(f.columns)
+        ? { columns: (f.columns as Record<string, unknown>[]).filter(c => typeof c?.key === 'string')
+          .map(c => ({ key: String(c.key), label: typeof c.label === 'string' ? c.label : String(c.key) })) }
+        : {}),
       ...(typeof f.dependsOn === 'string' && f.optionsBy && typeof f.optionsBy === 'object'
         ? { dependsOn: f.dependsOn, optionsBy: optionsByOf(f.optionsBy as Record<string, unknown>) }
         : {}),
@@ -125,6 +132,8 @@ export function initialValues(form: StepForm): FormValues {
 }
 
 function toInput(field: StepField, value: unknown): string | boolean | string[] {
+  // A repeated section's entries go in its table as JSON text.
+  if (field.type === 'rows') return value == null ? '[]' : typeof value === 'string' ? value : JSON.stringify(value)
   if (field.type === 'checkbox') return value === true || value === 'true' || value === 'checked'
   if (field.type === 'list') {
     if (Array.isArray(value)) return value.map(String)
@@ -155,10 +164,15 @@ export function isEmpty(value: unknown): boolean {
   return value == null || value === '' || (Array.isArray(value) && value.length === 0)
 }
 
+/** Whether a field's value is empty: a rows table counts as empty with nothing filled in. */
+export function fieldEmpty(field: Pick<StepField, 'type'>, value: unknown): boolean {
+  return field.type === 'rows' ? rowsEmpty(value) : isEmpty(value)
+}
+
 /** The mandatory fields still empty, by label: Approve waits until there are none. */
 export function unfilled(form: StepForm, values: FormValues): string[] {
   return form.fields
-    .filter(f => (f.required || form.missing.includes(f.key)) && f.type !== 'checkbox' && f.type !== 'note' && isEmpty(values[f.key]))
+    .filter(f => (f.required || form.missing.includes(f.key)) && f.type !== 'checkbox' && f.type !== 'note' && fieldEmpty(f, values[f.key]))
     .map(f => f.label)
 }
 

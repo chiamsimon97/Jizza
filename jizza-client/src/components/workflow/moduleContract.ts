@@ -19,6 +19,8 @@ export interface ModuleField {
   value?: string
   /** For a date input: how the site it fills writes it (DD/MM/YYYY), kept from the recording. */
   format?: string
+  /** For a list of entries (one per passenger): the columns each entry has, shown as a table. */
+  columns?: Array<{ key: string; label: string }>
 }
 
 export const FIELD_TYPES: Array<{ value: ValueType; label: string }> = [
@@ -51,6 +53,10 @@ export function fieldsOf(config: Record<string, unknown> | null | undefined, key
     ...(f?.default !== undefined && f?.default !== null ? { default: f.default } : {}),
     ...(typeof f?.value === 'string' ? { value: f.value } : {}),
     ...(typeof f?.format === 'string' && f.format ? { format: f.format } : {}),
+    ...(Array.isArray(f?.columns)
+      ? { columns: (f.columns as Record<string, unknown>[]).filter(c => typeof c?.key === 'string')
+        .map(c => ({ key: String(c.key), label: typeof c.label === 'string' ? c.label : String(c.key) })) }
+      : {}),
   }))
 }
 

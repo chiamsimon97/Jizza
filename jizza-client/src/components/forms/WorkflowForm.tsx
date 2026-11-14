@@ -22,6 +22,7 @@ import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { moduleInputs } from '@/components/workflow/moduleContract'
 import { DateValueInput } from '@/components/ui/DateValueInput'
+import { RowsInput, rowsEmpty } from '@/components/ui/RowsInput'
 
 interface Step {
   key: number
@@ -352,7 +353,11 @@ export function WorkflowForm() {
             <div className="grid gap-3 sm:grid-cols-2">
               {declaredInputs.map(f => (
                 <Field key={f.name} label={`${f.name}${f.required && f.default === undefined ? ' *' : ''}`} hint={f.description}>
-                  {f.type === 'date' || f.type === 'datetime' ? (
+                  {f.columns?.length ? (
+                    <RowsInput label={f.name} columns={f.columns}
+                      value={runInput[f.name] ?? (f.default !== undefined ? JSON.stringify(f.default) : '[]')}
+                      onChange={v => setRunInput(r => ({ ...r, [f.name]: rowsEmpty(v) ? '' : v }))} />
+                  ) : f.type === 'date' || f.type === 'datetime' ? (
                     <DateValueInput type={f.type} format={f.format} className={fieldClass} aria-label={`Input ${f.name}`}
                       value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}
                       onChange={v => setRunInput(r => ({ ...r, [f.name]: v }))} />

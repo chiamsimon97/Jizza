@@ -1,8 +1,9 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { RowsInput } from '@/components/ui/RowsInput'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { formatDate, kindOf, pickerValue } from '@/lib/dateFormat'
-import { type FormValues, type StepField, type StepForm, type StepShots, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
+import { type FormValues, type StepField, type StepForm, type StepShots, fieldEmpty, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
 
 /**
  * The step's settings as they will be sent, on its approval card: each value as it resolved from
@@ -42,7 +43,7 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
             : field
         return (
           <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data} shots={form.shots}
-            missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && isEmpty(values[field.key])}
+            missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && fieldEmpty(field, values[field.key])}
             choicesAt={shown.type === 'select' && shown.options && !leader && form.choicesAt ? form.choicesAt : undefined}
             waitsOn={leader?.label}
             readOnly={readOnly}
@@ -72,7 +73,7 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
   const [mapping, setMapping] = useState(false)
   const id = `step-field-${field.key}`
   const required = field.required || missing
-  const canMap = !readOnly && data.length > 0 && field.type !== 'checkbox' && !(field.type === 'select' && field.options)
+  const canMap = !readOnly && data.length > 0 && field.type !== 'checkbox' && field.type !== 'rows' && !(field.type === 'select' && field.options)
   const border = missing || field.error ? 'border-red-400 dark:border-red-700' : ''
 
   if (field.type === 'checkbox') {
@@ -99,7 +100,10 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
         )}
       </div>
 
-      {field.type === 'select' && field.options ? (
+      {field.type === 'rows' ? (
+        <RowsInput label={field.label} columns={field.columns ?? []} value={value} readOnly={readOnly}
+          invalid={missing} onChange={onChange} />
+      ) : field.type === 'select' && field.options ? (
         <select id={id} aria-label={field.label} disabled={readOnly || waitsOn !== undefined} className={`${fieldClass} ${border}`}
           value={waitsOn !== undefined ? '' : typeof value === 'string' ? value : ''} onChange={e => onChange(e.target.value)}>
           <option value="">{waitsOn !== undefined ? `Choose ${waitsOn} first` : field.options.length ? 'Choose one…' : 'Nothing to choose from'}</option>

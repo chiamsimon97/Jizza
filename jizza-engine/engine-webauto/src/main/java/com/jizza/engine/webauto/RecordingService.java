@@ -648,7 +648,8 @@ public class RecordingService implements Recordings, RecordingIntake {
         log.info("Dropped a recording edit for {}: map needs a field and an input", recording.getId());
         return;
       }
-      input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null), null);
+      input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
+          null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null);
     }
     List<Held> held = load(recording.getId());
     try {
@@ -817,8 +818,11 @@ public class RecordingService implements Recordings, RecordingIntake {
     JsonNode value = StepCompiler.valueAt(target.node.path("input"), op.field());
     // A dropdown's one chosen item (items: ["Sleeper"]) is a value too; runs turn the mapped
     // text back into a list.
-    if (value != null && value.isArray() && value.size() == 1) value = value.get(0);
-    if (value == null || value.isNull() || !value.isValueNode()) {
+    // The entries of a repeated section (one per passenger) are one list input as they are.
+    boolean entries = "list".equals(op.input().type()) && value != null && value.isArray()
+        && "rows".equals(op.field());
+    if (!entries && value != null && value.isArray() && value.size() == 1) value = value.get(0);
+    if (!entries && (value == null || value.isNull() || !value.isValueNode())) {
       throw new ValidationException("This step has no '" + op.field() + "' value to turn into an input");
     }
     String name = op.input().name() == null ? "" : op.input().name().strip();
@@ -834,7 +838,12 @@ public class RecordingService implements Recordings, RecordingIntake {
       if (format.length() > 40) throw new ValidationException("That date format is too long");
       mapping.put("format", format);
     }
-    if (listChoice(target.node, op.field())) {
+    if (op.input().mandatory()) {
+      // Mandatory: no recorded value stands in for it, so each run fills it in (on the run form
+      // or on the step's card, which waits for it).
+      mapping.put("required", true);
+      mapping.put("default", "");
+    } else if (listChoice(target.node, op.field())) {
       // A choice from a list the page reads again on each run (a theatre, a showtime): the item
       // recorded is not carried as a default, so a run without a value chooses from what the
       // page lists then, never from what it listed while recording.

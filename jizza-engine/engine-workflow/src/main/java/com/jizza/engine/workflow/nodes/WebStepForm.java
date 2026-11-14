@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * What a person sees, and may change, when a web step stops for their approval: each value the
@@ -35,6 +37,11 @@ final class WebStepForm {
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";
+  /** A section the page repeats, one row per entry (passengers). */
+  static final String FILL_ROWS = "browser.fillRows";
+  /** Between a column's key and its label in a rows field's options (see {@link Field#toJson}). */
+  static final String COLUMN_SEP = "\u001F";
+  private static final Pattern INPUT_REF = Pattern.compile("\\{\\{\\s*input\\.([A-Za-z][A-Za-z0-9_]*)\\s*}}");
   static final String CHOOSE_OPTION = "browser.chooseOption";
   /** A click on one of the buttons the person grouped while recording, chosen by name. */
   static final String CLICK_ONE_OF = "browser.clickOneOf";
@@ -102,7 +109,15 @@ final class WebStepForm {
       if (source != null) out.put("source", source);
       if (error != null) out.put("error", error);
       if (format != null) out.put("format", format);
-      if (options != null) {
+      if (options != null && "rows".equals(type)) {
+        // A rows field's options are its columns: one entry's values by key, with labels.
+        ArrayNode columns = out.putArray("columns");
+        for (String option : options) {
+          int at = option.indexOf(COLUMN_SEP);
+          columns.addObject().put("key", at < 0 ? option : option.substring(0, at))
+              .put("label", at < 0 ? option : option.substring(at + 1));
+        }
+      } else if (options != null) {
         ArrayNode list = out.putArray("options");
         options.forEach(list::add);
       }
@@ -138,6 +153,10 @@ final class WebStepForm {
             inputs.put(key, value.asText());
           }
         }
+      }
+      case FILL_ROWS -> {
+        JsonNode rows = entries(inputs.get("rows"));
+        if (rows != null) inputs.set("rows", rows);
       }
       case FILL_FORM, "ui.fillForm" -> {
         if (!inputs.path("fields").isArray()) return;
@@ -241,10 +260,24 @@ final class WebStepForm {
       return out;
     }
 
+    if (FILL_ROWS.equals(spec.action())) {
+      List<String> columns = new ArrayList<>();
+      for (JsonNode column : inputs.path("columns")) {
+        String key = column.path("key").asText("");
+        if (!key.isEmpty()) columns.add(key + COLUMN_SEP + column.path("label").asText(key));
+      }
+      String source = template(configured.get("rows"));
+      Matcher named = source == null ? null : INPUT_REF.matcher(source.strip());
+      String label = named != null && named.matches() ? label(named.group(1), FILL_ROWS) : "Rows";
+      out.add(new Field("rows", label, "rows", inputs.get("rows"), true, source, columns));
+      return out;
+    }
     JsonNode schema = spec.input() == null ? Json.obj() : spec.input();
     JsonNode properties = schema.path("properties");
     Set<String> required = new LinkedHashSet<>();
     schema.path("required").forEach(r -> required.add(r.asText()));
+    // Values marked mandatory while recording: the card waits for them to be filled in.
+    config.path("requiredInputs").forEach(r -> required.add(r.asText()));
     // setText needs text unless it types a saved login.
     if (schema.path("oneOf").isArray() && !inputs.has("secretRef")) {
       for (JsonNode choice : schema.get("oneOf")) {
@@ -464,11 +497,41 @@ final class WebStepForm {
    * Puts the person's values into the inputs: only for keys the card offered, only as plain text,
    * yes/no, numbers or lists of text, and never evaluated.
    */
+  /**
+   * The entries of a repeated section as a list: given as JSON text (a run form, the card's
+   * table) or as a list, with entries that have nothing filled in dropped. Null when it is
+   * neither.
+   */
+  static ArrayNode entries(JsonNode rows) {
+    if (rows != null && rows.isTextual()) {
+      try {
+        rows = Json.mapper().readTree(rows.asText().isBlank() ? "[]" : rows.asText());
+      } catch (Exception e) {
+        return null;
+      }
+    }
+    if (rows == null || !rows.isArray() || rows.size() > MAX_LIST) return null;
+    ArrayNode kept = Json.mapper().createArrayNode();
+    for (JsonNode row : rows) {
+      if (!row.isObject()) continue;
+      boolean any = false;
+      for (JsonNode value : row) any |= !empty(value);
+      if (any) kept.add(row);
+    }
+    return kept;
+  }
+
   static void apply(ObjectNode inputs, JsonNode edits, Set<String> offered) {
     if (edits == null || !edits.isObject()) return;
     for (Iterator<Map.Entry<String, JsonNode>> it = edits.fields(); it.hasNext(); ) {
       Map.Entry<String, JsonNode> edit = it.next();
       if (!offered.contains(edit.getKey()) || edit.getKey().startsWith("_")) continue;
+      // A repeated section's table: its entries, as a list of rows.
+      if ("rows".equals(edit.getKey()) && inputs.has("columns")) {
+        ArrayNode rows = entries(edit.getValue());
+        if (rows != null) inputs.set("rows", rows);
+        continue;
+      }
       JsonNode value = plain(edit.getValue());
       if (value == null) continue;
       String[] path = edit.getKey().split("\\.");
