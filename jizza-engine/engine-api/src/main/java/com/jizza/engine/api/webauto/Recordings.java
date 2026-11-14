@@ -107,14 +107,24 @@ public interface Recordings {
 
   /**
    * A typed value the person turns into a module input. A date or date and time keeps the
-   * format the site writes it in (DD/MM/YYYY), so the value given is written that way.
+   * format the site writes it in (DD/MM/YYYY), so the value given is written that way. A
+   * {@code required} (mandatory) one keeps no recorded value: each run must be given it, and
+   * the step's card waits for it to be filled in before it can be submitted.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
   record Input(String name, String type, @JsonProperty("default") JsonNode defaultValue,
-               String format) {
+               String format, Boolean required) {
 
     public Input(String name, String type, JsonNode defaultValue) {
-      this(name, type, defaultValue, null);
+      this(name, type, defaultValue, null, null);
+    }
+
+    public Input(String name, String type, JsonNode defaultValue, String format) {
+      this(name, type, defaultValue, format, null);
+    }
+
+    public boolean mandatory() {
+      return Boolean.TRUE.equals(required);
     }
   }
 

@@ -66,6 +66,32 @@ class StepCompilerTest {
   }
 
   @Test
+  void mandatoryInputsAreMarkedForTheCard() {
+    JsonNode name = step("""
+        {"seq":1,"action":"browser.setText","version":1,"label":"Passenger name",
+         "input":{"element":{"strategies":[{"by":"css","value":"#n"}]},"text":"Chiam"},"meta":{},
+         "mappings":{"text":{"name":"passenger","type":"text","default":"","required":true}}}""");
+    JsonNode form = step("""
+        {"seq":2,"action":"browser.fillForm","version":1,"label":"Passenger",
+         "input":{"fields":[
+           {"element":{"strategies":[{"by":"css","value":"#age"}]},"kind":"text","value":"30"},
+           {"element":{"strategies":[{"by":"css","value":"#g"}]},"kind":"select","value":"M"}]},
+         "meta":{},
+         "mappings":{"fields.1.value":{"name":"gender","type":"text","default":"","required":true},
+                     "fields.0.value":{"name":"age","type":"text","default":"30"}}}""");
+
+    var nodes = StepCompiler.compile("https://x.example.com", List.of(OPEN, name, form))
+        .path("nodes");
+
+    assertThat(nodes.get(2).path("config").path("requiredInputs").toString())
+        .isEqualTo("[\"text\"]");
+    var fields = nodes.get(3).path("config").path("inputs").path("fields");
+    assertThat(fields.get(1).path("required").asBoolean()).isTrue();
+    assertThat(fields.get(0).path("required").asBoolean()).isFalse();
+    assertThat(nodes.get(3).path("config").has("requiredInputs")).isFalse();
+  }
+
+  @Test
   void aListChoiceAndItsCardBecomeInputs() {
     JsonNode choose = step("""
         {"seq":1,"action":"browser.clickItem","version":1,"label":"Choose the time \\"01:15 PM\\"",

@@ -245,6 +245,8 @@ final class WebStepForm {
     JsonNode properties = schema.path("properties");
     Set<String> required = new LinkedHashSet<>();
     schema.path("required").forEach(r -> required.add(r.asText()));
+    // Values marked mandatory while recording: the card waits for them to be filled in.
+    config.path("requiredInputs").forEach(r -> required.add(r.asText()));
     // setText needs text unless it types a saved login.
     if (schema.path("oneOf").isArray() && !inputs.has("secretRef")) {
       for (JsonNode choice : schema.get("oneOf")) {

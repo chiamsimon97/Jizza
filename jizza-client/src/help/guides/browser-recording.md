@@ -204,6 +204,12 @@ The names you give become the field names in review and in the workflow builder 
 
 The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
 
+If **Mark a list** says no list was found, press it again and click the item itself rather than the text inside it. From browser agent 0.16.0 this is rarely needed: clicking a button's text, or choosing the box of buttons as the card, climbs to the repeated item by itself, the way **Partial page scan** finds it.
+
+### Mandatory inputs
+
+A value that is **Different each run** can also be ticked **Mandatory** (browser agent 0.16.0 or later), in the scan's field list or in **Add field**. A mandatory input keeps no recorded value. When a run is not given it, the step stops and asks you on its approval card, and the card shows **Submit** (or **Approve**) only once every mandatory field is filled in. Until then it says which ones are left.
+
 ### Lists are only what you define
 
 From browser agent 0.13.0, a click becomes **Choose from a list** only in a list you mapped with Scan or marked with **Mark a list**. Two buttons side by side, or cards that happen to look alike, are recorded as plain clicks. To get the old behaviour back, where any click on one of several look-alike items was guessed to be a list, tick **Guess lists** under Auto and Manual in the side panel.

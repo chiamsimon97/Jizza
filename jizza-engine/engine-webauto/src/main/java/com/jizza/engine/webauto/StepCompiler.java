@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -204,6 +206,7 @@ final class StepCompiler {
       // A run-time list choice keeps no default, so the item recorded is kept beside it for Edit
       // recording to run the step with.
       ObjectNode recorded = Json.obj();
+      List<String> mandatory = new ArrayList<>();
       for (Iterator<Map.Entry<String, JsonNode>> it = mappings.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> mapping = it.next();
         String name = mapping.getValue().path("name").asText("");
@@ -227,11 +230,27 @@ final class StepCompiler {
         setAt(stepInputs, mapping.getKey(),
             Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
         if (inputNames.add(name)) inputs.add(inputField(name, mapping.getValue()));
+        if (mapping.getValue().path("required").asBoolean(false)) {
+          mandatory.add(mapping.getKey());
+        }
       }
 
       int version = step.path("version").asInt(1);
+      // A mandatory value: a form's field says so itself; any other is listed for the card,
+      // which waits for each to be filled in before the step can be submitted.
+      ArrayNode requiredInputs = Json.mapper().createArrayNode();
+      for (String key : mandatory) {
+        Matcher formField = FORM_FIELD.matcher(key);
+        JsonNode formFields = stepInputs.path("fields");
+        if (formField.matches() && formFields.path(Integer.parseInt(formField.group(1))).isObject()) {
+          ((ObjectNode) formFields.get(Integer.parseInt(formField.group(1)))).put("required", true);
+        } else {
+          requiredInputs.add(key);
+        }
+      }
       ObjectNode config = web ? webConfig(action, version, stepInputs)
           : deviceConfig(desktop, action, version, stepInputs);
+      if (!requiredInputs.isEmpty()) config.set("requiredInputs", requiredInputs);
       // What the builder had set on a step opened for editing (retries, guardrails, timeouts).
       JsonNode extra = step.path("meta").path("config");
       for (Iterator<Map.Entry<String, JsonNode>> it = extra.fields(); it.hasNext(); ) {
@@ -289,9 +308,10 @@ final class StepCompiler {
   static final String ELSE = "flow.else";
   static final String KEEP = "flow.keep";
   static final int DEFAULT_IF_WAIT_MS = 3_000;
+  private static final Pattern FORM_FIELD = Pattern.compile("fields\\.(\\d+)\\.value");
   private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
   private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
-      "preset", "target", "disabled", "optional", "ifCheck", "recorded");
+      "preset", "target", "disabled", "optional", "ifCheck", "recorded", "requiredInputs");
 
   /** A condition being compiled: its branch node, and the open paths where its steps run when
    *  it holds ended, once its "Otherwise" starts. */

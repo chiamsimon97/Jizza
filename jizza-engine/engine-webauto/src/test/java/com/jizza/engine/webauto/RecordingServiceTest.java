@@ -356,6 +356,22 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aMandatoryInputKeepsNoRecordedValue() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "Passenger name", "{\"text\":\"Chiam\"}", false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "text");
+    map.putObject("input").put("name", "passenger").put("type", "text").put("required", true);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+
+    var mapping = service.get(access, id).steps().get(0).step().path("mappings").path("text");
+    assertThat(mapping.path("name").asText()).isEqualTo("passenger");
+    assertThat(mapping.path("required").asBoolean()).isTrue();
+    assertThat(mapping.path("default").asText()).isEmpty();
+  }
+
+  @Test
   void aManualFieldsDropdownChoiceDateAndCheckboxBecomeInputs() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

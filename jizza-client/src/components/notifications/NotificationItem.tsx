@@ -308,16 +308,22 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
               )}
               {open && n.kind !== 'INSTRUCTION_REQUIRED' && (
                 <>
-                  <Button size="sm" loading={busy === 'approve'} disabled={busy !== null || !canApprove}
-                    title={canApprove ? undefined : `Fill in ${stillEmpty.join(', ')} first`}
-                    onClick={() => void run('approve', () => actions.approve(n, approvedValues()))}>
-                    <Check className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Approve procedure' : asksDetails ? 'Submit' : 'Approve'}
-                  </Button>
+                  {/* Submit shows only once every mandatory field is filled in. */}
+                  {canApprove ? (
+                    <Button size="sm" loading={busy === 'approve'} disabled={busy !== null}
+                      onClick={() => void run('approve', () => actions.approve(n, approvedValues()))}>
+                      <Check className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Approve procedure' : asksDetails ? 'Submit' : 'Approve'}
+                    </Button>
+                  ) : (
+                    <p data-testid="fill-first" className="text-xs text-gray-600 dark:text-gray-400">
+                      Fill in {stillEmpty.join(', ')} to {asksDetails ? 'submit' : 'approve'}.
+                    </p>
+                  )}
                   <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => setMode('declining')}>
                     <X className="h-4 w-4" />{n.kind === 'WORKFLOW_REVIEW' ? 'Request changes' : asksDetails ? 'Cancel' : 'Decline'}
                   </Button>
-                  {canAlwaysAllow && (
-                    <Button size="sm" variant="ghost" disabled={busy !== null || !canApprove} onClick={() => setMode('confirmAlways')}>
+                  {canAlwaysAllow && canApprove && (
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => setMode('confirmAlways')}>
                       Always allow
                     </Button>
                   )}
