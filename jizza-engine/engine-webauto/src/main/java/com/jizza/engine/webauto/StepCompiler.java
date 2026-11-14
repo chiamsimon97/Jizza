@@ -229,7 +229,18 @@ final class StepCompiler {
         }
         setAt(stepInputs, mapping.getKey(),
             Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
-        if (inputNames.add(name)) inputs.add(inputField(name, mapping.getValue()));
+        if (inputNames.add(name)) {
+          ObjectNode field = inputField(name, mapping.getValue());
+          // The entries of a repeated section: the run form shows them as a table of its columns.
+          if ("rows".equals(mapping.getKey()) && stepInputs.path("columns").isArray()) {
+            ArrayNode columns = field.putArray("columns");
+            for (JsonNode column : stepInputs.get("columns")) {
+              columns.addObject().put("key", column.path("key").asText())
+                  .put("label", column.path("label").asText(column.path("key").asText()));
+            }
+          }
+          inputs.add(field);
+        }
         if (mapping.getValue().path("required").asBoolean(false)) {
           mandatory.add(mapping.getKey());
         }

@@ -206,6 +206,21 @@ The step saves a pattern for the items and for the cards. Runs read the list wit
 
 If **Mark a list** says no list was found, press it again and click the item itself rather than the text inside it. From browser agent 0.16.0 this is rarely needed: clicking a button's text, or choosing the box of buttons as the card, climbs to the repeated item by itself, the way **Partial page scan** finds it.
 
+### Fill a row for each passenger
+
+Some forms repeat a section, one per person, with a button such as **+ Add Passenger** to add another. Record it once and each run fills as many rows as it is given (browser agent 0.16.0 or later):
+
+1. Press **Start form step** and give it a name, such as "Passenger details".
+2. In the form step, type what each row is in **Each row is a** (such as "Passenger") and press **Repeat for each row**.
+3. On the page, point at the first passenger's row and press Up until the whole row is outlined, then click or press Enter. The click doesn't reach the site.
+4. Click the button that adds a row, such as **+ Add Passenger** (or press Esc if there is none). The side panel says how many rows the page shows and which button adds one.
+5. Fill the first passenger as usual. You can also press **+ Add Passenger** on the page and fill a second one. Fields outside the rows, such as the mobile number, can be filled too.
+6. Press **Finish form step**.
+
+The rows become one step, **Fill a row for each Passenger**, with one column per field of a row. Its passengers are the module input `passengers`, a list with the ones you filled as its default. Fields outside the rows stay in a form step of their own.
+
+When the workflow runs, the run form shows `passengers` as a table: a row per passenger, and **Add passenger** for another. The step presses the add button on the site until there is a row for each one, then fills each row. When a run has no passengers, the step stops and asks for them on its card with the same table. A column's value can also be mapped from earlier steps as a list, such as `[{"name": "Asha Rao", "age": "34"}]`.
+
 ### Mandatory inputs
 
 A value that is **Different each run** can also be ticked **Mandatory** (browser agent 0.16.0 or later), in the scan's field list or in **Add field**. A mandatory input keeps no recorded value. When a run is not given it, the step stops and asks you on its approval card, and the card shows **Submit** (or **Approve**) only once every mandatory field is filled in. Until then it says which ones are left.

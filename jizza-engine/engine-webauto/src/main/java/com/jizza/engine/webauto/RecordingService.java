@@ -818,8 +818,11 @@ public class RecordingService implements Recordings, RecordingIntake {
     JsonNode value = StepCompiler.valueAt(target.node.path("input"), op.field());
     // A dropdown's one chosen item (items: ["Sleeper"]) is a value too; runs turn the mapped
     // text back into a list.
-    if (value != null && value.isArray() && value.size() == 1) value = value.get(0);
-    if (value == null || value.isNull() || !value.isValueNode()) {
+    // The entries of a repeated section (one per passenger) are one list input as they are.
+    boolean entries = "list".equals(op.input().type()) && value != null && value.isArray()
+        && "rows".equals(op.field());
+    if (!entries && value != null && value.isArray() && value.size() == 1) value = value.get(0);
+    if (!entries && (value == null || value.isNull() || !value.isValueNode())) {
       throw new ValidationException("This step has no '" + op.field() + "' value to turn into an input");
     }
     String name = op.input().name() == null ? "" : op.input().name().strip();

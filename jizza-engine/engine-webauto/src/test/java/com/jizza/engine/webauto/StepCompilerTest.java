@@ -92,6 +92,31 @@ class StepCompilerTest {
   }
 
   @Test
+  void theRowsOfARepeatedSectionBecomeOneListInputWithItsColumns() {
+    JsonNode rows = step("""
+        {"seq":1,"action":"browser.fillRows","version":1,"label":"Fill a row for each Passenger",
+         "input":{"row":{"strategies":[{"by":"css","value":"app-passenger"}]},
+                  "rowCss":"app-passenger","add":{"strategies":[{"by":"css","value":"#add"}]},
+                  "columns":[{"key":"name","label":"Name","css":"input","kind":"text"},
+                             {"key":"age","label":"Age","css":"input.age","kind":"text"}],
+                  "rows":[{"name":"Asha","age":"34"},{"name":"Ravi","age":"36"}]},
+         "meta":{},
+         "mappings":{"rows":{"name":"passengers","type":"list",
+                             "default":[{"name":"Asha","age":"34"},{"name":"Ravi","age":"36"}]}}}""");
+
+    var nodes = StepCompiler.compile("https://x.example.com", List.of(OPEN, rows)).path("nodes");
+
+    assertThat(nodes.get(2).path("config").path("inputs").path("rows").asText())
+        .isEqualTo("{{ input.passengers }}");
+    var input = nodes.get(0).path("config").path("inputs").get(0);
+    assertThat(input.path("name").asText()).isEqualTo("passengers");
+    assertThat(input.path("type").asText()).isEqualTo("list");
+    assertThat(input.path("default").size()).isEqualTo(2);
+    assertThat(input.path("columns").toString())
+        .isEqualTo("[{\"key\":\"name\",\"label\":\"Name\"},{\"key\":\"age\",\"label\":\"Age\"}]");
+  }
+
+  @Test
   void aListChoiceAndItsCardBecomeInputs() {
     JsonNode choose = step("""
         {"seq":1,"action":"browser.clickItem","version":1,"label":"Choose the time \\"01:15 PM\\"",

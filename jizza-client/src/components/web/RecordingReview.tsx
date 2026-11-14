@@ -81,6 +81,14 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                   ))}
                 </ul>
               )}
+              {s.step.action === 'browser.fillRows' && Array.isArray(s.step.input?.rows) && (
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300" data-testid="rows-summary">
+                  {(s.step.input.rows as unknown[]).length} row{(s.step.input.rows as unknown[]).length === 1 ? '' : 's'} of{' '}
+                  {(Array.isArray(s.step.input.columns) ? s.step.input.columns as { label?: string; key?: string }[] : [])
+                    .map(c => c.label ?? c.key).join(', ')}
+                  {s.step.mappings?.rows && <span className="ml-1 text-brand-600 dark:text-brand-300">(input: {s.step.mappings.rows.name})</span>}
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {s.step.disabled && <Badge>Off</Badge>}
                 {s.step.optional && <Badge>Optional</Badge>}

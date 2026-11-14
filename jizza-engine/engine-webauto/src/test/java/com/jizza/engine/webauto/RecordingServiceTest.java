@@ -372,6 +372,25 @@ class RecordingServiceTest {
   }
 
   @Test
+  void theRowsOfARepeatedSectionBecomeAListInput() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillRows", "Fill a row for each Passenger",
+            "{\"rowCss\":\"app-passenger\",\"columns\":[{\"key\":\"name\",\"css\":\"input\","
+                + "\"kind\":\"text\"}],\"rows\":[{\"name\":\"Asha\"},{\"name\":\"Ravi\"}]}", false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "rows");
+    map.putObject("input").put("name", "passengers").put("type", "list");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+
+    var mapping = service.get(access, id).steps().get(0).step().path("mappings").path("rows");
+    assertThat(mapping.path("name").asText()).isEqualTo("passengers");
+    assertThat(mapping.path("type").asText()).isEqualTo("list");
+    assertThat(mapping.path("default").toString())
+        .isEqualTo("[{\"name\":\"Asha\"},{\"name\":\"Ravi\"}]");
+  }
+
+  @Test
   void aManualFieldsDropdownChoiceDateAndCheckboxBecomeInputs() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

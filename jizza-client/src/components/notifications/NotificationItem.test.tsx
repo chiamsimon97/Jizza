@@ -45,4 +45,38 @@ describe('a card with a mandatory field', () => {
     fireEvent.click(screen.getByRole('button', { name: /approve/i }))
     expect(inbox.approve).toHaveBeenCalledWith(PASSENGER, expect.objectContaining({ 'fields.0.value': 'Chiam' }))
   })
+
+  it('fills a row for each passenger in a table, and sends them as entries', () => {
+    const inbox = actions()
+    const rows = {
+      ...PASSENGER,
+      context: {
+        node: 'step',
+        form: {
+          action: 'browser.fillRows', title: 'Fill a row for each',
+          fields: [{
+            key: 'rows', label: 'Passengers', type: 'rows', required: true, missing: true,
+            columns: [{ key: 'name', label: 'Name' }, { key: 'age', label: 'Age' }],
+          }],
+          missing: ['rows'],
+        },
+      },
+    } as unknown as NotificationDto
+    render(
+      <MemoryRouter>
+        <NotificationItem n={rows} now={Date.parse('2026-11-14T10:01:00Z')} actions={inbox}
+          focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('fill-first').textContent).toContain('Passengers')
+    fireEvent.change(screen.getByLabelText('Name 1'), { target: { value: 'Asha' } })
+    fireEvent.change(screen.getByLabelText('Age 1'), { target: { value: '34' } })
+    fireEvent.click(screen.getByRole('button', { name: /add passenger/i }))
+    fireEvent.change(screen.getByLabelText('Name 2'), { target: { value: 'Ravi' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(inbox.approve).toHaveBeenCalledWith(rows, {
+      rows: JSON.stringify([{ name: 'Asha', age: '34' }, { name: 'Ravi' }]),
+    })
+  })
 })
