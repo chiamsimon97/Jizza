@@ -60,7 +60,7 @@ final class FastReplay {
   private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.record", "browser.pickElement",
       "browser.listItems", WebStepForm.CLICK_ITEM, WebStepForm.CHOOSE_OPTION,
       WebStepForm.CLICK_ONE_OF, WebStepForm.SELECT_OPTION, "browser.listOptions",
-      "browser.pickDate");
+      "browser.pickDate", "browser.ask", "browser.handOff");
   /** A template that reads another step's output can't be filled before that step has run. */
   private static final Pattern READS_STEPS = Pattern.compile("\\{\\{[^}]*\\bnodes\\b");
 

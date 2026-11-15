@@ -69,6 +69,10 @@ public class DeviceEntity {
   @Column(columnDefinition = "jsonb", nullable = false)
   private JsonNode blockedActions;
 
+  /** Once true, every message from the device must carry a valid signature by its key. */
+  @Column(nullable = false)
+  private boolean signsMessages;
+
   /** The owner's action type for each tool the device added itself; MONEY when not set. */
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb", nullable = false)
@@ -152,6 +156,9 @@ public class DeviceEntity {
 
   public boolean isShellEnabled() { return shellEnabled; }
   public void setShellEnabled(boolean shellEnabled) { this.shellEnabled = shellEnabled; }
+
+  public boolean isSignsMessages() { return signsMessages; }
+  public void setSignsMessages(boolean signsMessages) { this.signsMessages = signsMessages; }
 
   public JsonNode getBlockedActions() { return blockedActions; }
   public void setBlockedActions(JsonNode blockedActions) { this.blockedActions = blockedActions; }

@@ -12,6 +12,8 @@ import {
   RUN_CHOICES,
 } from './inbox'
 import { StepApprovalForm } from './StepApprovalForm'
+import { DeviceHelpCard } from './DeviceHelpCard'
+import { deviceHelpOf } from './deviceHelp'
 import { answerValues, initialValues, stepFormOf, unfilled, type FormValues } from './stepForm'
 
 const KIND_ICON: Record<NotificationKind, LucideIcon> = {
@@ -73,7 +75,9 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const defaultChoice = failedStep ? defaultChoiceOf(n) : null
   const canStopRun = open && n.kind === 'INSTRUCTION_REQUIRED' && !!n.runId
   const canAlwaysAllow = open && n.kind === 'PERMISSION_REQUEST' && !!tool && !!n.sourceAgentId
-  const stepForm = useMemo(() => n.kind === 'PERMISSION_REQUEST' ? stepFormOf(n) : null, [n])
+  // A browser asking mid-step (a CAPTCHA, a code, a hand-over) has its own card and buttons.
+  const deviceHelp = useMemo(() => n.kind === 'PERMISSION_REQUEST' ? deviceHelpOf(n) : null, [n])
+  const stepForm = useMemo(() => n.kind === 'PERMISSION_REQUEST' && !deviceHelp ? stepFormOf(n) : null, [n, deviceHelp])
   const [values, setValues] = useState<FormValues>(() => stepForm ? initialValues(stepForm) : {})
   const stillEmpty = stepForm && open ? unfilled(stepForm, values) : []
   // A step with details attached asks like a small form: its buttons read Submit and Cancel.
@@ -103,8 +107,8 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   useEffect(() => {
     if (!command) return
     onCommandHandled()
-    if (command === 'approve' && open && n.kind !== 'INSTRUCTION_REQUIRED' && canApprove) void run('approve', () => actions.approve(n, approvedValues()))
-    if (command === 'decline' && open && n.kind !== 'INSTRUCTION_REQUIRED') setMode('declining')
+    if (command === 'approve' && open && n.kind !== 'INSTRUCTION_REQUIRED' && canApprove && !deviceHelp) void run('approve', () => actions.approve(n, approvedValues()))
+    if (command === 'decline' && open && n.kind !== 'INSTRUCTION_REQUIRED' && !deviceHelp) setMode('declining')
     if (command === 'archive' && n.kind === 'INFO') void run('archive', () => (n.archivedAt ? actions.unarchive(n) : actions.archive(n)))
     if (command === 'toggleRead') void run('read', () => (unread ? actions.markRead(n) : actions.markUnread(n)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,6 +173,15 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                 </div>
               ))}
             </dl>
+          )}
+
+          {deviceHelp && (
+            <div onClick={e => e.stopPropagation()}>
+              <DeviceHelpCard help={deviceHelp} expiresAt={n.expiresAt} open={open} busy={busy}
+                onSend={answer => void run('send', () => actions.approve(n, { answer }))}
+                onDone={() => void run('done', () => actions.approve(n, { done: true }))}
+                onStop={() => void run('stop', () => actions.decline(n, 'Stopped'))} />
+            </div>
           )}
 
           {stepForm && (
@@ -306,7 +319,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                   Stop the run
                 </Button>
               )}
-              {open && n.kind !== 'INSTRUCTION_REQUIRED' && (
+              {open && n.kind !== 'INSTRUCTION_REQUIRED' && !deviceHelp && (
                 <>
                   {/* Submit shows only once every mandatory field is filled in. */}
                   {canApprove ? (

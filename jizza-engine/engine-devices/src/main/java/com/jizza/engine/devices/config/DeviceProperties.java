@@ -19,6 +19,11 @@ public class DeviceProperties {
   private Duration maxPollWait = Duration.ofSeconds(25);
   /** How long a run waits for a device that is asking a person for help (a login, a captcha). */
   private Duration needsUserGrace = Duration.ofMinutes(10);
+  /**
+   * Refuse every unsigned message from a device. Off by default so apps that do not sign yet keep
+   * working; a device that has signed once must always sign (see DeviceEntity#signsMessages).
+   */
+  private boolean requireSignedMessages = false;
   /** The longest time limit a command may be given. */
   private Duration maxCommandTimeout = Duration.ofHours(24);
   private int maxQueuedPerDevice = 100;
@@ -49,6 +54,11 @@ public class DeviceProperties {
   public void setChallengeTtl(Duration challengeTtl) { this.challengeTtl = challengeTtl; }
   public Duration getMaxPollWait() { return maxPollWait; }
   public void setMaxPollWait(Duration maxPollWait) { this.maxPollWait = maxPollWait; }
+  public boolean isRequireSignedMessages() { return requireSignedMessages; }
+  public void setRequireSignedMessages(boolean requireSignedMessages) {
+    this.requireSignedMessages = requireSignedMessages;
+  }
+
   public Duration getNeedsUserGrace() { return needsUserGrace; }
   public void setNeedsUserGrace(Duration needsUserGrace) { this.needsUserGrace = needsUserGrace; }
   public Duration getMaxCommandTimeout() { return maxCommandTimeout; }

@@ -253,6 +253,13 @@ final class StepCompiler {
         }
       }
 
+      // A step that types a value is bound to the site it was recorded on: the browser refuses
+      // to type while the tab shows another one (a look-alike page, a redirect elsewhere).
+      if (web && TYPES_VALUES.contains(action) && !stepInputs.hasNonNull("expectOrigin")) {
+        String origin = originOf(step.path("meta").path("url").asText(""));
+        if (origin != null) stepInputs.put("expectOrigin", origin);
+      }
+
       int version = step.path("version").asInt(1);
       // A mandatory value: a form's field says so itself; any other is listed for the card,
       // which waits for each to be filled in before the step can be submitted.
@@ -577,6 +584,27 @@ final class StepCompiler {
         if (!text.isBlank()) options.add(text.strip());
       }
       if (options.size() > 1) field.set("options", options);
+    }
+  }
+
+  /** Web steps that type values into the page. */
+  static final Set<String> TYPES_VALUES = Set.of("browser.setText", "browser.typeInto",
+      "browser.fillForm", "browser.fillRows", "browser.chooseOption", "browser.setDate",
+      "browser.ask");
+
+  /** {@code https://host[:port]} of a recorded page, or null for anything but http(s). */
+  static String originOf(String url) {
+    try {
+      java.net.URI uri = java.net.URI.create(url);
+      String scheme = uri.getScheme();
+      if (uri.getHost() == null || scheme == null
+          || !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))) {
+        return null;
+      }
+      return scheme.toLowerCase(java.util.Locale.ROOT) + "://" + uri.getHost().toLowerCase(java.util.Locale.ROOT)
+          + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
+    } catch (IllegalArgumentException e) {
+      return null;
     }
   }
 

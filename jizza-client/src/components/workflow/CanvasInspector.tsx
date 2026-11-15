@@ -1676,6 +1676,11 @@ const WEB_INPUT_LABELS: Record<string, string> = {
   promptText: 'Text for prompt dialogs', prefer: 'When several match', opener: 'Opens the calendar',
   optionElement: 'One suggestion (optional)', submit: 'Send button (optional)', checkErrors: "Read the site's errors after sending",
   option: 'Suggestion to choose', date: 'Date', item: 'Item to choose',
+  message: 'What to say', picture: 'Picture to show (optional)', answerElement: 'Box for the answer (optional)',
+  secret: 'Secret answer (never shown or kept)', wantsAnswer: 'Ask for an answer (off: just Done)',
+  successUrl: 'Done when the address contains', successText: 'Done when the page shows',
+  failureUrl: 'Failed when the address contains', failureText: 'Failed when the page shows',
+  expectOrigin: 'Only on this site',
 }
 
 /** What a recorded list choice kept about its list (config.list): the names the person gave its

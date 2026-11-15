@@ -56,6 +56,16 @@ public interface NotificationBus {
   }
 
   /**
+   * Closes one item that is still waiting on an answer, because nothing waits for it any more (a
+   * device's question whose command ended). {@code reason} is shown on the item.
+   *
+   * @return whether it was open and is now closed
+   */
+  default boolean closeOpen(java.util.UUID notificationId, String reason) {
+    return false;
+  }
+
+  /**
    * Block until a permission request is answered, or the wait budget elapses.
    *
    * @return true when approved

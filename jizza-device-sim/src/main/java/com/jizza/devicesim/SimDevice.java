@@ -234,9 +234,38 @@ public final class SimDevice implements AutoCloseable {
     return env;
   }
 
+  private volatile boolean signMessages;
+
+  /**
+   * Signs every message from now on with the device key, over the canonical envelope without
+   * {@code sig}, as the browser extension does ({@code "p256:" + base64} for a P-256 key).
+   */
+  public SimDevice signMessages(boolean on) {
+    this.signMessages = on;
+    return this;
+  }
+
+  /** The device's signature for an envelope, as a real app sends it in {@code sig}. */
+  public String signEnvelope(ObjectNode env) {
+    ObjectNode unsigned = env.deepCopy();
+    unsigned.remove("sig");
+    return (p256 ? "p256:" : "") + sign(Canonical.of(unsigned));
+  }
+
+  /** Whether a server message ({@code resume}, {@code extend}) carries the server's signature. */
+  public boolean signedByServer(JsonNode message) {
+    return verify(Canonical.of(message.path("body")), message.path("sig").asText(null));
+  }
+
   /** Sends one message over HTTPS, or the socket when connected, and returns the server's reply. */
   public JsonNode send(String type, JsonNode body) {
     ObjectNode env = envelope(type, body);
+    if (signMessages) env.put("sig", signEnvelope(env));
+    return sendEnvelope(env);
+  }
+
+  /** Sends an envelope as it is (signed or not, maybe tampered with) and returns the reply. */
+  public JsonNode sendEnvelope(ObjectNode env) {
     if (socket != null) {
       String id = env.get("id").asText();
       socket.sendText(write(env), true).join();

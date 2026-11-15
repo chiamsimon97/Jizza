@@ -387,4 +387,29 @@ class StepCompilerTest {
     assertThat(input.path("columns").get(0).path("required").asBoolean()).isTrue();
     assertThat(input.path("columns").get(1).path("options").size()).isEqualTo(3);
   }
+  @Test
+  void aStepThatTypesIsBoundToTheSiteItWasRecordedOn() {
+    var typed = step("""
+        {"seq":1,"action":"browser.setText","version":1,"label":"Name",
+         "input":{"element":{"strategies":[{"by":"css","value":"#n"}]},"text":"Chiam"},
+         "meta":{"url":"https://Portal.Example.com:8443/login?next=/home"}}""");
+    var read = step("""
+        {"seq":2,"action":"browser.getText","version":1,"label":"Total",
+         "input":{"element":{"strategies":[{"by":"css","value":"#t"}]}},
+         "meta":{"url":"https://portal.example.com/"}}""");
+    var nodes = StepCompiler.compile("https://portal.example.com", List.of(OPEN, typed, read))
+        .path("nodes");
+    assertThat(nodes.get(2).path("config").path("inputs").path("expectOrigin").asText())
+        .isEqualTo("https://portal.example.com:8443");
+    assertThat(nodes.get(3).path("config").path("inputs").has("expectOrigin")).isFalse();
+  }
+
+  @Test
+  void originOfKeepsOnlyWebAddresses() {
+    assertThat(StepCompiler.originOf("https://a.example.com/x")).isEqualTo("https://a.example.com");
+    assertThat(StepCompiler.originOf("http://localhost:5173/")).isEqualTo("http://localhost:5173");
+    assertThat(StepCompiler.originOf("chrome://settings")).isNull();
+    assertThat(StepCompiler.originOf("")).isNull();
+    assertThat(StepCompiler.originOf("not a url")).isNull();
+  }
 }

@@ -131,6 +131,8 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Choose from a list', 'browser.clickItem'),
   web('Choose in a dropdown', 'browser.selectOption'),
   web('List items', 'browser.listItems'),
+  web('Ask me', 'browser.ask'),
+  web('Hand over to me', 'browser.handOff'),
 ]
 
 /** Browser actions whose contract requires a concrete element locator. */

@@ -36,6 +36,10 @@ public final class Protocol {
   public static final String LOG = "log";
   // Server to device: something in the person's inbox (phones show it and answer it)
   public static final String INBOX = "inbox";
+  // Server to device, signed: the person answered a needs_user on a card (go on, with their
+  // answer), and more time for a command that waits for the person.
+  public static final String RESUME = "resume";
+  public static final String EXTEND = "extend";
   // Replies
   public static final String ACK = "ack";
   public static final String ERROR = "error";

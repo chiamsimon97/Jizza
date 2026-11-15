@@ -33,7 +33,8 @@ final class WebStepForm {
       "screenshotOnError", "highlight", "secretRef", "waitElement", "to", "offset", "modifiers",
       "steps", "fields", "group", "in", "waitAfter", "by", "max", "within", "loadMore", "submit",
       "checkErrors", "opener", "optionElement", "prefer", "app", "itemCss", "titleCss",
-      "options", "format", "mode");
+      "options", "format", "mode", "expectOrigin", "picture", "answerElement", "secret",
+      "wantsAnswer", "successUrl", "successText", "failureUrl", "failureText");
 
   static final String CLICK_ITEM = "browser.clickItem";
   static final String FILL_FORM = "browser.fillForm";

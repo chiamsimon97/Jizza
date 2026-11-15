@@ -79,7 +79,7 @@ public class CommandBroker implements DeviceCommands {
 
   public static final String RUN_STEPS = "browser.runSteps";
   private static final java.util.Set<String> NOT_BATCHED = java.util.Set.of(
-      RUN_STEPS, "browser.record", "browser.pickElement");
+      RUN_STEPS, "browser.record", "browser.pickElement", "browser.ask", "browser.handOff");
 
   private static final Logger log = LoggerFactory.getLogger(CommandBroker.class);
 
@@ -593,26 +593,142 @@ public class CommandBroker implements DeviceCommands {
   @Transactional
   public void needsUser(UUID deviceId, String deviceName, JsonNode body) {
     DeviceCommandEntity cmd = owned(deviceId, body);
+    String kind = limit(body.path("kind").asText("other"), 20);
     String message = limit(body.path("message").asText("Your device needs you to continue."), 500);
+    Instant until = null;
     if (cmd != null && OPEN.contains(cmd.getStatus())) {
       Instant extended = clock.instant().plus(props.getNeedsUserGrace());
       if (extended.isAfter(cmd.getDeadlineAt())) cmd.setDeadlineAt(extended);
       cmd.setProgress(limit("Waiting for you: " + message, MAX_PROGRESS));
       commands.save(cmd);
       publish(cmd);
+      until = cmd.getDeadlineAt();
+      // The device keeps the deadline it was signed with unless told otherwise: give it the
+      // same time the server now allows, so the person is not cut off by the step's own limit.
+      sendExtend(cmd);
     }
     UUID userId = cmd != null ? cmd.getUserId()
         : devices.findById(deviceId).map(d -> d.getOwnerUserId()).orElse(null);
     NotificationBus bus = notifications.getIfAvailable();
-    if (bus != null && userId != null) {
-      ObjectNode detail = Json.obj().put("deviceId", deviceId.toString())
-          .put("source", "device").put("kind", body.path("kind").asText("other"));
-      if (cmd != null) detail.put("commandId", cmd.getId().toString());
-      if (body.path("steps").isArray()) detail.set("steps", body.get("steps"));
+    if (bus == null || userId == null) return;
+    ObjectNode detail = Json.obj().put("deviceId", deviceId.toString())
+        .put("source", "device").put("kind", kind);
+    if (cmd != null) detail.put("commandId", cmd.getId().toString());
+    if (body.path("steps").isArray()) detail.set("steps", body.get("steps"));
+    if (cmd == null || until == null) {
       bus.raise(NotificationKind.INFO, null, new NotificationContext(userId,
           "On " + deviceName + ": " + message, detail, null, null,
           cmd == null ? null : cmd.getRunId(), null, NotificationPriority.URGENT));
+      return;
     }
+    // A command still running: the card answers it (Submit, Done or Stop), see relayAnswer.
+    if (cmd.getNodeId() != null) detail.put("node", cmd.getNodeId());
+    detail.set("deviceHelp", deviceHelp(cmd, kind, body, deviceName));
+    Duration expiresIn = Duration.between(clock.instant(), until);
+    if (expiresIn.isNegative() || expiresIn.isZero()) expiresIn = Duration.ofMinutes(1);
+    UUID previous = helpCards.remove(cmd.getId());
+    if (previous != null) bus.closeOpen(previous, "Asked again");
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, null, new NotificationContext(userId,
+        "On " + deviceName + ": " + message, detail, null, null, cmd.getRunId(), expiresIn,
+        NotificationPriority.URGENT));
+    if (raised != null) helpCards.put(cmd.getId(), raised.id());
+  }
+
+  /** The kinds a device may say it needs the person for; anything else shows as "other". */
+  private static final Set<String> HELP_KINDS = Set.of("captcha", "otp", "verification", "login",
+      "ask", "handoff");
+  private static final int MAX_HELP_VALUES = 10;
+
+  /**
+   * What the card shows and answers: the device and command it answers, the picture the device
+   * cropped (only a file this command uploaded), whether it asks for an answer and if that is a
+   * secret, a few read-only values, and when the device stops waiting.
+   */
+  private ObjectNode deviceHelp(DeviceCommandEntity cmd, String kind, JsonNode body,
+                                String deviceName) {
+    ObjectNode help = Json.obj().put("deviceId", cmd.getDeviceId().toString())
+        .put("commandId", cmd.getId().toString())
+        .put("kind", HELP_KINDS.contains(kind) ? kind : "other")
+        .put("deviceName", limit(deviceName, 100))
+        .put("until", cmd.getDeadlineAt().toString());
+    String shot = body.path("shot").asText(null);
+    if (shot != null) {
+      try {
+        UUID fileId = UUID.fromString(shot);
+        files.findById(fileId)
+            .filter(f -> cmd.getDeviceId().equals(f.getDeviceId())
+                && cmd.getId().equals(f.getCommandId()))
+            .ifPresent(f -> help.put("shot", f.getId().toString()));
+      } catch (IllegalArgumentException ignored) {
+        // Not a file id: the card shows no picture.
+      }
+    }
+    JsonNode answer = body.path("answer");
+    if (answer.isObject()) {
+      help.set("answer", Json.obj().put("secret", answer.path("secret").asBoolean(true))
+          .put("required", answer.path("required").asBoolean(true)));
+    }
+    JsonNode values = body.path("values");
+    if (values.isObject()) {
+      ObjectNode shown = Json.obj();
+      for (var it = values.fields(); it.hasNext() && shown.size() < MAX_HELP_VALUES; ) {
+        var entry = it.next();
+        if (entry.getValue().isValueNode()) {
+          shown.put(limit(entry.getKey(), 60), limit(entry.getValue().asText(), 200));
+        }
+      }
+      if (!shown.isEmpty()) help.set("values", shown);
+    }
+    return help;
+  }
+
+  /** Cards raised for a command that waits for the person, by command: closed when it ends. */
+  private final Map<UUID, UUID> helpCards = new ConcurrentHashMap<>();
+
+  /**
+   * The person answered a device's card: a signed {@code resume} goes to the device with what
+   * they typed (typed into the page there, never kept here), or the command is stopped. Only the
+   * command's own person can answer it, and only while it runs.
+   */
+  public void relayAnswer(UUID userId, UUID deviceId, UUID commandId, boolean stop, String answer) {
+    transactions.executeWithoutResult(status -> {
+      DeviceCommandEntity cmd = commands.findById(commandId).orElse(null);
+      if (cmd == null || !cmd.getDeviceId().equals(deviceId)
+          || !Objects.equals(cmd.getUserId(), userId) || !OPEN.contains(cmd.getStatus())) {
+        log.info("An answer for command {} arrived after it ended", commandId);
+        return;
+      }
+      helpCards.remove(commandId);
+      if (stop) {
+        cancel(cmd, "Stopped by you");
+        return;
+      }
+      ObjectNode body = Json.obj().put("commandId", cmd.getId().toString())
+          .put("deviceId", cmd.getDeviceId().toString())
+          .put("issuedAt", clock.instant().toString())
+          .put("nonce", UUID.randomUUID().toString());
+      if (answer != null) body.put("answer", answer);
+      ObjectNode env = Protocol.envelope(Protocol.RESUME, cmd.getDeviceId(), body, null);
+      env.put("sig", serverKeys.sign(Canonical.of(body)));
+      cmd.setProgress("Carrying on");
+      commands.save(cmd);
+      publish(cmd);
+      UUID target = cmd.getDeviceId();
+      afterCommit(() -> hub.deliver(target, env));
+    });
+  }
+
+  /** Tells the device its command now has until {@code deadlineAt} (signed, like a command). */
+  private void sendExtend(DeviceCommandEntity cmd) {
+    ObjectNode body = Json.obj().put("commandId", cmd.getId().toString())
+        .put("deviceId", cmd.getDeviceId().toString())
+        .put("issuedAt", clock.instant().toString())
+        .put("nonce", UUID.randomUUID().toString())
+        .put("deadline", cmd.getDeadlineAt().toString());
+    ObjectNode env = Protocol.envelope(Protocol.EXTEND, cmd.getDeviceId(), body, null);
+    env.put("sig", serverKeys.sign(Canonical.of(body)));
+    UUID deviceId = cmd.getDeviceId();
+    afterCommit(() -> hub.deliver(deviceId, env));
   }
 
   private DeviceCommandEntity owned(UUID deviceId, JsonNode body) {
@@ -704,7 +820,18 @@ public class CommandBroker implements DeviceCommands {
             .put("deviceId", cmd.getDeviceId().toString()).put("status", status)
             .put("code", String.valueOf(code)));
     DeviceCommandDto dto = toDto(cmd);
+    UUID helpCard = helpCards.remove(cmd.getId());
     afterCommit(() -> {
+      if (helpCard != null) {
+        NotificationBus bus = notifications.getIfAvailable();
+        if (bus != null) {
+          try {
+            bus.closeOpen(helpCard, "The step ended before an answer was needed");
+          } catch (RuntimeException e) {
+            log.warn("Could not close the card for command {}", dto.id(), e);
+          }
+        }
+      }
       publishDto(dto);
       CompletableFuture<Void> future = waiting.remove(dto.id());
       if (future != null) future.complete(null);
