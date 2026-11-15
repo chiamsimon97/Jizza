@@ -104,9 +104,27 @@ public class WorkflowUseCase {
   public WorkflowDto save(UUID userId, UUID workflowId, String name, String description,
                           JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
                           UUID owningAgentId, ReuseProfile reuse) {
+    return save(userId, workflowId, name, description, graph, inputSchema, triggerConfig,
+        owningAgentId, reuse, null);
+  }
+
+  /**
+   * As above. {@code baseVersion} is the version the builder opened: when the workflow has had a
+   * newer version saved since (an edited recording, an applied fix), saving would write the old
+   * steps over it, so it is refused.
+   */
+  @Transactional
+  public WorkflowDto save(UUID userId, UUID workflowId, String name, String description,
+                          JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
+                          UUID owningAgentId, ReuseProfile reuse, Integer baseVersion) {
     boolean creating = workflowId == null;
     if (!creating) {
       WorkflowDto existing = ownedBy(userId, workflowId);
+      if (baseVersion != null && existing.version() != baseVersion) {
+        throw new ConflictException(("'%s' has a newer version (%d) than the one open here (%d), "
+            + "so saving would undo it. Close it and open it again to see the newest steps.")
+            .formatted(existing.name(), existing.version(), baseVersion));
+      }
       // The builder saves in place over the current version's snapshot. That is fine for a draft,
       // but on a reviewed workflow it would rewrite the very snapshot the binding check compares
       // against, so anything past draft changes through review instead.

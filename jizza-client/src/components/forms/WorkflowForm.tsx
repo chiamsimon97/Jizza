@@ -114,6 +114,7 @@ export function WorkflowForm() {
   // Opened from a saved row: editing that workflow rather than starting a new one.
   const workflowId = str(request?.fields.id) || undefined
   const status = str(request?.fields.status) || 'DRAFT'
+  const baseVersion = Number(request?.fields.version) || undefined
   const readOnly = !!workflowId && status !== 'DRAFT'
   // Branches, service actions and the like only exist on the canvas; such a workflow can't be
   // shown as a simple list of steps.
@@ -182,7 +183,7 @@ export function WorkflowForm() {
     void qc.invalidateQueries({ queryKey: ['workflows'] })
     try {
       const wf = await workflowsApi.get(fix.workflowId)
-      openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, graph: wf.graph, focusNode: fix.nodeId,
+      openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, version: wf.version, graph: wf.graph, focusNode: fix.nodeId,
         notice: wf.status === 'DRAFT' ? `Saved version ${version} with the new element for ${fix.nodeLabel}.` : `Version ${version}, with the new element for ${fix.nodeLabel}, is waiting for review in Procedures.` })
     } catch {
       setNotice(`Saved version ${version}. Close and open the workflow to see it.`)
@@ -193,6 +194,8 @@ export function WorkflowForm() {
     mutationFn: () => workflowsApi.save({
       id: workflowId, name: name.trim(), description: description.trim() || undefined,
       graph: graphMode ? canvasToGraph(canvas) : toGraph(steps),
+      // The version opened here: a newer one saved meanwhile is not written over.
+      ...(workflowId && baseVersion ? { baseVersion } : {}),
     }),
     onSuccess: (wf) => {
       void qc.invalidateQueries({ queryKey: ['workflows'] })

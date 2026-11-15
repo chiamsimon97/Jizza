@@ -8,7 +8,7 @@ export const workflowsApi = {
   get: (id: string) =>
     api.get<WorkflowDto>(`/api/workflows/${id}`),
 
-  save: (workflow: Partial<WorkflowDto>) =>
+  save: (workflow: Partial<WorkflowDto> & { baseVersion?: number }) =>
     api.post<WorkflowDto>('/api/workflows', workflow),
 
   run: (id: string, version?: number, input?: unknown) =>
