@@ -372,6 +372,48 @@ class RecordingServiceTest {
   }
 
   @Test
+  void anInputKeepsItsCatalogueDetailsAndRefusesBadOnes() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "Seats", "{\"text\":\"2\"}", false)));
+    service.stop(access, id);
+    service.edit(access, id, List.of(new Recordings.EditOp("map", 1, null, null, "text",
+        new Recordings.Input("seats", "number", null, null, null, "Seats", "Journey", "upFront",
+            null, null, 1.0, 6.0, null, null), null, null)));
+
+    var mapping = service.get(access, id).steps().get(0).step().path("mappings").path("text");
+    assertThat(mapping.path("label").asText()).isEqualTo("Seats");
+    assertThat(mapping.path("group").asText()).isEqualTo("Journey");
+    assertThat(mapping.path("ask").asText()).isEqualTo("upFront");
+    assertThat(mapping.path("max").asInt()).isEqualTo(6);
+
+    assertThatThrownBy(() -> service.edit(access, id, List.of(new Recordings.EditOp("map", 1,
+        null, null, "text", new Recordings.Input("seats", "number", null, null, null, null, null,
+            "sometimes", null, null, null, null, null, null), null, null))))
+        .hasMessageContaining("upFront, atStep or ifMissing");
+    assertThatThrownBy(() -> service.edit(access, id, List.of(new Recordings.EditOp("map", 1,
+        null, null, "text", new Recordings.Input("seats", "number", null, null, null, null, null,
+            null, null, null, null, null, "[broken", null), null, null))))
+        .hasMessageContaining("pattern is not valid");
+  }
+
+  @Test
+  void anUnmapFromTheBrowserIsApplied() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "Name", "{\"text\":\"Asha\"}", false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "text");
+    map.putObject("input").put("name", "who").put("type", "text");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+    var unmap = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "text").putNull("input");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", unmap);
+
+    assertThat(service.get(access, id).steps().get(0).step().path("mappings").has("text")).isFalse();
+  }
+
+  @Test
   void theRowsOfARepeatedSectionBecomeAListInput() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addAfter, emptyGraph, fieldIssues, updateNode } from './canvasModel'
 import { dataSourcesFor } from './dataMapping'
-import { contractIssues, isModule, moduleInputs, moduleOutputs } from './moduleContract'
+import { contractIssues, fieldsOf, inputSections, isModule, moduleInputs, moduleOutputs, ruleProblem } from './moduleContract'
 
 const saved = {
   nodes: [
@@ -46,5 +46,44 @@ describe('workflow modules', () => {
     const next = addAfter(withScript, script, null, 'NOTIFY')
     const sources = dataSourcesFor(next.graph, next.id)
     expect(sources.find(s => s.id === script)?.fields).toContainEqual({ expr: `nodes.${script}.total`, label: 'total', type: 'number' })
+  })
+})
+
+describe('input catalogue', () => {
+  const config = {
+    inputs: [
+      { name: 'from', type: 'text', group: 'Journey', label: 'From station' },
+      { name: 'cls', type: 'text', group: 'Journey', options: ['Sleeper', 'AC'], synonyms: { sl: 'Sleeper' } },
+      { name: 'note', type: 'text' },
+      { name: 'otp', type: 'text', ask: 'atStep' },
+      { name: 'people', type: 'list', maxRows: 2, columns: [{ key: 'name', label: 'Name', required: true, options: ['x'] }] },
+      { name: 'seats', type: 'number', min: 1, max: 6, ask: 'sometimes' },
+    ],
+  }
+
+  it('keeps every catalogue key so a field read and saved back loses nothing', () => {
+    const [from, cls, , otp, people, seats] = fieldsOf(config, 'inputs')
+    expect(from).toMatchObject({ label: 'From station', group: 'Journey' })
+    expect(cls).toMatchObject({ options: ['Sleeper', 'AC'], synonyms: { sl: 'Sleeper' } })
+    expect(otp.ask).toBe('atStep')
+    expect(people.columns?.[0]).toEqual({ key: 'name', label: 'Name', required: true, options: ['x'] })
+    expect(seats).toMatchObject({ min: 1, max: 6 })
+    expect(seats.ask).toBeUndefined()
+  })
+
+  it('shows ungrouped inputs first and leaves at-step inputs for their card', () => {
+    const sections = inputSections(fieldsOf(config, 'inputs'))
+    expect(sections.map(s => s.group)).toEqual(['', 'Journey'])
+    expect(sections[0].fields.map(f => f.name)).toEqual(['note', 'people', 'seats'])
+    expect(sections.flatMap(s => s.fields).some(f => f.name === 'otp')).toBe(false)
+  })
+
+  it('names what is wrong before the server is asked', () => {
+    const [, , , , people, seats] = fieldsOf(config, 'inputs')
+    expect(ruleProblem(seats, '9')).toContain('at most 6')
+    expect(ruleProblem(seats, '3')).toBeNull()
+    expect(ruleProblem(people, '[{"name":"a"},{"name":"b"},{"name":"c"}]')).toContain('at most 2 entries')
+    expect(ruleProblem({ name: 'pin', type: 'text', pattern: '[0-9]{6}', patternHint: '6 digits' }, '12')).toContain('6 digits')
+    expect(ruleProblem({ name: 'pin', type: 'text', pattern: '[broken' }, '12')).toBeNull()
   })
 })

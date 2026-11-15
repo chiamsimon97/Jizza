@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
-import { conditionDepths, dependentListChoices, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, movesBetween, movesFor, moveOp, pageArrangement, reusableOps, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
+import { conditionDepths, detailsInput, detailsOf, detailsProblem, type InputDetails, dependentListChoices, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, movesBetween, movesFor, moveOp, pageArrangement, reusableOps, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
 
 /** A login saved in the browser extension, as its device lists it. */
 export interface SavedLogin { id: string; name: string; description?: string | null }
@@ -180,7 +180,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                       onClick={() => {
                         const elsewhere = stepsUsingInput(recording.steps, m.name).filter(o => o.seq !== s.seq)
                         if (elsewhere.length > 0) setUnmapping({ step: s, field, name: m.name })
-                        else edit(unmapOps([{ step: s, field }]), [{ op: 'map', seq: s.seq, field, input: { name: m.name, type: m.type, default: m.default } }])
+                        else edit(unmapOps([{ step: s, field }]), [{ op: 'map', seq: s.seq, field, input: { ...m } }])
                       }}><X className="h-3 w-3" /></button>
                   </Badge>
                 ))}
@@ -249,7 +249,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
         onSave={op => {
           const before = op.field ? mapping.step.mappings?.[op.field] : undefined
           edit([op], op.field ? [{ op: 'map', seq: mapping.seq, field: op.field,
-            input: before ? { name: before.name, type: before.type, default: before.default } : null }] : undefined)
+            input: before ? { ...before } : null }] : undefined)
           setMapping(null)
         }} />}
       {unmapping && (
@@ -262,7 +262,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
             <Button variant="secondary" size="sm" onClick={() => {
               const target = { step: unmapping.step, field: unmapping.field }
               const m = unmapping.step.step.mappings?.[unmapping.field]
-              edit(unmapOps([target]), m ? [{ op: 'map', seq: unmapping.step.seq, field: unmapping.field, input: { name: m.name, type: m.type, default: m.default } }] : undefined)
+              edit(unmapOps([target]), m ? [{ op: 'map', seq: unmapping.step.seq, field: unmapping.field, input: { ...m } }] : undefined)
               setUnmapping(null)
             }}>Only this step</Button>
             <Button size="sm" onClick={() => {
@@ -272,7 +272,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                   .map(([field]) => ({ step, field })))
               const inverse = targets.flatMap(({ step, field }) => {
                 const m = step.step.mappings?.[field]
-                return m ? [{ op: 'map' as const, seq: step.seq, field, input: { name: m.name, type: m.type, default: m.default } }] : []
+                return m ? [{ op: 'map' as const, seq: step.seq, field, input: { ...m } }] : []
               })
               edit(unmapOps(targets), inverse)
               setUnmapping(null)
@@ -336,12 +336,20 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
   const fields = mappableFields(step)
   const [field, setField] = useState(fields[0].field)
   const current = fields.find(f => f.field === field)!
-  const [name, setName] = useState(suggestInputName(step, field))
+  const existing = step.step.mappings?.[field]
+  const [name, setName] = useState(existing?.name ?? suggestInputName(step, field))
   // A date the site writes its own way keeps that format with the input.
   const format = typeof step.step.input?.format === 'string' && step.step.input.format ? step.step.input.format : undefined
   const dated = step.step.action === 'browser.setDate' || step.step.action === 'browser.pickDate'
-  const [type, setType] = useState<(typeof TYPES)[number]>(dated ? (format && /[Hh]/.test(format) ? 'datetime' : 'date') : 'text')
+  const [type, setType] = useState<(typeof TYPES)[number]>(
+    (TYPES as readonly string[]).includes(existing?.type ?? '') ? existing!.type as (typeof TYPES)[number]
+      : dated ? (format && /[Hh]/.test(format) ? 'datetime' : 'date') : 'text')
+  const [details, setDetails] = useState<InputDetails>(() => detailsOf(existing))
+  const [more, setMore] = useState(Boolean(existing && (existing.label || existing.group || existing.options || existing.pattern)))
   const valid = /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
+  const problem = detailsProblem(details)
+  const box = 'mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-1.5 dark:border-gray-600'
+  const set = (patch: Partial<InputDetails>) => setDetails(d => ({ ...d, ...patch }))
   return (
     <Dialog open title="Make this an input" description="The value you typed becomes the default; each run can change it." onClose={onClose}>
       <div className="space-y-3 text-sm">
@@ -354,8 +362,7 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
           </label>
         )}
         <label className="block">Input name
-          <input aria-label="Input name" value={name} onChange={e => setName(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-1.5 dark:border-gray-600" />
+          <input aria-label="Input name" value={name} onChange={e => setName(e.target.value)} className={box} />
         </label>
         <label className="block">Type
           <select aria-label="Input type" value={type} onChange={e => setType(e.target.value as (typeof TYPES)[number])}
@@ -367,10 +374,66 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
         {format && (type === 'date' || type === 'datetime') && (
           <p className="text-xs text-gray-500">The site writes it as {format}. Any date given is written that way.</p>
         )}
+        <button type="button" className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400" aria-expanded={more}
+          onClick={() => setMore(m => !m)}>{more ? 'Fewer details' : 'More details: label, section, when to ask, accepted values'}</button>
+        {more && (
+          <div className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">Label on the run form
+                <input aria-label="Input label" value={details.label} onChange={e => set({ label: e.target.value })} className={box} />
+              </label>
+              <label className="block">Section
+                <input aria-label="Input section" value={details.group} placeholder="The page it was typed on" onChange={e => set({ group: e.target.value })} className={box} />
+              </label>
+            </div>
+            <label className="block">When to ask
+              <select aria-label="When to ask" value={details.ask} onChange={e => set({ ask: e.target.value as InputDetails['ask'] })}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-2 py-1.5 dark:border-gray-600">
+                <option value="">Before the run (default)</option>
+                <option value="atStep">During the run, on this step's card</option>
+                <option value="ifMissing">Only if the run wasn't given it</option>
+              </select>
+            </label>
+            <label className="block">Accepted values (one per line; empty accepts anything)
+              <textarea aria-label="Accepted values" rows={3} value={details.options} onChange={e => set({ options: e.target.value })} className={box} />
+            </label>
+            {details.options.trim() && (
+              <label className="block">Also accept (one per line, such as: other words = accepted value)
+                <textarea aria-label="Also accept" rows={2} value={details.synonyms} onChange={e => set({ synonyms: e.target.value })} className={box} />
+              </label>
+            )}
+            {type === 'number' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">Smallest
+                  <input aria-label="Smallest value" inputMode="decimal" value={details.min} onChange={e => set({ min: e.target.value })} className={box} />
+                </label>
+                <label className="block">Largest
+                  <input aria-label="Largest value" inputMode="decimal" value={details.max} onChange={e => set({ max: e.target.value })} className={box} />
+                </label>
+              </div>
+            )}
+            {type === 'text' && !details.options.trim() && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">Pattern (regular expression)
+                  <input aria-label="Pattern" value={details.pattern} onChange={e => set({ pattern: e.target.value })} className={box} />
+                </label>
+                <label className="block">Shown when it doesn't match
+                  <input aria-label="Pattern hint" value={details.patternHint} placeholder="such as 10 digits" onChange={e => set({ patternHint: e.target.value })} className={box} />
+                </label>
+              </div>
+            )}
+            {problem && <p className="text-xs text-red-500">{problem}</p>}
+          </div>
+        )}
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" disabled={!valid} onClick={() => onSave({ op: 'map', seq: step.seq, field, input: { name, type, default: current.value, ...(format && (type === 'date' || type === 'datetime') ? { format } : {}) } })}>Make input</Button>
+        <Button size="sm" disabled={!valid || problem !== null} onClick={() => onSave({ op: 'map', seq: step.seq, field, input: {
+          ...(existing?.required ? { required: true } : {}),
+          name, type, default: current.value,
+          ...(format && (type === 'date' || type === 'datetime') ? { format } : {}),
+          ...detailsInput(details, type),
+        } })}>{existing ? 'Save input' : 'Make input'}</Button>
       </div>
     </Dialog>
   )

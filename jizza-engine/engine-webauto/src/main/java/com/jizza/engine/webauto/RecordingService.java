@@ -644,12 +644,20 @@ public class RecordingService implements Recordings, RecordingIntake {
     Recordings.Input input = null;
     if ("map".equals(op)) {
       JsonNode in = data.path("input");
-      if (!in.isObject() || !data.path("field").isTextual()) {
+      // A null input is an unmap: the field goes back to the value it was recorded with.
+      if (!(in.isObject() || in.isNull()) || !data.path("field").isTextual()) {
         log.info("Dropped a recording edit for {}: map needs a field and an input", recording.getId());
         return;
       }
-      input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
-          null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null);
+      if (in.isObject()) {
+        input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
+            null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null,
+            in.path("label").asText(null), in.path("group").asText(null), in.path("ask").asText(null),
+            in.get("options"), in.get("synonyms"),
+            in.path("min").isNumber() ? in.get("min").asDouble() : null,
+            in.path("max").isNumber() ? in.get("max").asDouble() : null,
+            in.path("pattern").asText(null), in.path("patternHint").asText(null));
+      }
     }
     List<Held> held = load(recording.getId());
     try {
@@ -857,8 +865,75 @@ public class RecordingService implements Recordings, RecordingIntake {
     } else {
       mapping.set("default", op.input().defaultValue() != null ? op.input().defaultValue() : value);
     }
+    describe(mapping, op.input());
     mappings.set(op.field(), mapping);
     target.changed = true;
+  }
+
+  static final int MAX_OPTIONS = 500;
+  private static final int MAX_TEXT = 120;
+
+  /**
+   * The optional catalogue details of an input: how the run form shows it, when a run asks for it,
+   * and what it accepts. Each is checked here so a run never meets a rule it cannot apply.
+   */
+  static void describe(ObjectNode mapping, Recordings.Input in) {
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    putText(mapping, "label", in.label(), "label");
+    putText(mapping, "group", in.group(), "group");
+    if (in.ask() != null && !in.ask().isBlank()) {
+      if (!Recordings.Input.ASKS.contains(in.ask())) {
+        throw new ValidationException("An input is asked upFront, atStep or ifMissing, not '" + in.ask() + "'");
+      }
+      mapping.put("ask", in.ask());
+    }
+    if (in.options() != null && !in.options().isNull()) {
+      if (!in.options().isArray()) throw new ValidationException("The choices of an input are a list");
+      if (in.options().size() > MAX_OPTIONS) {
+        throw new ValidationException("An input can have at most " + MAX_OPTIONS + " choices");
+      }
+      var options = mapping.putArray("options");
+      for (JsonNode o : in.options()) {
+        String text = o.isValueNode() ? o.asText().strip() : "";
+        if (text.isEmpty() || text.length() > 200 || !seen.add(text)) continue;
+        options.add(text);
+      }
+      if (options.isEmpty()) mapping.remove("options");
+    }
+    if (in.synonyms() != null && in.synonyms().isObject() && mapping.has("options")) {
+      var synonyms = mapping.putObject("synonyms");
+      in.synonyms().fields().forEachRemaining(e -> {
+        if (synonyms.size() < MAX_OPTIONS && e.getValue().isValueNode()
+            && !e.getKey().isBlank() && e.getKey().length() <= 200) {
+          if (!seen.contains(e.getValue().asText().strip())) {
+            throw new ValidationException("'" + e.getValue().asText() + "' is not one of the accepted values");
+          }
+          synonyms.put(e.getKey().strip(), e.getValue().asText().strip());
+        }
+      });
+      if (synonyms.isEmpty()) mapping.remove("synonyms");
+    }
+    if (in.min() != null) mapping.put("min", in.min());
+    if (in.max() != null) mapping.put("max", in.max());
+    if (in.min() != null && in.max() != null && in.min() > in.max()) {
+      throw new ValidationException("The smallest value can't be above the largest");
+    }
+    if (in.pattern() != null && !in.pattern().isBlank()) {
+      if (in.pattern().length() > 300) throw new ValidationException("That pattern is too long");
+      try {
+        java.util.regex.Pattern.compile(in.pattern());
+      } catch (java.util.regex.PatternSyntaxException e) {
+        throw new ValidationException("That pattern is not valid: " + e.getDescription());
+      }
+      mapping.put("pattern", in.pattern());
+      putText(mapping, "patternHint", in.patternHint(), "pattern hint");
+    }
+  }
+
+  private static void putText(ObjectNode mapping, String key, String value, String what) {
+    if (value == null || value.isBlank()) return;
+    if (value.strip().length() > MAX_TEXT) throw new ValidationException("That " + what + " is too long");
+    mapping.put(key, value.strip());
   }
 
   /** The item, or the card it is in, of a choice from a marked or mapped list. */

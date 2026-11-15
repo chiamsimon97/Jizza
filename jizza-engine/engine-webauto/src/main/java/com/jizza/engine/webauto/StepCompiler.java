@@ -231,17 +231,24 @@ final class StepCompiler {
             Json.mapper().getNodeFactory().textNode("{{ input." + name + " }}"));
         if (inputNames.add(name)) {
           ObjectNode field = inputField(name, mapping.getValue());
+          describeInput(field, mapping.getKey(), mapping.getValue(), step, stepInputs);
           // The entries of a repeated section: the run form shows them as a table of its columns.
           if ("rows".equals(mapping.getKey()) && stepInputs.path("columns").isArray()) {
             ArrayNode columns = field.putArray("columns");
             for (JsonNode column : stepInputs.get("columns")) {
-              columns.addObject().put("key", column.path("key").asText())
+              ObjectNode out = columns.addObject().put("key", column.path("key").asText())
                   .put("label", column.path("label").asText(column.path("key").asText()));
+              // What the column's own field knows: mandatory, its choices, its bounds.
+              for (String rule : List.of("required", "options", "min", "max", "pattern")) {
+                if (column.hasNonNull(rule)) out.set(rule, column.get(rule).deepCopy());
+              }
             }
           }
           inputs.add(field);
         }
-        if (mapping.getValue().path("required").asBoolean(false)) {
+        // Mandatory, or asked at its step: the step's card waits for it to be filled in.
+        if (mapping.getValue().path("required").asBoolean(false)
+            || "atStep".equals(mapping.getValue().path("ask").asText(""))) {
           mandatory.add(mapping.getKey());
         }
       }
@@ -539,6 +546,52 @@ final class StepCompiler {
     String format = mapping.path("format").asText("");
     if (!format.isBlank()) field.put("format", format);
     return field;
+  }
+
+  /** The catalogue keys a mapping may carry, passed to the module input as they are. */
+  private static final List<String> CATALOGUE = List.of("label", "group", "ask", "options",
+      "synonyms", "min", "max", "pattern", "patternHint");
+  private static final int GROUP_LENGTH = 40;
+
+  /**
+   * What the run form and every run path learn about an input beyond its type: the person's own
+   * details from the mapping, else what the recording itself shows. Its group is the page it was
+   * typed on; a mandatory value is asked at its step; a dropdown kept as Static accepts only the
+   * items it listed. Nothing here depends on any one site.
+   */
+  static void describeInput(ObjectNode field, String key, JsonNode mapping, JsonNode step,
+                            JsonNode stepInputs) {
+    for (String rule : CATALOGUE) {
+      if (mapping.hasNonNull(rule)) field.set(rule, mapping.get(rule).deepCopy());
+    }
+    if (!field.has("group")) {
+      String group = pageName(step.path("meta"));
+      if (!group.isEmpty()) field.put("group", group);
+    }
+    if (!field.has("ask") && mapping.path("required").asBoolean(false)) field.put("ask", "atStep");
+    if (!field.has("options") && "browser.selectOption".equals(step.path("action").asText())
+        && "static".equals(stepInputs.path("mode").asText()) && stepInputs.path("options").isArray()) {
+      ArrayNode options = Json.mapper().createArrayNode();
+      for (JsonNode option : stepInputs.get("options")) {
+        String text = option.isObject() ? option.path("name").asText("") : option.asText("");
+        if (!text.isBlank()) options.add(text.strip());
+      }
+      if (options.size() > 1) field.set("options", options);
+    }
+  }
+
+  /** The page a step was recorded on, by its title, else its site's host; empty when neither. */
+  static String pageName(JsonNode meta) {
+    String title = meta.path("title").asText("").strip();
+    if (!title.isEmpty()) {
+      return title.length() <= GROUP_LENGTH ? title : title.substring(0, GROUP_LENGTH - 1).strip() + "…";
+    }
+    try {
+      String host = java.net.URI.create(meta.path("url").asText("")).getHost();
+      return host == null ? "" : host.replaceFirst("^www\\.", "");
+    } catch (IllegalArgumentException e) {
+      return "";
+    }
   }
 
   private static ObjectNode webConfig(String action, int version, ObjectNode inputs) {

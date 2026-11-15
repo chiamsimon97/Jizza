@@ -313,4 +313,78 @@ class StepCompilerTest {
     assertThat(steps.stream().map(st -> st.path("action").asText()).toList()).containsExactly(
         "browser.open", "flow.if", "browser.click", "flow.endIf", "browser.click", "browser.close");
   }
+
+  @Test
+  void anInputIsGroupedByItsPageAndCarriesThePersonsRules() {
+    JsonNode set = step("""
+        {"seq":1,"action":"browser.setText","version":1,"label":"Seats",
+         "input":{"element":{"strategies":[{"by":"css","value":"#n"}]},"text":"2"},
+         "meta":{"title":"Passenger details","url":"https://www.shop.example.com/book"},
+         "mappings":{"text":{"name":"seats","type":"number","default":"2","label":"Seats",
+                             "min":1,"max":6}}}""");
+    JsonNode otp = step("""
+        {"seq":2,"action":"browser.setText","version":1,"label":"One-time code",
+         "input":{"element":{"strategies":[{"by":"css","value":"#otp"}]},"text":"1234"},
+         "meta":{"url":"https://www.shop.example.com/verify"},
+         "mappings":{"text":{"name":"code","type":"text","default":"","required":true}}}""");
+
+    var inputs = StepCompiler.compile("https://shop.example.com", List.of(OPEN, set, otp))
+        .path("nodes").get(0).path("config").path("inputs");
+
+    assertThat(inputs.get(0).path("group").asText()).isEqualTo("Passenger details");
+    assertThat(inputs.get(0).path("label").asText()).isEqualTo("Seats");
+    assertThat(inputs.get(0).path("min").asInt()).isEqualTo(1);
+    assertThat(inputs.get(0).path("max").asInt()).isEqualTo(6);
+    assertThat(inputs.get(1).path("group").asText()).as("no title: the site's host").isEqualTo("shop.example.com");
+    assertThat(inputs.get(1).path("ask").asText()).as("mandatory: asked at its step").isEqualTo("atStep");
+  }
+
+  @Test
+  void anInputAskedAtItsStepMakesTheCardWaitForIt() {
+    JsonNode set = step("""
+        {"seq":1,"action":"browser.setText","version":1,"label":"Coupon",
+         "input":{"element":{"strategies":[{"by":"css","value":"#c"}]},"text":"SAVE10"},
+         "meta":{},
+         "mappings":{"text":{"name":"coupon","type":"text","default":"SAVE10","ask":"atStep"}}}""");
+    var nodes = StepCompiler.compile("https://x.example.com", List.of(OPEN, set)).path("nodes");
+    assertThat(nodes.get(2).path("config").path("requiredInputs").toString()).isEqualTo("[\"text\"]");
+  }
+
+  @Test
+  void aStaticDropdownAcceptsOnlyTheItemsItListed() {
+    JsonNode choose = step("""
+        {"seq":1,"action":"browser.selectOption","version":1,"label":"Class",
+         "input":{"element":{"strategies":[{"by":"css","value":"select"}]},"items":["Gold"],
+                  "mode":"static","options":[{"name":"Silver"},{"name":"Gold"},{"name":"Platinum"}]},
+         "meta":{},
+         "mappings":{"items":{"name":"tier","type":"text","default":"Gold"}}}""");
+    JsonNode dynamic = step("""
+        {"seq":2,"action":"browser.selectOption","version":1,"label":"Slot",
+         "input":{"element":{"strategies":[{"by":"css","value":"#slot"}]},"items":["9am"],"mode":"dynamic"},
+         "meta":{},
+         "mappings":{"items":{"name":"slot","type":"text","default":"9am"}}}""");
+
+    var inputs = StepCompiler.compile("https://x.example.com", List.of(OPEN, choose, dynamic))
+        .path("nodes").get(0).path("config").path("inputs");
+
+    assertThat(inputs.get(0).path("options").toString()).isEqualTo("[\"Silver\",\"Gold\",\"Platinum\"]");
+    assertThat(inputs.get(1).has("options")).as("dynamic: read from the page each run").isFalse();
+  }
+
+  @Test
+  void aRowsColumnKeepsItsOwnRules() {
+    JsonNode rows = step("""
+        {"seq":1,"action":"browser.fillRows","version":1,"label":"Rows",
+         "input":{"rowCss":"li","columns":[{"key":"name","label":"Name","required":true},
+                  {"key":"size","label":"Size","options":["S","M","L"]}],"rows":[{"name":"a","size":"M"}]},
+         "meta":{},
+         "mappings":{"rows":{"name":"items","type":"list","default":[{"name":"a","size":"M"}],
+                             "maxRows":4}}}""");
+
+    var input = StepCompiler.compile("https://x.example.com", List.of(OPEN, rows))
+        .path("nodes").get(0).path("config").path("inputs").get(0);
+
+    assertThat(input.path("columns").get(0).path("required").asBoolean()).isTrue();
+    assertThat(input.path("columns").get(1).path("options").size()).isEqualTo(3);
+  }
 }

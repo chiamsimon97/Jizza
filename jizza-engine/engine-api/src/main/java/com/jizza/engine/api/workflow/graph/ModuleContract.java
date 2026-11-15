@@ -134,13 +134,16 @@ public final class ModuleContract {
       throw new ValidationException("This workflow takes its input as named fields: "
           + String.join(", ", inputs.stream().map(Field::name).toList()));
     }
+    JsonNode rawFields = rawInputs(graph);
     ObjectNode out = input == null || input.isNull() ? Json.obj() : ((ObjectNode) input).deepCopy();
     List<String> missing = new ArrayList<>();
     for (Field f : inputs) {
+      JsonNode raw = rawFieldOf(rawFields, f.name());
       JsonNode value = out.get(f.name());
       if (blank(value) && f.defaultValue() != null) value = f.defaultValue();
       if (blank(value)) {
-        if (f.required()) missing.add(f.name());
+        // An input asked for on the step's own card is not needed to start the run.
+        if (f.required() && !"atStep".equals(raw.path("ask").asText(""))) missing.add(f.name());
         continue;
       }
       JsonNode typed = coerce(value, f.type());
@@ -148,6 +151,7 @@ public final class ModuleContract {
         throw new ValidationException("The input '" + f.name() + "' should be " + typeName(f.type())
             + ", not " + Json.toNode(value).toString());
       }
+      typed = InputRules.apply(f.name(), typed, raw);
       out.set(f.name(), typed);
     }
     if (!missing.isEmpty()) {
@@ -157,6 +161,21 @@ public final class ModuleContract {
     return out;
   }
 
+  /** The start step's input declarations as stored, rules and all. */
+  private static JsonNode rawInputs(WorkflowGraph graph) {
+    WorkflowNode trigger = graph.nodes().stream().filter(n -> n.type() == NodeType.TRIGGER)
+        .findFirst().orElse(null);
+    JsonNode list = trigger == null || trigger.config() == null ? null : trigger.config().get("inputs");
+    return list != null && list.isArray() ? list : Json.mapper().createArrayNode();
+  }
+
+  private static JsonNode rawFieldOf(JsonNode rawFields, String name) {
+    for (JsonNode f : rawFields) {
+      if (name.equals(f.path("name").asText(""))) return f;
+    }
+    return Json.mapper().missingNode();
+  }
+
   /** The declared inputs as a JSON schema, which is what a workflow's input schema holds; null when none. */
   public static JsonNode inputSchema(WorkflowGraph graph) {
     List<Field> inputs = inputsOf(graph);
@@ -164,8 +183,10 @@ public final class ModuleContract {
     ObjectNode schema = Json.obj().put("type", "object");
     ObjectNode properties = schema.putObject("properties");
     ArrayNode required = schema.putArray("required");
+    JsonNode rawFields = rawInputs(graph);
     for (Field f : inputs) {
       ObjectNode p = properties.putObject(f.name());
+      describeRules(p, rawFieldOf(rawFields, f.name()));
       String jsonType = switch (f.type()) {
         case "number" -> "number";
         case "boolean" -> "boolean";
@@ -185,6 +206,21 @@ public final class ModuleContract {
       if (f.required()) required.add(f.name());
     }
     return schema;
+  }
+
+  /** The input's catalogue details in JSON Schema terms, plus x- keys for the run form. */
+  private static void describeRules(ObjectNode p, JsonNode raw) {
+    if (raw.path("options").isArray() && raw.get("options").size() > 0) p.set("enum", raw.get("options").deepCopy());
+    if (raw.path("min").isNumber()) p.set("minimum", raw.get("min"));
+    if (raw.path("max").isNumber()) p.set("maximum", raw.get("max"));
+    if (raw.path("pattern").isTextual()) p.put("pattern", raw.get("pattern").asText());
+    if (raw.path("maxLength").isInt()) p.put("maxLength", raw.get("maxLength").asInt());
+    if (raw.path("minRows").isInt()) p.put("minItems", raw.get("minRows").asInt());
+    if (raw.path("maxRows").isInt()) p.put("maxItems", raw.get("maxRows").asInt());
+    for (String key : java.util.List.of("label", "group", "ask", "patternHint")) {
+      if (raw.path(key).isTextual()) p.put("x-" + key, raw.get(key).asText());
+    }
+    if (raw.path("label").isTextual()) p.put("title", raw.get("label").asText());
   }
 
   private static boolean blank(JsonNode value) {
