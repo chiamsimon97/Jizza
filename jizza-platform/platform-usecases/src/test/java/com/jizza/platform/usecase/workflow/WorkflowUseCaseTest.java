@@ -121,6 +121,28 @@ class WorkflowUseCaseTest {
   }
 
   @Test
+  void theBuilderCannotSaveAnOlderVersionOverANewerOne() {
+    var created = useCase.save(userId, null, "IRCTC", "desc", graph(), null, null, null);
+    // An edited recording saved version 2 while the builder still showed version 1.
+    var newer = new WorkflowDto(created.id(), userId, created.name(), created.description(),
+        created.graph(), null, null, created.origin(), WorkflowStatus.DRAFT, null, 2, null,
+        created.createdAt());
+    rows.removeIf(w -> w.id().equals(created.id()));
+    rows.add(newer);
+
+    assertThatThrownBy(() -> useCase.save(userId, created.id(), "Old steps", "desc", graph(),
+        null, null, null, null, 1))
+        .isInstanceOf(ConflictException.class)
+        .hasMessageContaining("newer version (2)");
+    assertThat(useCase.get(userId, created.id()).name()).isEqualTo("IRCTC");
+    // Opened at the newest version (or a caller that names none): saved as before.
+    assertThat(useCase.save(userId, created.id(), "Renamed", "desc", graph(), null, null, null,
+        null, 2).name()).isEqualTo("Renamed");
+    assertThat(useCase.save(userId, created.id(), "Again", "desc", graph(), null, null, null)
+        .name()).isEqualTo("Again");
+  }
+
+  @Test
   void anotherUsersWorkflowIsReportedMissingRatherThanForbidden() {
     var created = useCase.save(userId, null, "My workflow", "desc", graph(), null, null, null);
     UUID somebodyElse = UUID.randomUUID();

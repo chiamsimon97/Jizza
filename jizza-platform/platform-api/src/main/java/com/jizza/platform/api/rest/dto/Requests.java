@@ -111,7 +111,14 @@ public final class Requests {
   public record WorkflowSave(UUID id, @NotBlank @Size(max = 200) String name,
                              @Size(max = 4000) String description,
                              @NotNull JsonNode graph, JsonNode inputSchema, JsonNode triggerConfig,
-                             UUID owningAgentId, JsonNode reuse) {}
+                             UUID owningAgentId, JsonNode reuse, Integer baseVersion) {
+    /** {@code baseVersion}: the version the builder opened; a save over a newer one is refused. */
+    public WorkflowSave(UUID id, String name, String description, JsonNode graph,
+                        JsonNode inputSchema, JsonNode triggerConfig, UUID owningAgentId,
+                        JsonNode reuse) {
+      this(id, name, description, graph, inputSchema, triggerConfig, owningAgentId, reuse, null);
+    }
+  }
 
   public record SaveAsSkill(@NotBlank @Size(max = 200) String name,
                             @Size(max = 4000) String description, JsonNode parameterSchema) {}

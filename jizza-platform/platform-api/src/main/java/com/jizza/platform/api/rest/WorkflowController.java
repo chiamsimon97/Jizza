@@ -118,7 +118,7 @@ public class WorkflowController {
     }
     return workflows.save(userId, request.id(), request.name(),
         request.description(), request.graph(), request.inputSchema(), request.triggerConfig(),
-        request.owningAgentId(), ReuseProfile.from(request.reuse()));
+        request.owningAgentId(), ReuseProfile.from(request.reuse()), request.baseVersion());
   }
 
   /** The workflows Jizza may reuse, with what it keeps about each and their guardrails. */
