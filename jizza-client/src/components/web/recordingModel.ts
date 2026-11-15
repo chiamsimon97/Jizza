@@ -122,6 +122,81 @@ export function reusableOps(steps: RecordedStep[] | undefined): EditOp[] {
   return ops
 }
 
+/** The live steps whose mappings use this input name (an input can feed several steps). */
+export function stepsUsingInput(steps: RecordedStep[] | undefined, name: string): RecordedStep[] {
+  return liveSteps(steps).filter(s =>
+    Object.values(s.step.mappings ?? {}).some(m => m.name === name))
+}
+
+/** The edits that stop a field being an input: the recorded value stays and is used as is. */
+export function unmapOps(targets: { step: RecordedStep; field: string }[]): EditOp[] {
+  return targets.map(({ step, field }) => ({ op: 'map', seq: step.seq, field, input: null }))
+}
+
+/** List choices that follow the list this step chooses from (they would lose their anchor). */
+export function dependentListChoices(steps: RecordedStep[] | undefined, s: RecordedStep): RecordedStep[] {
+  const title = s.step.meta?.list?.title
+  if (!title) return []
+  return liveSteps(steps).filter(other => other.seq !== s.seq
+    && other.step.meta?.list?.dependsOn?.title === title)
+}
+
+/** The page a step ran on (origin and path), for grouping; steps with no page inherit the previous one. */
+function pageKey(s: RecordedStep): string | null {
+  const url = s.step.meta?.url
+  if (typeof url !== 'string' || !url) return null
+  try {
+    const parsed = new URL(url)
+    return parsed.origin + parsed.pathname
+  } catch {
+    return url
+  }
+}
+
+/**
+ * Tidy up: steps grouped by the page they ran on, pages in the order first visited, the steps of
+ * each page in their current relative order. Returns the new order of seqs and which moved, or
+ * null when nothing changes or the recording has conditions (their blocks must not be split).
+ */
+export function pageArrangement(steps: RecordedStep[] | undefined):
+  { order: number[]; moved: Set<number> } | { blocked: string } | null {
+  const live = liveSteps(steps)
+  if (live.some(isCondition)) {
+    return { blocked: 'This recording has conditions, and Tidy up does not reorder those yet.' }
+  }
+  const keys: string[] = []
+  let last = ''
+  for (const s of live) {
+    const key = pageKey(s) ?? last
+    keys.push(key)
+    last = key
+  }
+  const pageOrder: string[] = []
+  for (const key of keys) if (!pageOrder.includes(key)) pageOrder.push(key)
+  const order = pageOrder.flatMap(page => live.filter((s, i) => keys[i] === page).map(s => s.seq))
+  const moved = new Set(order.filter((seq, i) => live[i]?.seq !== seq))
+  return moved.size === 0 ? null : { order, moved }
+}
+
+/** The move edits that take the live steps to the given seq order, as the server applies them. */
+export function movesFor(steps: RecordedStep[] | undefined, order: number[]): EditOp[] {
+  return movesBetween(liveSteps(steps).map(s => s.seq), order)
+}
+
+/** The move edits that turn one seq order into another. */
+export function movesBetween(from: number[], order: number[]): EditOp[] {
+  const current = [...from]
+  const ops: EditOp[] = []
+  for (let i = 0; i < order.length; i++) {
+    if (current[i] === order[i]) continue
+    const from = current.indexOf(order[i])
+    current.splice(from, 1)
+    current.splice(i, 0, order[i])
+    ops.push({ op: 'move', seq: order[i], toIndex: i })
+  }
+  return ops
+}
+
 /** A condition's start (`flow.if`), its "Otherwise" (`flow.else`) or its end (`flow.endIf`). */
 export function isCondition(step: RecordedStep): boolean {
   return step.step.action === 'flow.if' || step.step.action === 'flow.else' || step.step.action === 'flow.endIf'

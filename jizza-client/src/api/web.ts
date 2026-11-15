@@ -123,7 +123,7 @@ export interface SaveRecordingResult {
 export interface RecordingEvent { recordingId: string; status: string; stepCount: number; lastStep?: RecordedStep }
 
 export interface EditOp {
-  op: 'delete' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck' | 'update'
+  op: 'delete' | 'restore' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck' | 'update' | 'removeField'
   seq: number
   toIndex?: number
   label?: string

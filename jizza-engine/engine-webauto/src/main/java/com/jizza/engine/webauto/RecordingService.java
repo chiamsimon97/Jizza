@@ -701,6 +701,12 @@ public class RecordingService implements Recordings, RecordingIntake {
         target.node.put("label", label);
         target.changed = true;
       }
+      case "restore" -> {
+        // Undo of a delete: the step keeps its place, so it simply shows again.
+        target.entity.setDeleted(false);
+        target.changed = true;
+      }
+      case "removeField" -> removeField(target, op.toIndex());
       case "map" -> map(target, op);
       case "secret" -> {
         if (!person) throw new ValidationException("Only the person chooses a saved login");
@@ -889,6 +895,52 @@ public class RecordingService implements Recordings, RecordingIntake {
         VALUE_FIELDS.forEach(((ObjectNode) target.node.get("mappings"))::remove);
       }
       target.node.put("secretRef", ref);
+    }
+    target.changed = true;
+  }
+
+  /**
+   * Removes one field from a form step ({@code input.fields}) or one column from a repeated-rows
+   * step ({@code input.columns}, with that column's values dropped from every row). Mappings on
+   * later form fields keep pointing at the same field: their {@code fields.N.value} keys shift.
+   */
+  private void removeField(Held target, Integer index) {
+    if (index == null || index < 0) throw new ValidationException("Which field to remove?");
+    JsonNode input = target.node.path("input");
+    if (!(input instanceof ObjectNode in)) throw new ValidationException("This step has no fields");
+    if (in.path("fields").isArray()) {
+      ArrayNode fields = (ArrayNode) in.get("fields");
+      if (index >= fields.size()) throw new ValidationException("This step has no field " + index);
+      fields.remove(index);
+      JsonNode mappings = target.node.path("mappings");
+      if (mappings instanceof ObjectNode maps) {
+        ObjectNode next = Json.obj();
+        maps.fields().forEachRemaining(entry -> {
+          var m = java.util.regex.Pattern.compile("^fields\\.(\\d+)\\.value$")
+              .matcher(entry.getKey());
+          if (!m.matches()) {
+            next.set(entry.getKey(), entry.getValue());
+            return;
+          }
+          int at = Integer.parseInt(m.group(1));
+          if (at == index) return; // the removed field's input goes with it
+          next.set(at > index ? "fields." + (at - 1) + ".value" : entry.getKey(),
+              entry.getValue());
+        });
+        target.node.set("mappings", next);
+      }
+    } else if (in.path("columns").isArray()) {
+      ArrayNode columns = (ArrayNode) in.get("columns");
+      if (index >= columns.size()) throw new ValidationException("This step has no column " + index);
+      String name = columns.get(index).path("name").asText("");
+      columns.remove(index);
+      if (in.path("rows").isArray() && !name.isEmpty()) {
+        for (JsonNode row : in.get("rows")) {
+          if (row instanceof ObjectNode r) r.remove(name);
+        }
+      }
+    } else {
+      throw new ValidationException("This step has no fields to remove");
     }
     target.changed = true;
   }

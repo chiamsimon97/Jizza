@@ -425,6 +425,87 @@ class RecordingServiceTest {
   }
 
   @Test
+  void restoreUndoesADelete() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.click", "Search", "{}", false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(2, "browser.click", "Book", "{}", false)));
+    service.stop(access, id);
+
+    service.edit(access, id, List.of(
+        new Recordings.EditOp("delete", 1, null, null, null, null, null, null)));
+    var restored = service.edit(access, id, List.of(
+        new Recordings.EditOp("restore", 1, null, null, null, null, null, null)));
+
+    // The step shows again, in the place it had.
+    assertThat(restored.steps().stream().filter(s -> !s.deleted()).map(Recordings.RecordedStep::seq))
+        .containsExactly(1, 2);
+  }
+
+  @Test
+  void removeFieldDropsAFormFieldAndShiftsLaterMappings() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillForm", "Traveller details",
+            "{\"fields\":[{\"kind\":\"text\",\"label\":\"Name\",\"value\":\"Asha\"},"
+                + "{\"kind\":\"text\",\"label\":\"Middle\",\"value\":\"K\"},"
+                + "{\"kind\":\"text\",\"label\":\"Age\",\"value\":\"34\"}]}", false)));
+    for (String[] m : new String[][] {{"fields.0.value", "name"}, {"fields.2.value", "age"}}) {
+      var map = Json.obj().put("recordingId", id.toString()).put("op", "map")
+          .put("seq", 1).put("field", m[0]);
+      map.putObject("input").put("name", m[1]).put("type", "text");
+      service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+    }
+    service.stop(access, id);
+
+    var edited = service.edit(access, id, List.of(
+        new Recordings.EditOp("removeField", 1, 1, null, null, null, null, null)));
+
+    var step = edited.steps().get(0).step();
+    assertThat(step.path("input").path("fields")).hasSize(2);
+    assertThat(step.path("input").path("fields").get(1).path("label").asText()).isEqualTo("Age");
+    // The mapping that pointed at fields.2.value follows its field to fields.1.value.
+    assertThat(step.path("mappings").path("fields.0.value").path("name").asText())
+        .isEqualTo("name");
+    assertThat(step.path("mappings").path("fields.1.value").path("name").asText()).isEqualTo("age");
+    assertThat(step.path("mappings").has("fields.2.value")).isFalse();
+  }
+
+  @Test
+  void removeFieldDropsARowsColumnEverywhere() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillRows", "Fill a row for each traveller",
+            "{\"row\":{\"strategies\":[{\"by\":\"css\",\"value\":\".row\"}]},\"rowCss\":\".row\","
+                + "\"columns\":[{\"name\":\"name\",\"kind\":\"text\"},"
+                + "{\"name\":\"food\",\"kind\":\"select\"}],"
+                + "\"rows\":[{\"name\":\"Asha\",\"food\":\"Veg\"},"
+                + "{\"name\":\"Ravi\",\"food\":\"None\"}]}", false)));
+    service.stop(access, id);
+
+    var edited = service.edit(access, id, List.of(
+        new Recordings.EditOp("removeField", 1, 1, null, null, null, null, null)));
+
+    var input = edited.steps().get(0).step().path("input");
+    assertThat(input.path("columns")).hasSize(1);
+    assertThat(input.path("rows").get(0).has("food")).isFalse();
+    assertThat(input.path("rows").get(1).has("food")).isFalse();
+    assertThat(input.path("rows").get(0).path("name").asText()).isEqualTo("Asha");
+  }
+
+  @Test
+  void removeFieldRefusesStepsWithoutFields() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.click", "Search", "{}", false)));
+    service.stop(access, id);
+    assertThatThrownBy(() -> service.edit(access, id, List.of(
+        new Recordings.EditOp("removeField", 1, 0, null, null, null, null, null))))
+        .isInstanceOf(ValidationException.class);
+  }
+
+  @Test
   void eachFieldOfAFormStepCanBecomeAnInput() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
