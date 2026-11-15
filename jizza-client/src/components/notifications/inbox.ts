@@ -252,6 +252,9 @@ export function fixLinkOf(n: NotificationDto): string | null {
 
 /** What became of a request, in words. */
 export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' | 'warning' | 'danger' | 'default' } | null {
+  const fromDevice = !!n.context?.deviceHelp
+  if (fromDevice && n.status === 'APPROVED') return { text: 'You answered', tone: 'success' }
+  if (fromDevice && n.status === 'DENIED') return { text: 'You stopped it', tone: 'danger' }
   switch (n.status) {
     case 'APPROVED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You approved this procedure' : 'You approved this', tone: 'success' }
     case 'DENIED': return { text: n.kind === 'WORKFLOW_REVIEW' ? 'You asked for changes' : 'You declined this', tone: 'danger' }

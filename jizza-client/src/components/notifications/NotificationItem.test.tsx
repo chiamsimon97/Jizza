@@ -80,3 +80,62 @@ describe('a card with a mandatory field', () => {
     })
   })
 })
+
+describe('a browser asking mid-step', () => {
+  const CAPTCHA = {
+    id: 'n2', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-15T10:00:00Z',
+    expiresAt: '2026-11-15T10:09:30Z', body: 'On Chrome: The page shows a CAPTCHA.',
+    context: {
+      source: 'device', kind: 'captcha',
+      deviceHelp: {
+        deviceId: 'd1', commandId: 'c1', kind: 'captcha',
+        shot: '0b5c2f1e-6a1d-4c39-9a5e-2f9d1c7b8a01', answer: { secret: true, required: true },
+      },
+    },
+  } as unknown as NotificationDto
+
+  function show(n: NotificationDto, inbox: InboxActions) {
+    render(
+      <MemoryRouter>
+        <NotificationItem n={n} now={Date.parse('2026-11-15T10:01:00Z')} actions={inbox}
+          focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('shows the picture and a box, and sends what is typed', () => {
+    const inbox = actions()
+    show(CAPTCHA, inbox)
+    expect(screen.getByText('Solve the CAPTCHA')).toBeTruthy()
+    expect(screen.getByAltText('What the page shows').getAttribute('src'))
+      .toBe('/api/devices/d1/files/0b5c2f1e-6a1d-4c39-9a5e-2f9d1c7b8a01')
+    expect(screen.getByTestId('device-help-countdown').textContent).toMatch(/left/)
+    // The ordinary Approve / Decline are not offered: this card answers the browser.
+    expect(screen.queryByRole('button', { name: /^approve/i })).toBeNull()
+    const send = screen.getByRole('button', { name: /send/i }) as HTMLButtonElement
+    expect(send.disabled).toBe(true)
+    fireEvent.change(screen.getByTestId('device-help-answer'), { target: { value: ' X7K2P ' } })
+    fireEvent.click(send)
+    expect(inbox.approve).toHaveBeenCalledWith(CAPTCHA, { answer: 'X7K2P' })
+  })
+
+  it('can say it was done in the browser, or stop', () => {
+    const inbox = actions()
+    show(CAPTCHA, inbox)
+    fireEvent.click(screen.getByRole('button', { name: /i did it in the browser/i }))
+    expect(inbox.approve).toHaveBeenCalledWith(CAPTCHA, { done: true })
+  })
+
+  it('a hand-over asks only for Done', () => {
+    const inbox = actions()
+    const handOff = {
+      ...CAPTCHA,
+      context: { deviceHelp: { deviceId: 'd1', commandId: 'c1', kind: 'handoff' } },
+    } as unknown as NotificationDto
+    show(handOff, inbox)
+    expect(screen.getByText('Your turn in the browser')).toBeTruthy()
+    expect(screen.queryByTestId('device-help-answer')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /stop/i }))
+    expect(inbox.decline).toHaveBeenCalledWith(handOff, 'Stopped')
+  })
+})

@@ -65,13 +65,15 @@ public class AgentGatewayService implements DeviceAgentGateway {
   private final EncryptionService encryption;
   private final ObjectProvider<NotificationBus> notifications;
   private final DeviceProperties props;
+  private final MessageSignatures signatures;
 
   public AgentGatewayService(DeviceRegistryService registry, CommandBroker broker,
                              DeviceEventIntake events, DeviceHub hub, DeviceActionCatalog catalog,
                              DeviceRepository devices, DeviceCommandRepository commands,
                              DeviceFileRepository files, DeviceLogRepository logs,
                              StorageProvider storage, EncryptionService encryption,
-                             ObjectProvider<NotificationBus> notifications, DeviceProperties props) {
+                             ObjectProvider<NotificationBus> notifications, DeviceProperties props,
+                             MessageSignatures signatures) {
     this.registry = registry;
     this.broker = broker;
     this.events = events;
@@ -85,6 +87,7 @@ public class AgentGatewayService implements DeviceAgentGateway {
     this.encryption = encryption;
     this.notifications = notifications;
     this.props = props;
+    this.signatures = signatures;
   }
 
   @Override
@@ -132,6 +135,27 @@ public class AgentGatewayService implements DeviceAgentGateway {
         && !caller.deviceId().toString().equals(envelope.get("deviceId").asText())) {
       return Protocol.error(caller.deviceId(), replyTo, Protocol.Errors.UNAUTHORIZED,
           "A device can only speak for itself");
+    }
+    switch (signatures.check(caller.deviceId(), envelope)) {
+      case REFUSE_UNSIGNED -> {
+        return Protocol.error(caller.deviceId(), replyTo, Protocol.Errors.UNAUTHORIZED,
+            "This device signs its messages: an unsigned one is refused");
+      }
+      case REFUSE_BAD_SIGNATURE -> {
+        return Protocol.error(caller.deviceId(), replyTo, Protocol.Errors.BAD_SIGNATURE,
+            "The message's signature does not match this device's key");
+      }
+      case REFUSE_STALE -> {
+        return Protocol.error(caller.deviceId(), replyTo, Protocol.Errors.EXPIRED,
+            "The message is too old, or dated in the future");
+      }
+      case REPLAY -> {
+        // Already acted on (a resend after a lost ack, or a replay): confirm it, do nothing.
+        return Protocol.ACKED.contains(type) ? Protocol.ack(caller.deviceId(), replyTo) : null;
+      }
+      case ACCEPT -> {
+        // Checked: carry on.
+      }
     }
     JsonNode body = envelope.path("body").isObject() ? envelope.get("body") : Json.obj();
     hub.touch(caller.deviceId(), null);

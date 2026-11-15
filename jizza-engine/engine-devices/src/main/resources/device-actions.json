@@ -971,6 +971,32 @@
       "output":{"type":"object","properties":{"chosen":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["chosen"]},"conditions":["site"],"platforms":["browser"],"defaultTimeoutSec":60
     },
     {
+      "action":"browser.ask",
+      "version":1,
+      "capability":"browser",
+      "actionType":"READ",
+      "title":"Ask me",
+      "description":"Stops and asks you on a card in Jizza (and in the browser's side panel), with a picture of part of the page if you pick one, then types your answer into a box on the page or passes it to the next steps. For CAPTCHAs and one-time codes: you solve them, Jizza never does.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"expectOrigin":{"type":"string","maxLength":300,"description":"The site the step was recorded on: it refuses to act while the tab shows another one."},"message":{"type":"string","minLength":1,"maxLength":300,"description":"The question on the card."},"picture":{"$ref":"device-actions.json#/schemas/locatorBundle","description":"Part of the page shown on the card (a CAPTCHA, a total)."},"answerElement":{"$ref":"device-actions.json#/schemas/locatorBundle","description":"The box on the page your answer is typed into."},"secret":{"type":"boolean","default":true,"description":"Never show, keep or report the answer (a CAPTCHA, a code)."},"wantsAnswer":{"type":"boolean","default":true,"description":"Off: the card only asks you to press Done after doing it in the browser."},"timeoutMs":{"type":"integer","default":300000,"minimum":10000,"maximum":1800000},"screenshotOnError":{"type":"boolean","default":true}},"required":["message"]},
+      "output":{"type":"object","properties":{"answered":{"type":"boolean"},"from":{"enum":["card","browser"]},"answer":{"type":"string"}},"required":["answered"]},
+      "conditions":["site"],
+      "platforms":["browser"],
+      "defaultTimeoutSec":600
+    },
+    {
+      "action":"browser.handOff",
+      "version":1,
+      "capability":"browser",
+      "actionType":"READ",
+      "title":"Hand over to me",
+      "description":"Brings the tab to the front and waits while you do something only you should, like paying. The run carries on when the page shows success or failure, or when you press Done. Jizza types and clicks nothing meanwhile.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"expectOrigin":{"type":"string","maxLength":300,"description":"The site the step was recorded on: it refuses to act while the tab shows another one."},"message":{"type":"string","maxLength":300,"default":"Finish this in the browser, then press Done."},"successUrl":{"type":"string","maxLength":500,"description":"Done well when the address contains this (* matches anything)."},"successText":{"type":"string","maxLength":200,"description":"...or when the page shows this text."},"failureUrl":{"type":"string","maxLength":500},"failureText":{"type":"string","maxLength":200},"timeoutMs":{"type":"integer","default":900000,"minimum":10000,"maximum":1800000},"screenshotOnError":{"type":"boolean","default":false}},"required":[]},
+      "output":{"type":"object","properties":{"outcome":{"enum":["success","failure","done"]},"url":{"type":"string"}},"required":["outcome"]},
+      "conditions":["site"],
+      "platforms":["browser"],
+      "defaultTimeoutSec":1200
+    },
+    {
       "action": "browser.runRecording",
       "version": 1,
       "capability": "browser",

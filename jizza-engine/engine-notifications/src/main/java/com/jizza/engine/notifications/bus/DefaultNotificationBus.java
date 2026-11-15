@@ -10,6 +10,7 @@ import com.jizza.engine.api.enums.NotificationPriority;
 import com.jizza.engine.api.enums.NotificationStatus;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.event.DeviceHelpAnswered;
 import com.jizza.engine.api.event.InfoRaised;
 import com.jizza.engine.api.event.InstructionRequired;
 import com.jizza.engine.api.event.InstructionSubmitted;
@@ -160,7 +161,12 @@ public class DefaultNotificationBus implements NotificationBus {
     };
   }
 
+  /** Longest answer passed on to a device (a CAPTCHA's text, a code, a short value). */
+  static final int MAX_DEVICE_ANSWER = 200;
+
   private NotificationDto answerPermission(NotificationEntity entity, Answer answer) {
+    JsonNode help = entity.getContext() == null ? null : entity.getContext().get("deviceHelp");
+    if (help != null && help.isObject()) return answerDeviceHelp(entity, help, answer);
     boolean approved = answer.kind() == Answer.Kind.APPROVE;
     if (approved) requireFilledIn(entity, answer.inputs());
     entity.setStatus(approved ? NotificationStatus.APPROVED : NotificationStatus.DENIED);
@@ -186,6 +192,57 @@ public class DefaultNotificationBus implements NotificationBus {
       resumeRun(entity, payload);
     }
     return toDto(entity);
+  }
+
+  /**
+   * A device asked the person mid-command (a CAPTCHA, a code, an Ask step, a hand-over). Approving
+   * goes on, with what they typed in {@code inputs.answer} unless they pressed Done
+   * ({@code inputs.done}); declining stops the command. The answer is handed to the device module
+   * in an event and kept nowhere: not on the item, not in the audit, not in the run.
+   */
+  private NotificationDto answerDeviceHelp(NotificationEntity entity, JsonNode help, Answer answer) {
+    boolean approved = answer.kind() == Answer.Kind.APPROVE;
+    JsonNode inputs = answer.inputs();
+    String typed = null;
+    if (approved && inputs != null && inputs.path("answer").isTextual()) {
+      typed = inputs.get("answer").asText().strip();
+      if (typed.isEmpty()) typed = null;
+      else if (typed.length() > MAX_DEVICE_ANSWER) typed = typed.substring(0, MAX_DEVICE_ANSWER);
+    }
+    boolean done = inputs != null && inputs.path("done").asBoolean(false);
+    boolean required = help.path("answer").path("required").asBoolean(false);
+    if (approved && required && typed == null && !done) {
+      throw new ValidationException(
+          "Type the answer, or press Done if you finished it in the browser");
+    }
+    UUID deviceId = uuidOrNull(help.path("deviceId").asText(null));
+    UUID commandId = uuidOrNull(help.path("commandId").asText(null));
+    if (deviceId == null || commandId == null) {
+      throw new ValidationException("This item no longer reaches its device");
+    }
+    entity.setStatus(approved ? NotificationStatus.APPROVED : NotificationStatus.DENIED);
+    entity.setAnsweredAt(Instant.now());
+    entity.setResponseNote(approved ? null : "Stopped");
+    entity.setSnoozedUntil(null);
+    notifications.save(entity);
+    audit.record(entity.getUserId(), ActorType.USER, null,
+        approved ? "notification.device_help_answered" : "notification.device_help_stopped",
+        entity.getId().toString(),
+        Json.obj().put("commandId", commandId.toString()).put("answered", typed != null));
+    events.publishEvent(new DeviceHelpAnswered(entity.getUserId(), entity.getId(), deviceId,
+        commandId, !approved, typed));
+    NotificationDto dto = toDto(entity);
+    realtime.ifAvailable(gateway -> gateway.publish(entity.getUserId(), "notifications", dto));
+    return dto;
+  }
+
+  private static UUID uuidOrNull(String value) {
+    if (value == null) return null;
+    try {
+      return UUID.fromString(value);
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
   }
 
   /**
@@ -422,6 +479,18 @@ public class DefaultNotificationBus implements NotificationBus {
       closed++;
     }
     return closed;
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRED)
+  public boolean closeOpen(UUID notificationId, String reason) {
+    NotificationEntity item = notifications.findById(notificationId).orElse(null);
+    if (item == null) return false;
+    boolean open = item.getStatus() == NotificationStatus.UNREAD
+        || item.getStatus() == NotificationStatus.READ;
+    if (!open || !item.getKind().blocking()) return false;
+    close(item, reason);
+    return true;
   }
 
   /** Files an item that no longer needs an answer, saying why on the item itself. */
