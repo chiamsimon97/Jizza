@@ -26,7 +26,12 @@ jobs:
       # pgvector/pgvector:pg16 container through Testcontainers instead of skipping.
       # A self-hosted machine without Docker skips the database suites instead.
       - name: Pre-pull the test database image
-        run: if command -v docker >/dev/null && docker info >/dev/null 2>&1; then docker pull pgvector/pgvector:pg16; else echo "No Docker: database suites will be skipped"; fi
+        run: |
+          if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+            docker pull pgvector/pgvector:pg16
+          else
+            echo "No Docker, so the database suites will be skipped"
+          fi
       - name: Run tests
         run: mvn -B -ntp test
       - name: Upload surefire reports
