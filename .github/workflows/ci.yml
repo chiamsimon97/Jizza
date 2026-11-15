@@ -12,7 +12,8 @@ concurrency:
 jobs:
   backend:
     name: Backend (mvn test)
-    runs-on: ubuntu-latest
+    # Repository variable CI_RUNNER=self-hosted runs this on a registered machine instead.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +24,14 @@ jobs:
           cache: maven
       # ubuntu-latest ships a Docker daemon, so the *DbTest and *E2eTest suites start the
       # pgvector/pgvector:pg16 container through Testcontainers instead of skipping.
+      # A self-hosted machine without Docker skips the database suites instead.
       - name: Pre-pull the test database image
-        run: docker pull pgvector/pgvector:pg16
+        run: |
+          if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+            docker pull pgvector/pgvector:pg16
+          else
+            echo "No Docker, so the database suites will be skipped"
+          fi
       - name: Run tests
         run: mvn -B -ntp test
       - name: Upload surefire reports
@@ -37,7 +44,8 @@ jobs:
 
   client:
     name: Client (npm run build)
-    runs-on: ubuntu-latest
+    # Repository variable CI_RUNNER=self-hosted runs this on a registered machine instead.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     defaults:
       run:

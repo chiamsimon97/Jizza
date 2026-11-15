@@ -17,6 +17,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /** {@code /run <workflow>} in chat runs the workflow without asking the model anything. */
+@org.junit.jupiter.api.condition.EnabledIf(
+    value = "com.jizza.engine.persistence.support.TestDatabase#available",
+    disabledReason = "no PostgreSQL: set JIZZA_TEST_DB_URL or start Docker")
 class RunCommandE2eTest extends E2eSupport {
 
   private static final String PASSWORD = "Correct-Horse-92";

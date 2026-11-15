@@ -110,10 +110,19 @@ public interface Recordings {
    * format the site writes it in (DD/MM/YYYY), so the value given is written that way. A
    * {@code required} (mandatory) one keeps no recorded value: each run must be given it, and
    * the step's card waits for it to be filled in before it can be submitted.
+   *
+   * <p>The rest are optional and apply wherever a run gets the value: {@code label} and
+   * {@code group} for the run form, {@code ask} for when it is asked, {@code options} with
+   * {@code synonyms}, {@code min}/{@code max} and {@code pattern} for what it accepts.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
   record Input(String name, String type, @JsonProperty("default") JsonNode defaultValue,
-               String format, Boolean required) {
+               String format, Boolean required, String label, String group, String ask,
+               JsonNode options, JsonNode synonyms, Double min, Double max, String pattern,
+               String patternHint) {
+
+    /** When a run asks for the value: before it starts, at the step, or only when not given. */
+    public static final java.util.Set<String> ASKS = java.util.Set.of("upFront", "atStep", "ifMissing");
 
     public Input(String name, String type, JsonNode defaultValue) {
       this(name, type, defaultValue, null, null);
@@ -121,6 +130,10 @@ public interface Recordings {
 
     public Input(String name, String type, JsonNode defaultValue, String format) {
       this(name, type, defaultValue, format, null);
+    }
+
+    public Input(String name, String type, JsonNode defaultValue, String format, Boolean required) {
+      this(name, type, defaultValue, format, required, null, null, null, null, null, null, null, null, null);
     }
 
     public boolean mandatory() {

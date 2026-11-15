@@ -644,12 +644,20 @@ public class RecordingService implements Recordings, RecordingIntake {
     Recordings.Input input = null;
     if ("map".equals(op)) {
       JsonNode in = data.path("input");
-      if (!in.isObject() || !data.path("field").isTextual()) {
+      // A null input is an unmap: the field goes back to the value it was recorded with.
+      if (!(in.isObject() || in.isNull()) || !data.path("field").isTextual()) {
         log.info("Dropped a recording edit for {}: map needs a field and an input", recording.getId());
         return;
       }
-      input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
-          null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null);
+      if (in.isObject()) {
+        input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
+            null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null,
+            in.path("label").asText(null), in.path("group").asText(null), in.path("ask").asText(null),
+            in.get("options"), in.get("synonyms"),
+            in.path("min").isNumber() ? in.get("min").asDouble() : null,
+            in.path("max").isNumber() ? in.get("max").asDouble() : null,
+            in.path("pattern").asText(null), in.path("patternHint").asText(null));
+      }
     }
     List<Held> held = load(recording.getId());
     try {
@@ -701,6 +709,12 @@ public class RecordingService implements Recordings, RecordingIntake {
         target.node.put("label", label);
         target.changed = true;
       }
+      case "restore" -> {
+        // Undo of a delete: the step keeps its place, so it simply shows again.
+        target.entity.setDeleted(false);
+        target.changed = true;
+      }
+      case "removeField" -> removeField(target, op.toIndex());
       case "map" -> map(target, op);
       case "secret" -> {
         if (!person) throw new ValidationException("Only the person chooses a saved login");
@@ -851,8 +865,75 @@ public class RecordingService implements Recordings, RecordingIntake {
     } else {
       mapping.set("default", op.input().defaultValue() != null ? op.input().defaultValue() : value);
     }
+    describe(mapping, op.input());
     mappings.set(op.field(), mapping);
     target.changed = true;
+  }
+
+  static final int MAX_OPTIONS = 500;
+  private static final int MAX_TEXT = 120;
+
+  /**
+   * The optional catalogue details of an input: how the run form shows it, when a run asks for it,
+   * and what it accepts. Each is checked here so a run never meets a rule it cannot apply.
+   */
+  static void describe(ObjectNode mapping, Recordings.Input in) {
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    putText(mapping, "label", in.label(), "label");
+    putText(mapping, "group", in.group(), "group");
+    if (in.ask() != null && !in.ask().isBlank()) {
+      if (!Recordings.Input.ASKS.contains(in.ask())) {
+        throw new ValidationException("An input is asked upFront, atStep or ifMissing, not '" + in.ask() + "'");
+      }
+      mapping.put("ask", in.ask());
+    }
+    if (in.options() != null && !in.options().isNull()) {
+      if (!in.options().isArray()) throw new ValidationException("The choices of an input are a list");
+      if (in.options().size() > MAX_OPTIONS) {
+        throw new ValidationException("An input can have at most " + MAX_OPTIONS + " choices");
+      }
+      var options = mapping.putArray("options");
+      for (JsonNode o : in.options()) {
+        String text = o.isValueNode() ? o.asText().strip() : "";
+        if (text.isEmpty() || text.length() > 200 || !seen.add(text)) continue;
+        options.add(text);
+      }
+      if (options.isEmpty()) mapping.remove("options");
+    }
+    if (in.synonyms() != null && in.synonyms().isObject() && mapping.has("options")) {
+      var synonyms = mapping.putObject("synonyms");
+      in.synonyms().fields().forEachRemaining(e -> {
+        if (synonyms.size() < MAX_OPTIONS && e.getValue().isValueNode()
+            && !e.getKey().isBlank() && e.getKey().length() <= 200) {
+          if (!seen.contains(e.getValue().asText().strip())) {
+            throw new ValidationException("'" + e.getValue().asText() + "' is not one of the accepted values");
+          }
+          synonyms.put(e.getKey().strip(), e.getValue().asText().strip());
+        }
+      });
+      if (synonyms.isEmpty()) mapping.remove("synonyms");
+    }
+    if (in.min() != null) mapping.put("min", in.min());
+    if (in.max() != null) mapping.put("max", in.max());
+    if (in.min() != null && in.max() != null && in.min() > in.max()) {
+      throw new ValidationException("The smallest value can't be above the largest");
+    }
+    if (in.pattern() != null && !in.pattern().isBlank()) {
+      if (in.pattern().length() > 300) throw new ValidationException("That pattern is too long");
+      try {
+        java.util.regex.Pattern.compile(in.pattern());
+      } catch (java.util.regex.PatternSyntaxException e) {
+        throw new ValidationException("That pattern is not valid: " + e.getDescription());
+      }
+      mapping.put("pattern", in.pattern());
+      putText(mapping, "patternHint", in.patternHint(), "pattern hint");
+    }
+  }
+
+  private static void putText(ObjectNode mapping, String key, String value, String what) {
+    if (value == null || value.isBlank()) return;
+    if (value.strip().length() > MAX_TEXT) throw new ValidationException("That " + what + " is too long");
+    mapping.put(key, value.strip());
   }
 
   /** The item, or the card it is in, of a choice from a marked or mapped list. */
@@ -889,6 +970,52 @@ public class RecordingService implements Recordings, RecordingIntake {
         VALUE_FIELDS.forEach(((ObjectNode) target.node.get("mappings"))::remove);
       }
       target.node.put("secretRef", ref);
+    }
+    target.changed = true;
+  }
+
+  /**
+   * Removes one field from a form step ({@code input.fields}) or one column from a repeated-rows
+   * step ({@code input.columns}, with that column's values dropped from every row). Mappings on
+   * later form fields keep pointing at the same field: their {@code fields.N.value} keys shift.
+   */
+  private void removeField(Held target, Integer index) {
+    if (index == null || index < 0) throw new ValidationException("Which field to remove?");
+    JsonNode input = target.node.path("input");
+    if (!(input instanceof ObjectNode in)) throw new ValidationException("This step has no fields");
+    if (in.path("fields").isArray()) {
+      ArrayNode fields = (ArrayNode) in.get("fields");
+      if (index >= fields.size()) throw new ValidationException("This step has no field " + index);
+      fields.remove(index);
+      JsonNode mappings = target.node.path("mappings");
+      if (mappings instanceof ObjectNode maps) {
+        ObjectNode next = Json.obj();
+        maps.fields().forEachRemaining(entry -> {
+          var m = java.util.regex.Pattern.compile("^fields\\.(\\d+)\\.value$")
+              .matcher(entry.getKey());
+          if (!m.matches()) {
+            next.set(entry.getKey(), entry.getValue());
+            return;
+          }
+          int at = Integer.parseInt(m.group(1));
+          if (at == index) return; // the removed field's input goes with it
+          next.set(at > index ? "fields." + (at - 1) + ".value" : entry.getKey(),
+              entry.getValue());
+        });
+        target.node.set("mappings", next);
+      }
+    } else if (in.path("columns").isArray()) {
+      ArrayNode columns = (ArrayNode) in.get("columns");
+      if (index >= columns.size()) throw new ValidationException("This step has no column " + index);
+      String name = columns.get(index).path("name").asText("");
+      columns.remove(index);
+      if (in.path("rows").isArray() && !name.isEmpty()) {
+        for (JsonNode row : in.get("rows")) {
+          if (row instanceof ObjectNode r) r.remove(name);
+        }
+      }
+    } else {
+      throw new ValidationException("This step has no fields to remove");
     }
     target.changed = true;
   }

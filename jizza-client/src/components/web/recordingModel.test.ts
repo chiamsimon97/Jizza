@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordedStep } from '@/api/web'
-import { conditionDepths, emptyConditions, fieldName, isCondition, hostOf, liveSteps, mappableFields, missingLogins, reusableOps, siteAllowed, suggestInputName } from './recordingModel'
+import { conditionDepths, dependentListChoices, emptyConditions, fieldName, isCondition, hostOf, liveSteps, mappableFields, missingLogins, movesBetween, pageArrangement, reusableOps, siteAllowed, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
 
 const step = (seq: number, over: Partial<RecordedStep['step']> = {}, deleted = false, position = seq): RecordedStep =>
   ({ seq, position, deleted, step: { action: 'browser.setText', label: 'Set "Invoice number" to "INV-2041"', input: { text: 'INV-2041', clearFirst: true }, ...over } })
@@ -112,5 +112,79 @@ describe('emptyConditions', () => {
     expect(emptyConditions([at(1, 'browser.click'), at(2, 'flow.if'), at(3, 'flow.endIf'), at(4, 'browser.clickItem')])).toEqual([2])
     expect(emptyConditions([at(1, 'flow.if'), at(2, 'flow.else'), at(3, 'flow.endIf')])).toEqual([1])
     expect(emptyConditions([at(1, 'flow.if'), at(2, 'browser.click'), at(3, 'flow.endIf')])).toEqual([])
+  })
+})
+
+describe('pageArrangement and movesBetween', () => {
+  const on = (seq: number, url: string, extra: Record<string, unknown> = {}) =>
+    ({ seq, position: seq, deleted: false,
+      step: { action: 'browser.click', label: `s${seq}`, input: {}, meta: { url }, ...extra } }) as unknown as RecordedStep
+
+  it('groups steps by page in first-visit order, keeping order within a page', () => {
+    const steps = [
+      on(1, 'https://portal.example.com/search'),
+      on(2, 'https://portal.example.com/details'),
+      on(3, 'https://portal.example.com/search'),   // recorded late, belongs to page 1
+      on(4, 'https://portal.example.com/details'),
+    ]
+    const plan = pageArrangement(steps)
+    expect(plan && 'order' in plan ? plan.order : null).toEqual([1, 3, 2, 4])
+    expect(plan && 'moved' in plan ? [...plan.moved] : null).toEqual([3, 2])
+  })
+
+  it('returns null when the steps are already in page order', () => {
+    expect(pageArrangement([on(1, 'https://a.example.com/x'), on(2, 'https://a.example.com/y')])).toBeNull()
+  })
+
+  it('refuses recordings with conditions', () => {
+    const plan = pageArrangement([on(1, 'https://a.example.com/x'),
+      { seq: 2, position: 2, deleted: false, step: { action: 'flow.if', input: {} } } as unknown as RecordedStep])
+    expect(plan && 'blocked' in plan).toBe(true)
+  })
+
+  it('steps with no page (an inserted wait) stay with the page before them', () => {
+    const wait = { seq: 3, position: 3, deleted: false,
+      step: { action: 'browser.wait', label: 'Wait', input: {}, meta: {} } } as unknown as RecordedStep
+    const plan = pageArrangement([
+      on(1, 'https://a.example.com/x'), on(2, 'https://a.example.com/y'), wait,
+      on(4, 'https://a.example.com/x')])
+    expect(plan && 'order' in plan ? plan.order : null).toEqual([1, 4, 2, 3])
+  })
+
+  it('movesBetween produces the server moves that reach the order', () => {
+    expect(movesBetween([1, 2, 3, 4], [1, 3, 2, 4])).toEqual([{ op: 'move', seq: 3, toIndex: 1 }])
+    expect(movesBetween([1, 2, 3], [1, 2, 3])).toEqual([])
+    // Applying the inverse gets back to where it started.
+    expect(movesBetween([1, 3, 2, 4], [1, 2, 3, 4])).toEqual([{ op: 'move', seq: 2, toIndex: 1 }])
+  })
+})
+
+describe('unmap helpers', () => {
+  const mapped = (seq: number, mappings: Record<string, { name: string; type: string }>) =>
+    ({ seq, position: seq, deleted: false,
+      step: { action: 'browser.setText', input: {}, mappings } }) as unknown as RecordedStep
+
+  it('finds every step using an input name and builds the unmap edits', () => {
+    const steps = [mapped(1, { text: { name: 'city', type: 'text' } }),
+      mapped(2, { text: { name: 'city', type: 'text' } }),
+      mapped(3, { text: { name: 'date', type: 'text' } })]
+    const using = stepsUsingInput(steps, 'city')
+    expect(using.map(s => s.seq)).toEqual([1, 2])
+    expect(unmapOps(using.map(step => ({ step, field: 'text' })))).toEqual([
+      { op: 'map', seq: 1, field: 'text', input: null },
+      { op: 'map', seq: 2, field: 'text', input: null },
+    ])
+  })
+})
+
+describe('dependentListChoices', () => {
+  it('names the list choices that follow a deleted list', () => {
+    const list = (seq: number, title: string, dependsOn?: { title: string; relation: 'after' }) =>
+      ({ seq, position: seq, deleted: false,
+        step: { action: 'browser.clickItem', label: title, input: {},
+          meta: { list: { title, kind: 'text', count: 2, ...(dependsOn ? { dependsOn } : {}) } } } }) as unknown as RecordedStep
+    const steps = [list(1, 'Date'), list(2, 'Theatre', { title: 'Date', relation: 'after' })]
+    expect(dependentListChoices(steps, steps[0]).map(s => s.seq)).toEqual([2])
+    expect(dependentListChoices(steps, steps[1])).toEqual([])
   })
 })

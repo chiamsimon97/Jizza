@@ -20,7 +20,7 @@ import { JizzaOrb } from '@/jizza/JizzaOrb'
 import type { AgentDto } from '@/types'
 import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
-import { moduleInputs } from '@/components/workflow/moduleContract'
+import { inputSections, moduleInputs, ruleProblem } from '@/components/workflow/moduleContract'
 import { DateValueInput } from '@/components/ui/DateValueInput'
 import { RowsInput, rowsEmpty } from '@/components/ui/RowsInput'
 
@@ -204,6 +204,8 @@ export function WorkflowForm() {
 
   // A workflow that declares inputs asks for them before a run, as a module's caller would give them.
   const declaredInputs = graphMode ? moduleInputs(canvasToGraph(canvas)) : []
+  const atStepInputs = declaredInputs.filter(f => f.ask === 'atStep')
+  const inputProblems = declaredInputs.some(f => ruleProblem(f, runInput[f.name]) !== null)
   const [askInputs, setAskInputs] = useState(false)
   const [runInput, setRunInput] = useState<Record<string, string>>({})
   useEffect(() => { setAskInputs(false); setRunInput({}) }, [request?.nonce])
@@ -350,27 +352,49 @@ export function WorkflowForm() {
         {askInputs && declaredInputs.length > 0 && (
           <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 animate-fade-in dark:border-gray-800 dark:bg-gray-950">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Inputs for this run</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {declaredInputs.map(f => (
-                <Field key={f.name} label={`${f.name}${f.required && f.default === undefined ? ' *' : ''}`} hint={f.description}>
-                  {f.columns?.length ? (
-                    <RowsInput label={f.name} columns={f.columns}
-                      value={runInput[f.name] ?? (f.default !== undefined ? JSON.stringify(f.default) : '[]')}
-                      onChange={v => setRunInput(r => ({ ...r, [f.name]: rowsEmpty(v) ? '' : v }))} />
-                  ) : f.type === 'date' || f.type === 'datetime' ? (
-                    <DateValueInput type={f.type} format={f.format} className={fieldClass} aria-label={`Input ${f.name}`}
-                      value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}
-                      onChange={v => setRunInput(r => ({ ...r, [f.name]: v }))} />
-                  ) : <input className={fieldClass} aria-label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
-                    placeholder={f.default !== undefined ? `Default: ${typeof f.default === 'string' ? f.default : JSON.stringify(f.default)}` : f.type === 'any' ? '' : f.type}
-                    onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))} />}
-                </Field>
-              ))}
-            </div>
+            {inputSections(declaredInputs).map(section => (
+              <section key={section.group || '-'} className="flex flex-col gap-2" aria-label={section.group || 'Inputs'}>
+                {section.group && <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{section.group}</p>}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {section.fields.map(f => {
+                    const label = f.label ?? f.name
+                    const problem = ruleProblem(f, runInput[f.name])
+                    return (
+                      <Field key={f.name} label={`${label}${f.required && f.default === undefined ? ' *' : ''}`} hint={problem ?? f.description}>
+                        {f.columns?.length ? (
+                          <RowsInput label={label} columns={f.columns}
+                            value={runInput[f.name] ?? (f.default !== undefined ? JSON.stringify(f.default) : '[]')}
+                            onChange={v => setRunInput(r => ({ ...r, [f.name]: rowsEmpty(v) ? '' : v }))} />
+                        ) : f.type === 'date' || f.type === 'datetime' ? (
+                          <DateValueInput type={f.type} format={f.format} className={fieldClass} aria-label={`Input ${f.name}`}
+                            value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}
+                            onChange={v => setRunInput(r => ({ ...r, [f.name]: v }))} />
+                        ) : f.options?.length ? (
+                          <select className={fieldClass} aria-label={`Input ${f.name}`}
+                            value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}
+                            onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))}>
+                            <option value="">{f.required && f.default === undefined ? 'Choose…' : 'Default'}</option>
+                            {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : <input className={fieldClass} aria-label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
+                          aria-invalid={problem ? true : undefined}
+                          placeholder={f.default !== undefined ? `Default: ${typeof f.default === 'string' ? f.default : JSON.stringify(f.default)}` : f.type === 'any' ? '' : f.type}
+                          onChange={e => setRunInput(v => ({ ...v, [f.name]: e.target.value }))} />}
+                      </Field>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+            {atStepInputs.length > 0 && (
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Asked during the run, on the step that needs it: {atStepInputs.map(f => f.label ?? f.name).join(', ')}.
+              </p>
+            )}
             <p className="text-[11px] text-gray-500">The saved version runs. Lists and fields are written as JSON, such as ["a", "b"].</p>
             <div className="flex justify-end gap-2">
               <Button type="button" size="sm" variant="secondary" onClick={() => setAskInputs(false)}>Cancel</Button>
-              <Button type="button" size="sm" onClick={() => { setError(''); run.mutate() }} loading={run.isPending}><Play className="h-4 w-4" />Start run</Button>
+              <Button type="button" size="sm" disabled={inputProblems} onClick={() => { setError(''); run.mutate() }} loading={run.isPending}><Play className="h-4 w-4" />Start run</Button>
             </div>
           </div>
         )}

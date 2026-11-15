@@ -41,7 +41,7 @@ export interface RecordedStepData {
   version?: number
   label?: string
   input?: Record<string, unknown>
-  mappings?: Record<string, { name: string; type: string; default?: unknown }>
+  mappings?: Record<string, RecordingInput>
   secretRef?: string | null
   /** Edit recording: turned off (not run), or optional (skipped when not on the page). */
   disabled?: boolean
@@ -123,13 +123,13 @@ export interface SaveRecordingResult {
 export interface RecordingEvent { recordingId: string; status: string; stepCount: number; lastStep?: RecordedStep }
 
 export interface EditOp {
-  op: 'delete' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck' | 'update'
+  op: 'delete' | 'restore' | 'move' | 'relabel' | 'map' | 'secret' | 'insertCheck' | 'update' | 'removeField'
   seq: number
   toIndex?: number
   label?: string
   field?: string
   /** A date input keeps the site's format (DD/MM/YYYY), so any date given is written that way. */
-  input?: { name: string; type: string; default?: unknown; format?: string } | null
+  input?: RecordingInput | null
   secretRef?: string | null
   check?: { action: string; afterSeq: number }
   /** op update: step settings to change. */
@@ -188,4 +188,26 @@ export const webApi = {
   dismissFix: (id: string) => api.post<void>(`/api/web/fixes/${id}/dismiss`, {}),
   testStep: (body: { deviceId: string; action: string; version: number; inputs: Record<string, unknown> }) =>
     api.post<WebTestResult>('/api/web/test-step', body),
+}
+
+/**
+ * A recorded value turned into a module input. Besides its name and type, the person may say how
+ * the run form shows it (label, group), when a run asks for it, and what it accepts; every run
+ * path then checks a value against these before anything touches a page.
+ */
+export interface RecordingInput {
+  name: string
+  type: string
+  default?: unknown
+  format?: string
+  required?: boolean
+  label?: string
+  group?: string
+  ask?: 'upFront' | 'atStep' | 'ifMissing'
+  options?: string[]
+  synonyms?: Record<string, string>
+  min?: number
+  max?: number
+  pattern?: string
+  patternHint?: string
 }

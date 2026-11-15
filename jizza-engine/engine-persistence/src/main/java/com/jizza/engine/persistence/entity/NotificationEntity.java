@@ -6,6 +6,7 @@ import com.jizza.engine.api.enums.NotificationKind;
 import com.jizza.engine.api.enums.NotificationPriority;
 import com.jizza.engine.api.enums.NotificationStatus;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,6 +37,7 @@ public class NotificationEntity {
   @Column(columnDefinition = "text")
   private String body;
 
+  @Convert(converter = com.jizza.engine.persistence.converter.SealedJsonConverter.class)
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb")
   private JsonNode context;

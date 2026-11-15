@@ -3,6 +3,7 @@ package com.jizza.engine.persistence.entity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.enums.RunStatus;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -40,6 +41,7 @@ public class WorkflowRunEntity {
 
   private String currentNode;
 
+  @Convert(converter = com.jizza.engine.persistence.converter.SealedJsonConverter.class)
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb")
   private JsonNode context;
