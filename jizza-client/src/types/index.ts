@@ -376,13 +376,52 @@ export type UiAction =
   /** Settings for the Builder step Jizza was opened on; they land in its panel unsaved. */
   | { type: 'configure_step'; payload: { stepId: string; label?: string; config: Record<string, unknown>; summary?: string } }
   /** Jizza ran one of the user's saved workflows instead of building a new one. */
-  | { type: 'reused_workflow'; payload: { workflowId: string; name: string; runId: string; status: string } }
+  | { type: 'reused_workflow'; payload: { workflowId: string; name: string; runId: string; status: string; followUp?: boolean } }
+  /** The person asked in their own words to run a saved workflow: the values Jizza read, to check and start. */
+  | { type: 'start_run'; payload: StartRunCard }
   /** Jizza moved a topic into a thread led by a specialist, or passed a message to an open one. */
   | { type: 'thread_opened'; payload: ThreadCard }
   /** A thread's lead passed a message that does not belong there back to the main chat. */
   | { type: 'thread_handback'; payload: { conversationId: string; threadId: string; reason?: string } }
   /** Steps only the user can take, with buttons: open a sign-in page, then carry on. */
   | { type: 'show_steps'; payload: UserSteps }
+
+/** One input on a start card, with the value Jizza read from the message (if any). */
+export interface StartRunField {
+  name: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'list' | 'map' | 'any'
+  required: boolean
+  /** 'atStep': asked on the step's own card while the run is going. */
+  ask?: string
+  group?: string
+  description?: string
+  format?: string
+  patternHint?: string
+  options?: string[]
+  /** A list of rows: each row's keys, with their own choices. */
+  columns?: { key?: string; name?: string; label?: string; type?: string; required?: boolean; options?: string[] }[]
+  default?: unknown
+  value?: unknown
+  /** Why the value read from the message does not fit, to correct before starting. */
+  problem?: string
+}
+
+/** The card Jizza shows when the person asks to run a saved workflow; nothing runs until Start. */
+export interface StartRunCard {
+  planId: string
+  workflowId: string
+  name: string
+  summary?: string
+  fields: StartRunField[]
+  needsBrowser?: boolean
+  browsers?: { id: string; name: string; online: boolean; state?: string }[]
+  browserId?: string
+  /** Set once Start was pressed: the run it started. */
+  runId?: string
+  startedAt?: string
+  dismissed?: boolean
+}
 
 /** A card of steps for the user, from an agent or from a sign-in link a tool returned. */
 export interface UserSteps {

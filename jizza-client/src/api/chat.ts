@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { JobDto, TurnRef } from '@/types'
+import type { JobDto, RunDto, TurnRef } from '@/types'
 
 export const chatApi = {
   /**
@@ -15,6 +15,14 @@ export const chatApi = {
     api.get<JobDto>(`/api/chat/jobs/${jobId}?afterSeq=${afterSeq}`),
 
   cancel: (jobId: string) => api.post<void>(`/api/chat/jobs/${jobId}/cancel`),
+
+  /** Start on a start card: runs the workflow with the values and browser as they are on the card. */
+  startRun: (body: { conversationId: string; planId: string; workflowId: string; inputs: Record<string, unknown>; browserId?: string }) =>
+    api.post<RunDto>('/api/chat/runs', body),
+
+  /** No thanks on a start card: it stays in the chat, closed. */
+  dismissRun: (body: { conversationId: string; planId: string }) =>
+    api.post<void>('/api/chat/runs/dismiss', body),
 
   /** Stores a PDF or photo for a message to refer to; {@code text} is what could be read from it. */
   uploadFile: (file: File) => {

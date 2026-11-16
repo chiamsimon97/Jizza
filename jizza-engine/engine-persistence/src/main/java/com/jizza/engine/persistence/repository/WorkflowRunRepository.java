@@ -14,6 +14,10 @@ import org.springframework.data.repository.query.Param;
 public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, UUID> {
   List<WorkflowRunEntity> findByUserIdOrderByCreatedAtDesc(UUID userId);
   List<WorkflowRunEntity> findByStatus(RunStatus status);
+
+  /** A person's newest runs whose trigger ends this way, such as the runs started from one chat. */
+  List<WorkflowRunEntity> findTop5ByUserIdAndTriggerSourceEndingWithOrderByCreatedAtDesc(
+      UUID userId, String suffix);
   List<WorkflowRunEntity> findByWorkflowIdAndStatus(UUID workflowId, RunStatus status);
 
   /** How many runs of a workflow started since {@code since} with a trigger like {@code pattern}. */

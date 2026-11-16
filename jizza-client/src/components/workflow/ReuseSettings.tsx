@@ -29,7 +29,9 @@ export function ReuseSettings({ workflow }: { workflow: WorkflowDto }) {
     onSuccess: done, onError: fail,
   })
   const forget = useMutation({ mutationFn: () => workflowsApi.forgetReuse(workflow.id), onSuccess: done, onError: fail })
-  const busy = update.isPending || forget.isPending
+  const suggest = useMutation({ mutationFn: () => workflowsApi.suggestUses(workflow.id), onSuccess: done, onError: fail })
+  const busy = update.isPending || forget.isPending || suggest.isPending
+  const examples = reuse?.examples ?? []
 
   return (
     <div className="mb-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-950 dark:text-gray-300">
@@ -45,6 +47,21 @@ export function ReuseSettings({ workflow }: { workflow: WorkflowDto }) {
       ) : (
         <div className="mt-1 flex flex-col gap-1.5">
           {reuse.summary && <p className="text-gray-500 dark:text-gray-400">Used when: {reuse.summary}</p>}
+          <div data-testid="reuse-examples">
+            {examples.length > 0 ? (
+              <p className="text-gray-500 dark:text-gray-400">
+                Starts from chat when you say things like: {examples.map(e => `"${e}"`).join(', ')}.{' '}
+                <button type="button" disabled={busy} className="font-medium text-brand-600 hover:underline dark:text-brand-300"
+                  onClick={() => suggest.mutate()}>{suggest.isPending ? 'Suggesting…' : 'Suggest again'}</button>
+              </p>
+            ) : (
+              <p className="text-gray-500 dark:text-gray-400">
+                Jizza finds it in chat by its name and steps.{' '}
+                <button type="button" disabled={busy} className="font-medium text-brand-600 hover:underline dark:text-brand-300"
+                  onClick={() => suggest.mutate()}>{suggest.isPending ? 'Suggesting…' : "Suggest how I'd ask for it"}</button>
+              </p>
+            )}
+          </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={current.confirmBeforeRun} disabled={busy}
               onChange={e => update.mutate({ ...current, confirmBeforeRun: e.target.checked })} />

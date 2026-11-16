@@ -141,6 +141,12 @@ public class WorkflowController {
     return workflows.describe(CurrentUser.userId(), id, profile);
   }
 
+  /** Jizza suggests what the workflow is for and how the user would ask for it, and keeps that. */
+  @PostMapping("/workflows/{id}/reuse/suggest")
+  public WorkflowLibrary.Match suggestUses(@PathVariable UUID id) {
+    return workflows.suggestUses(CurrentUser.userId(), id);
+  }
+
   @DeleteMapping("/workflows/{id}/reuse")
   public WorkflowLibrary.Match forget(@PathVariable UUID id) {
     return workflows.describe(CurrentUser.userId(), id, null);

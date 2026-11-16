@@ -135,7 +135,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           || config.get("target") == null || config.path("target").isNull()
           || config.path("target").isTextual()
               && (configuredTarget.isBlank() || "any".equals(configuredTarget)))) {
-        target = new DeviceTarget(null, null, "browser", false);
+        // The browser the person chose when they started the run, else whichever is free.
+        UUID preferred = execution.context().preferredBrowser();
+        target = preferred != null ? DeviceTarget.device(preferred)
+            : new DeviceTarget(null, null, "browser", false);
       } else {
         target = DeviceTarget.from(config.get("target"));
       }

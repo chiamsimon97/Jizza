@@ -3,6 +3,20 @@
 > In the user's browser, in chat, they tell Jizza to book a train ticket, give some details,
 > and the rest is asked during the run.
 
+## Status (2026-11-16, round 3)
+
+Built: G1 (suggested summary and example requests on every saved recording, "Suggest again" in
+Reuse by Jizza), G2 (one cheap-model call reads the message against the best 3 word-matched
+workflows; values checked with `InputRules`), G3 (start card with editable values, still-needed,
+asked-during-the-run, browser choice; Start / No thanks), G4 + G5 (the card follows the run in the
+chat: live step line and the run's own notification cards inline, Stop), G6 (that path offers the
+model no tools at all), G7 partly ("stop it", "status", "what's the <output>?" with no model call),
+G8 (browser default: the one it was recorded in when online, else the readiest online one; the run
+uses the chosen browser via `RunContext.preferBrowser`).
+
+Not built yet: changing an input of a running run ("use the 22:00 train instead"), skipping the
+start card per workflow, a "waiting for the browser" run state (plan 07 G11).
+
 ## What exists today
 
 - `/run <workflow>` with `name: value` lines, no model call (#105); chat-box picker of runnable

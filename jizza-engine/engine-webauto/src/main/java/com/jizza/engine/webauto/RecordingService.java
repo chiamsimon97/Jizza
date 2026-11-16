@@ -27,6 +27,7 @@ import com.jizza.engine.api.webauto.RecordingIntake;
 import com.jizza.engine.api.webauto.Recordings;
 import com.jizza.engine.api.workflow.WorkflowRegistry;
 import com.jizza.engine.api.workflow.library.ReuseProfile;
+import com.jizza.engine.api.workflow.library.WorkflowIntents;
 import com.jizza.engine.api.workflow.library.WorkflowLibrary;
 import com.jizza.engine.persistence.entity.WebRecordingEntity;
 import com.jizza.engine.persistence.entity.WebRecordingStepEntity;
@@ -103,6 +104,13 @@ public class RecordingService implements Recordings, RecordingIntake {
   private final ObjectProvider<WorkflowLibrary> library;
   private final ObjectProvider<RealtimeGateway> realtime;
   private final WebGuardrails guardrails;
+  private ObjectProvider<WorkflowIntents> intents;
+
+  /** Suggests how the person would ask for a saved recording; optional for isolated tests. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void setIntents(ObjectProvider<WorkflowIntents> intents) {
+    this.intents = intents;
+  }
 
   public RecordingService(WebRecordingRepository recordings, WebRecordingStepRepository steps,
                           Devices devices, DeviceCommands commands, DeviceActionCatalog catalog,
@@ -382,6 +390,12 @@ public class RecordingService implements Recordings, RecordingIntake {
 
     WorkflowLibrary lib = library.getIfAvailable();
     if (lib != null) lib.describe(access.userId(), saved.id(), reuseFor(request, graph, name));
+    // How the person would ask for it in chat ("book a train ticket"), so a recording named
+    // anything at all is found by what it does. Suggested once it is saved, never in the way.
+    if (lib != null && (request == null || request.reuse() == null)) {
+      WorkflowIntents intents = this.intents == null ? null : this.intents.getIfAvailable();
+      if (intents != null) intents.suggestLater(access.userId(), saved.id());
+    }
 
     recording.setStatus(STATUS_SAVED);
     recording.setWorkflowId(saved.id());

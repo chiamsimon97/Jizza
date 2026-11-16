@@ -396,6 +396,19 @@ public final class RunContext {
     if (browser.workspaceId() != null) value.put("workspaceId", browser.workspaceId().toString());
   }
 
+  /**
+   * The browser the person chose for this run when they started it (from chat), used by its first
+   * browser step in place of whichever browser is free; null when they did not choose one.
+   */
+  public java.util.UUID preferredBrowser() {
+    return uuid(root.path("_preferBrowser"));
+  }
+
+  public void preferBrowser(java.util.UUID deviceId) {
+    if (deviceId == null) root.remove("_preferBrowser");
+    else root.put("_preferBrowser", deviceId.toString());
+  }
+
   public boolean needsNewBrowserSession() {
     return root.path("_browserNeedsNewSession").asBoolean(false);
   }

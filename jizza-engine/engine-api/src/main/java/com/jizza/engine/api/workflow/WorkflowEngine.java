@@ -19,6 +19,16 @@ public interface WorkflowEngine {
     return start(workflowId, version, input, triggerSource);
   }
 
+  /**
+   * As {@link #start}, with the browser its browser steps should use when the person chose one
+   * (null for whichever of their browsers is free, as usual).
+   */
+  default RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource,
+                       JsonNode stepOverrides, UUID preferredBrowser) {
+    return stepOverrides == null ? start(workflowId, version, input, triggerSource)
+        : start(workflowId, version, input, triggerSource, stepOverrides);
+  }
+
   /** Continue a run paused on a human-intervention node, feeding the instruction downstream. */
   RunDto resume(UUID runId, JsonNode instruction);
 

@@ -158,6 +158,13 @@ public class DeviceRegistryService implements Devices {
 
   @Override
   @Transactional(readOnly = true)
+  public List<DeviceDto> owned(UUID userId) {
+    return devices.findByOwnerUserIdAndStatusOrderByCreatedAtAsc(userId, "active").stream()
+        .map(this::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public List<DeviceDto> listAll(UUID workspaceId) {
     return devices.findByWorkspaceIdOrderByCreatedAtAsc(workspaceId).stream()
         .filter(d -> !DeviceStatus.REVOKED.name().equalsIgnoreCase(d.getStatus()))

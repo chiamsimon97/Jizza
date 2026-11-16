@@ -45,6 +45,20 @@ public class WorkflowUseCase {
     this.library = library;
   }
 
+  private com.jizza.engine.api.workflow.library.WorkflowIntents intents;
+
+  @Autowired(required = false)
+  public void setIntents(com.jizza.engine.api.workflow.library.WorkflowIntents intents) {
+    this.intents = intents;
+  }
+
+  /** Has Jizza suggest how the user would ask for this workflow in chat, and keeps it. */
+  public WorkflowLibrary.Match suggestUses(UUID userId, UUID workflowId) {
+    ownedBy(userId, workflowId);
+    if (intents == null) throw new com.jizza.engine.api.error.ValidationException("Suggestions are not available here");
+    return intents.suggest(userId, workflowId);
+  }
+
   @Autowired(required = false)
   public void setEngine(com.jizza.engine.api.workflow.WorkflowEngine engine) {
     this.engine = engine;

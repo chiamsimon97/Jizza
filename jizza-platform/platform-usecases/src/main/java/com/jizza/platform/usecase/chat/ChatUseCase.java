@@ -56,12 +56,20 @@ public class ChatUseCase {
       throw new ValidationException("An incognito message cannot go into a saved conversation");
     }
     String screen = s.screen() == null || s.screen().isBlank() ? null : s.screen().trim();
-    var context = s.context() == null || !s.context().isObject() || screen == null ? null : s.context();
+    var context = s.context() == null || !s.context().isObject() ? null
+        : screen != null ? s.context() : zoneOnly(s.context());
     if (context != null && context.toString().length() > MAX_CONTEXT_CHARS) {
       throw new ValidationException("This workflow is too large for Jizza to look at in one go. "
           + "Open the step you want help with and use Configure using Jizza.");
     }
     return new TurnSubmission(s.conversationId(), s.clientMessageId(), s.text(), screen,
         s.incognito(), context);
+  }
+
+  /** The viewer's time zone alone (for "tomorrow" in a request), when that is all that applies. */
+  private static com.fasterxml.jackson.databind.JsonNode zoneOnly(com.fasterxml.jackson.databind.JsonNode context) {
+    String zone = context.path("timeZone").asText("");
+    if (zone.isBlank() || zone.length() > 64) return null;
+    return com.jizza.engine.api.util.Json.obj().put("timeZone", zone);
   }
 }
