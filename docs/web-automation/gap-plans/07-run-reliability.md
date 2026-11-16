@@ -16,8 +16,15 @@ batched in fast replay, never retried automatically, a lost command is not resen
 offers "I checked, it did not go through: try again" instead of Try again, a plain Try again or a
 written note is refused, and no-answer never retries.)
 
-Not built yet: G3 session guard, G4 checkpoints, G6 automatic pop-up following, G7 frames matrix,
-G9 run-time self-healing, G10 politeness (plan 14), G11 waiting-for-browser state.
+Round 3, second slice: G6 (a Switch to step waits, up to its timeout, for the window a click
+opens instead of failing when it hasn't appeared yet, and when a pop-up closes, by itself or by a
+step, the run goes back to the tab that opened it rather than to the newest tab). G11 (a step
+whose browser or phone was never reached is not retried on a schedule, which would only wait
+again: the card says it was not started and to open the browser, and Try again carries on from
+that step. Because nothing was sent, a step that cannot be undone gets a plain Try again too.)
+
+Not built yet: G3 session guard (needs the login section of plan 12), G4 checkpoints (resume
+from an earlier step), G7 frames matrix, G9 run-time self-healing, G10 politeness (plan 14).
 
 ## What exists today
 

@@ -79,6 +79,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class SagaWorkflowEngine implements WorkflowEngine,
     org.springframework.beans.factory.DisposableBean {
 
+  /** Words a device step's failure carries when the device never got it (nothing was done). */
+  static final String NOT_STARTED =
+      com.jizza.engine.workflow.nodes.DeviceActionNodeExecutor.NOT_STARTED;
+
+
   private static final Logger log = LoggerFactory.getLogger(SagaWorkflowEngine.class);
 
   /** Ceiling on nodes executed in one advance, so a pathological graph cannot spin a worker. */
@@ -401,7 +406,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     FailedStepChoice choice = FailedStepChoice.of(text);
     if (choice != FailedStepChoice.STOP && choice != FailedStepChoice.SKIP
         && choice != FailedStepChoice.RETRY_CHECKED && stepFailed(runId, node)
-        && FailedStepChoice.irreversible(configOf(run, node))) {
+        && FailedStepChoice.irreversible(configOf(run, node)) && !neverStarted(runId, node)) {
       // Paying, booking, placing an order: trying again blind could do it twice.
       throw new ValidationException("Step '" + labelOf(run, node) + "' may already have gone "
           + "through. Check the site first (your orders or bookings), then answer \""
@@ -433,6 +438,12 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     audit.record(run.getUserId(), ActorType.USER, null, "run.instruction_submitted",
         run.getId().toString(), Json.obj().put("node", node));
     return advance(runId);
+  }
+
+  /** The step's last attempt never reached the device, so nothing can have gone through. */
+  private boolean neverStarted(UUID runId, String nodeId) {
+    return steps.findByRunIdAndNodeId(runId, nodeId)
+        .map(s -> s.getError() != null && s.getError().contains(NOT_STARTED)).orElse(false);
   }
 
   private boolean stepFailed(UUID runId, String nodeId) {
@@ -1289,7 +1300,8 @@ public class SagaWorkflowEngine implements WorkflowEngine,
               .put("error", String.valueOf(message)));
       return true;
     }
-    boolean irreversible = FailedStepChoice.irreversible(node.config());
+    boolean irreversible = FailedStepChoice.irreversible(node.config())
+        && (message == null || !message.contains(NOT_STARTED));
     parkForPerson(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
         "Step '" + (node.label() == null ? node.id() : node.label()) + "' could not complete: "
             + message + (irreversible

@@ -120,4 +120,29 @@ class RunReliabilityTest {
     assertThat(card.context().path("choices").toString()).contains("\"Try again\"")
         .doesNotContain("I checked");
   }
+
+  @Test
+  void aBrowserThatWasNeverReachedAsksThePersonToOpenItAndCarriesOnFromThere() {
+    EngineHarness harness = new EngineHarness(line(node("pay", NodeType.DEVICE_ACTION, PAY)));
+    harness.nextDeviceStatus = DeviceCommandStatus.EXPIRED;
+    harness.nextDeviceErrorCode = "device_offline";
+    harness.neverDelivered = true;
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    // No retries on a schedule: they would only wait again.
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(harness.deviceRequests).hasSize(1);
+    var card = harness.raised.get(0);
+    assertThat(card.body()).contains("was not reachable, so this step was not started")
+        .doesNotContain("may have gone through");
+    // It was never sent, so a plain Try again is safe even on a Pay step.
+    assertThat(card.context().path("choices").toString()).contains("\"Try again\"");
+
+    harness.neverDelivered = false;
+    harness.nextDeviceStatus = DeviceCommandStatus.SUCCEEDED;
+    harness.nextDeviceErrorCode = null;
+    var again = harness.engine.resume(run.id(), Json.obj().put("instruction", "Try again"));
+    assertThat(again.status()).isEqualTo(RunStatus.DONE);
+  }
 }

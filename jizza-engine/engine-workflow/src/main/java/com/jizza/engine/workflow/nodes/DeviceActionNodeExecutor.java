@@ -874,6 +874,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       case EXPIRED -> {
         state.remove("commandId");
         preserveError(state, command);
+        if (command.dispatchedAt() == null) {
+          // The browser (or phone) was never reached, so nothing was done there, not even a
+          // step that can't be undone. Retrying on a schedule would only wait again: the person
+          // opens it and chooses Try again, and the run carries on from this step.
+          yield Outcome.permanentFailure(notReached(command));
+        }
         yield irreversible(execution.node().config())
             ? Outcome.permanentFailure(failureMessage(command)
                 + ". The browser did not say whether it went through")
@@ -884,6 +890,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   static final String UPLOAD_FILE = "browser.uploadFile";
+
+  /** Words a failure carries when the device never got the step: the engine then knows nothing
+   *  was done, even on a step that cannot be undone. */
+  public static final String NOT_STARTED = "so this step was not started";
 
   private ObjectProvider<com.jizza.engine.api.device.Devices> devices;
   private ObjectProvider<com.jizza.engine.api.chat.ChatFiles> chatFiles;
@@ -1052,6 +1062,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       command.files().forEach(id -> screenshots.add(id.toString()));
     }
     state.set("error", error);
+  }
+
+  /** What to do when the device never got the step. */
+  static String notReached(DeviceCommandDto command) {
+    return command.deviceName() + " was not reachable, " + NOT_STARTED + ". Open it"
+        + " (with Jizza signed in), then choose Try again to carry on from here";
   }
 
   private static String failureMessage(DeviceCommandDto command) {
