@@ -288,6 +288,9 @@ final class StepCompiler {
       if (WAIT_FOR.equals(action)) waitForRules(stepInputs, config);
       // Paying, booking, placing an order: never sent twice, see FailedStepChoice.
       if (step.path("meta").path("irreversible").asBoolean(false)) config.put("irreversible", true);
+      // "₹2,345.00" read as a number, a date or by a pattern: the step's value output.
+      JsonNode readAs = step.path("meta").path("readAs");
+      if (readAs.isObject() && READS_TEXT.contains(action)) config.set("readAs", readAs.deepCopy());
       boolean disabled = step.path("disabled").asBoolean(false);
       if (disabled) config.put("disabled", true);
       if (step.path("optional").asBoolean(false)) config.put("optional", true);
@@ -298,7 +301,11 @@ final class StepCompiler {
       if (!inline && outputKey != null && !disabled) {
         String name = unique(nameFrom(label, outputKey), outputNames);
         outputs.add(Json.obj().put("name", name)
-            .put("type", "rows".equals(outputKey) ? "list" : "text")
+            .put("type", switch (outputKey) {
+              case "rows" -> "list";
+              case "file" -> "file";
+              default -> "text";
+            })
             .put("value", "{{ nodes." + id + "." + outputKey + " }}"));
       }
     }
@@ -332,6 +339,40 @@ final class StepCompiler {
   }
 
   static final String WAIT_FOR = "browser.waitFor";
+  /** Steps whose output is a read text that can be read as a number, date or pattern. */
+  static final Set<String> READS_TEXT = Set.of("browser.getText");
+  static final Set<String> READ_AS = Set.of("text", "number", "money", "date", "pattern");
+
+  /** Checks a "read as" rule as the person set it, and returns it as it is kept. */
+  static ObjectNode readAsRule(JsonNode rule) {
+    String as = rule.path("as").asText("");
+    if (!READ_AS.contains(as)) {
+      throw new ValidationException("Read it as text, number, money, date or pattern");
+    }
+    ObjectNode out = Json.obj().put("as", as);
+    if ("pattern".equals(as)) {
+      String pattern = rule.path("pattern").asText("");
+      if (pattern.isBlank() || pattern.length() > 300) {
+        throw new ValidationException("Say what pattern to look for (up to 300 characters)");
+      }
+      try {
+        java.util.regex.Pattern.compile(pattern);
+      } catch (java.util.regex.PatternSyntaxException e) {
+        throw new ValidationException("That pattern is not valid: " + e.getDescription());
+      }
+      out.put("pattern", pattern);
+    }
+    if ("date".equals(as) && rule.path("format").isTextual() && !rule.get("format").asText().isBlank()) {
+      String format = rule.get("format").asText();
+      try {
+        java.time.format.DateTimeFormatter.ofPattern(format);
+      } catch (IllegalArgumentException e) {
+        throw new ValidationException("'" + format + "' is not a date format");
+      }
+      out.put("format", format);
+    }
+    return out;
+  }
 
   /**
    * "Wait for what happens": the browser only looks for the outcomes; what the run does with each
@@ -368,7 +409,7 @@ final class StepCompiler {
   private static final Pattern FORM_FIELD = Pattern.compile("fields\\.(\\d+)\\.value");
   private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
   private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
-      "preset", "target", "disabled", "optional", "ifCheck", "recorded", "requiredInputs", "onOutcome");
+      "preset", "target", "disabled", "optional", "ifCheck", "recorded", "requiredInputs", "onOutcome", "readAs");
 
   /** A condition being compiled: its branch node, and the open paths where its steps run when
    *  it holds ended, once its "Otherwise" starts. */
@@ -550,6 +591,7 @@ final class StepCompiler {
     return switch (action) {
       case "browser.getText" -> "text";
       case "browser.extractTable" -> "rows";
+      case "browser.download" -> "file";
       case "ui.readWindow" -> "text";
       default -> null;
     };

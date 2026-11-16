@@ -351,6 +351,11 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
           ? <ScriptFields node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} functions={functions} />
           : <FunctionCallFields key={str('functionId')} node={node} functions={functions} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />)}
         {node.type === 'END' && <ContractFields kind="outputs" node={node} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />}
+        {node.type === 'END' && Array.isArray(node.config.outputs) && node.config.outputs.length > 0 && (
+          <Labelled label="Result message" hint="The one line Jizza replies with when the run finishes, e.g. Booked. PNR {{ result.pnr }}, fare {{ result.fare }}. Each output is result.<its name>.">
+            <textarea className={fieldClass} rows={2} aria-label="Result message" value={str('resultMessage')} onChange={e => setConfig({ resultMessage: e.target.value })} />
+          </Labelled>
+        )}
 
         {node.type === 'APPROVAL' && <ApprovalFields node={node} setConfig={setConfig} mapping={mapping} />}
 

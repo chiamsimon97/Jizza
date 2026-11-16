@@ -151,6 +151,7 @@ final class RunInputs {
       case "datetime" -> "date and time as YYYY-MM-DDTHH:MM";
       case "list" -> i.declaration().path("columns").isArray() ? "list of rows" : "list";
       case "number", "boolean", "map" -> i.type();
+      case "file" -> "a file the person adds on the card (never read from the message)";
       default -> "text";
     };
   }

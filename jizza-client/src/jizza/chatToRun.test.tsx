@@ -14,7 +14,7 @@ vi.mock('@/api/notifications', () => ({ notificationsApi: { list: () => Promise.
 
 import { execute, useAssistantStore } from './assistantStore'
 import { StartRunCard, initialValues, runInputs, stillNeeded } from './StartRunCard'
-import { progressOf } from './RunInChat'
+import { progressOf, resultOf } from './RunInChat'
 
 const card: Card = {
   planId: 'p1',
@@ -129,5 +129,26 @@ describe('a run followed in chat', () => {
       children: [],
     } as unknown as RunTrace
     expect(progressOf(trace)).toMatchObject({ done: ['Log in'], current: 'Choose a train', waitingForYou: true })
+  })
+})
+
+describe('what a finished run gave back', () => {
+  const done = (result: unknown, steps: unknown[] = []) => ({
+    run: { id: 'r', status: 'DONE' }, nodes: [], edges: [], children: [], steps, result,
+  }) as unknown as RunTrace
+
+  it('leads with the result message, and offers the files it downloaded', () => {
+    const r = resultOf(done({ pnr: '4512345678', resultMessage: 'Booked. PNR 4512345678' }, [
+      { id: 's', nodeId: 'dl', label: 'Download ticket', status: 'DONE', attempts: 1,
+        output: { file: 'f1', name: 'ticket.pdf', size: 10, device: { id: 'd1', name: 'Chrome' } } },
+    ]))
+    expect(r).toEqual({ message: 'Booked. PNR 4512345678', values: [{ name: 'pnr', value: '4512345678' }],
+      files: [{ name: 'ticket.pdf', deviceId: 'd1', fileId: 'f1' }] })
+  })
+
+  it('lists plain values when there is no message, and nothing before it is done', () => {
+    expect(resultOf(done({ fare: 2345, _browser: 'x', table: [1] }))?.values).toEqual([{ name: 'fare', value: '2345' }])
+    expect(resultOf(done({}))).toBeNull()
+    expect(resultOf({ ...done({ fare: 1 }), run: { id: 'r', status: 'RUNNING' } } as unknown as RunTrace)).toBeNull()
   })
 })

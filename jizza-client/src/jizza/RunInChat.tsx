@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, Check, CircleDot, Hand, Loader2, Square, X } from 'lucide-react'
+import { ArrowUpRight, Check, CircleDot, Download, Hand, Loader2, Square, X } from 'lucide-react'
 import { runsApi } from '@/api/runs'
+import { devicesApi } from '@/api/devices'
 import { notificationsApi } from '@/api/notifications'
 import { NotificationItem } from '@/components/notifications/NotificationItem'
 import { isOpen } from '@/components/notifications/inbox'
@@ -34,6 +35,39 @@ export function progressOf(trace: RunTrace): Progress {
   return { done, current, waitingForYou, status, error: trace.run.error }
 }
 
+export interface RunResult {
+  /** The workflow's own one-line answer ("Booked. PNR 4512345678"). */
+  message?: string
+  values: { name: string; value: string }[]
+  /** Files the run downloaded, to open from here. */
+  files: { name: string; deviceId: string; fileId: string }[]
+}
+
+/** What a finished run gave back, as the chat shows it: its message, values and downloaded files. */
+export function resultOf(trace: RunTrace): RunResult | null {
+  if (trace.run.status !== 'DONE') return null
+  const out: RunResult = { values: [], files: [] }
+  const result = trace.result
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    for (const [name, value] of Object.entries(result as Record<string, unknown>)) {
+      if (name === 'resultMessage') {
+        if (typeof value === 'string' && value.trim()) out.message = value.trim()
+        continue
+      }
+      if (name.startsWith('_') || value === null || value === undefined || typeof value === 'object') continue
+      const shown = String(value)
+      if (shown.trim() && out.values.length < 8) out.values.push({ name, value: shown.length > 200 ? `${shown.slice(0, 200)}…` : shown })
+    }
+  }
+  for (const step of trace.steps) {
+    const o = step.output as { file?: unknown; name?: unknown; device?: { id?: unknown } } | undefined
+    if (step.status === 'DONE' && o && typeof o.file === 'string' && typeof o.device?.id === 'string') {
+      out.files.push({ name: typeof o.name === 'string' && o.name ? o.name : step.label || 'File', deviceId: o.device.id, fileId: o.file })
+    }
+  }
+  return out.message || out.values.length || out.files.length ? out : null
+}
+
 /**
  * A run started from this chat, followed where it was asked for: a live line of its steps, and the
  * cards it raises (a choice from the page, a CAPTCHA, a code, a hand-over) right here, answered the
@@ -57,6 +91,7 @@ export function RunInChat({ runId, name }: { runId: string; name: string }) {
   })
   const cards = useMemo(() => (notifications ?? []).filter((n: NotificationDto) => n.runId === runId && isOpen(n)), [notifications, runId])
   const progress = trace ? progressOf(trace) : null
+  const result = trace ? resultOf(trace) : null
   const now = Date.now()
 
   async function stop() {
@@ -111,6 +146,24 @@ export function RunInChat({ runId, name }: { runId: string; name: string }) {
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">{progress.error}</p>
       )}
       {stopError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{stopError}</p>}
+      {result && (
+        <div className="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-300" data-testid="run-result">
+          {result.message && <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{result.message}</p>}
+          {!result.message && result.values.length > 0 && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+              {result.values.map(v => (
+                <div key={v.name} className="contents"><dt className="text-gray-500 dark:text-gray-400">{v.name}</dt><dd className="break-words">{v.value}</dd></div>
+              ))}
+            </dl>
+          )}
+          {result.files.map(f => (
+            <a key={f.fileId} href={devicesApi.fileUrl(f.deviceId, f.fileId)} target="_blank" rel="noreferrer"
+              className="mr-3 inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-300">
+              <Download className="h-3 w-3" aria-hidden />{f.name}
+            </a>
+          ))}
+        </div>
+      )}
       {cards.length > 0 && (
         <div className="mt-3 flex flex-col gap-2" data-testid="run-cards">
           {cards.map(n => (

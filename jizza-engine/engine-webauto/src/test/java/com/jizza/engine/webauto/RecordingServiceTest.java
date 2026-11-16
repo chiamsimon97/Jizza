@@ -414,6 +414,58 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aClickThatStartedADownloadBecomesADownloadStepWhoseFileIsAResult() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.click", "Click Export CSV",
+            "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#x\"}]},\"button\":\"left\"}",
+            false)));
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", Json.obj()
+        .put("recordingId", id.toString()).put("op", "update").put("seq", 1)
+        .set("patch", Json.obj().put("download", true)));
+
+    JsonNode step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("action").asText()).isEqualTo("browser.download");
+    assertThat(step.path("label").asText()).isEqualTo("Download from Export CSV");
+    assertThat(step.path("input").has("button")).isFalse();
+    assertThat(step.path("input").has("element")).isTrue();
+
+    service.stop(access, id);
+    service.save(access, id, new Recordings.SaveRequest("Export", null, null));
+    String graph = savedWorkflows.get(0).graph().toString();
+    assertThat(graph).contains("\"type\":\"file\"").contains(".file }}");
+  }
+
+  @Test
+  void anUploadStepFitsAPictureToWhatTheSiteAsks() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.uploadFile", "Upload photo", "{\"file\":\"me.jpg\"}", false)));
+    var edit = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    edit.putObject("patch").putObject("transform").put("maxKb", 50).put("width", 200)
+        .put("format", "jpeg");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+    assertThat(service.get(access, id).steps().get(0).step().path("input").path("transform").toString())
+        .isEqualTo("{\"maxKb\":50,\"width\":200,\"format\":\"jpeg\"}");
+    assertThatThrownBy(() -> RecordingService.pictureFit(Json.obj().put("format", "gif")))
+        .hasMessageContaining("JPEG, PNG or WebP");
+    assertThatThrownBy(() -> RecordingService.pictureFit(Json.obj().put("maxKb", 0)))
+        .hasMessageContaining("whole number");
+  }
+
+  @Test
+  void onlyAClickCanBecomeADownload() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.setText", "Name", "{\"text\":\"Asha\"}", false)));
+    var edit = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    edit.putObject("patch").put("download", true);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+    assertThat(service.get(access, id).steps().get(0).step().path("action").asText())
+        .isEqualTo("browser.setText");
+  }
+
+  @Test
   void theRowsOfARepeatedSectionBecomeAListInput() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

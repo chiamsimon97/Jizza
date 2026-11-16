@@ -52,3 +52,19 @@ describe('Wait for what happens and steps that cannot be undone', () => {
     expect(onEdit).toHaveBeenLastCalledWith([{ op: 'update', seq: 1, patch: { irreversible: true } }])
   })
 })
+
+describe('Read as', () => {
+  it('reads a text as an amount, or by a pattern once one is written', () => {
+    const read: Recording = { ...recording, steps: [
+      { seq: 4, position: 1, deleted: false, step: { action: 'browser.getText', label: 'Fare', input: {} } },
+    ] }
+    const onEdit = vi.fn()
+    render(<RecordingReview recording={read} onEdit={onEdit} />)
+    fireEvent.change(screen.getByLabelText('Read as'), { target: { value: 'money' } })
+    expect(onEdit).toHaveBeenLastCalledWith([{ op: 'update', seq: 4, patch: { readAs: { as: 'money' } } }])
+    fireEvent.change(screen.getByLabelText('Read as'), { target: { value: 'pattern' } })
+    fireEvent.change(screen.getByLabelText('Pattern'), { target: { value: 'PNR:\\s*(\\d+)' } })
+    fireEvent.blur(screen.getByLabelText('Pattern'))
+    expect(onEdit).toHaveBeenLastCalledWith([{ op: 'update', seq: 4, patch: { readAs: { as: 'pattern', pattern: 'PNR:\\s*(\\d+)' } } }])
+  })
+})

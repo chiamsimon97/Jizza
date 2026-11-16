@@ -194,6 +194,11 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     WebStepForm.apply((ObjectNode) inputs, execution.context().approvedInputs(nodeId),
         offered(state));
 
+    if (UPLOAD_FILE.equals(spec.action())) {
+      String problem = handOver(execution, (ObjectNode) inputs, target, state);
+      if (problem != null) return Outcome.permanentFailure(problem);
+    }
+
     UUID actor = actorFor(execution);
     if (actor == null) {
       return Outcome.permanentFailure("No agent is available to run " + spec.title()
@@ -817,6 +822,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         if (state.path("details").isObject() && output instanceof ObjectNode object) {
           object.set("details", state.get("details"));
         }
+        if (execution.node().config() != null) {
+          ReadAs.apply(execution.node().config().path("readAs"), output);
+        }
         String stop = stopsOn(execution.node().config(), output);
         if (stop != null) yield Outcome.permanentFailure(stop);
         yield Outcome.completed(output);
@@ -873,6 +881,79 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       }
       default -> Outcome.permanentFailure(command.explain());
     };
+  }
+
+  static final String UPLOAD_FILE = "browser.uploadFile";
+
+  private ObjectProvider<com.jizza.engine.api.device.Devices> devices;
+  private ObjectProvider<com.jizza.engine.api.chat.ChatFiles> chatFiles;
+
+  /** Where a file to upload comes from: a file a device sent back, or one added in chat. */
+  @org.springframework.beans.factory.annotation.Autowired
+  public void setFileSources(ObjectProvider<com.jizza.engine.api.device.Devices> devices,
+                             ObjectProvider<com.jizza.engine.api.chat.ChatFiles> chatFiles) {
+    this.devices = devices;
+    this.chatFiles = chatFiles;
+  }
+
+  /**
+   * "Upload a file": the step names one of the person's files by id (a chat attachment, a run
+   * input, a file an earlier step downloaded). The browser can only fetch a file handed to it, so
+   * the file is handed to the browser that runs the step, once per step, and the input becomes
+   * {@code {id, name, contentType, size}}. Null when ready, else why it can't be.
+   */
+  private String handOver(Execution execution, ObjectNode inputs, DeviceTarget target,
+                          ObjectNode state) {
+    JsonNode given = inputs.get("file");
+    String ref = given == null ? "" : given.isObject() ? given.path("id").asText("") : given.asText("");
+    UUID source;
+    try {
+      source = UUID.fromString(ref.strip());
+    } catch (IllegalArgumentException e) {
+      return "Say which file to upload";
+    }
+    JsonNode handed = state.path("handedFile");
+    if (handed.isObject() && ref.strip().equals(handed.path("from").asText())
+        && target.deviceId() != null && target.deviceId().toString().equals(handed.path("to").asText())) {
+      inputs.set("file", handed.path("file").deepCopy());
+      return null;
+    }
+    if (target.deviceId() == null) {
+      return "Open the page in a browser first: the file is handed to the browser that shows it";
+    }
+    com.jizza.engine.api.device.Devices registry = devices == null ? null : devices.getIfAvailable();
+    if (registry == null) return "Files can't be handed to browsers here";
+    String name;
+    String contentType;
+    byte[] bytes;
+    var fromDevice = registry.file(source).filter(f -> registry.owned(execution.userId()).stream()
+        .anyMatch(d -> d.id().equals(f.deviceId())));
+    if (fromDevice.isPresent()) {
+      name = fromDevice.get().name();
+      contentType = fromDevice.get().contentType();
+      bytes = fromDevice.get().content();
+    } else {
+      com.jizza.engine.api.chat.ChatFiles chat = chatFiles == null ? null : chatFiles.getIfAvailable();
+      var fromChat = chat == null ? java.util.Optional.<com.jizza.engine.api.chat.ChatFiles.Content>empty()
+          : chat.content(execution.userId(), source);
+      if (fromChat.isEmpty()) return "The file to upload is not one of yours, or it is gone";
+      name = fromChat.get().name();
+      contentType = fromChat.get().contentType();
+      bytes = fromChat.get().bytes();
+    }
+    UUID id;
+    try {
+      id = registry.handFile(target.deviceId(), name, contentType, bytes);
+    } catch (RuntimeException e) {
+      return "The file could not be handed to the browser: " + e.getMessage();
+    }
+    ObjectNode file = Json.obj().put("id", id.toString()).put("name", name == null ? "file" : name)
+        .put("contentType", contentType == null ? "application/octet-stream" : contentType)
+        .put("size", bytes.length);
+    inputs.set("file", file);
+    state.putObject("handedFile").put("from", ref.strip()).put("to", target.deviceId().toString())
+        .set("file", file.deepCopy());
+    return null;
   }
 
   /** A step marked as one that cannot be undone, such as paying or placing an order. */

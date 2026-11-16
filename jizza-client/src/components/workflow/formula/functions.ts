@@ -4,7 +4,7 @@
  */
 
 /** What a value is, as far as the editor can tell. Dates are text in ISO form, so text works as a date. */
-export type ValueType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'list' | 'map' | 'any'
+export type ValueType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'list' | 'map' | 'file' | 'any'
 
 export type FunctionCategory = 'Text' | 'Number' | 'Date' | 'List' | 'Map' | 'Check'
 
@@ -113,7 +113,7 @@ export function fits(expected: ValueType, actual: ValueType): boolean {
   return false
 }
 
-const TYPE_NAMES: Record<ValueType, string> = { text: 'text', number: 'a number', boolean: 'true/false', date: 'a date', datetime: 'a date and time', list: 'a list', map: 'a map', any: 'anything' }
+const TYPE_NAMES: Record<ValueType, string> = { text: 'text', number: 'a number', boolean: 'true/false', date: 'a date', datetime: 'a date and time', list: 'a list', map: 'a map', file: 'a file', any: 'anything' }
 
 export function typeName(t: ValueType): string {
   return TYPE_NAMES[t]
