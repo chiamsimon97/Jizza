@@ -10,6 +10,7 @@ import { isOpen } from '@/components/notifications/inbox'
 import { useInboxActions } from '@/components/notifications/useInboxActions'
 import type { NotificationDto, RunStatus, RunTrace } from '@/types'
 import { runLogPath } from './assistantStore'
+import { LiveView } from './LiveView'
 
 const GOING: RunStatus[] = ['RUNNING', 'WAITING', 'PAUSED_WAITING_INSTRUCTION']
 /** How many finished steps the progress line keeps in view. */
@@ -145,6 +146,7 @@ export function RunInChat({ runId, name }: { runId: string; name: string }) {
       {progress?.status === 'FAILED' && progress.error && (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">{progress.error}</p>
       )}
+      {going && trace && <LiveView runId={runId} />}
       {stopError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{stopError}</p>}
       {result && (
         <div className="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-300" data-testid="run-result">

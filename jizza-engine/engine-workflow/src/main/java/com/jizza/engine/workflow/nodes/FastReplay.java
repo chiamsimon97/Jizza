@@ -57,7 +57,7 @@ final class FastReplay {
 
   private static final int MAX_STEPS = 100;
   /** Choosing from a list reads the page first and may ask, so it never runs in a batch. */
-  private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.uploadFile", "browser.record", "browser.pickElement",
+  private static final Set<String> NOT_BATCHED = Set.of(ACTION, "browser.uploadFile", "browser.waitUntil", "browser.tapPoints", "browser.record", "browser.pickElement",
       "browser.listItems", WebStepForm.CLICK_ITEM, WebStepForm.CHOOSE_OPTION,
       WebStepForm.CLICK_ONE_OF, WebStepForm.SELECT_OPTION, "browser.listOptions",
       "browser.pickDate", "browser.ask", "browser.handOff");
@@ -106,7 +106,7 @@ final class FastReplay {
       // A step that cannot be undone is never sent twice, and one whose outcome may stop the
       // run must be read by its own step: both run on their own.
       if (config.path("irreversible").asBoolean(false) || config.path("onOutcome").isObject()
-          || config.path("readAs").isObject()) {
+          || config.path("readAs").isObject() || config.path("poll").isObject()) {
         return null;
       }
       // A step with details attached stops for the person's answers, so it runs on its own.

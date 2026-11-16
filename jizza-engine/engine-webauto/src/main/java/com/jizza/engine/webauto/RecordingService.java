@@ -774,6 +774,15 @@ public class RecordingService implements Recordings, RecordingIntake {
           if (value.asBoolean()) meta.put("irreversible", true);
           else meta.remove("irreversible");
         }
+        case "poll" -> {
+          if (!StepCompiler.WAIT_FOR.equals(action)) {
+            throw new ValidationException("Only 'Wait for what happens' can keep looking");
+          }
+          ObjectNode meta = target.node.path("meta").isObject() ? (ObjectNode) target.node.get("meta")
+              : target.node.putObject("meta");
+          if (value.isNull()) meta.remove("poll");
+          else meta.set("poll", StepCompiler.pollRule(value));
+        }
         case "transform" -> {
           // What the site asks of an uploaded picture: the browser fits it before handing it over.
           if (!"browser.uploadFile".equals(action)) {
@@ -781,6 +790,24 @@ public class RecordingService implements Recordings, RecordingIntake {
           }
           if (value.isNull() || value.isObject() && value.isEmpty()) input.remove("transform");
           else input.set("transform", pictureFit(value));
+        }
+        case "tapPicture" -> {
+          // A seat map or a picture to pick from: each run shows it and the person taps.
+          if (!value.isBoolean() || !value.asBoolean()) {
+            throw new ValidationException("tapPicture can only be turned on");
+          }
+          if (!"browser.click".equals(action)) {
+            throw new ValidationException("Only a click can become taps on a picture");
+          }
+          target.node.put("action", "browser.tapPoints");
+          target.node.put("version", 1);
+          for (String clickOnly : List.of("button", "modifiers", "clickCount", "offset")) {
+            input.remove(clickOnly);
+          }
+          String label = target.node.path("label").asText("");
+          if (label.startsWith("Click ")) {
+            target.node.put("label", "Let me tap on " + label.substring("Click ".length()));
+          }
         }
         case "download" -> {
           // A click that started a download while recording: the run clicks the same way and

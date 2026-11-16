@@ -324,6 +324,7 @@ public final class EngineHarness {
             mock(com.jizza.engine.persistence.repository.AgentRepository.class),
             mock(ObjectProvider.class)),
         new CountingAgentStep());
+    deviceActions.setClock(clock);
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
         validator, killSwitch, mock(AuditLog.class), busProvider, executors, clock,

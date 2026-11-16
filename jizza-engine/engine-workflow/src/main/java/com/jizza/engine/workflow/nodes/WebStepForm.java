@@ -279,6 +279,8 @@ final class WebStepForm {
     schema.path("required").forEach(r -> required.add(r.asText()));
     // Values marked mandatory while recording: the card waits for them to be filled in.
     config.path("requiredInputs").forEach(r -> required.add(r.asText()));
+    // Taps on a picture are the person's each run.
+    if ("browser.tapPoints".equals(spec.action())) required.add("points");
     // setText needs text unless it types a saved login.
     if (schema.path("oneOf").isArray() && !inputs.has("secretRef")) {
       for (JsonNode choice : schema.get("oneOf")) {
@@ -451,6 +453,7 @@ final class WebStepForm {
     if (property.has("enum")) return "select";
     if ("browser.setDate".equals(action) && "value".equals(key)) return "date";
     if ("browser.pickDate".equals(action) && "date".equals(key)) return "date";
+    if ("browser.tapPoints".equals(action) && "points".equals(key)) return "taps";
     return switch (property.path("type").asText("string")) {
       case "boolean" -> "checkbox";
       case "array" -> "list";
@@ -471,7 +474,8 @@ final class WebStepForm {
       Map.entry("item", "Item to choose"), Map.entry("state", "Checkbox"),
       Map.entry("url", "Address"), Map.entry("keys", "Keys"),
       Map.entry("only", "Untick the others"), Map.entry("format", "Date format"),
-      Map.entry("date", "Date"), Map.entry("option", "Option to choose"));
+      Map.entry("date", "Date"), Map.entry("option", "Option to choose"),
+      Map.entry("points", "Where to tap"));
 
   private static String label(String key, String action) {
     if ("browser.setDate".equals(action) && "value".equals(key)) return "Date";

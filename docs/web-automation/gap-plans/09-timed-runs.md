@@ -1,5 +1,21 @@
 # 09. Timed runs: Tatkal, flash sales, slot polling
 
+## Status (2026-11-16, round 3)
+
+Built: G1 + G2 (`browser.waitUntil@1`, "Wait until": `at` with an offset, or a local time with
+`timeZone`; the run sleeps on the server until two minutes before, then the browser reads the
+site's clock from its `Date` header (median of 5, half-second resolution, error noted), waits
+out the rest itself with a tight last 200 ms, and reports `offsetMs` and `lateMs`. `clock:
+device` uses the computer's clock; `leadMs` goes on early. A moment already gone stops the run
+with why.) G3 (`poll` on "Wait for what happens": `everySec` (15 s or more), `forMinutes` or
+`until`, `maxTries`; each look after the first reloads the page (`reloadFirst`), the run sleeps
+between looks, and stops with how many looks it made. Set in the recording review: "If none
+shows, keep looking".) G6 partly: a browser that is not open when the step is due pauses the run
+with "open it, then Try again" (plan 07 G11).
+
+Not built yet: G4/G5 arming a timed run from chat with pre-flight checks and an armed card,
+readiness alerts ten minutes before, reading a clock element shown on the page.
+
 ## Scenarios
 
 - IRCTC Tatkal: AC classes open at 10:00, non-AC at 11:00 IST; seats go in a minute or two.

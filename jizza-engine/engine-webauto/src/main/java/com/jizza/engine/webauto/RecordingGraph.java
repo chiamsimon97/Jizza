@@ -250,13 +250,15 @@ final class RecordingGraph {
       }
       if (config.path("irreversible").asBoolean(false)) meta.put("irreversible", true);
       if (config.path("readAs").isObject()) meta.set("readAs", config.get("readAs").deepCopy());
+      if (config.path("poll").isObject()) meta.set("poll", config.get("poll").deepCopy());
       step.set("input", input);
       if (config.path("list").isObject()) meta.set("list", config.get("list").deepCopy());
       ObjectNode extra = Json.obj();
       for (Iterator<Map.Entry<String, JsonNode>> it = config.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> field = it.next();
         if (!Set.of("action", "version", "inputs", "list", "preset", "target", "disabled",
-            "optional", "recorded", "onOutcome", "irreversible", "readAs").contains(field.getKey())) {
+            "optional", "recorded", "onOutcome", "irreversible", "readAs", "poll")
+            .contains(field.getKey())) {
           extra.set(field.getKey(), field.getValue().deepCopy());
         }
       }

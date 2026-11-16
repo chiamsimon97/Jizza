@@ -1,6 +1,7 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { RowsInput } from '@/components/ui/RowsInput'
+import { TapPicture } from './TapPicture'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { formatDate, kindOf, pickerValue } from '@/lib/dateFormat'
 import { type FormValues, type StepField, type StepForm, type StepShots, fieldEmpty, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
@@ -73,7 +74,7 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
   const [mapping, setMapping] = useState(false)
   const id = `step-field-${field.key}`
   const required = field.required || missing
-  const canMap = !readOnly && data.length > 0 && field.type !== 'checkbox' && field.type !== 'rows' && !(field.type === 'select' && field.options)
+  const canMap = !readOnly && data.length > 0 && field.type !== 'checkbox' && field.type !== 'rows' && field.type !== 'taps' && !(field.type === 'select' && field.options)
   const border = missing || field.error ? 'border-red-400 dark:border-red-700' : ''
 
   if (field.type === 'checkbox') {
@@ -100,7 +101,14 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
         )}
       </div>
 
-      {field.type === 'rows' ? (
+      {field.type === 'taps' ? (
+        field.picture ? (
+          <TapPicture src={`/api/devices/${field.picture.device}/files/${field.picture.file}`} label={field.label}
+            taps={Array.isArray(value) ? value : []} readOnly={readOnly} onChange={onChange} />
+        ) : (
+          <p className="text-xs text-gray-600 dark:text-gray-400">The picture to tap on could not be shown.</p>
+        )
+      ) : field.type === 'rows' ? (
         <RowsInput label={field.label} columns={field.columns ?? []} value={value} readOnly={readOnly}
           invalid={missing} onChange={onChange} />
       ) : field.type === 'select' && field.options ? (

@@ -454,6 +454,45 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aWaitForWhatHappensKeepsLookingAsTheReviewSays() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.waitFor", "Wait for a slot",
+            "{\"outcomes\":[{\"name\":\"Open\",\"text\":\"Slot open\"}]}", false)));
+    var edit = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    edit.putObject("patch").putObject("poll").put("everySec", 60).put("forMinutes", 30);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+    assertThat(service.get(access, id).steps().get(0).step().path("meta").path("poll").toString())
+        .isEqualTo("{\"everySec\":60,\"forMinutes\":30}");
+
+    service.stop(access, id);
+    service.save(access, id, new Recordings.SaveRequest("Slots", null, null));
+    assertThat(savedWorkflows.get(0).graph().toString()).contains("\"poll\":{\"everySec\":60");
+    assertThatThrownBy(() -> StepCompiler.pollRule(Json.obj().put("everySec", 5).put("forMinutes", 1)))
+        .hasMessageContaining("15 seconds");
+    assertThatThrownBy(() -> StepCompiler.pollRule(Json.obj().put("everySec", 60)))
+        .hasMessageContaining("how long");
+  }
+
+  @Test
+  void aClickOnASeatMapBecomesTapsOnAPictureEachRun() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.click", "Click Seat map",
+            "{\"element\":{\"strategies\":[{\"by\":\"css\",\"value\":\"#map\"}]},\"offset\":{\"x\":3,\"y\":4}}",
+            false)));
+    var edit = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    edit.putObject("patch").put("tapPicture", true);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+
+    JsonNode step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("action").asText()).isEqualTo("browser.tapPoints");
+    assertThat(step.path("label").asText()).isEqualTo("Let me tap on Seat map");
+    assertThat(step.path("input").has("offset")).isFalse();
+    assertThat(step.path("input").has("element")).isTrue();
+  }
+
+  @Test
   void onlyAClickCanBecomeADownload() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

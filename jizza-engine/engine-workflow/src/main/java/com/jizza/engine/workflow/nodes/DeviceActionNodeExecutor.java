@@ -26,6 +26,7 @@ import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
 import com.jizza.engine.workflow.sandbox.Templates;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -197,6 +198,43 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     if (UPLOAD_FILE.equals(spec.action())) {
       String problem = handOver(execution, (ObjectNode) inputs, target, state);
       if (problem != null) return Outcome.permanentFailure(problem);
+    }
+    Duration holdFor = null;
+    if (WAIT_UNTIL.equals(spec.action())) {
+      Instant at;
+      try {
+        at = TimedRuns.instant(inputs.path("at"), inputs.path("timeZone").asText(""));
+      } catch (IllegalArgumentException e) {
+        return Outcome.permanentFailure(e.getMessage());
+      }
+      Instant now = clock.instant();
+      if (at.isBefore(now.minus(TimedRuns.TOO_LATE))) {
+        return Outcome.permanentFailure(TimedRuns.describe(at) + " has already passed");
+      }
+      // The run sleeps here; the browser gets the step just before, and waits the rest itself.
+      Instant send = at.minus(TimedRuns.SEND_BEFORE);
+      if (now.isBefore(send)) return Outcome.waitUntil(send);
+      ((ObjectNode) inputs).put("at", at.toString());
+      ((ObjectNode) inputs).remove("timeZone");
+      holdFor = Duration.between(now, at).plus(TimedRuns.SLACK);
+    }
+    if (TAP_POINTS.equals(spec.action())) {
+      ArrayNode points = TapPicture.points(inputs.get("points"));
+      if (points.isEmpty()) {
+        ((ObjectNode) inputs).remove("points");
+        // The person taps on a picture of the area (a seat map): take it first.
+        if (!state.path("picture").isObject()) {
+          Outcome taking = TapPicture.take(execution, broker, state, target, workspaceId,
+              (ObjectNode) inputs);
+          if (taking != null) return taking;
+        }
+      } else {
+        ((ObjectNode) inputs).set("points", points);
+      }
+    }
+    if (TimedRuns.polls(config) && state.path("pollTries").asInt(0) > 0) {
+      // Each look after the first loads the page again: a slot or a price only shows on reload.
+      ((ObjectNode) inputs).put("reloadFirst", true);
     }
 
     UUID actor = actorFor(execution);
@@ -449,7 +487,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     if (detailAnswers != null && detailAnswers.isObject() && !detailAnswers.isEmpty()) {
       state.set("details", detailAnswers);
     }
-    Duration timeout = config.path("timeoutSec").asInt(0) > 0
+    Duration timeout = holdFor != null ? holdFor : config.path("timeoutSec").asInt(0) > 0
         ? Duration.ofSeconds(config.get("timeoutSec").asInt()) : null;
     DeviceCommandDto command;
     try {
@@ -526,6 +564,14 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
     ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
+    if (state.path("picture").isObject() && detail.path("form").path("fields").isArray()) {
+      // The picture to tap on goes with the field the taps answer.
+      for (JsonNode field : detail.path("form").path("fields")) {
+        if ("points".equals(field.path("key").asText())) {
+          ((ObjectNode) field).set("picture", state.get("picture").deepCopy());
+        }
+      }
+    }
     if (shots != null && detail.path("form").isObject()) {
       ((ObjectNode) detail.get("form")).set("shots", shots);
     }
@@ -859,6 +905,19 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
               .put("index", i.index()));
           yield execute(execution);
         }
+        if ("timed_out".equals(kind) && TimedRuns.polls(stepConfig)) {
+          // Poll until: none of what it looks for showed yet. Look again after a while, until
+          // the time or the number of tries runs out.
+          Instant next = TimedRuns.nextLook(stepConfig, state.path("pollTries").asInt(0),
+              state.path("pollSince").asText(null), clock.instant());
+          if (next != null) {
+            if (!state.has("pollSince")) state.put("pollSince", clock.instant().toString());
+            state.put("pollTries", state.path("pollTries").asInt(0) + 1);
+            yield Outcome.waitUntil(next);
+          }
+          yield Outcome.permanentFailure(TimedRuns.gaveUp(stepConfig,
+              state.path("pollTries").asInt(0) + 1));
+        }
         if (irreversible(stepConfig)) {
           // Paying, booking, placing an order: never sent again by itself, as it may have gone
           // through. The person checks the site and says so before it is tried again.
@@ -890,6 +949,16 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   static final String UPLOAD_FILE = "browser.uploadFile";
+  static final String WAIT_UNTIL = "browser.waitUntil";
+  static final String TAP_POINTS = "browser.tapPoints";
+
+  private java.time.Clock clock = java.time.Clock.systemUTC();
+
+  /** The time timed steps keep ("Wait until", polling). */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setClock(java.time.Clock clock) {
+    if (clock != null) this.clock = clock;
+  }
 
   /** Words a failure carries when the device never got the step: the engine then knows nothing
    *  was done, even on a step that cannot be undone. */

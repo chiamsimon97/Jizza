@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, CircleOff, CircleSlash, KeyRound, ShieldAlert, ListChecks, Pencil, SlidersHorizontal, Trash2, Undo2, Wand2, X } from 'lucide-react'
-import type { EditOp, RecordedStep, Recording, PictureFit, WaitOutcome } from '@/api/web'
+import type { EditOp, RecordedStep, Recording, PictureFit, PollRule, WaitOutcome } from '@/api/web'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
@@ -8,6 +8,7 @@ import { ElementPreview } from './PageView'
 import { WaitOutcomes } from './WaitOutcomes'
 import { ReadAsField } from './ReadAsField'
 import { FitPictureField } from './FitPictureField'
+import { KeepLookingField } from './KeepLookingField'
 import { conditionDepths, detailsInput, detailsOf, detailsProblem, type InputDetails, dependentListChoices, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, movesBetween, movesFor, moveOp, pageArrangement, reusableOps, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
 
 /** A login saved in the browser extension, as its device lists it. */
@@ -143,12 +144,26 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                   onChange={next => edit([{ op: 'update', seq: s.seq, patch: { outcomes: next } }],
                     [{ op: 'update', seq: s.seq, patch: { outcomes: s.step.input!.outcomes as WaitOutcome[] } }])} />
               )}
+              {s.step.action === 'browser.waitFor' && (
+                <div className="mt-1">
+                  <KeepLookingField poll={s.step.meta?.poll as PollRule | undefined} busy={busy}
+                    onChange={next => edit([{ op: 'update', seq: s.seq, patch: { poll: next } }],
+                      [{ op: 'update', seq: s.seq, patch: { poll: (s.step.meta?.poll as PollRule | undefined) ?? null } }])} />
+                </div>
+              )}
               {s.step.action === 'browser.getText' && (
                 <div className="mt-1">
                   <ReadAsField rule={s.step.meta?.readAs} busy={busy}
                     onChange={next => edit([{ op: 'update', seq: s.seq, patch: { readAs: next } }],
                       [{ op: 'update', seq: s.seq, patch: { readAs: s.step.meta?.readAs ?? null } }])} />
                 </div>
+              )}
+              {s.step.action === 'browser.click' && (
+                <button type="button" disabled={busy} className="mt-1 text-xs text-brand-700 hover:underline disabled:opacity-60 dark:text-brand-300"
+                  title="For a seat map or a picture to pick from: each run shows you a picture of it, and the browser clicks where you tap"
+                  onClick={() => edit([{ op: 'update', seq: s.seq, patch: { tapPicture: true } }])}>
+                  Let me tap on a picture of this each run
+                </button>
               )}
               {s.step.action === 'browser.uploadFile' && (
                 <div className="mt-1">

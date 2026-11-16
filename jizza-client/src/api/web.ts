@@ -50,7 +50,8 @@ export interface RecordedStepData {
     /** Pay, Place order, Confirm booking: never sent twice (Try again only once checked). */
     irreversible?: boolean
     /** A read text taken as a number, amount, date or by a pattern (its value output). */
-    readAs?: ReadAsRule }
+    readAs?: ReadAsRule
+    poll?: PollRule }
 }
 
 export interface ReadAsRule { as: 'text' | 'number' | 'money' | 'date' | 'pattern'; pattern?: string; format?: string }
@@ -150,7 +151,7 @@ export interface EditOp {
   secretRef?: string | null
   check?: { action: string; afterSeq: number }
   /** op update: step settings to change. */
-  patch?: { disabled?: boolean; optional?: boolean; timeoutMs?: number; when?: 'shown' | 'missing'; irreversible?: boolean; outcomes?: WaitOutcome[]; readAs?: ReadAsRule | null; transform?: PictureFit | null }
+  patch?: { disabled?: boolean; optional?: boolean; timeoutMs?: number; when?: 'shown' | 'missing'; irreversible?: boolean; outcomes?: WaitOutcome[]; readAs?: ReadAsRule | null; transform?: PictureFit | null; poll?: PollRule | null; tapPicture?: true }
 }
 
 export interface FixCandidate {
@@ -231,3 +232,6 @@ export interface RecordingInput {
 
 /** What a site asks of an uploaded picture: at most this many KB, this size, this format. */
 export interface PictureFit { maxKb?: number; width?: number; height?: number; format?: 'jpeg' | 'png' | 'webp' }
+
+/** How a "Wait for what happens" keeps looking when nothing shows yet. */
+export interface PollRule { everySec: number; forMinutes?: number; until?: string; maxTries?: number }
