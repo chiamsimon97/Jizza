@@ -60,6 +60,10 @@ export const workflowsApi = {
   delete: (id: string) =>
     api.delete<void>(`/api/workflows/${id}`),
 
+  /** Jizza suggests what it is for and how you would ask for it in chat, and keeps that. */
+  suggestUses: (id: string) =>
+    api.post<LibraryEntry>(`/api/workflows/${id}/reuse/suggest`),
+
   forgetReuse: (id: string) =>
     api.delete<LibraryEntry>(`/api/workflows/${id}/reuse`),
 }

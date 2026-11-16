@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
+import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, StartRunCard, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -12,6 +12,7 @@ import { matchLocalIntent } from './localIntents'
 import { applyStepConfig, currentContext, useContextStore } from './contextStore'
 import type { Starter } from './commands'
 import { splitAttachments } from './attachments'
+import { viewerZone } from '@/api/activity'
 
 export interface Step {
   label: string
@@ -43,6 +44,10 @@ export interface AssistantMessage {
   proposal?: AgentProposal
   /** Steps only the user can take, shown as cards with buttons. */
   userSteps?: UserSteps[]
+  /** A saved workflow the person asked to run: the values to check, then Start. */
+  startRun?: StartRunCard
+  /** Runs this reply started or is about, followed live under it with their cards. */
+  runs?: { runId: string; name: string }[]
   /** Specialists who worked on this reply, shown by their logos. */
   helpers?: { agentId: string; agentName: string }[]
   /** In a thread: the lead who wrote this reply, shown in place of Jizza. */
@@ -171,7 +176,8 @@ function describe(action: UiAction): string {
     case 'propose_workflow': return 'Proposed a workflow plan'
     case 'propose_agent': return 'Drafted a new agent'
     case 'configure_step': return `Filled in ${action.payload.label ? `"${action.payload.label}"` : 'the step'}`
-    case 'reused_workflow': return `Ran your saved workflow "${action.payload.name}"`
+    case 'reused_workflow': return action.payload.followUp ? `About "${action.payload.name}"` : `Ran your saved workflow "${action.payload.name}"`
+    case 'start_run': return `Ready to run "${action.payload.name}"`
     case 'thread_opened': return `Handed to ${action.payload.leadName}`
     case 'thread_handback': return 'Passed back to Jizza'
     case 'show_steps': return action.payload.title
@@ -187,6 +193,8 @@ interface Executed {
   thread?: ThreadCard
   handback?: AssistantMessage['handback']
   userSteps?: UserSteps[]
+  startRun?: StartRunCard
+  runs?: { runId: string; name: string }[]
 }
 
 export function execute(actions: UiAction[], run = true): Executed {
@@ -197,6 +205,8 @@ export function execute(actions: UiAction[], run = true): Executed {
   let thread: ThreadCard | undefined
   let handback: AssistantMessage['handback']
   const userSteps: UserSteps[] = []
+  let startRun: StartRunCard | undefined
+  const runs: { runId: string; name: string }[] = []
   for (const action of actions) {
     switch (action.type) {
       case 'navigate': {
@@ -258,12 +268,25 @@ export function execute(actions: UiAction[], run = true): Executed {
         if (!action.payload?.title || !Array.isArray(action.payload.steps) || action.payload.steps.length === 0) continue
         userSteps.push(action.payload)
         continue
+      case 'start_run':
+        if (!action.payload?.planId || !action.payload.workflowId || !Array.isArray(action.payload.fields)) continue
+        startRun = action.payload
+        continue
+      case 'reused_workflow':
+        // A follow-up about a run ("how is it going?") points at the run already shown above.
+        if (action.payload?.runId && !action.payload.followUp && !runs.some(r => r.runId === action.payload.runId)) {
+          runs.push({ runId: action.payload.runId, name: action.payload.name })
+        }
+        break
     }
     steps.push(action.type === 'reused_workflow' && action.payload?.runId
       ? { label: describe(action), href: runLogPath(action.payload.runId), hrefLabel: 'View run log' }
       : { label: describe(action) })
   }
-  return { steps, question, plan, proposal, thread, handback, ...(userSteps.length ? { userSteps } : {}) }
+  return {
+    steps, question, plan, proposal, thread, handback, ...(userSteps.length ? { userSteps } : {}),
+    ...(startRun ? { startRun } : {}), ...(runs.length ? { runs } : {}),
+  }
 }
 
 /** Origins of a job nobody typed in this conversation: it starts with a line or a moved message. */
@@ -401,11 +424,11 @@ export const useAssistantStore = create<AssistantState>()(
             break
           case 'job.completed': {
             const actions = (e.payload.actions ?? []) as UiAction[]
-            const { steps, question, plan, proposal, thread, handback, userSteps } = execute(actions)
+            const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs } = execute(actions)
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors) }
                 : m)),
               lastReplyId: id,
               // A new thread belongs in the list straight away.
@@ -483,7 +506,8 @@ export const useAssistantStore = create<AssistantState>()(
             const ref = await chatApi.send({
               message: text, clientMessageId,
               screen: ctx.screen,
-              ...(ctx.data ? { context: ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data } : {}),
+              // The viewer's time zone rides along, so "tomorrow" in a request means their tomorrow.
+              context: { ...(ctx.data ? (ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data) : {}), timeZone: viewerZone() },
               ...(incognito ? { incognito: true } : { conversationId }),
             })
             set(s => ({
@@ -643,7 +667,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
   }
   const actions = m.metadata?.actions ?? []
-  const { steps, question, plan, proposal, thread, handback, userSteps } = execute(actions, false)
+  const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs } = execute(actions, false)
   return {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -660,6 +684,8 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     thread,
     handback,
     userSteps,
+    startRun,
+    runs,
     lead: m.metadata?.lead,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
   }

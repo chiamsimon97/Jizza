@@ -21,6 +21,8 @@ import type { LibraryEntry } from '@/types'
 import { useContextStore } from './contextStore'
 import { Markdown } from './Markdown'
 import { UserStepsCard, cardLinks } from './UserStepsCard'
+import { StartRunCard } from './StartRunCard'
+import { RunInChat } from './RunInChat'
 import { fileAttachment, folderFromFiles, pickLinkedFolder, splitAttachments, withAttachments, type Attachment, type AttachmentKind } from './attachments'
 
 const SUGGESTIONS = [
@@ -530,6 +532,8 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
           </button>
         )}
         {msg.question && <QuestionCard question={msg.question} onChoose={onChoose} onSendMany={onSendMany} />}
+        {!msg.streaming && msg.startRun && <StartRunCard card={msg.startRun} />}
+        {!msg.streaming && msg.runs?.map(r => <RunInChat key={r.runId} runId={r.runId} name={r.name} />)}
         {!msg.streaming && msg.userSteps?.map((card, i) => (
           <UserStepsCard key={i} card={card} onSend={onSendMany} disabled={busy}
             storageKey={msg.jobId ? `jizza.steps.${msg.jobId}.${i}` : undefined} />

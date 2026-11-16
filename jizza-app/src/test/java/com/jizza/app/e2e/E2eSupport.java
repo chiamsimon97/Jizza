@@ -68,6 +68,9 @@ public abstract class E2eSupport {
     // A model-written title would replace the first words typed with the scripted model's reply;
     // the test that covers titles turns it on for itself.
     registry.add("jizza.chat.titles.enabled", () -> "false");
+    // Reading a plain request as "run this saved workflow" is one more model call ahead of Jizza's,
+    // which would take Jizza's scripted reply; ChatToRunE2eTest turns it on for its own tests.
+    registry.add("jizza.chat.run-from-chat.enabled", () -> "false");
 
     // The stub connector runs on loopback over plain http, which the egress guard blocks by
     // default; these two lines are exactly the development escape hatch it provides.

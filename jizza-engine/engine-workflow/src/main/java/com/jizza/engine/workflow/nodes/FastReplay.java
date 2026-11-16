@@ -92,6 +92,7 @@ final class FastReplay {
     RunContext context = execution.context();
     RunContext.Browser browser = context.browser();
     DeviceTarget target = browser != null ? DeviceTarget.device(browser.deviceId())
+        : context.preferredBrowser() != null ? DeviceTarget.device(context.preferredBrowser())
         : new DeviceTarget(null, null, "browser", false);
     List<Planned> planned = new ArrayList<>();
     for (WorkflowNode node : chain) {

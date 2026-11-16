@@ -258,7 +258,8 @@ public class TurnRunner implements ChatService {
     try {
       // A slash command such as /run is answered here, with no model call at all.
       Optional<Orchestrator.Turn> direct = continuation == null
-          ? shortcut(userId, ref.conversationId(), s.text()) : Optional.empty();
+          ? shortcut(userId, ref.conversationId(), s.text(), s.context(), ref.incognito())
+          : Optional.empty();
       String input = continuation == null ? s.text() : Activity.run(recorder, continuation.prepare());
       // Where this turn is: the main chat, where Jizza coordinates, or a thread and its lead.
       ThreadService.Framing framing = ref.conversationId() == null ? null
@@ -266,7 +267,7 @@ public class TurnRunner implements ChatService {
       List<Msg> told = framing == null || framing.preamble() == null ? history
           : prepend(Msg.system(framing.preamble()), history);
       Orchestrator.TurnInput turnInput =
-          new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), s.context());
+          new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), screenContext(s.context()));
       // The reply may read the PDFs and photos the user attached; routing it does not.
       Supplier<Orchestrator.Turn> respond = () -> ChatFileAccess.run(userId, () ->
           framing != null && framing.lead() != null
@@ -380,10 +381,31 @@ public class TurnRunner implements ChatService {
     }
   }
 
-  private Optional<Orchestrator.Turn> shortcut(UUID userId, UUID conversationId, String text) {
-    if (shortcuts == null || text == null || !text.stripLeading().startsWith("/")) return Optional.empty();
-    for (ChatShortcut shortcut : shortcuts.orderedStream().toList()) {
-      Optional<Orchestrator.Turn> turn = shortcut.handle(userId, conversationId, text);
+  /**
+   * What the client said about the screen, without the time zone it adds to every turn (that is
+   * for reading dates such as "tomorrow", not something on screen); null when nothing is left.
+   */
+  static com.fasterxml.jackson.databind.JsonNode screenContext(com.fasterxml.jackson.databind.JsonNode context) {
+    if (!(context instanceof ObjectNode object) || !object.has("timeZone")) return context;
+    ObjectNode rest = object.deepCopy();
+    rest.remove("timeZone");
+    return rest.isEmpty() ? null : rest;
+  }
+
+  /**
+   * The reply of the first shortcut that answers: slash commands first, then (in a stored
+   * conversation only) the ones that read plain requests, such as running a saved workflow.
+   */
+  private Optional<Orchestrator.Turn> shortcut(UUID userId, UUID conversationId, String text,
+                                               com.fasterxml.jackson.databind.JsonNode context,
+                                               boolean incognito) {
+    if (shortcuts == null || text == null) return Optional.empty();
+    boolean slash = text.stripLeading().startsWith("/");
+    List<ChatShortcut> all = shortcuts.orderedStream().toList();
+    for (ChatShortcut shortcut : all) {
+      if (slash != shortcut.slashOnly()) continue;
+      if (!slash && (incognito || conversationId == null)) continue;
+      Optional<Orchestrator.Turn> turn = shortcut.handle(userId, conversationId, text, context);
       if (turn.isPresent()) return turn;
     }
     return Optional.empty();

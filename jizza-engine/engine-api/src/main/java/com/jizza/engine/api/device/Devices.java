@@ -50,6 +50,14 @@ public interface Devices {
   /** The person's own devices and the workspace's shared ones. */
   List<DeviceDto> list(UUID workspaceId, UUID userId);
 
+  /**
+   * The person's own active devices in every account, the pool a workflow run of theirs draws
+   * from, so they can choose which browser runs it.
+   */
+  default List<DeviceDto> owned(UUID userId) {
+    return List.of();
+  }
+
   /** Every device of the account that is not revoked, for someone who manages them. */
   List<DeviceDto> listAll(UUID workspaceId);
 

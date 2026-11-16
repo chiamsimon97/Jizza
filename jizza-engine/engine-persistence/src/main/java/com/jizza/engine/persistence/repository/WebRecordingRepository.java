@@ -20,6 +20,9 @@ public interface WebRecordingRepository extends JpaRepository<WebRecordingEntity
 
   List<WebRecordingEntity> findByStatus(String status);
 
+  /** The recordings a workflow was made from, newest first: which browser it was recorded in. */
+  List<WebRecordingEntity> findByWorkflowIdOrderByUpdatedAtDesc(UUID workflowId);
+
   List<WebRecordingEntity> findByStatusAndUpdatedAtBefore(String status, Instant before);
 
   /** Serialises the events of one recording so step counts never race. */

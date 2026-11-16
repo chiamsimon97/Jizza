@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { notificationsApi } from '@/api/notifications'
-import { guardrailsApi } from '@/api/guardrails'
+import { useInboxActions } from '@/components/notifications/useInboxActions'
 import { NotificationItem, type InboxActions, type ItemCommand } from '@/components/notifications/NotificationItem'
 import {
   KIND_META, NO_FILTERS, VIEWS, agentOf, buildInbox, countsByView, type InboxFilters, type InboxView,
@@ -42,23 +42,8 @@ export function NotificationsPage() {
   const all = useMemo(() => data ?? [], [data])
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['notifications'] })
-  const after = <T,>(p: Promise<T>) => p.finally(refresh)
 
-  const actions: InboxActions = {
-    approve: (n, inputs) => after(notificationsApi.answer(n.id, 'APPROVE', undefined, undefined, inputs)),
-    approveAlways: async (n, inputs) => {
-      await guardrailsApi.saveRule({ agentId: n.sourceAgentId, toolRef: String(n.context?.tool), rule: 'ALLOW', precedence: 20 })
-      void qc.invalidateQueries({ queryKey: ['guardrails'] })
-      return after(notificationsApi.answer(n.id, 'APPROVE', undefined, undefined, inputs))
-    },
-    decline: (n, reason) => after(notificationsApi.answer(n.id, 'DENY', undefined, reason || undefined)),
-    reply: (n, text) => after(notificationsApi.answer(n.id, 'SUBMIT_INSTRUCTION', text)),
-    markRead: n => after(notificationsApi.markRead(n.id)),
-    markUnread: n => after(notificationsApi.markUnread(n.id)),
-    archive: n => after(notificationsApi.archive(n.id)),
-    unarchive: n => after(notificationsApi.unarchive(n.id)),
-    snooze: (n, until) => after(notificationsApi.snooze(n.id, until ? until.toISOString() : null)),
-  }
+  const actions: InboxActions = useInboxActions()
 
   async function markAllRead() {
     try {

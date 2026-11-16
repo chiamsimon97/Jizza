@@ -217,6 +217,18 @@ public class SagaWorkflowEngine implements WorkflowEngine,
         context -> context.setStepOverrides(stepOverrides));
   }
 
+  @Override
+  @Transactional
+  public RunDto start(UUID workflowId, int version, JsonNode input, String triggerSource,
+                      JsonNode stepOverrides, UUID preferredBrowser) {
+    WorkflowEntity workflow = workflows.findById(workflowId)
+        .orElseThrow(() -> new NotFoundException("Workflow", workflowId));
+    return launch(workflow, version, input, triggerSource, context -> {
+      context.setStepOverrides(stepOverrides);
+      context.preferBrowser(preferredBrowser);
+    });
+  }
+
   /**
    * Starts {@code workflowId} as a step of another run. The child belongs to the same person,
    * must not already be running further up the chain, and follows the same approval rule as any

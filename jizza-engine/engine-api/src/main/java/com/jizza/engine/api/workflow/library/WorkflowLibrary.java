@@ -63,6 +63,15 @@ public interface WorkflowLibrary {
                boolean confirmed);
 
   /**
+   * As above, on the browser the user chose for it ({@code browserId}, one of their paired
+   * devices); null leaves the choice to whichever of their browsers is free.
+   */
+  default RunDto reuse(UUID userId, UUID workflowId, JsonNode input, Use use, String source,
+                       boolean confirmed, UUID browserId) {
+    return reuse(userId, workflowId, input, use, source, confirmed);
+  }
+
+  /**
    * Saves what the library keeps about a workflow, as the user set it. Turning scheduled runs on
    * pins that permission to the workflow's current steps. A null profile takes it out of the
    * library.

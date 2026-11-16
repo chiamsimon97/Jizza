@@ -178,6 +178,13 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
   @Transactional(noRollbackFor = ValidationException.class)
   public RunDto reuse(UUID userId, UUID workflowId, JsonNode input, Use use, String source,
                       boolean confirmed) {
+    return reuse(userId, workflowId, input, use, source, confirmed, null);
+  }
+
+  @Override
+  @Transactional(noRollbackFor = ValidationException.class)
+  public RunDto reuse(UUID userId, UUID workflowId, JsonNode input, Use use, String source,
+                      boolean confirmed, UUID browserId) {
     WorkflowEntity workflow = owned(userId, workflowId);
     ReuseProfile profile = profileFor(workflow, use);
     if (profile == null) {
@@ -213,7 +220,8 @@ public class DefaultWorkflowLibrary implements WorkflowLibrary {
     // A chat run is the user's own request, so it may run a draft the way pressing Run does; a
     // scheduled one is unattended and the engine holds it to approval or the user's allowance.
     String trigger = (use == Use.CHAT ? "manual:" : "") + TRIGGER + source;
-    RunDto run = engine.start(workflowId, workflow.getVersion(), given, trigger);
+    RunDto run = browserId == null ? engine.start(workflowId, workflow.getVersion(), given, trigger)
+        : engine.start(workflowId, workflow.getVersion(), given, trigger, null, browserId);
     audit.record(userId, use == Use.CHAT ? ActorType.USER : ActorType.SYSTEM, null,
         "workflow.reused", workflow.getName(), Json.obj()
             .put("workflowId", workflowId.toString()).put("runId", run.id().toString())
