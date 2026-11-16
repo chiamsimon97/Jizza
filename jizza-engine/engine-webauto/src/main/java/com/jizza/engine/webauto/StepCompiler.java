@@ -285,6 +285,9 @@ final class StepCompiler {
       ObjectNode list = listFacts(step.path("meta"));
       if (list != null) config.set("list", list);
       if (!recorded.isEmpty()) config.set("recorded", recorded);
+      if (WAIT_FOR.equals(action)) waitForRules(stepInputs, config);
+      // Paying, booking, placing an order: never sent twice, see FailedStepChoice.
+      if (step.path("meta").path("irreversible").asBoolean(false)) config.put("irreversible", true);
       boolean disabled = step.path("disabled").asBoolean(false);
       if (disabled) config.put("disabled", true);
       if (step.path("optional").asBoolean(false)) config.put("optional", true);
@@ -328,6 +331,35 @@ final class StepCompiler {
     return graph;
   }
 
+  static final String WAIT_FOR = "browser.waitFor";
+
+  /**
+   * "Wait for what happens": the browser only looks for the outcomes; what the run does with each
+   * (carry on, or stop with the site's message) is the step's own rule, kept beside it.
+   */
+  static void waitForRules(ObjectNode stepInputs, ObjectNode config) {
+    JsonNode outcomes = stepInputs.path("outcomes");
+    if (!outcomes.isArray() || outcomes.isEmpty()) {
+      throw new ValidationException("'Wait for what happens' needs at least one thing to wait for");
+    }
+    ObjectNode rules = Json.obj();
+    Set<String> names = new HashSet<>();
+    for (JsonNode outcome : outcomes) {
+      String name = outcome.path("name").asText("").strip();
+      if (name.isEmpty() || !names.add(name)) {
+        throw new ValidationException("Each thing to wait for needs its own name");
+      }
+      if (outcome instanceof ObjectNode o) {
+        String then = o.path("then").asText("continue");
+        String message = o.path("message").asText("").strip();
+        o.remove(List.of("then", "message"));
+        ObjectNode rule = rules.putObject(name).put("then", "stop".equals(then) ? "stop" : "continue");
+        if (!message.isEmpty()) rule.put("message", message);
+      }
+    }
+    config.set("onOutcome", rules);
+  }
+
   static final String IF = "flow.if";
   static final String END_IF = "flow.endIf";
   static final String ELSE = "flow.else";
@@ -336,7 +368,7 @@ final class StepCompiler {
   private static final Pattern FORM_FIELD = Pattern.compile("fields\\.(\\d+)\\.value");
   private static final Pattern FIELD_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
   private static final Set<String> RESERVED_CONFIG = Set.of("action", "version", "inputs", "list",
-      "preset", "target", "disabled", "optional", "ifCheck", "recorded", "requiredInputs");
+      "preset", "target", "disabled", "optional", "ifCheck", "recorded", "requiredInputs", "onOutcome");
 
   /** A condition being compiled: its branch node, and the open paths where its steps run when
    *  it holds ended, once its "Otherwise" starts. */

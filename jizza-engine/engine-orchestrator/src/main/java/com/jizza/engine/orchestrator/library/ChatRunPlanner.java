@@ -207,10 +207,29 @@ public class ChatRunPlanner implements ChatShortcut {
       said.append(" I'll ask you for ").append(join(later))
           .append(" while it runs, when the page shows the choices.");
     }
+    String finalStep = finalStep(workflow.getGraph());
+    if (finalStep != null) {
+      card.put("cannotBeUndone", finalStep);
+      said.append(" It includes \"").append(finalStep)
+          .append("\", which can't be undone, so check the details before you start.");
+    }
     if (browser && !anyOnline) {
       said.append(" None of your browsers with the Jizza extension is connected right now; open one before you start.");
     }
     return new Orchestrator.Turn(said.toString(), List.of(), List.of(new UiAction(START_RUN, card)), 0, 0);
+  }
+
+  /** The first step marked as one that cannot be undone (pay, place order), by its label. */
+  static String finalStep(JsonNode graph) {
+    if (graph == null) return null;
+    for (JsonNode node : graph.path("nodes")) {
+      JsonNode config = node.path("config");
+      if (config.path("irreversible").asBoolean(false) && !config.path("disabled").asBoolean(false)) {
+        String label = node.path("label").asText("").strip();
+        return label.isEmpty() ? "a final step" : label;
+      }
+    }
+    return null;
   }
 
   /** The person's own browsers with the Jizza extension, online and idle ones first. */

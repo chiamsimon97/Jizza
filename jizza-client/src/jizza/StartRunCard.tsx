@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, Globe, Play, Workflow } from 'lucide-react'
+import { AlertCircle, Globe, Play, ShieldAlert, Workflow } from 'lucide-react'
 import { chatApi } from '@/api/chat'
 import { Button } from '@/components/ui/Button'
 import { DateValueInput } from '@/components/ui/DateValueInput'
@@ -130,6 +130,13 @@ export function StartRunCard({ card }: { card: Card }) {
       {later.length > 0 && (
         <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
           Asked while it runs, when the page shows the choices: {later.map(f => f.label).join(', ')}.
+        </p>
+      )}
+
+      {card.cannotBeUndone && (
+        <p className="mt-3 inline-flex items-start gap-1 text-xs text-amber-700 dark:text-amber-300" data-testid="cannot-be-undone">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          "{card.cannotBeUndone}" can't be undone. Check the details first: Jizza never does it twice.
         </p>
       )}
 

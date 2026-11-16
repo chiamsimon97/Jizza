@@ -103,6 +103,11 @@ describe('the start card', () => {
     expect(screen.getByText(/Not run: Train booking/)).toBeInTheDocument()
   })
 
+  it('warns about a step that cannot be undone', () => {
+    wrap(<StartRunCard card={{ ...card, cannotBeUndone: 'Pay now' }} />)
+    expect(screen.getByTestId('cannot-be-undone')).toHaveTextContent('"Pay now" can\'t be undone')
+  })
+
   it('shows the run, not the form, once it has started', () => {
     wrap(<StartRunCard card={{ ...card, runId: 'run-9' }} />)
     expect(screen.getByTestId('run-in-chat')).toBeInTheDocument()

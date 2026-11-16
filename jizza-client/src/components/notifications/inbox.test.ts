@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NotificationDto } from '@/types'
-import { NO_FILTERS, buildInbox, countsByView, defaultChoiceOf, fixLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
+import { CHECKED_RETRY, NO_FILTERS, buildInbox, runChoicesFor, countsByView, defaultChoiceOf, fixLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
 
 const NOW = Date.parse('2026-10-23T10:00:00Z')
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString()
@@ -91,6 +91,13 @@ describe('inbox', () => {
     expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: "Step 'Open' could not complete: refused." }))).toBe('Stop the run')
     expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true, defaultChoice: 'Dance' } }))).toBe('Stop the run')
     expect(defaultChoiceOf(n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', body: 'Which supplier?' }))).toBeNull()
+  })
+
+  it('offers Try again on a step that cannot be undone only once the person has checked', () => {
+    const pay = n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true, irreversible: true } })
+    expect(runChoicesFor(pay).map(c => c.answer)).toEqual([CHECKED_RETRY, 'Skip this step', 'Stop the run'])
+    const plain = n({ kind: 'INSTRUCTION_REQUIRED', runId: 'r1', context: { failedStep: true } })
+    expect(runChoicesFor(plain)[0].answer).toBe('Try again')
     const auto = n({ kind: 'INSTRUCTION_REQUIRED', status: 'SUBMITTED', context: { answeredByDefault: true } })
     expect(outcomeOf(auto)?.text).toBe('No answer in time, so Jizza used the default')
   })

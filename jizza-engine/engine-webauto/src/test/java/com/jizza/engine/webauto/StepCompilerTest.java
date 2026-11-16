@@ -412,4 +412,67 @@ class StepCompilerTest {
     assertThat(StepCompiler.originOf("")).isNull();
     assertThat(StepCompiler.originOf("not a url")).isNull();
   }
+
+  @Test
+  void waitForWhatHappensKeepsEachOutcomesRuleBesideTheStepAndReadsBack() {
+    JsonNode search = step("""
+        {"seq":1,"action":"browser.click","version":2,"label":"Search",
+         "input":{"element":{"strategies":[{"by":"css","value":"#go"}]}},"meta":{}}""");
+    JsonNode wait = step("""
+        {"seq":2,"action":"browser.waitFor","version":1,"label":"Wait for results",
+         "input":{"timeoutMs":20000,"outcomes":[
+           {"name":"Results","element":{"strategies":[{"by":"css","value":".result"}]}},
+           {"name":"Nothing found","text":"No results","then":"stop","message":"Nothing matched"}]},
+         "meta":{}}""");
+    var graph = StepCompiler.compile("https://portal.example.com", List.of(OPEN, search, wait));
+    JsonNode node = null;
+    for (JsonNode n : graph.path("nodes")) {
+      if ("browser.waitFor".equals(n.path("config").path("action").asText())) node = n;
+    }
+    assertThat(node).isNotNull();
+    JsonNode config = node.path("config");
+    // The browser only gets what to look for.
+    assertThat(config.path("inputs").path("outcomes").get(1).has("then")).isFalse();
+    assertThat(config.path("inputs").path("outcomes").get(1).path("text").asText()).isEqualTo("No results");
+    assertThat(config.path("onOutcome").path("Nothing found").path("then").asText()).isEqualTo("stop");
+    assertThat(config.path("onOutcome").path("Nothing found").path("message").asText())
+        .isEqualTo("Nothing matched");
+    assertThat(config.path("onOutcome").path("Results").path("then").asText()).isEqualTo("continue");
+
+    var steps = RecordingGraph.open(graph).steps();
+    JsonNode back = steps.stream().filter(st -> "browser.waitFor".equals(st.path("action").asText()))
+        .findFirst().orElseThrow();
+    assertThat(back.path("input").path("outcomes").get(1).path("then").asText()).isEqualTo("stop");
+    assertThat(back.path("input").path("outcomes").get(1).path("message").asText())
+        .isEqualTo("Nothing matched");
+    assertThat(back.path("meta").has("config")).isFalse();
+  }
+
+  @Test
+  void waitForWhatHappensNeedsNamedOutcomes() {
+    JsonNode none = step("""
+        {"seq":1,"action":"browser.waitFor","version":1,"label":"Wait","input":{"outcomes":[]},"meta":{}}""");
+    assertThatThrownBy(() -> StepCompiler.compile("https://x.test", List.of(OPEN, none)))
+        .isInstanceOf(ValidationException.class);
+    JsonNode twice = step("""
+        {"seq":1,"action":"browser.waitFor","version":1,"label":"Wait","input":{"outcomes":[
+          {"name":"A","text":"x"},{"name":"A","text":"y"}]},"meta":{}}""");
+    assertThatThrownBy(() -> StepCompiler.compile("https://x.test", List.of(OPEN, twice)))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("own name");
+  }
+
+  @Test
+  void aStepThatCannotBeUndoneIsMarkedAndReadsBack() {
+    JsonNode pay = step("""
+        {"seq":1,"action":"browser.click","version":2,"label":"Pay now",
+         "input":{"element":{"strategies":[{"by":"css","value":"#pay"}]}},"meta":{"irreversible":true}}""");
+    var graph = StepCompiler.compile("https://shop.example.com", List.of(OPEN, pay));
+    JsonNode node = null;
+    for (JsonNode n : graph.path("nodes")) if ("Pay now".equals(n.path("label").asText())) node = n;
+    assertThat(node.path("config").path("irreversible").asBoolean()).isTrue();
+    JsonNode back = RecordingGraph.open(graph).steps().stream()
+        .filter(st -> "Pay now".equals(st.path("label").asText())).findFirst().orElseThrow();
+    assertThat(back.path("meta").path("irreversible").asBoolean()).isTrue();
+    assertThat(back.path("meta").has("config")).isFalse();
+  }
 }

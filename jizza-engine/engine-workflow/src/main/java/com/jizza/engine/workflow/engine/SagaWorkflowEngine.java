@@ -398,12 +398,20 @@ public class SagaWorkflowEngine implements WorkflowEngine,
       throw new ValidationException("This run is waiting for an instruction, so one is required");
     }
 
+    FailedStepChoice choice = FailedStepChoice.of(text);
+    if (choice != FailedStepChoice.STOP && choice != FailedStepChoice.SKIP
+        && choice != FailedStepChoice.RETRY_CHECKED && stepFailed(runId, node)
+        && FailedStepChoice.irreversible(configOf(run, node))) {
+      // Paying, booking, placing an order: trying again blind could do it twice.
+      throw new ValidationException("Step '" + labelOf(run, node) + "' may already have gone "
+          + "through. Check the site first (your orders or bookings), then answer \""
+          + FailedStepChoice.RETRY_CHECKED.answer() + "\" to try it again, or skip or stop.");
+    }
     context.recordInstruction(node, text);
     clearPause(context, node);
     // Answered here or from the inbox: either way nothing else should still ask about this step.
     closeQuestions(runId, node, "Closed: you answered this from the run");
 
-    FailedStepChoice choice = FailedStepChoice.of(text);
     if (choice == FailedStepChoice.STOP) {
       context.dequeue(node);
       run.setContext(context.toJson());
@@ -453,6 +461,14 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     audit.record(run.getUserId(), ActorType.USER, null, "run.step_skipped",
         run.getId().toString(), Json.obj().put("node", nodeId));
     return advance(run.getId());
+  }
+
+  private JsonNode configOf(WorkflowRunEntity run, String nodeId) {
+    return workflows.findById(run.getWorkflowId())
+        .map(w -> graphFor(w, run.getVersion()))
+        .flatMap(g -> g.node(nodeId))
+        .map(WorkflowNode::config)
+        .orElse(null);
   }
 
   private String labelOf(WorkflowRunEntity run, String nodeId) {
@@ -1218,7 +1234,11 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     if (ifNoAnswer != null) {
       detail.put("failedStep", true);
       ArrayNode choices = detail.putArray("choices");
-      for (FailedStepChoice choice : FailedStepChoice.values()) choices.add(choice.answer());
+      boolean irreversible = extra != null && extra.path("irreversible").asBoolean(false);
+      for (FailedStepChoice choice : FailedStepChoice.offered(
+          irreversible ? Json.obj().put("irreversible", true) : null)) {
+        choices.add(choice.answer());
+      }
       // The inbox applies this answer when the question expires unanswered.
       detail.put("defaultChoice", ifNoAnswer.answer());
     }
@@ -1269,10 +1289,15 @@ public class SagaWorkflowEngine implements WorkflowEngine,
               .put("error", String.valueOf(message)));
       return true;
     }
+    boolean irreversible = FailedStepChoice.irreversible(node.config());
     parkForPerson(run, context, node.id(), PAUSED_FOR_INSTRUCTION,
         "Step '" + (node.label() == null ? node.id() : node.label()) + "' could not complete: "
-            + message + " How would you like to proceed?",
-        NotificationKind.INSTRUCTION_REQUIRED, null, FailedStepChoice.ifNoAnswer(node.config()));
+            + message + (irreversible
+                ? " It cannot be undone and may have gone through already: check the site (your"
+                    + " orders or bookings) before you try it again."
+                : "") + " How would you like to proceed?",
+        NotificationKind.INSTRUCTION_REQUIRED, null, FailedStepChoice.ifNoAnswer(node.config()),
+        irreversible ? Json.obj().put("irreversible", true) : null);
     return false;
   }
 

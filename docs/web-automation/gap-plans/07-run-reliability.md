@@ -1,5 +1,24 @@
 # 07. Run reliability and recovery
 
+## Status (2026-11-16, round 3)
+
+Built: G1 + G8 (`browser.waitFor@1`: up to 8 named outcomes, each an element shown or gone, text
+shown or gone, or part of the address; the first one the page shows is the step's `outcome`
+output. Each outcome's rule is kept on the node as `onOutcome`: carry on, or stop the run with a
+message, which becomes the usual failed-step card. Recorder tool "Wait for what happens…" points
+at the first outcome; more text outcomes and their rules are edited in the recording review. A
+builder Branch can read `nodes.<step>.outcome`.) G2 (auto-settle: before each element step the
+browser waits, at most 10 s and half the step's time, until the page has loaded and no big
+loader overlay or indeterminate spinner covers it; generic signals only, `settle: false` turns it
+off). G5 (steps that cannot be undone: the recorder marks clicks on Pay / Place order / Confirm
+booking / Buy now and the like, and the recording review has a toggle. Such a step is never
+batched in fast replay, never retried automatically, a lost command is not resent, its card
+offers "I checked, it did not go through: try again" instead of Try again, a plain Try again or a
+written note is refused, and no-answer never retries.)
+
+Not built yet: G3 session guard, G4 checkpoints, G6 automatic pop-up following, G7 frames matrix,
+G9 run-time self-healing, G10 politeness (plan 14), G11 waiting-for-browser state.
+
 ## What exists today
 
 Failed-step cards (Try again / Skip / Stop) and resume after commit (#84, #91); locator bundles

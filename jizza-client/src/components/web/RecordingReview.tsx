@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, CircleOff, CircleSlash, KeyRound, ListChecks, Pencil, SlidersHorizontal, Trash2, Undo2, Wand2, X } from 'lucide-react'
-import type { EditOp, RecordedStep, Recording } from '@/api/web'
+import { ArrowDown, ArrowUp, CircleOff, CircleSlash, KeyRound, ShieldAlert, ListChecks, Pencil, SlidersHorizontal, Trash2, Undo2, Wand2, X } from 'lucide-react'
+import type { EditOp, RecordedStep, Recording, WaitOutcome } from '@/api/web'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
+import { WaitOutcomes } from './WaitOutcomes'
 import { conditionDepths, detailsInput, detailsOf, detailsProblem, type InputDetails, dependentListChoices, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, movesBetween, movesFor, moveOp, pageArrangement, reusableOps, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
 
 /** A login saved in the browser extension, as its device lists it. */
@@ -135,6 +136,11 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                   ))}
                 </ul>
               )}
+              {s.step.action === 'browser.waitFor' && Array.isArray(s.step.input?.outcomes) && (
+                <WaitOutcomes outcomes={s.step.input.outcomes as WaitOutcome[]} busy={busy}
+                  onChange={next => edit([{ op: 'update', seq: s.seq, patch: { outcomes: next } }],
+                    [{ op: 'update', seq: s.seq, patch: { outcomes: s.step.input!.outcomes as WaitOutcome[] } }])} />
+              )}
               {s.step.action === 'browser.fillRows' && Array.isArray(s.step.input?.rows) && (
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-300" data-testid="rows-summary">
                   {(s.step.input.rows as unknown[]).length} row{(s.step.input.rows as unknown[]).length === 1 ? '' : 's'} of{' '}
@@ -157,6 +163,7 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {s.step.disabled && <Badge>Off</Badge>}
                 {s.step.optional && <Badge>Optional</Badge>}
+                {s.step.meta?.irreversible && <Badge>Can't be undone</Badge>}
                 {s.step.action === 'flow.keep' && <Badge>Jizza step</Badge>}
                 {s.step.action === 'browser.clickOneOf' && <Badge>one of {s.step.meta?.list?.count ?? 'several'} buttons{s.step.meta?.list?.title ? `: ${s.step.meta.list.title}` : ''}</Badge>}
                 {s.step.action === 'browser.selectOption' && (
@@ -231,6 +238,14 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                   <Button size="sm" variant="ghost" aria-label={s.step.optional ? 'Make step required' : 'Make step optional'} title={s.step.optional ? 'Make required' : 'Optional: skipped when it is not on the page'}
                     disabled={busy} onClick={() => onEdit([{ op: 'update', seq: s.seq, patch: { optional: !s.step.optional } }])}><CircleSlash className="h-4 w-4" /></Button>
                 </>
+              )}
+              {!isCondition(s) && s.step.action !== 'flow.keep' && (
+                <Button size="sm" variant="ghost" aria-label={s.step.meta?.irreversible ? "Mark as one that can be redone" : "Mark as can't be undone"}
+                  title={s.step.meta?.irreversible ? "Can't be undone (pay, order, book): never sent twice. Click to unmark" : "Can't be undone (pay, order, book): a run never sends it twice, and asks you to check before trying again"}
+                  disabled={busy} onClick={() => edit([{ op: 'update', seq: s.seq, patch: { irreversible: !s.step.meta?.irreversible } }],
+                    [{ op: 'update', seq: s.seq, patch: { irreversible: !!s.step.meta?.irreversible } }])}>
+                  <ShieldAlert className={`h-4 w-4 ${s.step.meta?.irreversible ? 'text-amber-600' : ''}`} />
+                </Button>
               )}
               <Button size="sm" variant="ghost" aria-label="Rename step" onClick={() => setRenaming(s)}><Pencil className="h-4 w-4" /></Button>
               {mappableFields(s).length > 0 && <Button size="sm" variant="ghost" aria-label="Make this an input" onClick={() => setMapping(s)}><SlidersHorizontal className="h-4 w-4" /></Button>}

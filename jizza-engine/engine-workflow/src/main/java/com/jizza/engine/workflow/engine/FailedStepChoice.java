@@ -1,6 +1,7 @@
 package com.jizza.engine.workflow.engine;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -17,7 +18,14 @@ enum FailedStepChoice {
   SKIP("Skip this step", Set.of("skip this step", "skip it this time", "skip")),
   // "Stop and wait for me" was the inbox's old wording; people who picked it wanted the run stopped.
   STOP("Stop the run", Set.of("stop the run", "stop", "stop run", "stop and wait for me",
-      "cancel the run", "cancel"));
+      "cancel the run", "cancel")),
+  /**
+   * Try again on a step that cannot be undone (pay, place order, book), said only once the person
+   * has looked at the site: a plain "Try again" could do it twice, so it is not accepted there.
+   */
+  RETRY_CHECKED("I checked, it did not go through: try again", Set.of(
+      "i checked, it did not go through: try again", "i checked, it did not go through",
+      "i checked it did not go through, try again"));
 
   private final String answer;
   private final Set<String> phrases;
@@ -41,9 +49,20 @@ enum FailedStepChoice {
     String setting = config == null ? "" : config.path("ifNoAnswer").asText("");
     return switch (setting.trim().toLowerCase(Locale.ROOT)) {
       case "skip" -> SKIP;
-      case "retry" -> RETRY;
+      // A step that cannot be undone is never tried again without the person having looked.
+      case "retry" -> irreversible(config) ? STOP : RETRY;
       default -> STOP;
     };
+  }
+
+  /** The answers the card offers: on a step that cannot be undone, Try again only once checked. */
+  static List<FailedStepChoice> offered(JsonNode config) {
+    return irreversible(config) ? List.of(RETRY_CHECKED, SKIP, STOP) : List.of(RETRY, SKIP, STOP);
+  }
+
+  /** A step marked as one that cannot be undone, such as paying or placing an order. */
+  static boolean irreversible(JsonNode config) {
+    return config != null && config.path("irreversible").asBoolean(false);
   }
 
   /** The choice an answer names, or null for a written answer. */

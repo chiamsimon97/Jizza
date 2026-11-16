@@ -46,7 +46,20 @@ export interface RecordedStepData {
   /** Edit recording: turned off (not run), or optional (skipped when not on the page). */
   disabled?: boolean
   optional?: boolean
-  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean; list?: RecordedList }
+  meta?: { url?: string; title?: string; window?: string; app?: string; preview?: string; pagePreview?: string; sensitive?: boolean; truncated?: boolean; list?: RecordedList
+    /** Pay, Place order, Confirm booking: never sent twice (Try again only once checked). */
+    irreversible?: boolean }
+}
+
+/** One thing "Wait for what happens" waits for, and what the run does when the page shows it. */
+export interface WaitOutcome {
+  name: string
+  element?: Record<string, unknown>
+  text?: string
+  urlContains?: string
+  gone?: boolean
+  then?: 'continue' | 'stop'
+  message?: string
 }
 
 /** A "Choose from a list" step (browser agent 0.4.0+): what the list is, and the input names offered. */
@@ -133,7 +146,7 @@ export interface EditOp {
   secretRef?: string | null
   check?: { action: string; afterSeq: number }
   /** op update: step settings to change. */
-  patch?: { disabled?: boolean; optional?: boolean; timeoutMs?: number; when?: 'shown' | 'missing' }
+  patch?: { disabled?: boolean; optional?: boolean; timeoutMs?: number; when?: 'shown' | 'missing'; irreversible?: boolean; outcomes?: WaitOutcome[] }
 }
 
 export interface FixCandidate {

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
   KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
-  RUN_CHOICES,
+  runChoicesFor, cannotBeUndone,
 } from './inbox'
 import { StepApprovalForm } from './StepApprovalForm'
 import { DeviceHelpCard } from './DeviceHelpCard'
@@ -230,7 +230,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
             {failedStep && mode === 'idle' && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap gap-2">
-                  {RUN_CHOICES.map(c => (
+                  {runChoicesFor(n).map(c => (
                     <Button key={c.answer} size="sm" variant={c.tone === 'danger' ? 'danger' : c.tone === 'primary' ? 'primary' : 'secondary'}
                       loading={busy === c.answer} disabled={busy !== null}
                       onClick={() => void run(c.answer, () => actions.reply(n, c.answer))}>
@@ -240,7 +240,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {RUN_CHOICES.map(c => c.explain).join(' ')}
+                  {runChoicesFor(n).map(c => c.explain).join(' ')}
                 </p>
                 {defaultChoice && (
                   <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -252,7 +252,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
                 )}
               </div>
             )}
-            {open && n.kind === 'INSTRUCTION_REQUIRED' && (
+            {open && n.kind === 'INSTRUCTION_REQUIRED' && !(failedStep && cannotBeUndone(n)) && (
               <div className="mt-3 space-y-2">
                 {failedStep && <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Or tell Jizza what to change, and it tries the step again with that:</p>}
                 <textarea
