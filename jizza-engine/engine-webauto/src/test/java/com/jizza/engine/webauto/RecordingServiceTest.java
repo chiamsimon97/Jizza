@@ -945,6 +945,10 @@ class RecordingServiceTest {
     service.accept(browser.id(), access.userId(), "browser.recording.edit", Json.obj()
         .put("recordingId", opened.id().toString()).put("op", "update").put("seq", tamilSeq)
         .set("patch", Json.obj().put("optional", true)));
+    // Booking is the step that cannot be undone.
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", Json.obj()
+        .put("recordingId", opened.id().toString()).put("op", "update").put("seq", bookSeq)
+        .set("patch", Json.obj().put("irreversible", true)));
     service.accept(browser.id(), access.userId(), "browser.recording.stopped",
         Json.obj().put("recordingId", opened.id().toString()));
 
@@ -965,6 +969,8 @@ class RecordingServiceTest {
     assertThat(branch.path("type").asText()).isEqualTo("BRANCH");
     assertThat(byLabel.get("Tamil 2D").path("config").path("optional").asBoolean()).isTrue();
     assertThat(byLabel.get("Total").path("config").path("disabled").asBoolean()).isTrue();
+    assertThat(byLabel.get("Book tickets").path("config").path("irreversible").asBoolean()).isTrue();
+    assertThat(byLabel.get("Tamil 2D").path("config").has("irreversible")).isFalse();
     // Steps kept their node ids, so {{ nodes.step_4.text }} still reads the Total.
     assertThat(byLabel.get("Total").path("id").asText()).isEqualTo("step_4");
     assertThat(byLabel.get("Accept cookies").path("id").asText()).isNotIn("step_1", "step_2",

@@ -238,13 +238,24 @@ final class RecordingGraph {
       unmap(input, "", mappings);
       if (!mappings.isEmpty()) step.set("mappings", mappings);
       restoreRecorded(input, mappings, config, node.path("label").asText(""));
+      // "Wait for what happens": each outcome's rule goes back beside it, as it was recorded.
+      if (StepCompiler.WAIT_FOR.equals(action) && input.path("outcomes").isArray()) {
+        for (JsonNode outcome : input.get("outcomes")) {
+          JsonNode rule = config.path("onOutcome").path(outcome.path("name").asText(""));
+          if (outcome instanceof ObjectNode o && rule.isObject()) {
+            o.put("then", rule.path("then").asText("continue"));
+            if (rule.hasNonNull("message")) o.put("message", rule.get("message").asText());
+          }
+        }
+      }
+      if (config.path("irreversible").asBoolean(false)) meta.put("irreversible", true);
       step.set("input", input);
       if (config.path("list").isObject()) meta.set("list", config.get("list").deepCopy());
       ObjectNode extra = Json.obj();
       for (Iterator<Map.Entry<String, JsonNode>> it = config.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> field = it.next();
         if (!Set.of("action", "version", "inputs", "list", "preset", "target", "disabled",
-            "optional", "recorded").contains(field.getKey())) {
+            "optional", "recorded", "onOutcome", "irreversible").contains(field.getKey())) {
           extra.set(field.getKey(), field.getValue().deepCopy());
         }
       }

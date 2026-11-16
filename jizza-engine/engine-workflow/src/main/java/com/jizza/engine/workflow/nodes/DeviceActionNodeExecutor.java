@@ -817,6 +817,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         if (state.path("details").isObject() && output instanceof ObjectNode object) {
           object.set("details", state.get("details"));
         }
+        String stop = stopsOn(execution.node().config(), output);
+        if (stop != null) yield Outcome.permanentFailure(stop);
         yield Outcome.completed(output);
       }
       case FAILED -> {
@@ -849,6 +851,11 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
               .put("index", i.index()));
           yield execute(execution);
         }
+        if (irreversible(stepConfig)) {
+          // Paying, booking, placing an order: never sent again by itself, as it may have gone
+          // through. The person checks the site and says so before it is tried again.
+          yield Outcome.permanentFailure(message);
+        }
         if (state.path("browserAction").asBoolean(false) && "element_not_found".equals(kind)) {
           proposeFix(execution, command.output().path("error"));
         }
@@ -859,10 +866,31 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       case EXPIRED -> {
         state.remove("commandId");
         preserveError(state, command);
-        yield Outcome.retryable(failureMessage(command));
+        yield irreversible(execution.node().config())
+            ? Outcome.permanentFailure(failureMessage(command)
+                + ". The browser did not say whether it went through")
+            : Outcome.retryable(failureMessage(command));
       }
       default -> Outcome.permanentFailure(command.explain());
     };
+  }
+
+  /** A step marked as one that cannot be undone, such as paying or placing an order. */
+  static boolean irreversible(JsonNode config) {
+    return config != null && config.path("irreversible").asBoolean(false);
+  }
+
+  /**
+   * "Wait for what happens": the outcome the page showed, when the step says the run stops there
+   * ("No trains found", "Seats not available"); the message the run stops with, else null.
+   */
+  static String stopsOn(JsonNode config, JsonNode output) {
+    if (config == null || output == null || !output.path("outcome").isTextual()) return null;
+    String outcome = output.get("outcome").asText();
+    JsonNode rule = config.path("onOutcome").path(outcome);
+    if (!"stop".equals(rule.path("then").asText(""))) return null;
+    String message = rule.path("message").asText("").strip();
+    return message.isEmpty() ? "The page showed \"" + outcome + "\"" : message;
   }
 
   /** What the device returned, with which device did it and the files it sent back. */

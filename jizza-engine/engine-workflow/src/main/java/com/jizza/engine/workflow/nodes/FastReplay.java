@@ -103,6 +103,11 @@ final class FastReplay {
           || NOT_BATCHED.contains(spec.get().action())) {
         return null;
       }
+      // A step that cannot be undone is never sent twice, and one whose outcome may stop the
+      // run must be read by its own step: both run on their own.
+      if (config.path("irreversible").asBoolean(false) || config.path("onOutcome").isObject()) {
+        return null;
+      }
       // A step with details attached stops for the person's answers, so it runs on its own.
       if (config.path("details").path("blocks").isArray()
           && !config.path("details").path("blocks").isEmpty()) {

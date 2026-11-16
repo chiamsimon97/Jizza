@@ -207,4 +207,14 @@ class ChatRunPlannerTest {
     assertThat(ChatRunPlanner.defaultBrowser(List.of(browser(chrome, "Chrome", false)), ulaa)).isEqualTo(chrome);
     assertThat(ChatRunPlanner.defaultBrowser(List.of(), ulaa)).isNull();
   }
+
+  @Test
+  void namesTheFirstStepThatCannotBeUndone() {
+    var graph = com.jizza.engine.api.util.Json.read("""
+        {"nodes":[{"id":"a","label":"Search","config":{}},
+          {"id":"b","label":"Old pay","config":{"irreversible":true,"disabled":true}},
+          {"id":"c","label":"Pay now","config":{"irreversible":true}}]}""");
+    assertThat(ChatRunPlanner.finalStep(graph)).isEqualTo("Pay now");
+    assertThat(ChatRunPlanner.finalStep(com.jizza.engine.api.util.Json.read("{\"nodes\":[]}"))).isNull();
+  }
 }

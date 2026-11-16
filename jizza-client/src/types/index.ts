@@ -417,6 +417,8 @@ export interface StartRunCard {
   needsBrowser?: boolean
   browsers?: { id: string; name: string; online: boolean; state?: string }[]
   browserId?: string
+  /** The first step that can't be undone (pay, place order), by its name. */
+  cannotBeUndone?: string
   /** Set once Start was pressed: the run it started. */
   runId?: string
   startedAt?: string

@@ -48,6 +48,24 @@ export const RUN_CHOICES: { answer: string; explain: string; tone: 'primary' | '
   { answer: 'Stop the run', explain: 'Stop the run ends it now; steps already done stay done.', tone: 'danger' },
 ]
 
+/** The try-again answer on a step that cannot be undone (pay, place order): the server takes no
+ *  plain "Try again" there, as it could do it twice. */
+export const CHECKED_RETRY = 'I checked, it did not go through: try again'
+
+/** A failed step that cannot be undone, such as paying or placing an order. */
+export function cannotBeUndone(n: NotificationDto): boolean {
+  return n.context?.irreversible === true
+}
+
+/** The run choices a failed step's card offers. */
+export function runChoicesFor(n: NotificationDto): typeof RUN_CHOICES {
+  if (!cannotBeUndone(n)) return RUN_CHOICES
+  return [
+    { answer: CHECKED_RETRY, explain: 'It may have gone through already: check the site (your orders or bookings) first, and try again only if it did not.', tone: 'primary' },
+    ...RUN_CHOICES.slice(1),
+  ]
+}
+
 /** A question raised because a workflow step failed, which the run choices can answer. */
 export function isFailedStep(n: NotificationDto): boolean {
   if (n.kind !== 'INSTRUCTION_REQUIRED' || !n.runId) return false
@@ -63,7 +81,7 @@ export function isFailedStep(n: NotificationDto): boolean {
 export function defaultChoiceOf(n: NotificationDto): string | null {
   if (!isFailedStep(n)) return null
   const named = n.context?.defaultChoice
-  return typeof named === 'string' && RUN_CHOICES.some(c => c.answer === named) ? named : 'Stop the run'
+  return typeof named === 'string' && runChoicesFor(n).some(c => c.answer === named) ? named : 'Stop the run'
 }
 
 /** "Jizza stops the run" and so on, for the line that says what happens with no answer. */

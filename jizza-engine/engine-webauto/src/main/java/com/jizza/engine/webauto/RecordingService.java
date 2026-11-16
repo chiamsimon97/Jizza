@@ -764,6 +764,27 @@ public class RecordingService implements Recordings, RecordingIntake {
           if (value.asBoolean()) target.node.put(field.getKey(), true);
           else target.node.remove(field.getKey());
         }
+        case "irreversible" -> {
+          // Pay, Place order, Book: never sent twice without the person having checked.
+          if (control) throw new ValidationException("A condition can't be marked as final");
+          if (!value.isBoolean()) throw new ValidationException("irreversible is on or off");
+          ObjectNode meta = target.node.path("meta").isObject() ? (ObjectNode) target.node.get("meta")
+              : target.node.putObject("meta");
+          if (value.asBoolean()) meta.put("irreversible", true);
+          else meta.remove("irreversible");
+        }
+        case "outcomes" -> {
+          if (!StepCompiler.WAIT_FOR.equals(action)) {
+            throw new ValidationException("Only 'Wait for what happens' has outcomes");
+          }
+          if (!value.isArray() || value.isEmpty() || value.size() > 8
+              || Json.write(value).length() > MAX_STEP_CHARS / 2) {
+            throw new ValidationException("Wait for one to eight things");
+          }
+          // Checked as it will be compiled: each has its own name.
+          StepCompiler.waitForRules(Json.obj().set("outcomes", value.deepCopy()), Json.obj());
+          input.set("outcomes", value.deepCopy());
+        }
         case "timeoutMs" -> {
           if (!value.isInt() || value.asInt() < 0 || value.asInt() > 120_000) {
             throw new ValidationException("A wait is 0 to 120 seconds");
