@@ -208,9 +208,10 @@ export function WorkflowForm() {
   // A workflow that declares inputs asks for them before a run, as a module's caller would give them.
   const declaredInputs = graphMode ? moduleInputs(canvasToGraph(canvas)) : []
   const atStepInputs = declaredInputs.filter(f => f.ask === 'atStep')
-  const inputProblems = declaredInputs.some(f => ruleProblem(f, runInput[f.name]) !== null)
   const [askInputs, setAskInputs] = useState(false)
   const [runInput, setRunInput] = useState<Record<string, string>>({})
+  // After runInput: reading it before its useState line throws as soon as a workflow declares inputs.
+  const inputProblems = declaredInputs.some(f => ruleProblem(f, runInput[f.name]) !== null)
   useEffect(() => { setAskInputs(false); setRunInput({}) }, [request?.nonce])
 
   const run = useMutation({
