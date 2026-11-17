@@ -429,6 +429,39 @@ final class WebStepForm {
   }
 
   /**
+   * What a layer card's Refresh asks the browser for each value it can read again from the page:
+   * a dropdown's items (browser.listOptions), or the suggestions a field shows for the text
+   * typed into it (browser.suggestOptions). Keyed by the card field's key; null when nothing can
+   * be read (no browser chosen, no field that lists anything).
+   */
+  static ObjectNode layerLive(JsonNode inputs, java.util.UUID deviceId) {
+    if (deviceId == null) return null;
+    ObjectNode fields = Json.obj();
+    int index = 0;
+    for (JsonNode field : inputs.path("fields")) {
+      int at = index++;
+      if ("static".equals(field.path("section").asText("config"))) continue;
+      if (!field.path("element").isObject()) continue;
+      String kind = field.path("kind").asText("");
+      String action = switch (kind) {
+        case "select" -> "browser.listOptions";
+        case "combobox", "text" -> "browser.suggestOptions";
+        default -> null;
+      };
+      if (action == null) continue;
+      ObjectNode read = fields.putObject("fields." + at + ".value");
+      read.put("action", action).put("version", 1).put("typed", !"select".equals(kind));
+      read.set("element", field.get("element").deepCopy());
+    }
+    if (fields.isEmpty()) return null;
+    ObjectNode live = Json.obj().put("device", deviceId.toString());
+    String session = inputs.path("session").asText("");
+    if (!session.isBlank()) live.put("session", session);
+    live.set("fields", fields);
+    return live;
+  }
+
+  /**
    * The id of the button a device layer clicks, from what the step or the person named (its id
    * or its name, ignoring case and accents); null when it names none of them.
    */

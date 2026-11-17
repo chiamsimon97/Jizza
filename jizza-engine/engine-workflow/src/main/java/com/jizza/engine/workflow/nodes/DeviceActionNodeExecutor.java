@@ -507,6 +507,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         state.remove(List.of("layerNeeds", "layerNeedsAsked"));
       }
       state.set("layerFixed", WebStepForm.layerFixed(inputs));
+      ObjectNode live = WebStepForm.layerLive(inputs, target.deviceId());
+      if (live != null) state.set("layerLive", live);
+      else state.remove("layerLive");
     }
     List<String> missing = form.stream().filter(WebStepForm.Field::missing)
         .filter(f -> !f.key().startsWith("_"))
@@ -527,7 +530,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return ask(execution, state, spec, target, form, pick ? labels(choices) : null, why);
     }
     state.remove("choices");
-    state.remove("layerFixed");
+    state.remove(List.of("layerFixed", "layerLive"));
     if (layer && state.hasNonNull("layerStartAt")) {
       // Carry on from the field the layer stopped at; the ones above it are filled already.
       ((ObjectNode) inputs).put("startAt", state.get("layerStartAt").asText());
@@ -618,6 +621,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     JsonNode fixed = state.remove("layerFixed");
     if (fixed != null && fixed.isArray() && !fixed.isEmpty() && detail.path("form").isObject()) {
       ((ObjectNode) detail.get("form")).set("fixed", fixed);
+    }
+    JsonNode live = state.remove("layerLive");
+    if (live != null && live.isObject() && detail.path("form").isObject()) {
+      ((ObjectNode) detail.get("form")).set("live", live);
     }
     if (state.path("picture").isObject() && detail.path("form").path("fields").isArray()) {
       // The picture to tap on goes with the field the taps answer.

@@ -759,6 +759,7 @@ public class RecordingService implements Recordings, RecordingIntake {
       var field = it.next();
       JsonNode value = field.getValue();
       switch (field.getKey()) {
+        case "layer" -> layer(target, input, value);
         case "disabled", "optional" -> {
           if (control) throw new ValidationException("A condition can't be " + field.getKey());
           if (!value.isBoolean()) throw new ValidationException(field.getKey() + " is on or off");
@@ -902,6 +903,90 @@ public class RecordingService implements Recordings, RecordingIntake {
       }
     }
     target.changed = true;
+  }
+
+  private static final Set<String> LAYER_KINDS = Set.of("text", "select", "checkbox", "checkboxes",
+      "radio", "date", "datepicker", "combobox", "list");
+
+  /**
+   * Edit form, from the side panel: a device layer's fields, groups and buttons as the person
+   * changed them (added, removed, moved, another kind, mandatory, fixed or for each run). Values
+   * that were module inputs follow their field by its id; a field taken away takes its input.
+   */
+  private void layer(Held target, ObjectNode input, JsonNode value) {
+    if (!"browser.fillLayer".equals(target.node.path("action").asText())) {
+      throw new ValidationException("Only a device layer step has a form to edit");
+    }
+    if (!value.isObject() || !value.path("fields").isArray() || !value.path("buttons").isArray()) {
+      throw new ValidationException("A layer needs its fields and buttons");
+    }
+    JsonNode fields = value.get("fields");
+    JsonNode buttons = value.get("buttons");
+    if (fields.size() > 80) throw new ValidationException("A layer holds at most 80 fields");
+    if (buttons.isEmpty() || buttons.size() > 20) {
+      throw new ValidationException("A layer needs 1 to 20 buttons");
+    }
+    Set<String> ids = new java.util.HashSet<>();
+    for (JsonNode field : fields) {
+      String id = field.path("id").asText("");
+      if (id.isBlank() || id.length() > 40 || !ids.add(id)) {
+        throw new ValidationException("Each field needs its own id");
+      }
+      if (!LAYER_KINDS.contains(field.path("kind").asText(""))) {
+        throw new ValidationException("'" + field.path("kind").asText("") + "' is not a kind of field");
+      }
+      if (!field.path("element").isObject()) {
+        throw new ValidationException("Pick " + field.path("label").asText(id) + " on the page");
+      }
+    }
+    Set<String> buttonIds = new java.util.HashSet<>();
+    Set<String> names = new java.util.HashSet<>();
+    for (JsonNode button : buttons) {
+      String id = button.path("id").asText("");
+      String name = button.path("name").asText("").strip();
+      if (id.isBlank() || !buttonIds.add(id) || name.isEmpty()
+          || !names.add(name.toLowerCase(java.util.Locale.ROOT))) {
+        throw new ValidationException("Each button needs its own id and name");
+      }
+      if (!button.path("element").isObject()) {
+        throw new ValidationException("Pick the " + name + " button on the page");
+      }
+    }
+    // Module inputs are kept by field path: move each with its field's id.
+    Map<String, String> oldIds = new java.util.HashMap<>();
+    int at = 0;
+    for (JsonNode field : input.path("fields")) oldIds.put("fields." + at++ + ".value", field.path("id").asText(""));
+    Map<String, Integer> newIndex = new java.util.HashMap<>();
+    at = 0;
+    for (JsonNode field : fields) newIndex.put(field.path("id").asText(), at++);
+    if (target.node.path("mappings").isObject()) {
+      ObjectNode mappings = (ObjectNode) target.node.get("mappings");
+      ObjectNode moved = Json.obj();
+      mappings.fields().forEachRemaining(entry -> {
+        String id = oldIds.get(entry.getKey());
+        if (id == null) {
+          moved.set(entry.getKey(), entry.getValue());
+        } else if (newIndex.containsKey(id)) {
+          moved.set("fields." + newIndex.get(id) + ".value", entry.getValue());
+        }
+      });
+      target.node.set("mappings", moved);
+    }
+    ArrayNode kept = Json.mapper().createArrayNode();
+    for (JsonNode field : fields) {
+      ObjectNode copy = field.deepCopy();
+      if (copy.path("sensitive").asBoolean(false)) copy.remove("value");
+      kept.add(copy);
+    }
+    input.set("fields", kept);
+    input.set("buttons", buttons.deepCopy());
+    if (value.path("groups").isArray()) input.set("groups", value.get("groups").deepCopy());
+    String button = value.path("button").asText("").strip();
+    if (button.isEmpty()) input.remove("button");
+    else input.put("button", button);
+    if (Json.write(target.node).length() > MAX_STEP_CHARS * 4) {
+      throw new ValidationException("That form is too large to keep as one step");
+    }
   }
 
   /** A picture fit as the browser takes it: sizes in range, a format it can write. */

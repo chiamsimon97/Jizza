@@ -398,6 +398,54 @@ class RecordingServiceTest {
   }
 
   @Test
+  void editFormChangesALayersFieldsAndItsInputsFollowTheirFields() {
+    var id = started().id();
+    String el = "{\"strategies\":[{\"by\":\"css\",\"value\":\"#x\"}]}";
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillLayer", "Fill in Task details",
+            ("{\"groups\":[{\"id\":\"g1\",\"title\":\"Details\"}],"
+                + "\"fields\":[{\"id\":\"f1\",\"label\":\"Title\",\"kind\":\"text\",\"value\":\"Plan\",\"element\":%1$s},"
+                + "{\"id\":\"f2\",\"label\":\"Project\",\"kind\":\"select\",\"value\":\"Jizza\",\"element\":%1$s}],"
+                + "\"buttons\":[{\"id\":\"b1\",\"name\":\"Submit\",\"element\":%1$s}],\"button\":\"b1\"}")
+                .formatted(el), false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "fields.1.value");
+    map.putObject("input").put("name", "project").put("type", "text");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+
+    // Title taken away, a Billable checkbox added after Project, which is now mandatory.
+    var layer = Json.obj();
+    layer.putArray("groups").addObject().put("id", "g1").put("title", "Details");
+    var fields = layer.putArray("fields");
+    fields.addObject().put("id", "f2").put("label", "Project").put("kind", "select")
+        .put("value", "Jizza").put("required", true).set("element", Json.read(el));
+    fields.addObject().put("id", "f3").put("label", "Billable").put("kind", "checkbox")
+        .put("value", true).set("element", Json.read(el));
+    var buttons = layer.putArray("buttons");
+    buttons.addObject().put("id", "b1").put("name", "Submit").set("element", Json.read(el));
+    buttons.addObject().put("id", "b2").put("name", "Cancel").set("element", Json.read(el));
+    var edit = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    edit.putObject("patch").set("layer", layer);
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", edit);
+
+    JsonNode step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("input").path("fields").size()).isEqualTo(2);
+    assertThat(step.path("input").path("fields").get(0).path("required").asBoolean()).isTrue();
+    assertThat(step.path("input").path("buttons").size()).isEqualTo(2);
+    assertThat(step.path("input").has("button")).isFalse();
+    assertThat(step.path("mappings").has("fields.0.value")).isTrue();
+    assertThat(step.path("mappings").has("fields.1.value")).isFalse();
+
+    // A form that breaks the rules is left as it was.
+    var bad = Json.obj().put("recordingId", id.toString()).put("op", "update").put("seq", 1);
+    bad.putObject("patch").putObject("layer").putArray("fields");
+    ((com.fasterxml.jackson.databind.node.ObjectNode) bad.get("patch").get("layer")).putArray("buttons");
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", bad);
+    assertThat(service.get(access, id).steps().get(0).step().path("input").path("buttons").size())
+        .isEqualTo(2);
+  }
+
+  @Test
   void anUnmapFromTheBrowserIsApplied() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,

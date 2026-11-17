@@ -1,10 +1,11 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { webApi } from '@/api/web'
 import { RowsInput } from '@/components/ui/RowsInput'
 import { TapPicture } from './TapPicture'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { formatDate, kindOf, pickerValue } from '@/lib/dateFormat'
-import { type FormValues, type StepField, type StepForm, type StepShots, fieldEmpty, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
+import { type FormValues, type StepField, type StepForm, type StepLive, type StepShots, fieldEmpty, isDate, isEmpty, mapped, optionsFor, splitList } from './stepForm'
 
 /**
  * The step's settings as they will be sent, on its approval card: each value as it resolved from
@@ -18,6 +19,43 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
   onChange: (key: string, value: string | boolean | string[]) => void
   readOnly?: boolean
 }) {
+  // Refresh: what the page lists now for a value, read on the person's ask.
+  const [liveOptions, setLiveOptions] = useState<Record<string, LiveState>>({})
+  const refresh = async (key: string) => {
+    const live = form.live
+    const how = live?.fields[key]
+    if (!live || !how) return
+    const text = values[key]
+    const typed = typeof text === 'string' ? text.trim() : ''
+    if (how.typed && !typed) {
+      setLiveOptions(o => ({ ...o, [key]: { error: 'Type a few letters first, then refresh.' } }))
+      return
+    }
+    setLiveOptions(o => ({ ...o, [key]: { ...o[key], reading: true, error: undefined } }))
+    setLiveOptions(await readLive(live, key, typed))
+  }
+  async function readLive(live: StepLive, key: string, typed: string) {
+    const how = live.fields[key]!
+    let next: LiveState
+    try {
+      const result = await webApi.testStep({
+        deviceId: live.device, action: how.action, version: how.version,
+        inputs: { ...(live.session ? { session: live.session } : {}), element: how.element, ...(how.typed ? { text: typed } : {}) },
+      })
+      const out = result.output as { options?: unknown[]; items?: { label?: string }[] } | undefined
+      const labels = how.typed
+        ? (out?.options ?? []).map(String)
+        : (out?.items ?? []).map(i => i.label ?? '')
+      const options = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
+      next = result.status === 'succeeded'
+        ? options.length ? { options } : { options: [], error: how.typed ? `The page suggests nothing for "${typed}".` : 'The page lists nothing for it now.' }
+        : { error: result.error?.detail ?? result.message ?? 'The page could not be read.' }
+    } catch (e) {
+      const problem = (e as { problem?: { detail?: string; title?: string } }).problem
+      next = { error: problem?.detail ?? problem?.title ?? (e instanceof Error ? e.message : 'The page could not be read.') }
+    }
+    return (o: Record<string, LiveState>) => ({ ...o, [key]: next })
+  }
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40">
       <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
@@ -41,11 +79,15 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
         const leader = field.dependsOn && field.optionsBy && isEmpty(values[field.dependsOn])
           ? form.fields.find(f => f.key === field.dependsOn)
           : undefined
+        const read = liveOptions[field.key]
+        const how = form.live?.fields[field.key]
         const shown: StepField = leader
           ? { ...field, type: 'select', options: [] }
-          : field.dependsOn
-            ? { ...field, type: options ? 'select' : 'text', options }
-            : field
+          : read?.options?.length && how && !how.typed
+            ? { ...field, type: 'select', options: read.options }
+            : field.dependsOn
+              ? { ...field, type: options ? 'select' : 'text', options }
+              : field
         return (
           <div key={field.key} className="space-y-3">{heading}
           <FieldRow field={shown} value={values[field.key]} data={form.data} shots={form.shots}
@@ -53,6 +95,7 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
             choicesAt={shown.type === 'select' && shown.options && !leader && form.choicesAt ? form.choicesAt : undefined}
             waitsOn={leader?.label}
             readOnly={readOnly}
+            live={how && !readOnly && !leader ? { ...read, typed: how.typed, onRefresh: () => void refresh(field.key) } : undefined}
             onChange={v => {
               onChange(field.key, v)
               // A showtime of the theatre before is not one of the theatre chosen now.
@@ -65,7 +108,9 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
   )
 }
 
-function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, readOnly, onChange }: {
+interface LiveState { options?: string[]; reading?: boolean; error?: string }
+
+function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, readOnly, live, onChange }: {
   field: StepField
   value: FormValues[string] | undefined
   data: StepForm['data']
@@ -75,6 +120,8 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
   /** The label of the field this one's choices follow, while that one is still empty. */
   waitsOn?: string
   readOnly?: boolean
+  /** Refresh: read this value's choices from the page again (suggestions for what is typed). */
+  live?: LiveState & { typed: boolean; onRefresh: () => void }
   onChange: (value: string | boolean | string[]) => void
 }) {
   const [mapping, setMapping] = useState(false)
@@ -105,6 +152,13 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
             <RefreshCw className="h-3 w-3" />on the page at {new Date(choicesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
+        {live && (
+          <button type="button" disabled={live.reading} onClick={live.onRefresh}
+            title={live.typed ? 'Type in this field on the page and list what it suggests' : 'List what this dropdown offers on the page now'}
+            className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-400">
+            <RefreshCw className={`h-3 w-3 ${live.reading ? 'animate-spin' : ''}`} />{live.reading ? 'Reading the page…' : 'Refresh'}
+          </button>
+        )}
       </div>
 
       {field.type === 'taps' ? (
@@ -133,11 +187,27 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
           className={`${fieldClass} ${border}`} readOnly={readOnly} onChange={onChange} />
       ) : (
         <input id={id} aria-label={field.label} disabled={readOnly} className={`${fieldClass} ${border}`}
+          list={live?.typed && live.options?.length ? `${id}-suggestions` : undefined}
           inputMode={field.type === 'number' ? 'decimal' : undefined}
           placeholder={field.type === 'date' ? 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30' : undefined}
           value={typeof value === 'string' ? value : value == null ? '' : String(value)}
           onChange={e => onChange(e.target.value)} />
       )}
+
+      {live?.typed && live.options && live.options.length > 0 && (
+        <>
+          <datalist id={`${id}-suggestions`}>{live.options.map(o => <option key={o} value={o} />)}</datalist>
+          <div className="flex flex-wrap gap-1" data-testid="live-suggestions">
+            {live.options.slice(0, 12).map(o => (
+              <button key={o} type="button" onClick={() => onChange(o)}
+                className={`rounded-full border px-2 py-0.5 text-[11px] ${value === o ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200' : 'border-gray-300 text-gray-700 hover:border-brand-400 dark:border-gray-700 dark:text-gray-300'}`}>
+                {o}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {live?.error && <p className="text-[11px] text-amber-700 dark:text-amber-400">{live.error}</p>}
 
       {field.type === 'select' && typeof value === 'string' && shots?.byOption[value] && (
         <img src={`/api/devices/${shots.device}/files/${shots.byOption[value]}`} alt={value}
