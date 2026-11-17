@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, isCheckStep, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
 import { fieldsOf } from './moduleContract'
 
 export type Exit = ExitKey
@@ -20,7 +20,7 @@ export const exitOf = (handle: string | null | undefined): Exit => (handle && ha
 
 /** What an exit is called next to its dot. A paths step's cases go by their labels, so it needs the node. */
 export function exitLabel(b: Exit, node?: CanvasNode): string {
-  if (b === null) return ''
+  if (b === null) return isCheckStep(node) ? 'yes' : ''
   if (b === 'true') return 'yes'
   if (b === 'false') return 'no'
   if (b === 'else') return 'otherwise'
@@ -142,7 +142,7 @@ export const StepNode = memo(function StepNode({ data, selected }: NodeProps<Ste
       {exits.map((b, i) => {
         const top = tops[i]
         const free = freeExits.includes(b)
-        const tone = exitTone(b)
+        const tone = b === null && isCheckStep(node) ? 'yes' : exitTone(b)
         return (
           <div key={handleOf(b)}>
             {b && (

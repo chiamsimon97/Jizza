@@ -5,7 +5,7 @@
  */
 
 import {
-  addAfter, exitsOf, insertOnEdge, removeNode, setNext, updateNode,
+  addAfter, exitsOf, insertOnEdge, mainExitsOf, removeNode, setNext, updateNode,
   type CanvasEdge, type CanvasGraph, type ExitKey, type PaletteEntry, type NodeType,
 } from './canvasModel'
 
@@ -243,7 +243,7 @@ export function deleteStep(graph: CanvasGraph, id: string): { graph: CanvasGraph
   const ins = graph.edges.filter(e => e.to === id)
   const outs = graph.edges.filter(e => e.from === id)
   const next = removeNode(graph, id)
-  if (ins.length === 1 && outs.length === 1 && exitsOf(node).length === 1) {
+  if (ins.length === 1 && outs.length === 1 && mainExitsOf(node).length === 1) {
     return { graph: setNext(next, ins[0].from, ins[0].branch, outs[0].to), joined: true }
   }
   return { graph: next, joined: false }
