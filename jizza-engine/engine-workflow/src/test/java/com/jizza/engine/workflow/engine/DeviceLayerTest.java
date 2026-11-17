@@ -106,6 +106,24 @@ class DeviceLayerTest {
   }
 
   @Test
+  void skippedAfterItFailedItGoesOnAlongTheButtonItWasSetToClick() {
+    EngineHarness h = harness("Submit", true);
+    h.deviceFailures.put("browser.fillLayer", Json.obj().set("error",
+        Json.obj().put("kind", "not_actionable").put("detail", "Element is covered")));
+    var run = h.engine.start(h.workflow.getId(), 1,
+        Json.obj().put("project", "Jizza").put("title", "Write plan"), "manual");
+    assertThat(run.status()).isNotEqualTo(RunStatus.DONE);
+
+    var resumed = h.engine.resume(run.id(), Json.obj().put("instruction", "Skip this step"));
+
+    assertThat(resumed.status()).isEqualTo(RunStatus.DONE);
+    // Submit's path runs; Cancel's does not.
+    assertThat(actions(h)).containsExactly("browser.fillLayer", "browser.getText");
+    assertThat(h.step(run.id(), "dropped").orElseThrow().getStatus())
+        .isEqualTo(com.jizza.engine.api.enums.RunStepStatus.SKIPPED);
+  }
+
+  @Test
   void aButtonWithNoPathEndsThere() {
     EngineHarness h = harness("b2", false);
     h.deviceOutputs.put("browser.fillLayer", Json.obj().put("clicked", "b2"));
