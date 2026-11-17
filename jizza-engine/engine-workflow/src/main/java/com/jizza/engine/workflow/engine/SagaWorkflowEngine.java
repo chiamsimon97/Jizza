@@ -1122,6 +1122,11 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     boolean layer = com.jizza.engine.api.workflow.graph.LayerSteps.isLayer(node);
     String clicked = layer ? context.outputOf(node.id())
         .path(com.jizza.engine.api.workflow.graph.LayerSteps.CLICKED).asText(null) : null;
+    // Skipped after it failed, it clicked nothing: it goes on the way it was set to go.
+    if (layer && clicked == null) {
+      clicked = com.jizza.engine.api.workflow.graph.LayerSteps.skippedButton(node,
+          context.approvedInputs(node.id()));
+    }
     if (clicked != null) context.recordBranch(node.id(), clicked);
     for (WorkflowEdge edge : graph.outgoing(node.id())) {
       if (layer) {

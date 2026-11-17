@@ -33,4 +33,31 @@ public final class LayerSteps {
     }
     return ids;
   }
+
+  /**
+   * The way out a layer takes when the person skipped it after it failed (so it clicked nothing):
+   * the button it was set to click, by id or name (the one chosen on the card first), else the
+   * first button that sends the form, else its first button. Null when it has no buttons.
+   */
+  public static String skippedButton(WorkflowNode node, JsonNode approved) {
+    if (!isLayer(node)) return null;
+    JsonNode buttons = node.config().path("inputs").path("buttons");
+    for (String wanted : new String[] {
+        approved == null ? "" : approved.path("button").asText(""),
+        node.config().path("inputs").path("button").asText("")}) {
+      String want = wanted.strip();
+      if (want.isEmpty() || want.contains("{{")) continue;
+      for (JsonNode b : buttons) {
+        String id = b.path("id").asText("").strip();
+        if (id.isEmpty()) continue;
+        if (want.equals(id) || want.equalsIgnoreCase(b.path("name").asText("").strip())) return id;
+      }
+    }
+    for (JsonNode b : buttons) {
+      String id = b.path("id").asText("").strip();
+      if (!id.isEmpty() && "submit".equals(b.path("kind").asText(""))) return id;
+    }
+    List<String> ids = buttonIds(node);
+    return ids.isEmpty() ? null : ids.get(0);
+  }
 }
