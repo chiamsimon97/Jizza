@@ -452,6 +452,8 @@ final class WebStepForm {
       ObjectNode read = fields.putObject("fields." + at + ".value");
       read.put("action", action).put("version", 1).put("typed", !"select".equals(kind));
       read.set("element", field.get("element").deepCopy());
+      // One that loads after another lists nothing until that one is set on the page.
+      if (!field.path("dependsOn").asText("").isBlank()) read.put("follows", true);
     }
     if (fields.isEmpty()) return null;
     ObjectNode live = Json.obj().put("device", deviceId.toString());
@@ -755,6 +757,17 @@ final class WebStepForm {
    * that is empty. Internal keys (starting with an underscore), device details and file ids are
    * left out.
    */
+  /**
+   * What a browser step reports about itself rather than about the page (its session and tab,
+   * the address and title it ended on, timings): not a value anyone fills a field with, so the
+   * card's "Use a value from this run" leaves it out. Only below the top level, so a trigger's
+   * own input called "title" or "url" is still offered.
+   */
+  private static final Set<String> RUN_PLUMBING = Set.of(
+      "session", "sessionId", "tabId", "frameId", "windowId", "commandId", "handle",
+      "url", "title", "status", "durationMs", "elapsedMs", "attempts", "element", "locator",
+      "screenshot", "screenshots");
+
   static ArrayNode data(Map<String, Object> variables) {
     ArrayNode out = Json.mapper().createArrayNode();
     for (String root : List.of("input", "nodes", "vars")) {
@@ -767,6 +780,8 @@ final class WebStepForm {
   private static void flatten(String path, JsonNode value, ArrayNode out, int depth) {
     if (out.size() >= MAX_DATA || value == null || value.isNull()) return;
     if (value.isValueNode()) {
+      // A yes/no flag (clicked, navigated) is never a value to put in a field.
+      if (value.isBoolean()) return;
       String text = value.asText();
       if (text.isBlank()) return;
       out.addObject().put("path", path)
@@ -784,6 +799,7 @@ final class WebStepForm {
       Map.Entry<String, JsonNode> entry = it.next();
       String key = entry.getKey();
       if (key.startsWith("_") || "device".equals(key) || "files".equals(key)) continue;
+      if (depth >= 1 && RUN_PLUMBING.contains(key)) continue;
       flatten(path + "." + key, entry.getValue(), out, depth + 1);
     }
   }

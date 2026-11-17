@@ -43,7 +43,7 @@ For a city or theatre search box, use **Type and choose** (or the Search and cho
 
 When a step's guardrail is **Ask me**, its request in [Notifications](/notifications) shows the step's values as they came out for this run, with the mapping each came from (for example "from {{ input.movie }}"). Change any of them before you approve; the step uses what you approve.
 
-When a mandatory value is empty, it is marked in red and **Approve** stays off until you fill it in. Type it, or choose **Use a value from this run** to take one from the trigger or an earlier step. This happens even when the step is allowed to run on its own, because it can't run without the value.
+When a mandatory value is empty, it is marked in red and **Approve** stays off until you fill it in. Type it, or choose **Use a value from this run** to take one from the trigger or an earlier step (such as text read from a page). It lists only values worth putting in a field: not a browser step's own details, such as its session, tab, address or yes/no results. This happens even when the step is allowed to run on its own, because it can't run without the value.
 
 ## Choose a card or date at run time
 

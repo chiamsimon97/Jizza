@@ -1,5 +1,5 @@
 import { AlertCircle, ChevronDown, Link2, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { webApi } from '@/api/web'
 import { RowsInput } from '@/components/ui/RowsInput'
 import { TapPicture } from './TapPicture'
@@ -34,6 +34,29 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
     setLiveOptions(o => ({ ...o, [key]: { ...o[key], reading: true, error: undefined } }))
     setLiveOptions(await readLive(live, key, typed))
   }
+  // A dropdown the card has no choices for (a site's own dropdown, read only while open) lists
+  // what the page offers as the card opens, one at a time, so the person picks instead of typing.
+  // Quietly: a page that cannot be read now leaves the field as it was, with its Refresh.
+  useEffect(() => {
+    const live = form.live
+    if (readOnly || !live) return
+    const keys = Object.entries(live.fields)
+      .filter(([key, how]) => !how.typed && !how.follows
+        && !form.fields.find(f => f.key === key)?.options?.length)
+      .map(([key]) => key)
+    if (keys.length === 0) return
+    let stop = false
+    void (async () => {
+      for (const key of keys) {
+        if (stop) return
+        setLiveOptions(o => ({ ...o, [key]: { ...o[key], reading: true } }))
+        const read = (await readLive(live, key, ''))({})[key]
+        if (!stop) setLiveOptions(o => ({ ...o, [key]: read?.options?.length ? read : {} }))
+      }
+    })()
+    return () => { stop = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   async function readLive(live: StepLive, key: string, typed: string) {
     const how = live.fields[key]!
     let next: LiveState

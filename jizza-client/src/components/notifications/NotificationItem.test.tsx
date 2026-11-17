@@ -176,7 +176,7 @@ describe('a device layer card', () => {
     expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({ button: 'Cancel' }))
   })
 
-  it('refreshes a typed value from what the page suggests, and a dropdown from what it lists', async () => {
+  it('lists a dropdown from the page as the card opens, and refreshes a typed value from its suggestions', async () => {
     const inbox = actions()
     const testStep = vi.spyOn(webApi, 'testStep').mockImplementation(async body => body.action === 'browser.suggestOptions'
       ? { status: 'succeeded', output: { options: ['CHENNAI EGMORE - MS', 'MGR CHENNAI CTL - MAS'], count: 2 }, files: [] }
@@ -191,6 +191,7 @@ describe('a device layer card', () => {
           fields: [
             { key: 'fields.0.value', label: 'From', type: 'text', value: 'chen', required: true, missing: false },
             { key: 'fields.1.value', label: 'Class', type: 'text', value: 'All Classes', required: false, missing: false },
+            { key: 'fields.2.value', label: 'Berth', type: 'text', value: '', required: false, missing: false },
             { key: 'button', label: 'Then click', type: 'select', value: 'Search', required: true, missing: false, options: ['Search'] },
           ],
           missing: [],
@@ -199,6 +200,7 @@ describe('a device layer card', () => {
             fields: {
               'fields.0.value': { action: 'browser.suggestOptions', version: 1, typed: true, element },
               'fields.1.value': { action: 'browser.listOptions', version: 1, typed: false, element },
+              'fields.2.value': { action: 'browser.listOptions', version: 1, typed: false, element, follows: true },
             },
           },
         },
@@ -210,7 +212,13 @@ describe('a device layer card', () => {
           focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
       </MemoryRouter>,
     )
-    const [fromRefresh, classRefresh] = screen.getAllByRole('button', { name: 'Refresh' })
+    // Class has no list on the card: it is read from the page as the card opens. Berth loads
+    // after another field, so it is not.
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Sleeper (SL)' })).toBeInTheDocument())
+    expect(testStep).toHaveBeenCalledTimes(1)
+    expect(testStep).toHaveBeenCalledWith({ deviceId: 'dev-1', action: 'browser.listOptions', version: 1,
+      inputs: { session: 's_1', element } })
+    const [fromRefresh] = screen.getAllByRole('button', { name: 'Refresh' })
     fireEvent.click(fromRefresh!)
     await waitFor(() => expect(screen.getByRole('button', { name: 'MGR CHENNAI CTL - MAS' })).toBeInTheDocument())
     expect(testStep).toHaveBeenCalledWith({ deviceId: 'dev-1', action: 'browser.suggestOptions', version: 1,
@@ -218,8 +226,6 @@ describe('a device layer card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'MGR CHENNAI CTL - MAS' }))
     expect(screen.getByLabelText('From')).toHaveValue('MGR CHENNAI CTL - MAS')
 
-    fireEvent.click(classRefresh!)
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Sleeper (SL)' })).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Class'), { target: { value: 'Sleeper (SL)' } })
     fireEvent.click(screen.getByRole('button', { name: /approve/i }))
     expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({

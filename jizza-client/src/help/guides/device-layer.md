@@ -19,7 +19,8 @@ Many pages are one form you fill in and send: a **Create task** page with a Stag
 While recording in the browser, press **Map as a layer** in the side panel and click the button that sends the area (such as **Submit**). Jizza finds the box around that button and records one Device layer step with:
 
 - every field in it, in page order, with the value it has now;
-- which dropdown follows which (a dropdown that is empty or greyed out until another is chosen);
+- the choices of each dropdown, also a site's own dropdown that shows its list only while open (Jizza opens it, reads the list and closes it again);
+- which dropdown follows which (a dropdown that is greyed out, or opens empty, until another is chosen);
 - its buttons, with Submit-like and Cancel-like buttons told apart.
 
 Then click the button on the page yourself to carry on recording. That click is part of the layer step, so it is not recorded twice. Fill the form before you map it if you want its current values kept, or switch the recorder to **Manual** first so your typing is not also recorded as separate steps.
@@ -60,7 +61,7 @@ Removing a button that already has steps after it never deletes them. Jizza asks
 
 Before you approve the run, the card shows the values for each run under their group headings, the fixed values in a collapsed **Fixed values** list, and a **Then click** choice of the buttons.
 
-Next to a value that the page can list, such as a dropdown or a station box that suggests as you type, the card shows **Refresh**. For a dropdown it lists what the page offers right now. For a box that suggests as you type, type a few letters on the card first: Refresh types them into that box on the page, reads the suggestions, and shows them under the field to choose from. The browser must still be on that page.
+Next to a value that the page can list, such as a dropdown or a station box that suggests as you type, the card shows **Refresh**. For a dropdown it lists what the page offers right now. A dropdown the card has no choices for is read from the page by itself as the card opens, so you pick from it instead of typing; one that follows another field waits for your Refresh. For a box that suggests as you type, type a few letters on the card first: Refresh types them into that box on the page, reads the suggestions, and shows them under the field to choose from. The browser must still be on that page.
 
 If a value is not one the page offers (a milestone that no longer exists), or a mandatory value is empty, the step stops at that field and asks you, listing the choices the page shows right now. Pick one and the step carries on from that field: the ones before it are not filled again.
 
