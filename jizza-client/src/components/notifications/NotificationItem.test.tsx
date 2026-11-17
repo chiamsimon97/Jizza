@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { NotificationDto } from '@/types'
 import { NotificationItem, type InboxActions } from './NotificationItem'
+import { webApi } from '@/api/web'
 
 const PASSENGER = {
   id: 'n1', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-14T10:00:00Z',
@@ -173,5 +174,56 @@ describe('a device layer card', () => {
     fireEvent.change(screen.getByLabelText(/Then click/), { target: { value: 'Cancel' } })
     fireEvent.click(screen.getByRole('button', { name: /approve/i }))
     expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({ button: 'Cancel' }))
+  })
+
+  it('refreshes a typed value from what the page suggests, and a dropdown from what it lists', async () => {
+    const inbox = actions()
+    const testStep = vi.spyOn(webApi, 'testStep').mockImplementation(async body => body.action === 'browser.suggestOptions'
+      ? { status: 'succeeded', output: { options: ['CHENNAI EGMORE - MS', 'MGR CHENNAI CTL - MAS'], count: 2 }, files: [] }
+      : { status: 'succeeded', output: { items: [{ label: 'All Classes' }, { label: 'Sleeper (SL)' }] }, files: [] })
+    const element = { strategies: [{ by: 'css', value: '#from' }] }
+    const layer = {
+      ...PASSENGER,
+      context: {
+        node: 'layer',
+        form: {
+          action: 'browser.fillLayer', title: 'Device layer',
+          fields: [
+            { key: 'fields.0.value', label: 'From', type: 'text', value: 'chen', required: true, missing: false },
+            { key: 'fields.1.value', label: 'Class', type: 'text', value: 'All Classes', required: false, missing: false },
+            { key: 'button', label: 'Then click', type: 'select', value: 'Search', required: true, missing: false, options: ['Search'] },
+          ],
+          missing: [],
+          live: {
+            device: 'dev-1', session: 's_1',
+            fields: {
+              'fields.0.value': { action: 'browser.suggestOptions', version: 1, typed: true, element },
+              'fields.1.value': { action: 'browser.listOptions', version: 1, typed: false, element },
+            },
+          },
+        },
+      },
+    } as unknown as NotificationDto
+    render(
+      <MemoryRouter>
+        <NotificationItem n={layer} now={Date.parse('2026-11-14T10:01:00Z')} actions={inbox}
+          focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
+      </MemoryRouter>,
+    )
+    const [fromRefresh, classRefresh] = screen.getAllByRole('button', { name: 'Refresh' })
+    fireEvent.click(fromRefresh!)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'MGR CHENNAI CTL - MAS' })).toBeInTheDocument())
+    expect(testStep).toHaveBeenCalledWith({ deviceId: 'dev-1', action: 'browser.suggestOptions', version: 1,
+      inputs: { session: 's_1', element, text: 'chen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'MGR CHENNAI CTL - MAS' }))
+    expect(screen.getByLabelText('From')).toHaveValue('MGR CHENNAI CTL - MAS')
+
+    fireEvent.click(classRefresh!)
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Sleeper (SL)' })).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Class'), { target: { value: 'Sleeper (SL)' } })
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({
+      'fields.0.value': 'MGR CHENNAI CTL - MAS', 'fields.1.value': 'Sleeper (SL)' }))
+    testStep.mockRestore()
   })
 })

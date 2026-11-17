@@ -52,7 +52,14 @@ export interface StepForm {
   shots?: StepShots
   /** A device layer's fixed values: filled every run as they are, listed but not asked. */
   fixed?: { label: string; value: string }[]
+  /** Refresh: how to read each value's choices again from the page the run is on. */
+  live?: StepLive
 }
+
+/** One value the card can read again from the page: a dropdown's items, or the suggestions a
+ *  field shows for the text typed into it (`typed`). */
+export interface StepLiveField { action: string; version: number; typed: boolean; element: Record<string, unknown> }
+export interface StepLive { device: string; session?: string; fields: Record<string, StepLiveField> }
 
 export type FormValues = Record<string, string | boolean | string[]>
 
@@ -104,7 +111,27 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ? { fixed: (raw.fixed as Record<string, unknown>[]).filter(x => typeof x?.label === 'string')
         .map(x => ({ label: String(x.label), value: x.value == null ? '' : String(x.value) })) }
       : {}),
+    ...(liveOf(raw.live) ? { live: liveOf(raw.live)! } : {}),
   }
+}
+
+function liveOf(raw: unknown): StepLive | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { device, session, fields } = raw as Record<string, unknown>
+  if (typeof device !== 'string' || !device || !fields || typeof fields !== 'object') return undefined
+  const out: Record<string, StepLiveField> = {}
+  for (const [key, f] of Object.entries(fields as Record<string, unknown>)) {
+    const field = f as Record<string, unknown> | null
+    if (!field || typeof field.action !== 'string' || !field.element || typeof field.element !== 'object') continue
+    out[key] = {
+      action: field.action,
+      version: typeof field.version === 'number' ? field.version : 1,
+      typed: field.typed === true,
+      element: field.element as Record<string, unknown>,
+    }
+  }
+  if (Object.keys(out).length === 0) return undefined
+  return { device, ...(typeof session === 'string' && session ? { session } : {}), fields: out }
 }
 
 function shotsOf(raw: unknown): StepShots | undefined {

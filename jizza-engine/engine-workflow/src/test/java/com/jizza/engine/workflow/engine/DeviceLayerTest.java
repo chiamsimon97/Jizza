@@ -119,8 +119,9 @@ class DeviceLayerTest {
   void withNoButtonTheCardAsksWhichWithTheLayersButtons() {
     EngineHarness h = harness("", true);
     h.deviceOutputs.put("browser.fillLayer", Json.obj().put("clicked", "b1"));
+    java.util.UUID browser = java.util.UUID.randomUUID();
     var run = h.engine.start(h.workflow.getId(), 1,
-        Json.obj().put("project", "Jizza").put("title", "Write plan"), "manual");
+        Json.obj().put("project", "Jizza").put("title", "Write plan"), "manual", null, browser);
     assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
     assertThat(h.deviceRequests).isEmpty();
     JsonNode button = field(h, "button");
@@ -132,6 +133,15 @@ class DeviceLayerTest {
     assertThat(field(h, "fields.1.value").path("group").asText()).isEqualTo("Task details");
     // Milestone loads after Project: not missing yet, the page lists its choices later.
     assertThat(field(h, "fields.2.value").path("missing").asBoolean()).isFalse();
+    // Refresh: each value for this run that the page can list again, and how to read it.
+    JsonNode live = lastForm(h).path("live");
+    assertThat(live.path("device").asText()).isEqualTo(browser.toString());
+    assertThat(live.path("fields").path("fields.1.value").path("action").asText())
+        .isEqualTo("browser.listOptions");
+    assertThat(live.path("fields").path("fields.3.value").path("action").asText())
+        .isEqualTo("browser.suggestOptions");
+    assertThat(live.path("fields").path("fields.3.value").path("typed").asBoolean()).isTrue();
+    assertThat(live.path("fields").has("fields.0.value")).isFalse();
 
     h.engine.resume(run.id(), Json.obj().put("approved", true)
         .set("inputs", Json.obj().put("button", "Submit")));
