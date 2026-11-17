@@ -194,6 +194,13 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     String nodeId = execution.node().id();
     WebStepForm.apply((ObjectNode) inputs, execution.context().approvedInputs(nodeId),
         offered(state));
+    boolean layer = WebStepForm.FILL_LAYER.equals(spec.action());
+    if (layer) {
+      // The button is sent by its id, whether the step or the person named it or its id.
+      String button = WebStepForm.layerButton(inputs);
+      if (button == null) ((ObjectNode) inputs).remove(WebStepForm.LAYER_BUTTON);
+      else ((ObjectNode) inputs).put(WebStepForm.LAYER_BUTTON, button);
+    }
 
     if (UPLOAD_FILE.equals(spec.action())) {
       String problem = handOver(execution, (ObjectNode) inputs, target, state);
@@ -464,6 +471,43 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           + ". Fix the values and approve to send it again";
       state.put("siteErrorsAsked", true);
     }
+    JsonNode layerNeeds = layer ? state.get("layerNeeds") : null;
+    boolean needing = layerNeeds != null && !state.path("layerNeedsAsked").asBoolean(false);
+    String needSaid = null;
+    if (layer) {
+      if (needing) {
+        String fieldId = layerNeeds.path("field").asText("");
+        int at = 0;
+        String key = null;
+        for (JsonNode f : inputs.path("fields")) {
+          if (fieldId.equals(f.path("id").asText())) key = "fields." + at + ".value";
+          at++;
+        }
+        List<String> options = new java.util.ArrayList<>();
+        layerNeeds.path("options").forEach(o -> {
+          if (!o.asText("").isBlank()) options.add(o.asText());
+        });
+        String needKey = key;
+        if (needKey != null) {
+          String needLabel = layerNeeds.path("label").asText("").strip();
+          form = form.stream().map(f -> needKey.equals(f.key())
+              ? new WebStepForm.Field(f.key(), needLabel.isEmpty() ? f.label() : needLabel,
+                  options.isEmpty() ? f.type() : "select", options.isEmpty() ? f.value() : null,
+                  true, null, options.isEmpty() ? f.options() : options, null, f.format(),
+                  f.group())
+              : f).toList();
+        }
+        String label = layerNeeds.path("label").asText("A value");
+        String reason = layerNeeds.path("reason").asText("").strip();
+        needSaid = reason.isEmpty() ? label + " needs a choice from what the page lists now"
+            : reason;
+        state.put("layerNeedsAsked", true);
+        state.put("layerStartAt", fieldId);
+      } else if (layerNeeds != null) {
+        state.remove(List.of("layerNeeds", "layerNeedsAsked"));
+      }
+      state.set("layerFixed", WebStepForm.layerFixed(inputs));
+    }
     List<String> missing = form.stream().filter(WebStepForm.Field::missing)
         .filter(f -> !f.key().startsWith("_"))
         .map(WebStepForm.Field::label).toList();
@@ -471,8 +515,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     // A step with details attached always stops: the person reads them and answers, then it
     // goes on with their answers as its details output.
     boolean asksDetails = !details.isEmpty() && !approved;
-    if (asks || asksDetails || fixing || !missing.isEmpty()) {
+    if (asks || asksDetails || fixing || needing || !missing.isEmpty()) {
       String why = fixing ? siteSaid
+          : needing ? needSaid
           : pick && !picked.found() ? pickReason(wanted, picked, "the page")
           : !missing.isEmpty() && !asks
           ? (missing.size() == 1 ? missing.get(0) + " has" : String.join(", ", missing) + " have")
@@ -482,6 +527,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return ask(execution, state, spec, target, form, pick ? labels(choices) : null, why);
     }
     state.remove("choices");
+    state.remove("layerFixed");
+    if (layer && state.hasNonNull("layerStartAt")) {
+      // Carry on from the field the layer stopped at; the ones above it are filled already.
+      ((ObjectNode) inputs).put("startAt", state.get("layerStartAt").asText());
+      state.remove(List.of("layerStartAt", "layerNeeds", "layerNeedsAsked"));
+    }
     // The answers to the step's details are its own output, never sent to the device.
     JsonNode detailAnswers = ((ObjectNode) inputs).remove("details");
     if (detailAnswers != null && detailAnswers.isObject() && !detailAnswers.isEmpty()) {
@@ -564,6 +615,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
     ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
+    JsonNode fixed = state.remove("layerFixed");
+    if (fixed != null && fixed.isArray() && !fixed.isEmpty() && detail.path("form").isObject()) {
+      ((ObjectNode) detail.get("form")).set("fixed", fixed);
+    }
     if (state.path("picture").isObject() && detail.path("form").path("fields").isArray()) {
       // The picture to tap on goes with the field the taps answer.
       for (JsonNode field : detail.path("form").path("fields")) {
@@ -851,7 +906,18 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     return switch (command.status()) {
       case SUCCEEDED -> {
         JsonNode errors = command.output() == null ? null : command.output().path("errors");
-        if (WebStepForm.FILL_FORMS.contains(command.action()) && errors != null
+        JsonNode needs = command.output() == null ? null : command.output().path("needs");
+        if (WebStepForm.FILL_LAYER.equals(command.action()) && needs != null
+            && needs.path("field").isTextual() && state.path("needsRounds").asInt(0) < 4) {
+          // The layer stopped at a value it has no match for (often a dropdown that loaded after
+          // another): the person chooses from what the page lists, and it carries on from there.
+          state.remove("commandId");
+          state.set("layerNeeds", needs.deepCopy());
+          state.remove("layerNeedsAsked");
+          state.put("needsRounds", state.path("needsRounds").asInt(0) + 1);
+          yield execute(execution);
+        }
+        if (WebStepForm.SENDS_FORMS.contains(command.action()) && errors != null
             && errors.isArray() && !errors.isEmpty() && state.path("errorRounds").asInt(0) < 3) {
           // The site refused what was typed; the person fixes it and the form is sent again.
           state.remove("commandId");

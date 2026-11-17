@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, isCheckStep, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
+import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, isCheckStep, isLayerStep, layerButtonsOf, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
 import { fieldsOf } from './moduleContract'
 
 export type Exit = ExitKey
@@ -25,6 +25,11 @@ export function exitLabel(b: Exit, node?: CanvasNode): string {
   if (b === 'false') return 'no'
   if (b === 'else') return 'otherwise'
   if (b === 'approved' || b === 'rejected') return b
+  if (isLayerStep(node)) {
+    const buttons = layerButtonsOf(node)
+    const i = buttons.findIndex(x => x.id === b)
+    return i < 0 ? b : buttons[i].name.trim() || `button ${i + 1}`
+  }
   if (node?.type === 'SWITCH') {
     const cases = casesOf(node.config)
     const i = cases.findIndex(c => c.id === b)
@@ -56,7 +61,7 @@ function bodyPad(node: CanvasNode, exits: number): string {
   if (node.type === 'BRANCH') return 'pb-5 pr-10'
   if (node.type === 'PARALLEL') return 'pb-7 pr-14'
   if (node.type === 'APPROVAL') return 'pb-5 pr-20'
-  if (node.type === 'SWITCH') return exits === 2 ? 'pb-5 pr-20' : 'pb-7 pr-20'
+  if (node.type === 'SWITCH' || isLayerStep(node)) return exits <= 2 ? 'pb-5 pr-20' : 'pb-7 pr-20'
   return ''
 }
 

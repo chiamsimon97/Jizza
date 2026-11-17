@@ -139,3 +139,39 @@ describe('a browser asking mid-step', () => {
     expect(inbox.decline).toHaveBeenCalledWith(handOff, 'Stopped')
   })
 })
+
+describe('a device layer card', () => {
+  it('lists fixed values, shows groups, and sends the button chosen', () => {
+    const inbox = actions()
+    const layer = {
+      ...PASSENGER,
+      context: {
+        node: 'layer',
+        form: {
+          action: 'browser.fillLayer', title: 'Device layer',
+          fixed: [{ label: 'Stage', value: 'Open' }],
+          fields: [
+            { key: 'fields.1.value', label: 'Project', type: 'select', value: 'Jizza', required: true, missing: false, group: 'Task details', options: ['Jizza', 'Atlas'] },
+            { key: 'fields.2.value', label: 'Milestone (loads after Project is chosen)', type: 'text', required: false, missing: false, group: 'Task details' },
+            { key: 'button', label: 'Then click', type: 'select', required: true, missing: true, options: ['Submit', 'Cancel'] },
+          ],
+          missing: ['button'],
+        },
+      },
+    } as unknown as NotificationDto
+    render(
+      <MemoryRouter>
+        <NotificationItem n={layer} now={Date.parse('2026-11-14T10:01:00Z')} actions={inbox}
+          focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Task details')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Fixed values \(1\)/ }))
+    expect(screen.getByText('Stage')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText(/Then click/), { target: { value: 'Cancel' } })
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({ button: 'Cancel' }))
+  })
+})

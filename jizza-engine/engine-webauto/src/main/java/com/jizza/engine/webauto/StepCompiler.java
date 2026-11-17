@@ -299,6 +299,12 @@ final class StepCompiler {
       if (step.path("optional").asBoolean(false)) config.put("optional", true);
       nodes.add(node(id, "DEVICE_ACTION", label, config, row++));
       tails.to(id);
+      if (LAYER.equals(action)) {
+        // A device layer goes on along the path of the button clicked while recording (else
+        // its first button); its other buttons start with no path of their own.
+        String button = layerButtonId(stepInputs);
+        if (button != null) tails.only(id, button);
+      }
 
       String outputKey = readsData(action);
       if (!inline && outputKey != null && !disabled) {
@@ -664,9 +670,24 @@ final class StepCompiler {
     }
   }
 
+  static final String LAYER = "browser.fillLayer";
+
+  /** The id of the button a recorded device layer clicked (by id or name), else its first. */
+  static String layerButtonId(JsonNode inputs) {
+    String wanted = inputs.path("button").asText("").strip();
+    String first = null;
+    for (JsonNode b : inputs.path("buttons")) {
+      String id = b.path("id").asText("").strip();
+      if (id.isEmpty()) continue;
+      if (first == null) first = id;
+      if (wanted.equals(id) || wanted.equalsIgnoreCase(b.path("name").asText("").strip())) return id;
+    }
+    return first;
+  }
+
   /** Web steps that type values into the page. */
   static final Set<String> TYPES_VALUES = Set.of("browser.setText", "browser.typeInto",
-      "browser.fillForm", "browser.fillRows", "browser.chooseOption", "browser.setDate",
+      "browser.fillForm", "browser.fillLayer", "browser.fillRows", "browser.chooseOption", "browser.setDate",
       "browser.ask");
 
   /** {@code https://host[:port]} of a recorded page, or null for anything but http(s). */

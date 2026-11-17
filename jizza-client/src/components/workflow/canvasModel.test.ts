@@ -244,7 +244,7 @@ describe('palette groups', () => {
       ['Go back a page', 'browser.back', 1], ['Close browser', 'browser.close', 1],
       ['Wait', 'browser.wait', 1], ['Screenshot', 'browser.screenshot', 1],
       ['Handle pop-up dialogs', 'browser.handleDialog', 1], ['Drag and drop', 'browser.dragDrop', 1],
-      ['Fill form', 'browser.fillForm', 1], ['Set date', 'browser.setDate', 1],
+      ['Fill form', 'browser.fillForm', 1], ['Device layer', 'browser.fillLayer', 1], ['Set date', 'browser.setDate', 1],
       ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and choose', 'browser.chooseOption', 1],
       ['Check items', 'browser.checkItems', 1], ['Choose from a list', 'browser.clickItem', 1], ['Choose in a dropdown', 'browser.selectOption', 1],
       ['List items', 'browser.listItems', 1], ['Ask me', 'browser.ask', 1],

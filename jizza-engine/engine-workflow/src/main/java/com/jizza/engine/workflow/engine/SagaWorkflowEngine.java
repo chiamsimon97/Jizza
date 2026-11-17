@@ -1118,7 +1118,17 @@ public class SagaWorkflowEngine implements WorkflowEngine,
         .anyMatch(e -> com.jizza.engine.api.workflow.graph.CheckSteps.NO.equals(e.branch()))
         ? context.outputOf(node.id()).path(answer).asBoolean(false) : null;
     if (yes != null) context.recordBranch(node.id(), yes ? "true" : "false");
+    // A device layer goes on along the way of the button it clicked; the others are not taken.
+    boolean layer = com.jizza.engine.api.workflow.graph.LayerSteps.isLayer(node);
+    String clicked = layer ? context.outputOf(node.id())
+        .path(com.jizza.engine.api.workflow.graph.LayerSteps.CLICKED).asText(null) : null;
+    if (clicked != null) context.recordBranch(node.id(), clicked);
     for (WorkflowEdge edge : graph.outgoing(node.id())) {
+      if (layer) {
+        reach(run, graph, context, edge.to(), node.id(),
+            edge.branch() == null || edge.branch().equals(clicked));
+        continue;
+      }
       boolean live = switch (node.type()) {
         case BRANCH, SWITCH, APPROVAL -> Objects.equals(edge.branch(), outlet);
         // A filter has one way out, open only when its condition held.

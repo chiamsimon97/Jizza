@@ -30,6 +30,8 @@ export interface StepField {
   optionsBy?: Record<string, string[]>
   /** For a section the page repeats (passengers): the columns of its table, one row each. */
   columns?: RowsColumn[]
+  /** A device layer's group this value is in (Task details), shown as a heading above it. */
+  group?: string
   /** For taps: the picture of the page area to tap on, kept by that device. */
   picture?: { device: string; file: string }
 }
@@ -48,6 +50,8 @@ export interface StepForm {
   data: { path: string; value: string }[]
   /** Pictures of the listed items, shown for the option chosen. */
   shots?: StepShots
+  /** A device layer's fixed values: filled every run as they are, listed but not asked. */
+  fixed?: { label: string; value: string }[]
 }
 
 export type FormValues = Record<string, string | boolean | string[]>
@@ -72,6 +76,7 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ...(Array.isArray(f.options) ? { options: (f.options as unknown[]).map(String) } : {}),
       ...(typeof f.error === 'string' && f.error ? { error: f.error } : {}),
       ...(typeof f.format === 'string' && f.format ? { format: f.format } : {}),
+      ...(typeof f.group === 'string' && f.group ? { group: f.group } : {}),
       ...(Array.isArray(f.columns)
         ? { columns: (f.columns as Record<string, unknown>[]).filter(c => typeof c?.key === 'string')
           .map(c => ({ key: String(c.key), label: typeof c.label === 'string' ? c.label : String(c.key) })) }
@@ -95,6 +100,10 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
     ...(typeof raw.choicesAt === 'string' ? { choicesAt: raw.choicesAt } : {}),
     data,
     ...(shots ? { shots } : {}),
+    ...(Array.isArray(raw.fixed) && raw.fixed.length > 0
+      ? { fixed: (raw.fixed as Record<string, unknown>[]).filter(x => typeof x?.label === 'string')
+        .map(x => ({ label: String(x.label), value: x.value == null ? '' : String(x.value) })) }
+      : {}),
   }
 }
 

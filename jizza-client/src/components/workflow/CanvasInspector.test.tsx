@@ -346,6 +346,51 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('sets up a device layer and asks where a removed button\'s steps go', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.fillLayer', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Device layer', defaultTimeoutSec: 180,
+          conditions: [], platforms: [], input: { type: 'object', required: ['fields', 'buttons'], properties: { fields: { type: 'array' }, buttons: { type: 'array' }, root: locator } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const el = { strategies: [{ by: 'css', value: '#x' }], label: 'X' }
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.fillLayer')!)
+    const inputs = {
+      groups: [{ id: 'g1', title: 'Details' }],
+      fields: [
+        { id: 'f1', label: 'Project', kind: 'select', section: 'config', group: 'g1', element: el, options: ['Jizza', 'Atlas'] },
+        { id: 'f2', label: 'Milestone', kind: 'select', section: 'config', group: 'g1', element: el },
+      ],
+      buttons: [{ id: 'b1', name: 'Submit', kind: 'submit', element: el }, { id: 'b2', name: 'Cancel', kind: 'cancel', element: el }],
+    }
+    const withLayer = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs } } : n) }
+    const after = addAfter(withLayer, made.id, 'b2', 'NOTIFY')
+    const { onSave } = open(after.graph, made.id)
+
+    // A field that follows the one above it.
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Milestone follows' }), { target: { value: 'f1' } })
+    expect(screen.getByTestId('layer-follows')).toHaveTextContent('Loads after Project is chosen')
+
+    // Cancel has a step after it: removing it asks first, and Move hands that step to Submit.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove button Cancel' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Remove Cancel' })
+    expect(dialog).toHaveTextContent('"Cancel" leads to')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Move its steps to' }), { target: { value: 'b1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = onSave.mock.calls[0][0] as CanvasGraph
+    const node = saved.nodes.find(n => n.id === made.id)!
+    expect((node.config.inputs as { buttons: { id: string }[] }).buttons.map(b => b.id)).toEqual(['b1'])
+    expect((node.config.inputs as { fields: { id: string; dependsOn?: string }[] }).fields[1]).toMatchObject({ dependsOn: 'f1' })
+    expect(saved.edges).toContainEqual({ from: made.id, to: after.id, branch: 'b1' })
+    vi.unstubAllGlobals()
+  })
+
   it('chooses inside a card of another list and loads more of a growing list', async () => {
     queryClient.clear()
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
