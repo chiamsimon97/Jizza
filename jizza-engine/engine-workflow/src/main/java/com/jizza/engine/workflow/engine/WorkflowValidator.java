@@ -105,7 +105,17 @@ public class WorkflowValidator {
         default -> { /* Trigger, intervention and end nodes need no extra configuration. */ }
       }
 
-      if (!FORKS.contains(node.type()) && graph.outgoing(node.id()).size() > 1) {
+      if (com.jizza.engine.api.workflow.graph.CheckSteps.isCheck(node)) {
+        // A check step may fork once: its usual way out (yes) and one marked "false" (no).
+        List<WorkflowEdge> out = graph.outgoing(node.id());
+        long no = out.stream().filter(e -> "false".equals(e.branch())).count();
+        long other = out.stream().filter(e -> e.branch() != null && !"false".equals(e.branch())
+            && !"true".equals(e.branch())).count();
+        if (no > 1 || other > 0 || out.size() - no > 1) {
+          throw new ValidationException("Check step '" + node.id()
+              + "' may have one way out for yes and one for no");
+        }
+      } else if (!FORKS.contains(node.type()) && graph.outgoing(node.id()).size() > 1) {
         throw new ValidationException("Node '" + node.id()
             + "' has more than one outgoing edge; only a branch, paths, approval or parallel "
             + "step may fork");

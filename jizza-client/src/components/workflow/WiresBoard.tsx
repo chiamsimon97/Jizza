@@ -7,7 +7,7 @@ import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { api } from '@/lib/api'
 import type { AgentDto, McpServer, RunDto, WorkflowDto } from '@/types'
 import {
-  NODE_META, PALETTE_GROUPS, addNode, applyStepEdit, cloneNodes, exitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, setNext, targetsFor,
+  NODE_META, PALETTE_GROUPS, addNode, applyStepEdit, cloneNodes, exitsOf, mainExitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, setNext, targetsFor,
   unreachable, updateNode, type CanvasEdge, type CanvasGraph, type ExitKey, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import { NODE_ICON, StepPicker, exitLabel, summarise, type StepRun } from './canvasParts'
@@ -295,7 +295,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     const r = selected ? dropOnStep(graph, selected, entry) : null
     if (r) { commit(r.graph); setSelected(r.id); flash(`Wired in after “${byId.get(selected!)?.label}”.`); return }
     // Without a selected step it goes after the last step with a free exit.
-    const last = [...graph.nodes].reverse().find(n => exitsOf(n).some(b => !graph.edges.some(e => e.from === n.id && e.branch === b)))
+    const last = [...graph.nodes].reverse().find(n => mainExitsOf(n).some(b => !graph.edges.some(e => e.from === n.id && e.branch === b)))
     const at = looseSpot()
     const added = addNode(graph, entry, at.x, at.y, last?.id ?? null)
     commit(added.graph)

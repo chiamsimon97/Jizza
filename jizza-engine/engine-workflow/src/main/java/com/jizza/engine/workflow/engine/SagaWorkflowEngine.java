@@ -1100,12 +1100,20 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     context.dequeue(node.id());
     context.recordLast(node.id());
     String outlet = ROUTES_BY_OUTLET.contains(node.type()) ? context.branchOf(node.id()) : null;
+    // A check step ("is it there?") with a No way out takes that way on no and its usual one on
+    // yes. With nothing wired to No it carries on either way, as it always has.
+    String answer = com.jizza.engine.api.workflow.graph.CheckSteps.answerField(node);
+    Boolean yes = answer != null && graph.outgoing(node.id()).stream()
+        .anyMatch(e -> com.jizza.engine.api.workflow.graph.CheckSteps.NO.equals(e.branch()))
+        ? context.outputOf(node.id()).path(answer).asBoolean(false) : null;
+    if (yes != null) context.recordBranch(node.id(), yes ? "true" : "false");
     for (WorkflowEdge edge : graph.outgoing(node.id())) {
       boolean live = switch (node.type()) {
         case BRANCH, SWITCH, APPROVAL -> Objects.equals(edge.branch(), outlet);
         // A filter has one way out, open only when its condition held.
         case FILTER -> FILTER_PASSED.equals(outlet);
-        default -> true;
+        default -> yes == null
+            || yes != com.jizza.engine.api.workflow.graph.CheckSteps.NO.equals(edge.branch());
       };
       reach(run, graph, context, edge.to(), node.id(), live);
     }

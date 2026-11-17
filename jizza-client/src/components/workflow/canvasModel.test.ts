@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, applyStepEdit, branchByButton, buttonPathsAfter, clickedCondition, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
+  addAfter, addNode, applyStepEdit, newNode, branchByButton, buttonPathsAfter, clickedCondition, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
   toDuration, toGraph, type CanvasGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
 } from './canvasModel'
 
@@ -330,5 +330,25 @@ describe('recordedItem', () => {
       expect(branchByButton(group(), 'next')).toBeNull()
       expect(clickedCondition('a', 'back\\slash')).toBe('nodes.a.clicked == "back\\\\slash"')
     })
+  })
+})
+
+describe('check steps', () => {
+  const check = (action: string) => ({ ...newNode('DEVICE_ACTION', 0, 0), id: 'c', config: { action } })
+
+  it('gives yes/no checks a "no" exit beside their usual one', () => {
+    expect(exitsOf(check('browser.exists'))).toEqual([null, 'false'])
+    expect(exitsOf(check('browser.getCheckbox'))).toEqual([null, 'false'])
+    expect(exitsOf(check('browser.click'))).toEqual([null])
+  })
+
+  it('does not wire a new step to "no" unless asked to', () => {
+    const start = { ...newNode('TRIGGER', 0, 0), id: 's' }
+    const done = { ...newNode('DEVICE_ACTION', 0, 200), id: 'd', config: { action: 'browser.click' } }
+    const graph: CanvasGraph = { nodes: [start, check('browser.exists'), done], edges: [{ from: 's', to: 'c', branch: null }, { from: 'c', to: 'd', branch: null }] }
+    const added = addNode(graph, 'NOTIFY', 0, 10)
+    expect(added.graph.edges.some(e => e.from === 'c' && e.branch === 'false')).toBe(false)
+    const asked = addNode(graph, 'NOTIFY', 0, 10, 'c')
+    expect(asked.graph.edges).toContainEqual({ from: 'c', to: asked.id, branch: 'false' })
   })
 })

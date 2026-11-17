@@ -440,11 +440,27 @@ export function toGraph(graph: CanvasGraph) {
  */
 export function exitsOf(node: Pick<CanvasNode, 'type' | 'config'>): ExitKey[] {
   if (node.type === 'END') return []
+  if (isCheckStep(node)) return [null, 'false']
   if (node.type === 'BRANCH') return ['true', 'false']
   if (node.type === 'PARALLEL') return [...LANES]
   if (node.type === 'APPROVAL') return ['approved', 'rejected']
   if (node.type === 'SWITCH') return [...casesOf(node.config).map(c => c.id), 'else']
   return [null]
+}
+
+/**
+ * Device steps that answer yes or no ("is this on the page?"). Their usual exit is taken on yes
+ * and an optional "no" exit on no; with nothing wired to "no" they carry on either way.
+ */
+export const CHECK_ACTIONS: readonly string[] = ['browser.exists', 'browser.getCheckbox', 'browser.getRadio']
+
+export function isCheckStep(node: Pick<CanvasNode, 'type' | 'config'> | undefined): boolean {
+  return !!node && node.type === 'DEVICE_ACTION' && CHECK_ACTIONS.includes(String(node.config.action ?? ''))
+}
+
+/** The exits a step needs wired: every exit except a check step's optional "no". */
+export function mainExitsOf(node: Pick<CanvasNode, 'type' | 'config'>): ExitKey[] {
+  return isCheckStep(node) ? [null] : exitsOf(node)
 }
 
 /** A paths step's cases, skipping anything that isn't one. */
@@ -520,7 +536,7 @@ export function setNext(graph: CanvasGraph, from: string, branch: ExitKey, to: s
  */
 export function addNode(graph: CanvasGraph, type: NodeType | PaletteEntry, x: number, y: number, after?: string | null): { graph: CanvasGraph; id: string } {
   const node = newNode(type, x, y)
-  const freeExit = (n: CanvasNode) => exitsOf(n).find(b => !graph.edges.some(e => e.from === n.id && e.branch === b))
+  const freeExit = (n: CanvasNode) => (n.id === after ? exitsOf(n) : mainExitsOf(n)).find(b => !graph.edges.some(e => e.from === n.id && e.branch === b))
   const candidates = graph.nodes.filter(n => freeExit(n) !== undefined)
   const chosen = candidates.find(n => n.id === after)
     ?? candidates.sort((a, b) => dist(a, x, y) - dist(b, x, y))[0]
