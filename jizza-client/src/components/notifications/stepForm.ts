@@ -8,7 +8,7 @@ import { rowsEmpty, type RowsColumn } from '@/components/ui/RowsInput'
  * made at run time, the items the page lists now. Pure, so it can be tested without a browser.
  */
 
-export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime' | 'note' | 'rows'
+export type StepFieldType = 'text' | 'number' | 'checkbox' | 'select' | 'list' | 'date' | 'datetime' | 'note' | 'rows' | 'taps'
 
 export interface StepField {
   key: string
@@ -32,6 +32,8 @@ export interface StepField {
   columns?: RowsColumn[]
   /** A device layer's group this value is in (Task details), shown as a heading above it. */
   group?: string
+  /** For taps: the picture of the page area to tap on, kept by that device. */
+  picture?: { device: string; file: string }
 }
 
 /** The pictures taken of the listed items: which device keeps them, and one per option name. */
@@ -144,6 +146,11 @@ function toInput(field: StepField, value: unknown): string | boolean | string[] 
   // A repeated section's entries go in its table as JSON text.
   if (field.type === 'rows') return value == null ? '[]' : typeof value === 'string' ? value : JSON.stringify(value)
   if (field.type === 'checkbox') return value === true || value === 'true' || value === 'checked'
+  if (field.type === 'taps') {
+    return Array.isArray(value)
+      ? value.map(v => (v && typeof v === 'object' && 'x' in v && 'y' in v ? `${(v as { x: number }).x},${(v as { y: number }).y}` : String(v)))
+      : []
+  }
   if (field.type === 'list') {
     if (Array.isArray(value)) return value.map(String)
     return typeof value === 'string' && value ? splitList(value) : []

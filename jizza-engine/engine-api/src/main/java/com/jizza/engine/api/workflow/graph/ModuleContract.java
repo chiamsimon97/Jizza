@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 public final class ModuleContract {
 
   public static final int MAX_FIELDS = 30;
-  public static final Set<String> TYPES = Set.of("text", "number", "boolean", "date", "datetime", "list", "map",
+  public static final Set<String> TYPES = Set.of("text", "number", "boolean", "date", "datetime", "list", "map", "file",
       "any");
   private static final Pattern NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
 
@@ -192,9 +192,11 @@ public final class ModuleContract {
         case "boolean" -> "boolean";
         case "list" -> "array";
         case "map" -> "object";
-        case "text", "date", "datetime" -> "string";
+        case "text", "date", "datetime", "file" -> "string";
         default -> null;
       };
+      // A file is given by the id of one the person added (a chat attachment, a download).
+      if (f.type().equals("file")) p.put("x-type", "file");
       if (jsonType != null) p.put("type", jsonType);
       if (f.type().equals("date")) p.put("format", "date-time");
       // JSON Schema has one date-time format for both; the phone apps read which picker to show.
@@ -254,6 +256,13 @@ public final class ModuleContract {
         return text != null && text.startsWith("{") ? parsed(text, false) : null;
       case "text", "date", "datetime":
         return value.isValueNode() ? Json.toNode(value.asText()) : null;
+      case "file":
+        if (text == null) return value.isObject() && value.path("id").isTextual() ? value : null;
+        try {
+          return Json.toNode(java.util.UUID.fromString(text).toString());
+        } catch (IllegalArgumentException e) {
+          return null;
+        }
       default:
         return value;
     }
@@ -276,6 +285,7 @@ public final class ModuleContract {
       case "map" -> "a set of fields";
       case "date" -> "a date";
       case "datetime" -> "a date and time";
+      case "file" -> "a file";
       default -> "text";
     };
   }

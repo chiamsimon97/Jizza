@@ -2,6 +2,7 @@ package com.jizza.engine.notifications.bus;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.audit.AuditLog;
+import com.jizza.engine.api.device.SealedAnswers;
 import com.jizza.engine.api.dto.NotificationDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.EscalationState;
@@ -209,9 +210,20 @@ public class DefaultNotificationBus implements NotificationBus {
       if (typed.isEmpty()) typed = null;
       else if (typed.length() > MAX_DEVICE_ANSWER) typed = typed.substring(0, MAX_DEVICE_ANSWER);
     }
+    // A secret answer the card sealed to the device's key: checked for shape, relayed unread.
+    JsonNode sealed = null;
+    if (approved && inputs != null && inputs.has("sealed")) {
+      if (!help.path("answer").path("secret").asBoolean(false)
+          || !help.path("answer").hasNonNull("key")) {
+        throw new ValidationException("This card does not take a sealed answer");
+      }
+      sealed = SealedAnswers.of(inputs.get("sealed"));
+      if (sealed == null) throw new ValidationException("The sealed answer is not valid");
+      typed = null;
+    }
     boolean done = inputs != null && inputs.path("done").asBoolean(false);
     boolean required = help.path("answer").path("required").asBoolean(false);
-    if (approved && required && typed == null && !done) {
+    if (approved && required && typed == null && sealed == null && !done) {
       throw new ValidationException(
           "Type the answer, or press Done if you finished it in the browser");
     }
@@ -228,9 +240,10 @@ public class DefaultNotificationBus implements NotificationBus {
     audit.record(entity.getUserId(), ActorType.USER, null,
         approved ? "notification.device_help_answered" : "notification.device_help_stopped",
         entity.getId().toString(),
-        Json.obj().put("commandId", commandId.toString()).put("answered", typed != null));
+        Json.obj().put("commandId", commandId.toString())
+            .put("answered", typed != null || sealed != null).put("sealed", sealed != null));
     events.publishEvent(new DeviceHelpAnswered(entity.getUserId(), entity.getId(), deviceId,
-        commandId, !approved, typed));
+        commandId, !approved, typed, sealed));
     NotificationDto dto = toDto(entity);
     realtime.ifAvailable(gateway -> gateway.publish(entity.getUserId(), "notifications", dto));
     return dto;

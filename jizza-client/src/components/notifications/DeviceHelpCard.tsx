@@ -3,6 +3,7 @@ import { Check, Eye, EyeOff, Hand, KeyRound, Timer, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { countdown, DEVICE_HELP_TITLE, type DeviceHelp } from './deviceHelp'
+import { canSeal } from './sealAnswer'
 
 /**
  * A device's question on its card: the picture it cropped (a CAPTCHA), a box for the answer, the
@@ -88,7 +89,15 @@ export function DeviceHelpCard({ help, expiresAt, open, busy, onSend, onDone, on
               </button>
             )}
           </div>
-          {help.answer!.secret && <p className="text-[11px] text-gray-500 dark:text-gray-400">Typed into the page only. Jizza doesn’t keep it.</p>}
+          {help.answer!.secret && (
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+              {!help.answer!.key
+                ? 'Typed into the page only. Jizza doesn’t keep it.'
+                : canSeal()
+                  ? 'Locked here so only your browser can read it, then typed into the page. Jizza can’t read or keep it.'
+                  : 'This page isn’t on HTTPS, so the answer can’t be locked here. It is still typed into the page only, and Jizza doesn’t keep it.'}
+            </p>
+          )}
         </div>
       )}
 

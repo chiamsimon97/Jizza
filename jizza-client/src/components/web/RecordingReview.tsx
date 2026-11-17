@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, CircleOff, CircleSlash, KeyRound, ShieldAlert, ListChecks, Pencil, SlidersHorizontal, Trash2, Undo2, Wand2, X } from 'lucide-react'
-import type { EditOp, RecordedStep, Recording, WaitOutcome } from '@/api/web'
+import type { EditOp, RecordedStep, Recording, PictureFit, PollRule, WaitOutcome } from '@/api/web'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import { ElementPreview } from './PageView'
 import { WaitOutcomes } from './WaitOutcomes'
+import { ReadAsField } from './ReadAsField'
+import { FitPictureField } from './FitPictureField'
+import { KeepLookingField } from './KeepLookingField'
 import { conditionDepths, detailsInput, detailsOf, detailsProblem, type InputDetails, dependentListChoices, emptyConditions, fieldName, isCondition, isListChoice, isPassword, isUsernameBox, liveSteps, mappableFields, movesBetween, movesFor, moveOp, pageArrangement, reusableOps, stepsUsingInput, suggestInputName, unmapOps } from './recordingModel'
 
 /** A login saved in the browser extension, as its device lists it. */
 export interface SavedLogin { id: string; name: string; description?: string | null }
 
-const TYPES = ['text', 'number', 'boolean', 'date', 'datetime'] as const
+const TYPES = ['text', 'number', 'boolean', 'date', 'datetime', 'file'] as const
 
 /**
  * Where a person checks what Chrome captured before it becomes steps: rename, reorder, delete,
@@ -140,6 +143,34 @@ export function RecordingReview({ recording, busy, logins, onEdit }: {
                 <WaitOutcomes outcomes={s.step.input.outcomes as WaitOutcome[]} busy={busy}
                   onChange={next => edit([{ op: 'update', seq: s.seq, patch: { outcomes: next } }],
                     [{ op: 'update', seq: s.seq, patch: { outcomes: s.step.input!.outcomes as WaitOutcome[] } }])} />
+              )}
+              {s.step.action === 'browser.waitFor' && (
+                <div className="mt-1">
+                  <KeepLookingField poll={s.step.meta?.poll as PollRule | undefined} busy={busy}
+                    onChange={next => edit([{ op: 'update', seq: s.seq, patch: { poll: next } }],
+                      [{ op: 'update', seq: s.seq, patch: { poll: (s.step.meta?.poll as PollRule | undefined) ?? null } }])} />
+                </div>
+              )}
+              {s.step.action === 'browser.getText' && (
+                <div className="mt-1">
+                  <ReadAsField rule={s.step.meta?.readAs} busy={busy}
+                    onChange={next => edit([{ op: 'update', seq: s.seq, patch: { readAs: next } }],
+                      [{ op: 'update', seq: s.seq, patch: { readAs: s.step.meta?.readAs ?? null } }])} />
+                </div>
+              )}
+              {s.step.action === 'browser.click' && (
+                <button type="button" disabled={busy} className="mt-1 text-xs text-brand-700 hover:underline disabled:opacity-60 dark:text-brand-300"
+                  title="For a seat map or a picture to pick from: each run shows you a picture of it, and the browser clicks where you tap"
+                  onClick={() => edit([{ op: 'update', seq: s.seq, patch: { tapPicture: true } }])}>
+                  Let me tap on a picture of this each run
+                </button>
+              )}
+              {s.step.action === 'browser.uploadFile' && (
+                <div className="mt-1">
+                  <FitPictureField fit={s.step.input?.transform as PictureFit | undefined} busy={busy}
+                    onChange={next => edit([{ op: 'update', seq: s.seq, patch: { transform: next } }],
+                      [{ op: 'update', seq: s.seq, patch: { transform: (s.step.input?.transform as PictureFit | undefined) ?? null } }])} />
+                </div>
               )}
               {s.step.action === 'browser.fillRows' && Array.isArray(s.step.input?.rows) && (
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-300" data-testid="rows-summary">
@@ -358,6 +389,7 @@ function InputDialog({ step, onClose, onSave }: { step: RecordedStep; onClose: (
   const dated = step.step.action === 'browser.setDate' || step.step.action === 'browser.pickDate'
   const [type, setType] = useState<(typeof TYPES)[number]>(
     (TYPES as readonly string[]).includes(existing?.type ?? '') ? existing!.type as (typeof TYPES)[number]
+      : step.step.action === 'browser.uploadFile' ? 'file'
       : dated ? (format && /[Hh]/.test(format) ? 'datetime' : 'date') : 'text')
   const [details, setDetails] = useState<InputDetails>(() => detailsOf(existing))
   const [more, setMore] = useState(Boolean(existing && (existing.label || existing.group || existing.options || existing.pattern)))

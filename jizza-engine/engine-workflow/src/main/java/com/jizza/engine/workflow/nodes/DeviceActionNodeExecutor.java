@@ -26,6 +26,7 @@ import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
 import com.jizza.engine.workflow.sandbox.Templates;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -199,6 +200,48 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       String button = WebStepForm.layerButton(inputs);
       if (button == null) ((ObjectNode) inputs).remove(WebStepForm.LAYER_BUTTON);
       else ((ObjectNode) inputs).put(WebStepForm.LAYER_BUTTON, button);
+    }
+
+    if (UPLOAD_FILE.equals(spec.action())) {
+      String problem = handOver(execution, (ObjectNode) inputs, target, state);
+      if (problem != null) return Outcome.permanentFailure(problem);
+    }
+    Duration holdFor = null;
+    if (WAIT_UNTIL.equals(spec.action())) {
+      Instant at;
+      try {
+        at = TimedRuns.instant(inputs.path("at"), inputs.path("timeZone").asText(""));
+      } catch (IllegalArgumentException e) {
+        return Outcome.permanentFailure(e.getMessage());
+      }
+      Instant now = clock.instant();
+      if (at.isBefore(now.minus(TimedRuns.TOO_LATE))) {
+        return Outcome.permanentFailure(TimedRuns.describe(at) + " has already passed");
+      }
+      // The run sleeps here; the browser gets the step just before, and waits the rest itself.
+      Instant send = at.minus(TimedRuns.SEND_BEFORE);
+      if (now.isBefore(send)) return Outcome.waitUntil(send);
+      ((ObjectNode) inputs).put("at", at.toString());
+      ((ObjectNode) inputs).remove("timeZone");
+      holdFor = Duration.between(now, at).plus(TimedRuns.SLACK);
+    }
+    if (TAP_POINTS.equals(spec.action())) {
+      ArrayNode points = TapPicture.points(inputs.get("points"));
+      if (points.isEmpty()) {
+        ((ObjectNode) inputs).remove("points");
+        // The person taps on a picture of the area (a seat map): take it first.
+        if (!state.path("picture").isObject()) {
+          Outcome taking = TapPicture.take(execution, broker, state, target, workspaceId,
+              (ObjectNode) inputs);
+          if (taking != null) return taking;
+        }
+      } else {
+        ((ObjectNode) inputs).set("points", points);
+      }
+    }
+    if (TimedRuns.polls(config) && state.path("pollTries").asInt(0) > 0) {
+      // Each look after the first loads the page again: a slot or a price only shows on reload.
+      ((ObjectNode) inputs).put("reloadFirst", true);
     }
 
     UUID actor = actorFor(execution);
@@ -495,7 +538,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     if (detailAnswers != null && detailAnswers.isObject() && !detailAnswers.isEmpty()) {
       state.set("details", detailAnswers);
     }
-    Duration timeout = config.path("timeoutSec").asInt(0) > 0
+    Duration timeout = holdFor != null ? holdFor : config.path("timeoutSec").asInt(0) > 0
         ? Duration.ofSeconds(config.get("timeoutSec").asInt()) : null;
     DeviceCommandDto command;
     try {
@@ -575,6 +618,14 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     JsonNode fixed = state.remove("layerFixed");
     if (fixed != null && fixed.isArray() && !fixed.isEmpty() && detail.path("form").isObject()) {
       ((ObjectNode) detail.get("form")).set("fixed", fixed);
+    }
+    if (state.path("picture").isObject() && detail.path("form").path("fields").isArray()) {
+      // The picture to tap on goes with the field the taps answer.
+      for (JsonNode field : detail.path("form").path("fields")) {
+        if ("points".equals(field.path("key").asText())) {
+          ((ObjectNode) field).set("picture", state.get("picture").deepCopy());
+        }
+      }
     }
     if (shots != null && detail.path("form").isObject()) {
       ((ObjectNode) detail.get("form")).set("shots", shots);
@@ -883,6 +934,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         if (state.path("details").isObject() && output instanceof ObjectNode object) {
           object.set("details", state.get("details"));
         }
+        if (execution.node().config() != null) {
+          ReadAs.apply(execution.node().config().path("readAs"), output);
+        }
         String stop = stopsOn(execution.node().config(), output);
         if (stop != null) yield Outcome.permanentFailure(stop);
         yield Outcome.completed(output);
@@ -917,6 +971,19 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
               .put("index", i.index()));
           yield execute(execution);
         }
+        if ("timed_out".equals(kind) && TimedRuns.polls(stepConfig)) {
+          // Poll until: none of what it looks for showed yet. Look again after a while, until
+          // the time or the number of tries runs out.
+          Instant next = TimedRuns.nextLook(stepConfig, state.path("pollTries").asInt(0),
+              state.path("pollSince").asText(null), clock.instant());
+          if (next != null) {
+            if (!state.has("pollSince")) state.put("pollSince", clock.instant().toString());
+            state.put("pollTries", state.path("pollTries").asInt(0) + 1);
+            yield Outcome.waitUntil(next);
+          }
+          yield Outcome.permanentFailure(TimedRuns.gaveUp(stepConfig,
+              state.path("pollTries").asInt(0) + 1));
+        }
         if (irreversible(stepConfig)) {
           // Paying, booking, placing an order: never sent again by itself, as it may have gone
           // through. The person checks the site and says so before it is tried again.
@@ -932,6 +999,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       case EXPIRED -> {
         state.remove("commandId");
         preserveError(state, command);
+        if (command.dispatchedAt() == null) {
+          // The browser (or phone) was never reached, so nothing was done there, not even a
+          // step that can't be undone. Retrying on a schedule would only wait again: the person
+          // opens it and chooses Try again, and the run carries on from this step.
+          yield Outcome.permanentFailure(notReached(command));
+        }
         yield irreversible(execution.node().config())
             ? Outcome.permanentFailure(failureMessage(command)
                 + ". The browser did not say whether it went through")
@@ -939,6 +1012,93 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       }
       default -> Outcome.permanentFailure(command.explain());
     };
+  }
+
+  static final String UPLOAD_FILE = "browser.uploadFile";
+  static final String WAIT_UNTIL = "browser.waitUntil";
+  static final String TAP_POINTS = "browser.tapPoints";
+
+  private java.time.Clock clock = java.time.Clock.systemUTC();
+
+  /** The time timed steps keep ("Wait until", polling). */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setClock(java.time.Clock clock) {
+    if (clock != null) this.clock = clock;
+  }
+
+  /** Words a failure carries when the device never got the step: the engine then knows nothing
+   *  was done, even on a step that cannot be undone. */
+  public static final String NOT_STARTED = "so this step was not started";
+
+  private ObjectProvider<com.jizza.engine.api.device.Devices> devices;
+  private ObjectProvider<com.jizza.engine.api.chat.ChatFiles> chatFiles;
+
+  /** Where a file to upload comes from: a file a device sent back, or one added in chat. */
+  @org.springframework.beans.factory.annotation.Autowired
+  public void setFileSources(ObjectProvider<com.jizza.engine.api.device.Devices> devices,
+                             ObjectProvider<com.jizza.engine.api.chat.ChatFiles> chatFiles) {
+    this.devices = devices;
+    this.chatFiles = chatFiles;
+  }
+
+  /**
+   * "Upload a file": the step names one of the person's files by id (a chat attachment, a run
+   * input, a file an earlier step downloaded). The browser can only fetch a file handed to it, so
+   * the file is handed to the browser that runs the step, once per step, and the input becomes
+   * {@code {id, name, contentType, size}}. Null when ready, else why it can't be.
+   */
+  private String handOver(Execution execution, ObjectNode inputs, DeviceTarget target,
+                          ObjectNode state) {
+    JsonNode given = inputs.get("file");
+    String ref = given == null ? "" : given.isObject() ? given.path("id").asText("") : given.asText("");
+    UUID source;
+    try {
+      source = UUID.fromString(ref.strip());
+    } catch (IllegalArgumentException e) {
+      return "Say which file to upload";
+    }
+    JsonNode handed = state.path("handedFile");
+    if (handed.isObject() && ref.strip().equals(handed.path("from").asText())
+        && target.deviceId() != null && target.deviceId().toString().equals(handed.path("to").asText())) {
+      inputs.set("file", handed.path("file").deepCopy());
+      return null;
+    }
+    if (target.deviceId() == null) {
+      return "Open the page in a browser first: the file is handed to the browser that shows it";
+    }
+    com.jizza.engine.api.device.Devices registry = devices == null ? null : devices.getIfAvailable();
+    if (registry == null) return "Files can't be handed to browsers here";
+    String name;
+    String contentType;
+    byte[] bytes;
+    var fromDevice = registry.file(source).filter(f -> registry.owned(execution.userId()).stream()
+        .anyMatch(d -> d.id().equals(f.deviceId())));
+    if (fromDevice.isPresent()) {
+      name = fromDevice.get().name();
+      contentType = fromDevice.get().contentType();
+      bytes = fromDevice.get().content();
+    } else {
+      com.jizza.engine.api.chat.ChatFiles chat = chatFiles == null ? null : chatFiles.getIfAvailable();
+      var fromChat = chat == null ? java.util.Optional.<com.jizza.engine.api.chat.ChatFiles.Content>empty()
+          : chat.content(execution.userId(), source);
+      if (fromChat.isEmpty()) return "The file to upload is not one of yours, or it is gone";
+      name = fromChat.get().name();
+      contentType = fromChat.get().contentType();
+      bytes = fromChat.get().bytes();
+    }
+    UUID id;
+    try {
+      id = registry.handFile(target.deviceId(), name, contentType, bytes);
+    } catch (RuntimeException e) {
+      return "The file could not be handed to the browser: " + e.getMessage();
+    }
+    ObjectNode file = Json.obj().put("id", id.toString()).put("name", name == null ? "file" : name)
+        .put("contentType", contentType == null ? "application/octet-stream" : contentType)
+        .put("size", bytes.length);
+    inputs.set("file", file);
+    state.putObject("handedFile").put("from", ref.strip()).put("to", target.deviceId().toString())
+        .set("file", file.deepCopy());
+    return null;
   }
 
   /** A step marked as one that cannot be undone, such as paying or placing an order. */
@@ -1037,6 +1197,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       command.files().forEach(id -> screenshots.add(id.toString()));
     }
     state.set("error", error);
+  }
+
+  /** What to do when the device never got the step. */
+  static String notReached(DeviceCommandDto command) {
+    return command.deviceName() + " was not reachable, " + NOT_STARTED + ". Open it"
+        + " (with Jizza signed in), then choose Try again to carry on from here";
   }
 
   private static String failureMessage(DeviceCommandDto command) {

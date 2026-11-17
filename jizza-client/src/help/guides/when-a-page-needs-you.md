@@ -1,9 +1,9 @@
 ---
 title: When a page needs you
-summary: Answer a CAPTCHA or a one-time code from a card in Jizza, ask yourself a question mid-run, and hand payments over to yourself.
+summary: Answer a CAPTCHA or a one-time code from a card in Jizza, ask yourself a question mid-run, pick seats on a picture, watch the browser, and hand payments over to yourself.
 section: Web automation
 order: 18
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 ## What it is
@@ -52,7 +52,29 @@ Its output says which happened (`success`, `failure` or `done`), so a **Paths** 
 
 Jizza never fills payment details. A step that would type into a card number, security code, expiry, or UPI or ATM PIN box stops with "Jizza does not fill in payment details".
 
+## Tap on a picture (seat maps)
+
+Some choices can only be made by looking: seats on a cinema, flight or bus seat map, or a picture to pick from. **Tap on a picture** lets you make them from a card.
+
+1. While reviewing a recording, open the click on the seat map and choose **Let me tap on a picture of this each run**.
+2. On each run, when the step comes, Jizza takes a picture of that part of the page and shows it on the step's card.
+3. Tap the places you want, in order (up to 20). Each tap shows a number; tap a number to take it away, or **Clear** to start again.
+4. Press **Approve**. The browser clicks the same places on the page, one after another, with a short pause so the map can redraw.
+
+Taps are kept as positions within the picture, so they land in the right place whatever the size of your screen or the browser window.
+
+## Watch the browser and take over
+
+When you follow a run in chat, **Watch the browser** shows what the run's browser shows, with a new picture every few seconds. **Stop watching** closes it. The pictures aren't kept with the run.
+
+To take over and do something yourself:
+
+1. In the Jizza extension on that browser, choose **Pause automation**. The browser takes no more steps.
+2. Do what is needed in the tab.
+3. Choose **Resume automation**, then press **Try again** on the step's card to let Jizza do the step, or **Skip** if you did it yourself.
+
 ## Safety
 
 - Every message the browser sends to Jizza is signed with that browser's own key, and Jizza's answers to it are signed by the server.
+- A secret answer (a CAPTCHA, a code) is locked on the card, in your own browser, so that only the browser that asked can unlock it. Jizza passes it on without being able to read it. This needs Jizza opened over HTTPS or on localhost. Over plain HTTP the card says so, and the answer goes unlocked (still kept nowhere).
 - A recorded step that types a value only does so on the site it was recorded on. If the tab shows another site, the step stops without typing. You can change this in the step's **Only on this site** setting.

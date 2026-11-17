@@ -22,6 +22,7 @@ import { matchAgent, str } from './agentMatch'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { inputSections, moduleInputs, ruleProblem } from '@/components/workflow/moduleContract'
 import { DateValueInput } from '@/components/ui/DateValueInput'
+import { FileValueInput } from '@/components/ui/FileValueInput'
 import { RowsInput, rowsEmpty } from '@/components/ui/RowsInput'
 
 interface Step {
@@ -369,6 +370,9 @@ export function WorkflowForm() {
                           <RowsInput label={label} columns={f.columns}
                             value={runInput[f.name] ?? (f.default !== undefined ? JSON.stringify(f.default) : '[]')}
                             onChange={v => setRunInput(r => ({ ...r, [f.name]: rowsEmpty(v) ? '' : v }))} />
+                        ) : f.type === 'file' ? (
+                          <FileValueInput label={`Input ${f.name}`} value={runInput[f.name] ?? ''}
+                            onChange={v => setRunInput(r => ({ ...r, [f.name]: v }))} />
                         ) : f.type === 'date' || f.type === 'datetime' ? (
                           <DateValueInput type={f.type} format={f.format} className={fieldClass} aria-label={`Input ${f.name}`}
                             value={runInput[f.name] ?? (typeof f.default === 'string' ? f.default : '')}

@@ -20,6 +20,9 @@ public class DeviceRunWaker implements DeviceCommandListener, AutoCloseable {
 
   private static final Logger log = LoggerFactory.getLogger(DeviceRunWaker.class);
 
+  /** The node name live-view pictures are filed under. */
+  public static final String LIVE_VIEW = "live-view";
+
   private final ObjectProvider<SagaWorkflowEngine> engine;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -29,7 +32,8 @@ public class DeviceRunWaker implements DeviceCommandListener, AutoCloseable {
 
   @Override
   public void onFinished(DeviceCommandDto command) {
-    if (command.runId() == null) return;
+    // A picture taken for the person watching the run (live view) is no step of it.
+    if (command.runId() == null || LIVE_VIEW.equals(command.nodeId())) return;
     executor.execute(() -> {
       try {
         engine.getObject().wake(command.runId());

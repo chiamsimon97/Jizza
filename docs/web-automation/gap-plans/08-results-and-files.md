@@ -1,5 +1,24 @@
 # 08. Results, files, uploads and downloads
 
+## Status (2026-11-16, round 3)
+
+Built: G1 + G2 (`browser.uploadFile@1`: the server hands the file (a run input of type `file`,
+added on the start card or the run form, or a chat attachment) to the browser first; the
+extension puts it into the file input itself, the one a label or "Upload" button stands for, or
+drops it on a drop zone, through a `DataTransfer`, checking the input's `accept` list. Pictures
+can be fitted first with `transform: { maxKb, width, height, format }` in the browser, never
+enlarged. 10 MB cap. Picking a file while recording records the step with a required `file`
+input; the file itself is never kept.) G3 (`readAs` on Read text steps: number, money with its
+currency, date in the site's format or common ones, or a pattern's first group; the step keeps
+`text` and adds `value`, or `valueProblem` when the text does not fit; set in the recording
+review.) G4 (the End step's outputs get a **Result message** template over `result.<output>`,
+shown as the run's answer in chat with the values and any downloaded files linked.) G6 (a click
+that starts a download within moments while recording becomes a Download step on the same
+element, and the file becomes one of the recording's outputs.)
+
+Not built yet: G5 result-page capture in the recorder, G7 result history, G8 batch write-back,
+PDF conversion in transforms.
+
 ## What exists today
 
 - `browser.getText`, `browser.extractTable`, `browser.listItems`, `browser.pageInfo`,

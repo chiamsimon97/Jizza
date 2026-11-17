@@ -14,6 +14,7 @@ import com.jizza.engine.api.device.DeviceCommandStatus;
 import com.jizza.engine.api.device.DeviceCommands;
 import com.jizza.engine.api.device.DevicePlatform;
 import com.jizza.engine.api.device.DeviceTarget;
+import com.jizza.engine.api.device.SealedAnswers;
 import com.jizza.engine.api.enums.ActionType;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.NotificationKind;
@@ -665,8 +666,13 @@ public class CommandBroker implements DeviceCommands {
     }
     JsonNode answer = body.path("answer");
     if (answer.isObject()) {
-      help.set("answer", Json.obj().put("secret", answer.path("secret").asBoolean(true))
-          .put("required", answer.path("required").asBoolean(true)));
+      ObjectNode asks = Json.obj().put("secret", answer.path("secret").asBoolean(true))
+          .put("required", answer.path("required").asBoolean(true));
+      // The public half of the device's one-off key for this command: the card seals a secret
+      // answer to it in the person's browser, so it reaches the device unreadable here.
+      String key = answer.path("key").asText("");
+      if (asks.path("secret").asBoolean() && SealedAnswers.isKey(key)) asks.put("key", key);
+      help.set("answer", asks);
     }
     JsonNode values = body.path("values");
     if (values.isObject()) {
@@ -690,7 +696,8 @@ public class CommandBroker implements DeviceCommands {
    * they typed (typed into the page there, never kept here), or the command is stopped. Only the
    * command's own person can answer it, and only while it runs.
    */
-  public void relayAnswer(UUID userId, UUID deviceId, UUID commandId, boolean stop, String answer) {
+  public void relayAnswer(UUID userId, UUID deviceId, UUID commandId, boolean stop, String answer,
+                          JsonNode sealed) {
     transactions.executeWithoutResult(status -> {
       DeviceCommandEntity cmd = commands.findById(commandId).orElse(null);
       if (cmd == null || !cmd.getDeviceId().equals(deviceId)
@@ -708,6 +715,7 @@ public class CommandBroker implements DeviceCommands {
           .put("issuedAt", clock.instant().toString())
           .put("nonce", UUID.randomUUID().toString());
       if (answer != null) body.put("answer", answer);
+      if (sealed != null) body.set("sealed", sealed.deepCopy());
       ObjectNode env = Protocol.envelope(Protocol.RESUME, cmd.getDeviceId(), body, null);
       env.put("sig", serverKeys.sign(Canonical.of(body)));
       cmd.setProgress("Carrying on");

@@ -38,6 +38,8 @@ class PersonInTheLoopE2eTest extends E2eSupport {
 
   private static final String PASSWORD = "Correct-Horse-92";
   private static final String CODE = "481516";
+  /** The public half of the device's one-off key (an uncompressed P-256 point, base64url). */
+  private static final String KEY = "B" + "A".repeat(86);
 
   @LocalServerPort private int port;
   @Autowired private WorkflowRepository workflows;
@@ -60,7 +62,7 @@ class PersonInTheLoopE2eTest extends E2eSupport {
       ObjectNode ask = Json.obj().put("commandId", commandId).put("kind", "ask")
           .put("message", input.path("message").asText())
           .put("deadline", Instant.now().plusSeconds(60).toString());
-      ask.set("answer", Json.obj().put("secret", true).put("required", true));
+      ask.set("answer", Json.obj().put("secret", true).put("required", true).put("key", KEY));
       device.send("needs_user", ask);
       JsonNode resume = device.awaitMessage(m -> "resume".equals(m.path("type").asText())
           && commandId.equals(m.path("body").path("commandId").asText()), Duration.ofSeconds(30));
@@ -118,6 +120,39 @@ class PersonInTheLoopE2eTest extends E2eSupport {
              + (SELECT count(*) FROM workflow_run_steps WHERE output::text LIKE ? OR input::text LIKE ?)
         """, Integer.class, "%" + CODE + "%", "%" + CODE + "%", "%" + CODE + "%",
         "%" + CODE + "%", "%" + CODE + "%");
+    assertThat(stored).isZero();
+  }
+
+  @Test
+  void aSealedAnswerIsRelayedAsItIsAndKeptNowhere() throws Exception {
+    String runId = start("Type the code sent to your phone");
+    JsonNode card = awaitHelpCard(runId);
+    // The card gets the device's key to seal the secret answer to.
+    assertThat(card.path("context").path("deviceHelp").path("answer").path("key").asText())
+        .isEqualTo(KEY);
+    String ct = "Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eA";
+    Map<String, Object> sealed = Map.of("v", 1, "epk", "B" + "C".repeat(86),
+        "iv", "AAECAwQFBgcICQoL", "ct", ct);
+    var bad = api.post("/api/notifications/" + card.path("id").asText() + "/answer",
+        Map.of("kind", "APPROVE", "inputs", Map.of("sealed", Map.of("v", 1, "ct", "x"))));
+    assertThat(bad.status()).as(bad.body()).isEqualTo(400);
+    var answered = api.post("/api/notifications/" + card.path("id").asText() + "/answer",
+        Map.of("kind", "APPROVE", "inputs", Map.of("sealed", sealed)));
+    assertThat(answered.ok()).as(answered.body()).isTrue();
+
+    JsonNode run = awaitRun(runId, Duration.ofSeconds(30));
+    assertThat(run.path("status").asText()).as(run.toString()).isEqualTo("DONE");
+    // The device got exactly what the card sealed, signed, and no answer in the clear.
+    JsonNode body = resumed.get().path("body");
+    assertThat(device.signedByServer(resumed.get())).isTrue();
+    assertThat(body.has("answer")).isFalse();
+    assertThat(body.path("sealed").path("ct").asText()).isEqualTo(ct);
+    assertThat(body.path("sealed").path("epk").asText()).isEqualTo("B" + "C".repeat(86));
+    Integer stored = jdbc.queryForObject("""
+        SELECT (SELECT count(*) FROM notifications WHERE context::text LIKE ?)
+             + (SELECT count(*) FROM audit_log WHERE detail::text LIKE ?)
+             + (SELECT count(*) FROM workflow_runs WHERE context::text LIKE ?)
+        """, Integer.class, "%" + ct + "%", "%" + ct + "%", "%" + ct + "%");
     assertThat(stored).isZero();
   }
 
