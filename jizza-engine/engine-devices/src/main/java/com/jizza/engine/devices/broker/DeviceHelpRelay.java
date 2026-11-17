@@ -20,6 +20,6 @@ public class DeviceHelpRelay {
   @TransactionalEventListener(fallbackExecution = true)
   public void onAnswered(DeviceHelpAnswered event) {
     broker.relayAnswer(event.userId(), event.deviceId(), event.commandId(), event.stop(),
-        event.answer());
+        event.answer(), event.sealed());
   }
 }

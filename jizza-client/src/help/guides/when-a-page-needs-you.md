@@ -76,4 +76,5 @@ To take over and do something yourself:
 ## Safety
 
 - Every message the browser sends to Jizza is signed with that browser's own key, and Jizza's answers to it are signed by the server.
+- A secret answer (a CAPTCHA, a code) is locked on the card, in your own browser, so that only the browser that asked can unlock it. Jizza passes it on without being able to read it. This needs Jizza opened over HTTPS or on localhost. Over plain HTTP the card says so, and the answer goes unlocked (still kept nowhere).
 - A recorded step that types a value only does so on the site it was recorded on. If the tab shows another site, the step stops without typing. You can change this in the step's **Only on this site** setting.

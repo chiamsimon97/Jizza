@@ -14,6 +14,7 @@ import {
 import { StepApprovalForm } from './StepApprovalForm'
 import { DeviceHelpCard } from './DeviceHelpCard'
 import { deviceHelpOf } from './deviceHelp'
+import { answerInputs } from './sealAnswer'
 import { answerValues, initialValues, stepFormOf, unfilled, type FormValues } from './stepForm'
 
 const KIND_ICON: Record<NotificationKind, LucideIcon> = {
@@ -178,7 +179,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
           {deviceHelp && (
             <div onClick={e => e.stopPropagation()}>
               <DeviceHelpCard help={deviceHelp} expiresAt={n.expiresAt} open={open} busy={busy}
-                onSend={answer => void run('send', () => actions.approve(n, { answer }))}
+                onSend={answer => void run('send', async () => actions.approve(n, await answerInputs(deviceHelp, answer)))}
                 onDone={() => void run('done', () => actions.approve(n, { done: true }))}
                 onStop={() => void run('stop', () => actions.decline(n, 'Stopped'))} />
             </div>
