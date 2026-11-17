@@ -92,6 +92,33 @@ class StepCompilerTest {
   }
 
   @Test
+  void aDeviceLayerGoesOnAlongTheButtonClickedWhileRecording() {
+    JsonNode layer = step("""
+        {"seq":1,"action":"browser.fillLayer","version":1,"label":"Create task",
+         "input":{"groups":[{"id":"g1","title":"Details"}],
+           "fields":[{"id":"f1","label":"Project","kind":"select","section":"config","group":"g1",
+             "element":{"strategies":[{"by":"css","value":"#p"}]},"value":"Jizza"}],
+           "buttons":[{"id":"b1","name":"Submit","element":{"strategies":[{"by":"text","value":"Submit"}]}},
+                      {"id":"b2","name":"Cancel","element":{"strategies":[{"by":"text","value":"Cancel"}]}}],
+           "button":"Cancel"},
+         "meta":{"url":"https://x.example.com/tasks/new"},
+         "mappings":{"fields.0.value":{"name":"project","type":"text","default":"Jizza","required":true}}}""");
+
+    var graph = StepCompiler.compile("https://x.example.com", List.of(OPEN, layer));
+
+    var config = graph.path("nodes").get(2).path("config");
+    assertThat(config.path("inputs").path("fields").get(0).path("value").asText())
+        .isEqualTo("{{ input.project }}");
+    assertThat(config.path("inputs").path("fields").get(0).path("required").asBoolean()).isTrue();
+    assertThat(config.path("inputs").path("expectOrigin").asText()).isEqualTo("https://x.example.com");
+    JsonNode out = null;
+    for (JsonNode e : graph.path("edges")) {
+      if (e.path("from").asText().equals(graph.path("nodes").get(2).path("id").asText())) out = e;
+    }
+    assertThat(out.path("branch").asText()).isEqualTo("b2");
+  }
+
+  @Test
   void theRowsOfARepeatedSectionBecomeOneListInputWithItsColumns() {
     JsonNode rows = step("""
         {"seq":1,"action":"browser.fillRows","version":1,"label":"Fill a row for each Passenger",

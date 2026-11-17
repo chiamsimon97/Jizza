@@ -51,6 +51,12 @@ final class WebStepForm {
   /** Choices made from a list the page or app shows at run time. */
   static final Set<String> CLICK_ITEMS = Set.of(CLICK_ITEM, "ui.clickItem");
   static final Set<String> FILL_FORMS = Set.of(FILL_FORM, "ui.fillForm");
+  /** A device layer: a whole area of a page, filled in order, then one of its buttons clicked. */
+  static final String FILL_LAYER = "browser.fillLayer";
+  /** Steps whose site errors after sending are shown on the card for the person to fix. */
+  static final Set<String> SENDS_FORMS = Set.of(FILL_FORM, "ui.fillForm", FILL_LAYER);
+  /** The card's key for the button a device layer clicks. */
+  static final String LAYER_BUTTON = "button";
 
   /** The input that names the item chosen, for an action that chooses from a list. */
   static String pickKey(String action) {
@@ -73,7 +79,12 @@ final class WebStepForm {
 
   /** One value of the step, as the approval card shows it. */
   record Field(String key, String label, String type, JsonNode value, boolean required,
-               String source, List<String> options, String error, String format) {
+               String source, List<String> options, String error, String format, String group) {
+
+    Field(String key, String label, String type, JsonNode value, boolean required,
+          String source, List<String> options, String error, String format) {
+      this(key, label, type, value, required, source, options, error, format, null);
+    }
 
     Field(String key, String label, String type, JsonNode value, boolean required,
           String source, List<String> options, String error) {
@@ -86,22 +97,29 @@ final class WebStepForm {
     }
 
     Field withError(String message) {
-      return new Field(key, label, type, value, required, source, options, message, format);
+      return new Field(key, label, type, value, required, source, options, message, format, group);
     }
 
     Field withOptions(String newType, List<String> newOptions, boolean blank) {
       return new Field(key, label, newType, blank ? null : value, blank || required, source,
-          newOptions, error, format);
+          newOptions, error, format, group);
     }
 
     /** A date field that writes its value the site's way (DD/MM/YYYY, YYYY-MM-DD HH:mm). */
     Field withFormat(String newFormat) {
       if (newFormat == null || newFormat.isBlank()) return this;
       String newType = "date".equals(type) && hasTime(newFormat) ? "datetime" : type;
-      return new Field(key, label, newType, value, required, source, options, error, newFormat);
+      return new Field(key, label, newType, value, required, source, options, error, newFormat,
+          group);
     }
 
     boolean missing() { return required && empty(value); }
+
+    /** Where the value comes from, as the card shows it under the field. */
+    Field withSource(String newSource) {
+      if (newSource == null) return this;
+      return new Field(key, label, type, value, required, newSource, options, error, format, group);
+    }
 
     ObjectNode toJson() {
       ObjectNode out = Json.obj().put("key", key).put("label", label).put("type", type)
@@ -110,6 +128,7 @@ final class WebStepForm {
       if (source != null) out.put("source", source);
       if (error != null) out.put("error", error);
       if (format != null) out.put("format", format);
+      if (group != null) out.put("group", group);
       if (options != null && "rows".equals(type)) {
         // A rows field's options are its columns: one entry's values by key, with labels.
         ArrayNode columns = out.putArray("columns");
@@ -158,6 +177,17 @@ final class WebStepForm {
       case FILL_ROWS -> {
         JsonNode rows = entries(inputs.get("rows"));
         if (rows != null) inputs.set("rows", rows);
+      }
+      case FILL_LAYER -> {
+        // Every field keeps its place (the card and the run name fields by it); empty optional
+        // ones are left as the page has them by the browser.
+        for (JsonNode raw : inputs.path("fields")) {
+          if (raw instanceof ObjectNode field) {
+            JsonNode value = fieldValue(field.path("kind").asText("text"), field.get("value"));
+            if (value == null) field.remove("value");
+            else field.set("value", value);
+          }
+        }
       }
       case FILL_FORM, "ui.fillForm" -> {
         if (!inputs.path("fields").isArray()) return;
@@ -261,6 +291,8 @@ final class WebStepForm {
       return out;
     }
 
+    if (FILL_LAYER.equals(spec.action())) return layerFields(inputs);
+
     if (FILL_ROWS.equals(spec.action())) {
       List<String> columns = new ArrayList<>();
       for (JsonNode column : inputs.path("columns")) {
@@ -321,6 +353,97 @@ final class WebStepForm {
     }
     return CLICK_ITEMS.contains(spec.action()) || CLICK_ONE_OF.equals(spec.action())
         || SELECT_OPTION.equals(spec.action()) ? named(out, config.path("list")) : out;
+  }
+
+  /**
+   * A device layer's card: each value asked per run under its group's title, in order (a field
+   * that loads after another is asked once the page lists its choices), then the button to click.
+   * Fixed values are not on the card; {@link #layerFixed} lists them.
+   */
+  static List<Field> layerFields(ObjectNode inputs) {
+    List<Field> out = new ArrayList<>();
+    Map<String, String> groups = new java.util.HashMap<>();
+    for (JsonNode group : inputs.path("groups")) {
+      groups.put(group.path("id").asText(""), group.path("title").asText("").strip());
+    }
+    Map<String, String> labels = new java.util.HashMap<>();
+    int index = 0;
+    for (JsonNode field : inputs.path("fields")) {
+      int at = index++;
+      String id = field.path("id").asText("");
+      String label = layerLabel(field, at);
+      labels.put(id, label);
+      if ("static".equals(field.path("section").asText("config"))) continue;
+      String kind = field.path("kind").asText("text");
+      List<String> options = optionNames(field.path("options"));
+      boolean follows = !field.path("dependsOn").asText("").isBlank();
+      String type = !follows && options != null && ("select".equals(kind) || "radio".equals(kind)
+          || "list".equals(kind)) ? "select" : formType(kind);
+      String group = groups.get(field.path("group").asText(""));
+      // A field that follows another is checked against what the page lists once its parent is
+      // set: left empty here, the run stops there and asks with those choices.
+      boolean required = field.path("required").asBoolean(false)
+          && !(follows && empty(field.get("value")));
+      String parent = labels.get(field.path("dependsOn").asText(""));
+      out.add(new Field("fields." + at + ".value", label, type, field.get("value"), required,
+          null, "select".equals(type) ? options : null, null, null,
+          group == null || group.isEmpty() ? null : group)
+          .withFormat(field.path("format").asText(null))
+          .withSource(follows && parent != null ? "Loads after " + parent + " is chosen" : null));
+    }
+    List<String> buttons = new ArrayList<>();
+    String chosen = null;
+    String button = inputs.path(LAYER_BUTTON).asText("").strip();
+    for (JsonNode b : inputs.path("buttons")) {
+      String name = b.path("name").asText("").strip();
+      if (name.isEmpty()) continue;
+      buttons.add(name);
+      if (!button.isEmpty() && (button.equals(b.path("id").asText()) || fold(button).equals(fold(name)))) {
+        chosen = name;
+      }
+    }
+    out.add(new Field(LAYER_BUTTON, "Then click", "select",
+        chosen == null ? null : Json.mapper().getNodeFactory().textNode(chosen), true, null,
+        buttons));
+    return out;
+  }
+
+  /** A device layer field's name: the one given, else the element's, else its place. */
+  static String layerLabel(JsonNode field, int index) {
+    String label = field.path("label").asText("").strip();
+    if (label.isEmpty()) label = field.path("element").path("label").asText("").strip();
+    return label.isEmpty() ? "Field " + (index + 1) : label;
+  }
+
+  /** A device layer's fixed values, as the card lists them: name and value. */
+  static ArrayNode layerFixed(JsonNode inputs) {
+    ArrayNode out = Json.mapper().createArrayNode();
+    int index = 0;
+    for (JsonNode field : inputs.path("fields")) {
+      int at = index++;
+      if (!"static".equals(field.path("section").asText("config"))) continue;
+      JsonNode value = field.get("value");
+      String text = value == null || value.isNull() ? ""
+          : value.isArray() ? joined(value) : value.asText();
+      out.addObject().put("label", layerLabel(field, at)).put("value", text);
+    }
+    return out;
+  }
+
+  /**
+   * The id of the button a device layer clicks, from what the step or the person named (its id
+   * or its name, ignoring case and accents); null when it names none of them.
+   */
+  static String layerButton(JsonNode inputs) {
+    String wanted = inputs.path(LAYER_BUTTON).asText("").strip();
+    if (wanted.isEmpty()) return null;
+    for (JsonNode b : inputs.path("buttons")) {
+      if (wanted.equals(b.path("id").asText())) return wanted;
+    }
+    for (JsonNode b : inputs.path("buttons")) {
+      if (fold(wanted).equals(fold(b.path("name").asText("")))) return b.path("id").asText();
+    }
+    return null;
   }
 
   /** What a dropdown step's field is called: the dropdown's own label, else "Option to choose". */

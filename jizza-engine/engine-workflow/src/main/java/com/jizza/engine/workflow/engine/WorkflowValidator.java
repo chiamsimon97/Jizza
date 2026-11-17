@@ -85,6 +85,9 @@ public class WorkflowValidator {
           if (web) {
             validateWebAction(node);
           }
+          if (com.jizza.engine.api.workflow.graph.LayerSteps.isLayer(node)) {
+            validateLayer(node);
+          }
           if (!(web && "sameBrowser".equals(node.config().path("target").asText()))) {
             try {
               com.jizza.engine.api.device.DeviceTarget.from(node.config().get("target"));
@@ -105,7 +108,21 @@ public class WorkflowValidator {
         default -> { /* Trigger, intervention and end nodes need no extra configuration. */ }
       }
 
-      if (com.jizza.engine.api.workflow.graph.CheckSteps.isCheck(node)) {
+      if (com.jizza.engine.api.workflow.graph.LayerSteps.isLayer(node)) {
+        // A device layer forks once per button: each way out is marked with a button's id.
+        List<String> buttons = com.jizza.engine.api.workflow.graph.LayerSteps.buttonIds(node);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (WorkflowEdge edge : graph.outgoing(node.id())) {
+          if (edge.branch() == null || !buttons.contains(edge.branch())) {
+            throw new ValidationException("Device layer '" + node.id()
+                + "' has a path that belongs to no button; connect it to a button or remove it");
+          }
+          if (!seen.add(edge.branch())) {
+            throw new ValidationException("Device layer '" + node.id()
+                + "' has two paths for the same button");
+          }
+        }
+      } else if (com.jizza.engine.api.workflow.graph.CheckSteps.isCheck(node)) {
         // A check step may fork once: its usual way out (yes) and one marked "false" (no).
         List<WorkflowEdge> out = graph.outgoing(node.id());
         long no = out.stream().filter(e -> "false".equals(e.branch())).count();
@@ -140,6 +157,62 @@ public class WorkflowValidator {
       "browser.extractTable", "browser.typeInto", "browser.exists", "browser.setDate",
       "browser.checkItems", "browser.listItems", "browser.clickItem", "browser.pickDate",
       "browser.chooseOption");
+
+  /**
+   * A device layer: unique field and button ids and names, a known group for each value asked
+   * per run, and a parent above each field that follows another.
+   */
+  private static void validateLayer(WorkflowNode node) {
+    var inputs = node.config().path("inputs");
+    java.util.Set<String> buttonIds = new java.util.HashSet<>();
+    java.util.Set<String> buttonNames = new java.util.HashSet<>();
+    for (var button : inputs.path("buttons")) {
+      String id = button.path("id").asText("").strip();
+      String name = button.path("name").asText("").strip().toLowerCase(java.util.Locale.ROOT);
+      if (id.isEmpty() || name.isEmpty()) {
+        throw new ValidationException("Device layer '" + node.id() + "': every button needs a name");
+      }
+      if (!buttonIds.add(id) || !buttonNames.add(name)) {
+        throw new ValidationException("Device layer '" + node.id()
+            + "' has two buttons called '" + button.path("name").asText() + "'");
+      }
+    }
+    java.util.Set<String> groups = new java.util.HashSet<>();
+    inputs.path("groups").forEach(g -> groups.add(g.path("id").asText("")));
+    java.util.Set<String> above = new java.util.HashSet<>();
+    boolean configSeen = false;
+    for (var field : inputs.path("fields")) {
+      String id = field.path("id").asText("").strip();
+      String label = field.path("label").asText(id);
+      if (id.isEmpty() || above.contains(id)) {
+        throw new ValidationException("Device layer '" + node.id()
+            + "': every field needs its own id");
+      }
+      boolean fixed = "static".equals(field.path("section").asText("config"));
+      String parent = field.path("dependsOn").asText("").strip();
+      if (fixed && !parent.isEmpty()) {
+        throw new ValidationException("Device layer '" + node.id() + "': '" + label
+            + "' follows another field, so it cannot be a fixed value");
+      }
+      if (fixed && configSeen) {
+        throw new ValidationException("Device layer '" + node.id()
+            + "': fixed values come before the values for each run");
+      }
+      if (!fixed) {
+        configSeen = true;
+        String group = field.path("group").asText("");
+        if (!groups.isEmpty() && !group.isEmpty() && !groups.contains(group)) {
+          throw new ValidationException("Device layer '" + node.id() + "': '" + label
+              + "' is in a group the layer does not have");
+        }
+      }
+      if (!parent.isEmpty() && !above.contains(parent)) {
+        throw new ValidationException("Device layer '" + node.id() + "': '" + label
+            + "' must come after the field it follows");
+      }
+      above.add(id);
+    }
+  }
 
   private void validateWebAction(WorkflowNode node) {
     String action = node.config().path("action").asText();
