@@ -28,7 +28,7 @@ describe('live view', () => {
     expect(liveView).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /watch the browser/i }))
     await waitFor(() => expect(screen.getByRole('img').getAttribute('src')).toBe('/api/devices/d1/files/f1'))
-    expect(screen.getByText(/press pause on the browser/i)).toBeTruthy()
+    expect(screen.getByText(/pause automation/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /stop watching/i }))
     expect(screen.queryByRole('img')).toBeNull()
   })

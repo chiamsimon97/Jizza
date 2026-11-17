@@ -70,7 +70,7 @@ export function LiveView({ runId }: { runId: string }) {
             : !problem && <p className="text-xs text-gray-500 dark:text-gray-400">Getting a picture of the page…</p>}
           {problem && <p className="text-xs text-red-600 dark:text-red-400">{problem}</p>}
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            To take over, press Pause on the browser, do what is needed there, then press Resume.
+            To take over, choose Pause automation in the Jizza extension on that browser and do what is needed there. Then choose Resume automation, and press Try again or Skip on the step's card.
           </p>
         </div>
       )}
