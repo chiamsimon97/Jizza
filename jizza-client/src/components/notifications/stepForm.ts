@@ -58,7 +58,11 @@ export interface StepForm {
 
 /** One value the card can read again from the page: a dropdown's items, or the suggestions a
  *  field shows for the text typed into it (`typed`). */
-export interface StepLiveField { action: string; version: number; typed: boolean; element: Record<string, unknown> }
+export interface StepLiveField {
+  action: string; version: number; typed: boolean; element: Record<string, unknown>
+  /** It loads after another field, so it lists nothing until that one is set on the page. */
+  follows?: boolean
+}
 export interface StepLive { device: string; session?: string; fields: Record<string, StepLiveField> }
 
 export type FormValues = Record<string, string | boolean | string[]>
@@ -128,6 +132,7 @@ function liveOf(raw: unknown): StepLive | undefined {
       version: typeof field.version === 'number' ? field.version : 1,
       typed: field.typed === true,
       element: field.element as Record<string, unknown>,
+      ...(field.follows === true ? { follows: true } : {}),
     }
   }
   if (Object.keys(out).length === 0) return undefined
