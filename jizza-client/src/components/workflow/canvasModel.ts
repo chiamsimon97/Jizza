@@ -124,6 +124,13 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Handle pop-up dialogs', 'browser.handleDialog'),
   web('Drag and drop', 'browser.dragDrop'),
   web('Fill form', 'browser.fillForm'),
+  {
+    ...web('Device layer', 'browser.fillLayer'),
+    config: {
+      preset: 'web', action: 'browser.fillLayer', version: 1, target: 'sameBrowser',
+      inputs: { groups: [{ id: 'g1', title: 'Details' }], fields: [], buttons: [] },
+    },
+  },
   web('Set date', 'browser.setDate'),
   web('Pick a date in a calendar', 'browser.pickDate'),
   web('Type and choose', 'browser.chooseOption'),
@@ -441,6 +448,7 @@ export function toGraph(graph: CanvasGraph) {
 export function exitsOf(node: Pick<CanvasNode, 'type' | 'config'>): ExitKey[] {
   if (node.type === 'END') return []
   if (isCheckStep(node)) return [null, 'false']
+  if (isLayerStep(node)) return layerButtonsOf(node).map(b => b.id)
   if (node.type === 'BRANCH') return ['true', 'false']
   if (node.type === 'PARALLEL') return [...LANES]
   if (node.type === 'APPROVAL') return ['approved', 'rejected']
@@ -456,6 +464,50 @@ export const CHECK_ACTIONS: readonly string[] = ['browser.exists', 'browser.getC
 
 export function isCheckStep(node: Pick<CanvasNode, 'type' | 'config'> | undefined): boolean {
   return !!node && node.type === 'DEVICE_ACTION' && CHECK_ACTIONS.includes(String(node.config.action ?? ''))
+}
+
+/** A device layer: a whole area of a page filled in one step, then one of its buttons clicked. */
+export const LAYER_ACTION = 'browser.fillLayer'
+
+export function isLayerStep(node: Pick<CanvasNode, 'type' | 'config'> | undefined): boolean {
+  return !!node && node.type === 'DEVICE_ACTION' && node.config.action === LAYER_ACTION
+}
+
+export interface LayerButton { id: string; name: string; kind?: 'submit' | 'cancel' | 'other'; element?: unknown }
+
+/** A device layer's buttons, in order: each is a way out of the step, by its id. */
+export function layerButtonsOf(node: Pick<CanvasNode, 'type' | 'config'> | undefined): LayerButton[] {
+  if (!isLayerStep(node)) return []
+  const inputs = node!.config.inputs as Record<string, unknown> | undefined
+  const buttons = Array.isArray(inputs?.buttons) ? inputs!.buttons as Array<Record<string, unknown>> : []
+  const seen = new Set<string>()
+  const out: LayerButton[] = []
+  for (const b of buttons) {
+    const id = typeof b?.id === 'string' ? b.id.trim() : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ ...b, id, name: typeof b.name === 'string' ? b.name : '' } as LayerButton)
+  }
+  return out
+}
+
+/** An id for a new layer button or field: one past the highest, so a removed one's id is never reused. */
+export function nextLayerId(prefix: string, ids: string[]): string {
+  const top = Math.max(0, ...ids.map(id => Number(new RegExp(`^${prefix}(\\d+)$`).exec(id)?.[1] ?? 0)))
+  return `${prefix}${top + 1}`
+}
+
+/**
+ * A layer button is going away: the steps on its path either move to another button's path or
+ * are left on the canvas, disconnected, so nothing is deleted without the person seeing it.
+ */
+export function dropLayerButton(graph: CanvasGraph, stepId: string, buttonId: string, moveTo?: string): CanvasGraph {
+  const edges: CanvasEdge[] = []
+  for (const e of graph.edges) {
+    if (e.from !== stepId || e.branch !== buttonId) { edges.push(e); continue }
+    if (moveTo && !graph.edges.some(o => o.from === stepId && o.branch === moveTo)) edges.push({ ...e, branch: moveTo })
+  }
+  return { ...graph, edges }
 }
 
 /** The exits a step needs wired: every exit except a check step's optional "no". */
@@ -679,6 +731,78 @@ export function fieldIssues(n: CanvasNode, name = `"${n.label}"`): FieldIssue[] 
     if ((action === 'set' || action === 'append') && !text(n.config.valueExpr)) add('valueExpr', `${name} needs a value to ${action === 'set' ? 'store' : 'add'}.`)
   }
   if (n.type === 'NOTIFY' && !text(n.config.message)) add('message', `${name} needs a message.`)
+  if (isLayerStep(n)) layerIssues(n, name).forEach(([f, m]) => add(f, m))
+  return out
+}
+
+/** A device layer field, as the step keeps it. */
+export interface LayerField {
+  id: string
+  label?: string
+  kind: 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox' | 'list'
+  element?: unknown
+  section?: 'static' | 'config'
+  group?: string
+  value?: unknown
+  options?: string[]
+  mode?: 'static' | 'dynamic'
+  dependsOn?: string
+  required?: boolean
+  format?: string
+  [key: string]: unknown
+}
+
+export interface LayerGroup { id: string; title?: string }
+
+/** A device layer's fields, groups and buttons, read from its inputs. */
+export function layerOf(config: Record<string, unknown>): { fields: LayerField[]; groups: LayerGroup[]; buttons: LayerButton[] } {
+  const inputs = (config.inputs && typeof config.inputs === 'object' ? config.inputs : {}) as Record<string, unknown>
+  const list = <T,>(v: unknown) => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') as T[] : [])
+  return {
+    fields: list<LayerField>(inputs.fields),
+    groups: list<LayerGroup>(inputs.groups),
+    buttons: layerButtonsOf({ type: 'DEVICE_ACTION', config }),
+  }
+}
+
+/**
+ * Puts a layer's fields in the order it runs them: fixed values first, then the values for this
+ * run group by group, and a field that follows another after it.
+ */
+export function orderLayerFields(fields: LayerField[], groups: LayerGroup[]): LayerField[] {
+  const rank = new Map(groups.map((g, i) => [g.id, i]))
+  const fixed = fields.filter(f => f.section === 'static')
+  const perRun = fields.filter(f => f.section !== 'static')
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (rank.get(a.f.group ?? '') ?? groups.length) - (rank.get(b.f.group ?? '') ?? groups.length) || a.i - b.i)
+    .map(x => x.f)
+  const out: LayerField[] = []
+  const placed = new Set<string>()
+  const place = (f: LayerField, seen: Set<string>) => {
+    if (placed.has(f.id) || seen.has(f.id)) return
+    seen.add(f.id)
+    const parent = f.dependsOn ? perRun.find(p => p.id === f.dependsOn) : undefined
+    if (parent) place(parent, seen)
+    placed.add(f.id)
+    out.push(f)
+  }
+  for (const f of perRun) place(f, new Set())
+  return [...fixed, ...out]
+}
+
+function layerIssues(n: CanvasNode, name: string): Array<[string, string]> {
+  const out: Array<[string, string]> = []
+  const { fields, buttons } = layerOf(n.config)
+  if (buttons.length === 0) out.push(['inputs.buttons', `${name} needs at least one button to click.`])
+  buttons.forEach((b, i) => { if (!b.name.trim()) out.push(['inputs.buttons', `${name} needs a name for button ${i + 1}.`]) })
+  const names = buttons.map(b => b.name.trim().toLowerCase()).filter(Boolean)
+  if (new Set(names).size !== names.length) out.push(['inputs.buttons', `${name} has two buttons with the same name.`])
+  const hasElement = (e: unknown) => !!e && typeof e === 'object' && Array.isArray((e as { strategies?: unknown }).strategies)
+    && ((e as { strategies: unknown[] }).strategies.length > 0)
+  buttons.forEach(b => { if (!hasElement(b.element)) out.push(['inputs.buttons', `${name}: pick "${b.name || 'the button'}" on the page.`]) })
+  fields.forEach((f, i) => {
+    if (!hasElement(f.element)) out.push([`inputs.fields.${f.id}`, `${name}: pick "${f.label || `field ${i + 1}`}" on the page.`])
+  })
   return out
 }
 
@@ -702,7 +826,7 @@ export function issues(graph: CanvasGraph, label: (n: CanvasNode) => string = n 
     }
     if (n.type === 'PARALLEL' && graph.edges.filter(e => e.from === n.id).length < 2) add(`${name} needs at least two paths.`)
     if (n.type === 'APPROVAL' && !graph.edges.some(e => e.from === n.id && e.branch === 'approved')) add(`${name} needs a step for "approved".`)
-    if (n.type === 'SWITCH') {
+    if (n.type === 'SWITCH' || isLayerStep(n)) {
       const exits = new Set(exitsOf(n))
       if (graph.edges.some(e => e.from === n.id && !exits.has(e.branch))) add(`${name} has a connection from a path that no longer exists.`)
     }

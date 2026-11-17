@@ -14,6 +14,7 @@ import {
   type CanvasGraph, type CanvasNode, type FieldIssue, type SwitchCase,
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
+import { LayerFields } from './LayerFields'
 import { dataSourcesFor, type DeclaredField } from './dataMapping'
 import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type ModuleField } from './moduleContract'
 import type { ValueType } from './formula/functions'
@@ -296,7 +297,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
           ? <WebStepFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping}
               branch={node.config.action === 'browser.clickOneOf' && !readOnly && onBranchByButton
                 ? { existing: buttonPathsAfter(graph, node.id)?.label, disabled: missing.length > 0, onClick: () => onBranchByButton(graph) }
-                : undefined} />
+                : undefined}
+              layer={{ graph, onGraph: g => onChange(g) }} />
           : <DeviceActionFields node={node} catalog={deviceCatalog} setConfig={setConfig} isMissing={isMissing} mapping={mapping} />)}
 
         {node.type === 'TRANSFORM' && (
@@ -577,7 +579,7 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
   </>
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</p>
@@ -1365,9 +1367,11 @@ const asInputs = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 /** Browser-specific device action settings. Includes Pick on page. */
-export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, branch }: {
+export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, branch, layer }: {
   node: CanvasNode; catalog?: DeviceActionSpec[]; setConfig: SetConfig
   isMissing: (f: string) => boolean; mapping: MappingContext
+  /** A device layer changes its own exits: the graph it is in, and how to change it. */
+  layer?: { graph: CanvasGraph; onGraph: (graph: CanvasGraph) => void }
   /** A group of buttons: branching the flow on which one was clicked. */
   branch?: { existing?: string; disabled: boolean; onClick: () => void }
 }) {
@@ -1420,7 +1424,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     }
   }
   const ordinary = Object.entries(schema.properties ?? {}).filter(([key]) =>
-    !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
+    action !== 'browser.fillLayer' && !ADVANCED_WEB_INPUTS.has(key) && webInputShown(action, key, inputs)
     && !(action === 'browser.fillForm' && key === 'fields')
     && !(key === 'within' || key === 'loadMore' || key === 'itemCss' || key === 'titleCss')
     // A run-time list choice has one field for its item: the list's own dropdown (below).
@@ -1507,6 +1511,11 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     {action === 'browser.fillForm' && (
       <FillFormFields value={inputs.fields} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
         missing={isMissing('inputs.fields')} onChange={value => setInput('fields', value)} />
+    )}
+
+    {action === 'browser.fillLayer' && layer && (
+      <LayerFields node={node} graph={layer.graph} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
+        isMissing={isMissing} onGraph={layer.onGraph} />
     )}
 
     {action === 'browser.clickOneOf' && (
@@ -1813,7 +1822,7 @@ const MAP_CHOICE = '__map'
  * them), with "Map from earlier steps or type…" to map it instead. A mapped value, or a list with
  * no names to offer, is a mapped text field.
  */
-function ListValueField({ label, choices, value, mapping, required, missing, hint, onChange }: {
+export function ListValueField({ label, choices, value, mapping, required, missing, hint, onChange }: {
   label: string; choices: string[]; value: unknown; mapping: MappingContext
   required?: boolean; missing?: boolean; hint?: string
   onChange: (value: string) => void
@@ -1848,7 +1857,7 @@ function ListValueField({ label, choices, value, mapping, required, missing, hin
  * Reads a list from the page as the chosen browser shows it now (List items, run as a test): its
  * names become the choices of the list's own dropdown (a theatre, then its showtimes).
  */
-function LoadFromPage({ what, deviceId, list, blocked, onLoaded, action = 'browser.listItems' }: {
+export function LoadFromPage({ what, deviceId, list, blocked, onLoaded, action = 'browser.listItems' }: {
   what: 'cards' | 'items'; deviceId?: string; list?: Record<string, unknown>; blocked?: string
   onLoaded: (labels: string[]) => void
   /** The action that reads the list: List items, or List dropdown items for a dropdown. */
@@ -2515,7 +2524,7 @@ function JsonField({ label, value, hint, onChange }: { label: string; value: unk
   )
 }
 
-function Labelled({ label, hint, required, missing, group, children }: {
+export function Labelled({ label, hint, required, missing, group, children }: {
   label: string; hint?: string
   /** Wraps a mapped field: not a <label>, whose clicks would go to the field's insert button. */
   group?: boolean

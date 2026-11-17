@@ -446,8 +446,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
         });
         String needKey = key;
         if (needKey != null) {
+          String needLabel = layerNeeds.path("label").asText("").strip();
           form = form.stream().map(f -> needKey.equals(f.key())
-              ? (options.isEmpty() ? f : f.withOptions("select", options, true)).withSource(null)
+              ? new WebStepForm.Field(f.key(), needLabel.isEmpty() ? f.label() : needLabel,
+                  options.isEmpty() ? f.type() : "select", options.isEmpty() ? f.value() : null,
+                  true, null, options.isEmpty() ? f.options() : options, null, f.format(),
+                  f.group())
               : f).toList();
         }
         String label = layerNeeds.path("label").asText("A value");

@@ -22,7 +22,11 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
       <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
         {form.title}: {readOnly ? 'what it sent' : 'check or change what it will send'}
       </p>
-      {form.fields.map(field => {
+      {form.fixed && form.fixed.length > 0 && <FixedValues fixed={form.fixed} />}
+      {form.fields.map((field, index) => {
+        const heading = field.group && field.group !== form.fields[index - 1]?.group
+          ? <p key={`group-${index}`} className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{field.group}</p>
+          : null
         if (field.type === 'note') {
           return (
             <p key={field.key} className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">
@@ -42,7 +46,8 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
             ? { ...field, type: options ? 'select' : 'text', options }
             : field
         return (
-          <FieldRow key={field.key} field={shown} value={values[field.key]} data={form.data} shots={form.shots}
+          <div key={field.key} className="space-y-3">{heading}
+          <FieldRow field={shown} value={values[field.key]} data={form.data} shots={form.shots}
             missing={(field.required || form.missing.includes(field.key)) && field.type !== 'checkbox' && fieldEmpty(field, values[field.key])}
             choicesAt={shown.type === 'select' && shown.options && !leader && form.choicesAt ? form.choicesAt : undefined}
             waitsOn={leader?.label}
@@ -52,6 +57,7 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
               // A showtime of the theatre before is not one of the theatre chosen now.
               for (const follower of form.fields) if (follower.dependsOn === field.key) onChange(follower.key, '')
             }} />
+          </div>
         )
       })}
     </div>
@@ -164,6 +170,23 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** A device layer's fixed values, folded into one line that opens to list them. */
+function FixedValues({ fixed }: { fixed: { label: string; value: string }[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="text-xs text-gray-600 dark:text-gray-300">
+      <button type="button" aria-expanded={open} onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 text-gray-700 hover:underline dark:text-gray-200">
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
+        Fixed values ({fixed.length})
+      </button>
+      {open && <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 pl-5">
+        {fixed.map((f, i) => <div key={i} className="contents"><dt className="text-gray-500">{f.label}</dt><dd>{f.value || '(left as it is)'}</dd></div>)}
+      </dl>}
     </div>
   )
 }

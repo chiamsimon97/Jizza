@@ -115,11 +115,6 @@ final class WebStepForm {
 
     boolean missing() { return required && empty(value); }
 
-    /** Where the value comes from, as the card shows it under the field. */
-    Field withSource(String newSource) {
-      if (newSource == null) return this;
-      return new Field(key, label, type, value, required, newSource, options, error, format, group);
-    }
 
     ObjectNode toJson() {
       ObjectNode out = Json.obj().put("key", key).put("label", label).put("type", type)
@@ -385,11 +380,12 @@ final class WebStepForm {
       boolean required = field.path("required").asBoolean(false)
           && !(follows && empty(field.get("value")));
       String parent = labels.get(field.path("dependsOn").asText(""));
-      out.add(new Field("fields." + at + ".value", label, type, field.get("value"), required,
+      String shown = follows && parent != null && empty(field.get("value"))
+          ? label + " (loads after " + parent + " is chosen)" : label;
+      out.add(new Field("fields." + at + ".value", shown, type, field.get("value"), required,
           null, "select".equals(type) ? options : null, null, null,
           group == null || group.isEmpty() ? null : group)
-          .withFormat(field.path("format").asText(null))
-          .withSource(follows && parent != null ? "Loads after " + parent + " is chosen" : null));
+          .withFormat(field.path("format").asText(null)));
     }
     List<String> buttons = new ArrayList<>();
     String chosen = null;
