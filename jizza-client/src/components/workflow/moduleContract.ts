@@ -102,6 +102,7 @@ export const FIELD_TYPES: Array<{ value: ValueType; label: string }> = [
   { value: 'datetime', label: 'Date and time' },
   { value: 'list', label: 'List' },
   { value: 'map', label: 'Fields (map)' },
+  { value: 'file', label: 'File' },
   { value: 'any', label: 'Anything' },
 ]
 

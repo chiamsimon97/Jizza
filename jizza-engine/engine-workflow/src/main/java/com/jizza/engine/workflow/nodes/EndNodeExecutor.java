@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
  * <p>Its output is what the run produced, which a workflow running this one as a step receives:
  * the declared {@code outputs} when there are any (a module's results, each a mapped value), else
  * {@code outputExpr} when set, otherwise the result of the step that led here (or of each, by id,
- * when several paths end here together).
+ * when several paths end here together). With outputs, {@code resultMessage} is a template over
+ * {@code result.<output>} that becomes the run's one-line answer ("Booked. PNR 4512345678").
  */
 @Component
 public class EndNodeExecutor implements NodeExecutor {
@@ -44,6 +45,19 @@ public class EndNodeExecutor implements NodeExecutor {
         }
       } catch (SandboxViolationException e) {
         return Outcome.permanentFailure(e.getMessage());
+      }
+      // "Booked. PNR {{ result.pnr }}, {{ result.berth }}": the run's one-line answer, for chat.
+      String template = config.path("resultMessage").asText("").strip();
+      if (!template.isEmpty()) {
+        java.util.Map<String, Object> variables = new java.util.HashMap<>(execution.context().variables());
+        variables.put("result", Json.mapper().convertValue(result, Object.class));
+        try {
+          JsonNode message = Templates.renderValue(template, sandbox, variables);
+          result.put("resultMessage", message.isTextual() ? message.asText() : message.toString());
+        } catch (SandboxViolationException e) {
+          // A message that cannot be written never fails a run that did its work.
+          result.put("resultMessage", template);
+        }
       }
       return Outcome.completed(result);
     }

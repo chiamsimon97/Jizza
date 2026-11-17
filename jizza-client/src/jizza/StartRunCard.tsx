@@ -3,6 +3,7 @@ import { AlertCircle, Globe, Play, ShieldAlert, Workflow } from 'lucide-react'
 import { chatApi } from '@/api/chat'
 import { Button } from '@/components/ui/Button'
 import { DateValueInput } from '@/components/ui/DateValueInput'
+import { FileValueInput } from '@/components/ui/FileValueInput'
 import { RowsInput, rowsEmpty, rowsOf } from '@/components/ui/RowsInput'
 import type { StartRunCard as Card, StartRunField } from '@/types'
 import { useAssistantStore } from './assistantStore'
@@ -204,6 +205,8 @@ function FieldRow({ field: f, value, onChange, missing }: {
       <input id={id} type="checkbox" checked={value === true || value === 'true'} onChange={e => onChange(e.target.checked)}
         className="h-4 w-4 rounded border-gray-300" />
     )
+  } else if (f.type === 'file') {
+    control = <FileValueInput id={id} label={f.label} value={text} onChange={onChange} invalid={invalid} />
   } else if (f.type === 'date' || f.type === 'datetime') {
     control = <DateValueInput id={id} type={f.type} format={f.format} value={text} onChange={onChange} className={box} aria-label={f.label} />
   } else {

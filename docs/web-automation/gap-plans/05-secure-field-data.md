@@ -3,6 +3,33 @@
 > Web automation field values are accessed and passed between the web server and the agent; we
 > need strong security for that transfer.
 
+## Status (2026-11-17, round 3)
+
+Built in round 1: P0 2 (run, step and card values sealed at rest), P0 5 (`require-https`).
+Built in round 2: P1 7 (device messages signed with the device's P-256 key), P1 8 (`expectOrigin`
+on typing steps; payment boxes never filled), P0 3 for card answers (never stored).
+
+Built in round 3: **P1 10, secret answers sealed end to end (option B)**. When a step asks the
+person for a secret answer (a CAPTCHA's text, a one-time code, a secret Ask step), the browser
+makes a one-off ECDH P-256 key for that command. Its private half is not extractable and stays in
+the extension's memory for as long as the step waits. The public half goes with the question.
+The card seals the answer to it in the person's own browser: ECDH with a one-off key of its own,
+HKDF-SHA-256 bound to the command id, AES-256-GCM with the command id as additional data. The
+server checks only the shape (`SealedAnswers`), relays `sealed` inside the signed `resume`, and
+holds no key that opens it. A sealed answer that doesn't open with that command's key is dropped
+by the browser.
+
+Limits, stated plainly:
+- The key reaches the card through the server, so this protects the answer from the database,
+  logs, backups, proxies and anyone reading them. It does not protect against a server that is
+  itself changed to swap keys.
+- Web Crypto works only on HTTPS or localhost. A card opened over plain HTTP (the LAN phone setup)
+  sends the answer unsealed, as before (still typed into the page only, kept nowhere), and says
+  so on the card.
+
+Not built yet: P0 1, 4 and 6 (value classification, blanking personal defaults, one Redactor),
+P1 9 (sealing command values to the device), and P2.
+
 ## Where field data travels today
 
 ```

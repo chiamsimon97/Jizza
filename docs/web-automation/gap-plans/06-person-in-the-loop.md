@@ -3,6 +3,30 @@
 > During booking only we know some data; it must be asked through custom notification UI with
 > input data, screenshots etc., based on configuration.
 
+## Status (2026-11-17, round 3)
+
+Built in round 2: G1 (CAPTCHA and code cards answered from Jizza), G2 (picture + answer box),
+G3 ("Ask me", `browser.ask@1`), G4 ("Hand over to me", `browser.handOff@1`; payment boxes are
+never filled), G5 (cards end when the page's time runs out, with a countdown).
+
+Built in round 3:
+- G7 seat maps as **"Tap on a picture"** (`browser.tapPoints@1`). In the recording review, a
+  click gets "Let me tap on a picture of this each run". At run time, the server takes a picture
+  of that element (`browser.screenshot` with the element), and the step's card shows it. The
+  person taps up to 20 places, which are kept as fractions of the picture's width and height.
+  The browser clicks the same places on the element as it is now, finding it again before each
+  tap with a 250 ms pause between taps. This step is never batched in fast replay.
+- G8 **live view**: "Watch the browser" on a run followed in chat. It shows a fresh picture of
+  the run's tab every 4 seconds (`POST /api/runs/{id}/live-view`, a JPEG screenshot that wakes
+  nothing in the run). Take over uses what exists: **Pause automation** in the extension makes
+  the browser refuse the next step, the person acts in the tab, then **Resume automation** and
+  **Try again** or **Skip** on the step's card. There is no separate engine pause.
+
+Not built yet: G6 keep-alive while waiting, G9 merging several asks on one page into one card,
+G10 choosing where to ask, G11 "ask me above an amount" (`ui.confirmIf`), the recorder
+suggesting "Ask me" when it sees a CAPTCHA, and capturing what the person did during a take-over
+as a suggested fix (plan 13).
+
 ## What exists today
 
 - Step cards (`PERMISSION_REQUEST` notifications) with a details form (`config.details.blocks`,

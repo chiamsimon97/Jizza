@@ -14,8 +14,9 @@ export interface DeviceHelp {
   deviceName?: string
   /** A picture the device cropped from the page (a CAPTCHA), as a device file id. */
   shot?: string
-  /** The card asks for an answer; `secret`: it is never shown again or kept. */
-  answer?: { secret: boolean; required: boolean }
+  /** The card asks for an answer; `secret`: it is never shown again or kept. `key`: the
+   *  browser's one-off key to seal a secret answer to, so Jizza's server can't read it. */
+  answer?: { secret: boolean; required: boolean; key?: string }
   /** Read-only values read from the page (a total). */
   values?: Record<string, string>
 }
@@ -39,7 +40,11 @@ export function deviceHelpOf(n: NotificationDto): DeviceHelp | null {
     kind,
     ...(typeof h.deviceName === 'string' ? { deviceName: h.deviceName } : {}),
     ...(typeof h.shot === 'string' && /^[0-9a-f-]{36}$/i.test(h.shot) ? { shot: h.shot } : {}),
-    ...(answer ? { answer: { secret: answer.secret !== false, required: answer.required !== false } } : {}),
+    ...(answer ? { answer: {
+      secret: answer.secret !== false,
+      required: answer.required !== false,
+      ...(answer.secret !== false && typeof answer.key === 'string' && /^[A-Za-z0-9_-]{87}$/.test(answer.key) ? { key: answer.key } : {}),
+    } } : {}),
     ...(Object.keys(values).length ? { values } : {}),
   }
 }

@@ -390,7 +390,7 @@ export type UiAction =
 export interface StartRunField {
   name: string
   label: string
-  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'list' | 'map' | 'any'
+  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'list' | 'map' | 'file' | 'any'
   required: boolean
   /** 'atStep': asked on the step's own card while the run is going. */
   ask?: string

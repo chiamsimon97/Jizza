@@ -89,7 +89,7 @@ public class RecordingService implements Recordings, RecordingIntake {
   private static final Duration EVENT_GRACE = Duration.ofSeconds(3);
   private static final Duration RECORD_TIMEOUT = Duration.ofMinutes(31);
   private static final Set<String> TYPES =
-      Set.of("text", "number", "boolean", "date", "datetime", "list", "map", "any");
+      Set.of("text", "number", "boolean", "date", "datetime", "list", "map", "file", "any");
   private static final Set<String> VALUE_FIELDS = Set.of("text", "value", "password", "secret");
   private static final Set<String> CHECKS = Set.of("browser.exists", "browser.getText");
   private static final Pattern NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
@@ -422,6 +422,7 @@ public class RecordingService implements Recordings, RecordingIntake {
       RecordingGraph.Opened before = RecordingGraph.open(source.graph());
       RecordingGraph.keepOutputs(graph, before.outputs());
       RecordingGraph.keepInputDetails(graph, before.inputs());
+      RecordingGraph.keepResultMessage(graph, source.graph());
     } catch (ValidationException e) {
       // Changed in the builder since it was opened: what the edit made is what is saved.
     }
@@ -773,6 +774,69 @@ public class RecordingService implements Recordings, RecordingIntake {
           if (value.asBoolean()) meta.put("irreversible", true);
           else meta.remove("irreversible");
         }
+        case "poll" -> {
+          if (!StepCompiler.WAIT_FOR.equals(action)) {
+            throw new ValidationException("Only 'Wait for what happens' can keep looking");
+          }
+          ObjectNode meta = target.node.path("meta").isObject() ? (ObjectNode) target.node.get("meta")
+              : target.node.putObject("meta");
+          if (value.isNull()) meta.remove("poll");
+          else meta.set("poll", StepCompiler.pollRule(value));
+        }
+        case "transform" -> {
+          // What the site asks of an uploaded picture: the browser fits it before handing it over.
+          if (!"browser.uploadFile".equals(action)) {
+            throw new ValidationException("Only an Upload step can fit a picture");
+          }
+          if (value.isNull() || value.isObject() && value.isEmpty()) input.remove("transform");
+          else input.set("transform", pictureFit(value));
+        }
+        case "tapPicture" -> {
+          // A seat map or a picture to pick from: each run shows it and the person taps.
+          if (!value.isBoolean() || !value.asBoolean()) {
+            throw new ValidationException("tapPicture can only be turned on");
+          }
+          if (!"browser.click".equals(action)) {
+            throw new ValidationException("Only a click can become taps on a picture");
+          }
+          target.node.put("action", "browser.tapPoints");
+          target.node.put("version", 1);
+          for (String clickOnly : List.of("button", "modifiers", "clickCount", "offset")) {
+            input.remove(clickOnly);
+          }
+          String label = target.node.path("label").asText("");
+          if (label.startsWith("Click ")) {
+            target.node.put("label", "Let me tap on " + label.substring("Click ".length()));
+          }
+        }
+        case "download" -> {
+          // A click that started a download while recording: the run clicks the same way and
+          // keeps the file it gets for the next steps (and the run's result).
+          if (!value.isBoolean() || !value.asBoolean()) {
+            throw new ValidationException("download can only be turned on");
+          }
+          if (!"browser.click".equals(action)) {
+            throw new ValidationException("Only a click can become a download");
+          }
+          target.node.put("action", "browser.download");
+          target.node.put("version", 1);
+          for (String clickOnly : List.of("button", "modifiers", "clickCount", "trusted")) {
+            input.remove(clickOnly);
+          }
+          String label = target.node.path("label").asText("");
+          if (label.startsWith("Click ")) {
+            target.node.put("label", "Download from " + label.substring("Click ".length()));
+          }
+        }
+        case "readAs" -> {
+          if (!StepCompiler.READS_TEXT.contains(action)) {
+            throw new ValidationException("Only a step that reads text can read it as a value");
+          }
+          ObjectNode meta = target.node.path("meta").isObject() ? (ObjectNode) target.node.get("meta")
+              : target.node.putObject("meta");
+          if (value.isNull() || "text".equals(value.path("as").asText(""))) meta.remove("readAs");
+          else meta.set("readAs", StepCompiler.readAsRule(value));
+        }
         case "outcomes" -> {
           if (!StepCompiler.WAIT_FOR.equals(action)) {
             throw new ValidationException("Only 'Wait for what happens' has outcomes");
@@ -838,6 +902,34 @@ public class RecordingService implements Recordings, RecordingIntake {
       }
     }
     target.changed = true;
+  }
+
+  /** A picture fit as the browser takes it: sizes in range, a format it can write. */
+  static ObjectNode pictureFit(JsonNode value) {
+    if (!value.isObject()) throw new ValidationException("Say how to fit the picture");
+    ObjectNode fit = Json.obj();
+    for (var limit : List.of(Map.entry("maxKb", 10_240), Map.entry("width", 10_000),
+        Map.entry("height", 10_000))) {
+      JsonNode n = value.get(limit.getKey());
+      if (n == null || n.isNull()) continue;
+      if (!n.canConvertToInt() || !n.isIntegralNumber() || n.asInt() < 1 || n.asInt() > limit.getValue()) {
+        throw new ValidationException(limit.getKey() + " is a whole number from 1 to " + limit.getValue());
+      }
+      fit.put(limit.getKey(), n.asInt());
+    }
+    String format = value.path("format").asText("");
+    if (!format.isEmpty()) {
+      if (!Set.of("jpeg", "png", "webp").contains(format)) {
+        throw new ValidationException("A picture can be made JPEG, PNG or WebP");
+      }
+      fit.put("format", format);
+    }
+    var known = Set.of("maxKb", "width", "height", "format");
+    value.fieldNames().forEachRemaining(name -> {
+      if (!known.contains(name)) throw new ValidationException("'" + name + "' is not part of fitting a picture");
+    });
+    if (fit.isEmpty()) throw new ValidationException("Say how to fit the picture");
+    return fit;
   }
 
   private void move(List<Held> held, Held target, Integer toIndex) {

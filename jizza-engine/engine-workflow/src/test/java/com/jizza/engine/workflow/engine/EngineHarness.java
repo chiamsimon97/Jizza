@@ -104,6 +104,8 @@ public final class EngineHarness {
   public boolean jizzaActs;
   public final List<com.jizza.engine.api.device.DeviceCommandRequest> deviceRequests =
       new ArrayList<>();
+  /** The device was never reached: commands are not dispatched. */
+  public boolean neverDelivered;
   public com.jizza.engine.api.device.DeviceCommandStatus nextDeviceStatus =
       com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED;
   public JsonNode nextDeviceOutput = Json.obj();
@@ -322,6 +324,7 @@ public final class EngineHarness {
             mock(com.jizza.engine.persistence.repository.AgentRepository.class),
             mock(ObjectProvider.class)),
         new CountingAgentStep());
+    deviceActions.setClock(clock);
 
     engine = new SagaWorkflowEngine(workflows, mock(WorkflowVersionRepository.class), runs, steps,
         validator, killSwitch, mock(AuditLog.class), busProvider, executors, clock,
@@ -396,8 +399,8 @@ public final class EngineHarness {
       var command = new com.jizza.engine.api.device.DeviceCommandDto(id, deviceId, "Browser",
           request.userId(), request.runId(), request.nodeId(), request.action(), request.version(),
           request.input(), status, output, nextDeviceErrorCode, nextDeviceError, null,
-          nextDeviceFiles, Instant.now().plusSeconds(30), Instant.now(), Instant.now(),
-          Instant.now(), Instant.now());
+          nextDeviceFiles, Instant.now().plusSeconds(30), Instant.now(),
+          neverDelivered ? null : Instant.now(), Instant.now(), Instant.now());
       commands.put(id, command);
       idempotent.put(request.idempotencyKey(), command);
       return command;

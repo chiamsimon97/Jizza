@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { NotificationDto } from '@/types'
 import { NotificationItem, type InboxActions } from './NotificationItem'
@@ -103,7 +103,7 @@ describe('a browser asking mid-step', () => {
     )
   }
 
-  it('shows the picture and a box, and sends what is typed', () => {
+  it('shows the picture and a box, and sends what is typed', async () => {
     const inbox = actions()
     show(CAPTCHA, inbox)
     expect(screen.getByText('Solve the CAPTCHA')).toBeTruthy()
@@ -116,7 +116,7 @@ describe('a browser asking mid-step', () => {
     expect(send.disabled).toBe(true)
     fireEvent.change(screen.getByTestId('device-help-answer'), { target: { value: ' X7K2P ' } })
     fireEvent.click(send)
-    expect(inbox.approve).toHaveBeenCalledWith(CAPTCHA, { answer: 'X7K2P' })
+    await waitFor(() => expect(inbox.approve).toHaveBeenCalledWith(CAPTCHA, { answer: 'X7K2P' }))
   })
 
   it('can say it was done in the browser, or stop', () => {
