@@ -346,6 +346,91 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  describe('a picture of each item, field by field', () => {
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+
+    /** A class chosen inside a train: two lists, so two fields that can each have pictures. */
+    function openInACard(screenshots?: unknown) {
+      queryClient.clear()
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const body = String(input).includes('/api/devices/catalog') ? [
+          { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+            conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: { element: locator, item: { type: 'string' } } }, output: { type: 'object' } },
+        ] : []
+        return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }))
+      const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+      const inputs = {
+        element: { strategies: [{ by: 'css', value: 'td' }], label: 'Coach' }, item: '{{ input.coach }}',
+        within: { element: { strategies: [{ by: 'css', value: '.card' }], label: 'Train' }, item: '{{ input.train }}' },
+      }
+      const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs, ...(screenshots === undefined ? {} : { screenshots }) } } : n) }
+      const { onSave } = open(graph, made.id)
+      const saved = async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await waitFor(() => expect(onSave).toHaveBeenCalled())
+        return (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!.config.screenshots
+      }
+      return { saved }
+    }
+
+    const cards = () => screen.findByRole('checkbox', { name: 'Send a picture of each card with the question' })
+    const items = () => screen.findByRole('checkbox', { name: 'Send a picture of each item with the question' })
+
+    it('puts a switch under each field, and none shared at the foot', async () => {
+      openInACard()
+      expect(await cards()).not.toBeChecked()
+      expect(await items()).not.toBeChecked()
+      expect(screen.getAllByRole('checkbox', { name: /Send a picture of each/ })).toHaveLength(2)
+      vi.unstubAllGlobals()
+    })
+
+    it('asks for the trains only', async () => {
+      const { saved } = openInACard()
+      fireEvent.click(await cards())
+      expect(await items()).not.toBeChecked()
+      expect(await saved()).toEqual({ 'within.item': true })
+      vi.unstubAllGlobals()
+    })
+
+    it('asks for the classes only', async () => {
+      const { saved } = openInACard()
+      fireEvent.click(await items())
+      expect(await cards()).not.toBeChecked()
+      expect(await saved()).toEqual({ item: true })
+      vi.unstubAllGlobals()
+    })
+
+    it('asks for both as one true', async () => {
+      const { saved } = openInACard()
+      fireEvent.click(await cards())
+      fireEvent.click(await items())
+      expect(await saved()).toBe(true)
+      vi.unstubAllGlobals()
+    })
+
+    it('shows a step saved with the one switch as asking for both', async () => {
+      const { saved } = openInACard(true)
+      expect(await cards()).toBeChecked()
+      expect(await items()).toBeChecked()
+      // Turning one off leaves the other as it was.
+      fireEvent.click(await cards())
+      expect(await cards()).not.toBeChecked()
+      expect(await items()).toBeChecked()
+      expect(await saved()).toEqual({ item: true })
+      vi.unstubAllGlobals()
+    })
+
+    it('tells what each switch does only while it is on', async () => {
+      openInACard({ 'within.item': true })
+      expect(await screen.findByText(/Reading the cards also takes a picture of each one/)).toBeInTheDocument()
+      expect(screen.queryByText(/Reading the list also takes a picture of each card/)).not.toBeInTheDocument()
+      fireEvent.click(await items())
+      expect(await screen.findByText(/Reading the list also takes a picture of each card/)).toBeInTheDocument()
+      vi.unstubAllGlobals()
+    })
+  })
+
   it('sets up a device layer and asks where a removed button\'s steps go', async () => {
     queryClient.clear()
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

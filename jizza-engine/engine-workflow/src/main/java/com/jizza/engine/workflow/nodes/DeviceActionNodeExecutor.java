@@ -276,8 +276,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       }
     }
     boolean pick = pickKey != null && (listed || state.has("choices"));
-    // A picture of each listed item, taken with the list, so the card can show the one chosen.
-    boolean itemShots = config.path("screenshots").asBoolean(false);
+    // A picture of each listed item, taken with the list, so the card can show the one chosen:
+    // of the cards of the outer list (within.item) and of the items (item), each as set.
+    boolean itemShots = wantsShots(config, "item");
+    boolean parentShots = wantsShots(config, "within.item");
     String prefer = inputs.path("prefer").asText(null);
     List<ItemMatch.Item> choices = null;
     if (pick) {
@@ -295,7 +297,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           parentInput.remove("titleCss");
           if (within.hasNonNull("itemCss")) parentInput.set("itemCss", within.get("itemCss"));
           if (within.hasNonNull("titleCss")) parentInput.set("titleCss", within.get("titleCss"));
-          if (itemShots) parentInput.put("captureItems", true);
+          if (parentShots) parentInput.put("captureItems", true);
           return listChoices(execution, broker, state, target, workspaceId,
               WebStepForm.listAction(spec.action()), parentInput, "parents");
         }
@@ -694,6 +696,18 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   /** The inputs the listing of a choosing step's list takes. */
+  /**
+   * Whether the step asks for a picture of each item of one list. {@code screenshots} is
+   * {@code true} for every list of the step (the one switch a step had before each list had its
+   * own), or an object naming the fields that ask: {@code within.item} for the cards of the outer
+   * list, {@code item} for the items chosen.
+   */
+  static boolean wantsShots(JsonNode config, String field) {
+    JsonNode shots = config.path("screenshots");
+    if (shots.isBoolean()) return shots.asBoolean(false);
+    return shots.isObject() && shots.path(field).asBoolean(false);
+  }
+
   private static ObjectNode listInput(JsonNode inputs, boolean withinAndMore) {
     ObjectNode out = Json.obj();
     for (String key : List.of("session", "element", "timeoutMs", "highlight", "app", "max",
