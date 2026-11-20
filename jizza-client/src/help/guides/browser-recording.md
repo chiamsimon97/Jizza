@@ -158,6 +158,7 @@ For long forms such as a train booking (stations, date, class, passengers, payme
 4. Change the kind, name or value if the guess is wrong. Tick **Different each run** to make the value an input of the module (a different passenger or date each time), then press **Add step**.
 5. For a button that opens the next page (Search trains, Continue), press **Add field** and click the button first, then click it yourself so the site moves on. The click you make while picking doesn't reach the site.
 6. For a choice in a list of cards (a train in the results), use **Mark a list**: in Manual, clicks in a marked list are still recorded.
+7. For a button that sits in every card of such a list (each train's **Book Now**), press **Add field** and click the button in the card you chose. From browser agent 0.26.0 the side panel shows **Inside a card of** with the list it sits in (for example "Train (now: the train's name)"). Keep it and press **Add step**: each run clicks the button inside the card that run chooses in that list, found by the button's own text, so no input is needed for the button itself. Choose **Nothing** to click the same button on the whole page instead. Clicking the button yourself afterwards is part of the same step.
 
 You can switch between **Auto** and **Manual** at any time while recording, and **Add field** works in Auto too. Password and card fields are never read: choose a saved login for them when you review the recording.
 
@@ -183,7 +184,7 @@ From browser agent 0.9.0, a recording starts with **Scan and map** in the extens
 3. Or press **Add from page** and click one field, or one item of a list, to add just that.
 4. Each field and list gets a card. Give it a **Title**: type it, or press **Pick title on page** and click the text that names it (usually above or to the left of it). **Static** keeps the title as it is. **Dynamic** reads it from the page again each time a page loads; when the page doesn't show it, the last title read is kept and the card warns you.
 5. A list becomes one field: a dropdown whose choices are its items' names. A list with no title on the page (such as the theatres) asks you to name it. If each item is listed by all its text, press **Pick the name inside one item** and click the name, such as a theatre's name in its card. If the list found is not quite right, change its **Item pattern (CSS)** and press **Apply**: the card shows how many items the pattern finds.
-6. Lists that follow other lists: set **Depends on**. A list found inside the cards of another list (the showtimes in each theatre) is set to follow it already. For a list the page loads again when another changes (the theatres after the date), choose that list; **Suggest the order from the page** sets each list to follow the one above it. Use **Preview** to choose a date: it is clicked on the page (not recorded) and every list below it is read again.
+6. Lists that follow other lists: set **Depends on**. A list found inside the cards of another list (the showtimes in each theatre) is set to follow it already. Choosing a list whose cards hold this one's items (a Book Now button in each train's card) ties it to those cards: **How** shows "It sits inside each…", and each choice is made inside the card chosen in that list. For a list the page loads again when another changes (the theatres after the date), choose that list; **Suggest the order from the page** sets each list to follow the one above it. Use **Preview** to choose a date: it is clicked on the page (not recorded) and every list below it is read again.
 7. Untick **Different each run** for a field that should keep its value. The others become module inputs with the names shown.
 8. Press **Done mapping, start recording**, then do the task. A step on a mapped field or list is named by your title, and its value becomes the input you named. **Skip mapping** records as before. While recording, **Scan this page** pauses recording to map the next page.
 
@@ -341,6 +342,8 @@ In the side panel:
 | **Run these only if shown…** | Tick the steps that only sometimes apply, press it, then click the element that tells (such as the pop-up's title). They run only when it is on the page |
 | **Add wait** | Waits a number of seconds at the marker |
 | **⋯** on a step | Run from here, Shown/Missing for a condition, Rename, Turn off, Make optional, Pick element again, change the test value, move or delete |
+
+The lists the saved steps choose in (trains, their classes, dates) come back as mapped lists, folded under the step they came from (browser agent 0.26.0 or later). They keep their names and inputs, so **Depends on** and **Add field › Inside a card of** can offer them again, and a click in one of them while adding steps is a choice in that list.
 
 **Only if shown…** with no steps ticked puts the next step to run in the condition, so the steps after it run either way. That is how to skip one pop-up step: move the marker to that step, press **Only if shown…**, and click the pop-up's title (click the title text itself, not the whole pop-up). In a condition's **⋯** menu:
 

@@ -1746,10 +1746,14 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   const cardChoices = loadedCards ?? groups.map(g => g.label)
   // The items of the card chosen; with the card mapped (chosen each run), the items of every card.
   const currentCard = typeof within.item === 'string' ? within.item : ''
+  // Inside a card with no card's items known (the card box just ticked, nothing loaded yet): the
+  // names the list showed when recorded still offer the item, such as a card's Book Now, so the
+  // field stays a list instead of turning into a mapping box.
+  const cardItems = fixedCard ? groups.find(g => g.label === within.item)?.items ?? [] : [...new Set(groups.flatMap(g => g.items))]
   const itemChoices = loadedItems && (!inCard || loadedItems.card === currentCard)
     ? loadedItems.items
-    : inCard
-      ? fixedCard ? groups.find(g => g.label === within.item)?.items ?? [] : [...new Set(groups.flatMap(g => g.items))]
+    : inCard && cardItems.length > 0
+      ? cardItems
       : list.options ?? []
   const chooseCard = (value: string) => {
     // A new card has other items: an item chosen from the old card's names goes.
