@@ -25,6 +25,7 @@ import { ScriptEditor } from './formula/ScriptEditor'
 import { formulaApi, type FormulaPreview } from '@/api/formula'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { queryClient } from '@/lib/queryClient'
+import { pictureFields, wantsPictures, withPictures, type PictureField, type Pictures } from './pictureFields'
 import { infoOf, resultFields } from '@/components/functions/functionModel'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { registerStepTarget, useContextStore, useJizzaContext } from '@/jizza/contextStore'
@@ -1510,7 +1511,9 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     {(choosesAtRunTime || action === 'browser.listItems') && (
       <ListChoiceOptions inputs={inputs} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
         list={listNames} setInput={setInput} setInputs={setInputs} withItem={choosesAtRunTime}
-        itemRequired={required.has('item')} itemMissing={isMissing('inputs.item')} />
+        itemRequired={required.has('item')} itemMissing={isMissing('inputs.item')}
+        pictures={choosesAtRunTime ? node.config.screenshots : undefined}
+        onPictures={choosesAtRunTime ? screenshots => setConfig({ screenshots }) : undefined} />
     )}
 
     {action === 'browser.fillForm' && (
@@ -1546,16 +1549,6 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     )}
 
     <Section title="Ask on the approval card">
-      {choosesAtRunTime && (
-        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-          <input type="checkbox" checked={node.config.screenshots === true}
-            onChange={e => setConfig({ screenshots: e.target.checked || undefined })} />
-          Send a picture of each item with the question
-        </label>
-      )}
-      {choosesAtRunTime && node.config.screenshots === true && (
-        <p className="text-[11px] text-gray-500">Reading the list also takes a picture of each card (the first 20), and the question shows the picture of whichever one you pick.</p>
-      )}
       <StepDetailsEditor nodeId={node.id} value={node.config.details} mapping={mapping}
         onChange={details => setConfig({ details })} />
     </Section>
@@ -1715,7 +1708,7 @@ interface RecordedListNames {
  * a dropdown of the names it showed when recorded (or loaded from the page now), which can also be
  * mapped from earlier steps. The items follow the card chosen.
  */
-function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput, setInputs, withItem, itemRequired, itemMissing }: {
+function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput, setInputs, withItem, itemRequired, itemMissing, pictures, onPictures }: {
   inputs: Record<string, unknown>; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext
   list?: RecordedListNames
   setInput: (key: string, value: unknown) => void
@@ -1723,6 +1716,9 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   /** The step chooses an item (Choose from a list), not only reads the list. */
   withItem: boolean
   itemRequired?: boolean; itemMissing?: boolean
+  /** `config.screenshots` and how to change it: a picture of each item with the question, set per field. */
+  pictures?: unknown
+  onPictures?: (value: Pictures | undefined) => void
 }) {
   const within = asInputs(inputs.within)
   const loadMore = asInputs(inputs.loadMore)
@@ -1763,6 +1759,17 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
     setInputs({ within: { ...within, item: value }, ...(stale ? { item: undefined } : {}) })
   }
   const follows = list.dependsOn?.title
+  const fields = pictureFields(inCard)
+  const picturesSwitch = (field: PictureField, what: string, hint: string) => onPictures && (
+    <div className="space-y-1">
+      <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+        <input type="checkbox" checked={wantsPictures(pictures, field)}
+          onChange={e => onPictures(withPictures(pictures, field, e.target.checked, fields))} />
+        Send a picture of each {what} with the question
+      </label>
+      {wantsPictures(pictures, field) && <p className="text-[11px] text-gray-500">{hint}</p>}
+    </div>
+  )
   return <div className="space-y-2">
     {follows && list.dependsOn?.relation !== 'inside' && <p className="rounded-lg border border-gray-200 p-2 text-[11px] text-gray-500 dark:border-gray-700" data-testid="list-follows">
       Follows {follows}{list.dependsOn?.inputName ? ` (input ${list.dependsOn.inputName})` : ''}: the page loads these choices again when {follows} changes. After changing {follows}, load them from the page.
@@ -1771,6 +1778,7 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
       <ListValueField label={cardName ?? 'Which card'} choices={cardChoices} value={within.item} mapping={mapping} required
         hint={cardChoices.length > 0 ? `Chosen first, such as a theatre. Its ${(itemName ?? 'item').toLowerCase()}s follow it.` : 'Its name, such as a theatre. Map it from earlier steps.'}
         onChange={chooseCard} />
+      {picturesSwitch('within.item', 'card', 'Reading the cards also takes a picture of each one (the first 20), and the question shows the picture of whichever card you pick.')}
       <LoadFromPage what="cards" deviceId={deviceId} list={cardList} onLoaded={setLoadedCards} />
     </div>}
     {withItem && <ListValueField label={itemName ?? 'Item to choose'} choices={itemChoices} value={inputs.item} mapping={mapping}
@@ -1779,6 +1787,7 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
         ? `The ${(itemName ?? 'item').toLowerCase()}s of every ${(cardName ?? 'card').toLowerCase()}: choose one above to see only its own.`
         : 'Map it from earlier steps, or choose one of the names the list showed.'}
       onChange={v => setInput('item', v)} />}
+    {withItem && picturesSwitch('item', 'item', 'Reading the list also takes a picture of each card (the first 20), and the question shows the picture of whichever one you pick.')}
     {inputs.element !== undefined && <LoadFromPage what="items" deviceId={deviceId} list={itemList}
       blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
       onLoaded={labels => setLoadedItems({ card: currentCard, items: labels })} />}

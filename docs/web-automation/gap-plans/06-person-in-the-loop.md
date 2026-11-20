@@ -30,8 +30,10 @@ as a suggested fix (plan 13).
 ## What exists today
 
 - Step cards (`PERMISSION_REQUEST` notifications) with a details form (`config.details.blocks`,
-  Submit/Cancel, answers as a `details` output), per-item screenshots (`config.screenshots`),
-  editable resolved values, list choices, mandatory inputs, rows tables (PRs #95/#96, #114, #115).
+  Submit/Cancel, answers as a `details` output), per-item screenshots (`config.screenshots`:
+  `true` for every list of the step, or `{ "item": true, "within.item": true }` to choose per
+  field: the items chosen, and the cards of the outer list), editable resolved values, list
+  choices, mandatory inputs, rows tables (PRs #95/#96, #114, #115).
 - Local "needs the person" pause: the extension detects captcha / OTP / verification / login
   (`src/content/dom/needs-user.ts`), shows a Chrome notification and side panel *Done,
   continue*. The person must be **at that browser**.

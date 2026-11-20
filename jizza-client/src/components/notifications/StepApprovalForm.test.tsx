@@ -176,3 +176,50 @@ describe('notes and pictures on the card', () => {
     expect(shot().getAttribute('src')).toBe('/api/devices/dev-1/files/file-2')
   })
 })
+
+const TRAIN_AND_COACH = {
+  id: 'n3', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-14T10:00:00Z',
+  context: {
+    node: 'step',
+    form: {
+      action: 'browser.clickItem', title: 'Choose from a list',
+      fields: [
+        { key: 'within.item', label: 'Trains', type: 'select', value: 'CDG MDU SF EXP', required: true, missing: false, options: ['CDG MDU SF EXP', 'TEJAS EXPRESS'] },
+        { key: 'item', label: 'Coaches', type: 'select', value: 'Sleeper (SL)', required: true, missing: false, options: ['Sleeper (SL)', 'AC 3 Tier (3A)'] },
+      ],
+      missing: [],
+      shots: { device: 'dev-1', byOption: { 'CDG MDU SF EXP': 'train-1', 'TEJAS EXPRESS': 'train-2', 'Sleeper (SL)': 'coach-1', 'AC 3 Tier (3A)': 'coach-2' } },
+    },
+  },
+} as unknown as NotificationDto
+
+function TrainAndCoachCard() {
+  const form = stepFormOf(TRAIN_AND_COACH)!
+  const [values, setValues] = useState<FormValues>(() => initialValues(form))
+  return <StepApprovalForm form={form} values={values} onChange={(k, v) => setValues(old => ({ ...old, [k]: v }))} />
+}
+
+describe('pictures under each field of a list choice', () => {
+  it('shows the picture of the train and of the coach, each following its own choice', () => {
+    render(<TrainAndCoachCard />)
+    const sources = () => screen.getAllByTestId('option-shot').map(img => img.getAttribute('src'))
+    expect(sources()).toEqual(['/api/devices/dev-1/files/train-1', '/api/devices/dev-1/files/coach-1'])
+    fireEvent.change(screen.getByLabelText('Trains'), { target: { value: 'TEJAS EXPRESS' } })
+    expect(sources()).toEqual(['/api/devices/dev-1/files/train-2', '/api/devices/dev-1/files/coach-1'])
+    fireEvent.change(screen.getByLabelText('Coaches'), { target: { value: 'AC 3 Tier (3A)' } })
+    expect(sources()).toEqual(['/api/devices/dev-1/files/train-2', '/api/devices/dev-1/files/coach-2'])
+  })
+
+  it('shows a picture only for the field that has one', () => {
+    // Only the coaches were pictured: the train has no picture to show.
+    const only = { ...TRAIN_AND_COACH, context: { ...TRAIN_AND_COACH.context, form: { ...(TRAIN_AND_COACH.context as { form: object }).form, shots: { device: 'dev-1', byOption: { 'Sleeper (SL)': 'coach-1', 'AC 3 Tier (3A)': 'coach-2' } } } } } as unknown as NotificationDto
+    function Card() {
+      const form = stepFormOf(only)!
+      const [values, setValues] = useState<FormValues>(() => initialValues(form))
+      return <StepApprovalForm form={form} values={values} onChange={(k, v) => setValues(old => ({ ...old, [k]: v }))} />
+    }
+    render(<Card />)
+    expect(screen.getAllByTestId('option-shot').map(img => img.getAttribute('src'))).toEqual(['/api/devices/dev-1/files/coach-1'])
+  })
+})
+

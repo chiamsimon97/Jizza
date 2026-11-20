@@ -105,6 +105,82 @@ class StepDetailsAndShotsTest {
     assertThat(field(harness, "details.berth").path("missing").asBoolean()).isTrue();
   }
 
+  /**
+   * A class chosen inside a train: the train (the card) is the outer list, the class the item.
+   * The train asked for is not on the page, so both lists are read before the person is asked.
+   */
+  private static EngineHarness chosenInsideACard(String screenshots) {
+    EngineHarness harness = new EngineHarness(oneStep("""
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser"
+         %s,
+         "inputs":{"element":{"strategies":[{"by":"css","value":"td"}],"label":"Coaches"},
+                   "item":"AC Chair car (CC)",
+                   "within":{"element":{"strategies":[{"by":"css","value":".card"}],
+                                        "label":"Trains"},
+                             "item":"Vande Bharat"}}}
+        """.formatted(screenshots)));
+    String element = "\"element\":{\"$ref\":\"device-actions.json#/schemas/locatorBundle\"}";
+    harness.deviceInputSchemas.put("browser.clickItem", Json.read("{\"type\":\"object\","
+        + "\"properties\":{" + element + ",\"item\":{\"type\":\"string\"},"
+        + "\"within\":{\"type\":\"object\"}},\"required\":[\"element\",\"item\"]}"));
+    harness.toolRule = AutonomyRule.ALLOW;
+    var items = Json.mapper().createArrayNode();
+    items.addObject().put("label", "CDG MDU SF EXP").put("text", "CDG MDU SF EXP")
+        .put("index", 0).put("shot", "11111111-1111-1111-1111-111111111111");
+    items.addObject().put("label", "TEJAS EXPRESS").put("text", "TEJAS EXPRESS")
+        .put("index", 1).put("shot", "22222222-2222-2222-2222-222222222222");
+    harness.deviceOutputs.put("browser.listItems", Json.obj().put("count", 2).set("items", items));
+    return harness;
+  }
+
+  /** Whether each of the two listings (the trains, then the classes) was asked for pictures. */
+  private static List<Boolean> picturesAsked(EngineHarness harness) {
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    assertThat(harness.deviceRequests).hasSizeGreaterThanOrEqualTo(2);
+    assertThat(harness.deviceRequests.get(0).input().has("within")).isFalse();
+    assertThat(harness.deviceRequests.get(1).input().has("within")).isTrue();
+    return List.of(
+        harness.deviceRequests.get(0).input().path("captureItems").asBoolean(),
+        harness.deviceRequests.get(1).input().path("captureItems").asBoolean());
+  }
+
+  @Test
+  void eachFieldChoosesWhetherItsListIsPictured() {
+    // Only the classes: the trains are read plain, the classes with their pictures.
+    assertThat(picturesAsked(chosenInsideACard(",\"screenshots\":{\"item\":true}")))
+        .containsExactly(false, true);
+    // Only the trains.
+    assertThat(picturesAsked(chosenInsideACard(",\"screenshots\":{\"within.item\":true}")))
+        .containsExactly(true, false);
+    // Both, set field by field.
+    assertThat(picturesAsked(chosenInsideACard(
+        ",\"screenshots\":{\"within.item\":true,\"item\":true}")))
+        .containsExactly(true, true);
+    // A field set to false is the same as one left out.
+    assertThat(picturesAsked(chosenInsideACard(
+        ",\"screenshots\":{\"within.item\":false,\"item\":true}")))
+        .containsExactly(false, true);
+  }
+
+  @Test
+  void theOneSwitchEveryStepHadStillPicturesEveryList() {
+    assertThat(picturesAsked(chosenInsideACard(",\"screenshots\":true")))
+        .containsExactly(true, true);
+    assertThat(picturesAsked(chosenInsideACard(""))).containsExactly(false, false);
+    assertThat(picturesAsked(chosenInsideACard(",\"screenshots\":false")))
+        .containsExactly(false, false);
+  }
+
+  @Test
+  void theCardShowsThePictureOfWhicheverTrainIsPicked() {
+    EngineHarness harness = chosenInsideACard(",\"screenshots\":{\"within.item\":true}");
+    picturesAsked(harness);
+    JsonNode form = harness.raised.get(harness.raised.size() - 1).context().path("form");
+    assertThat(form.path("shots").path("byOption").path("TEJAS EXPRESS").asText())
+        .isEqualTo("22222222-2222-2222-2222-222222222222");
+  }
+
   @Test
   void itemPicturesAreReadWithTheListAndRideOnTheCard() {
     EngineHarness harness = new EngineHarness(oneStep("""
