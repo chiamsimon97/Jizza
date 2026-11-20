@@ -175,7 +175,7 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
             <RefreshCw className="h-3 w-3" />on the page at {new Date(choicesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
-        {live && (
+        {live && !(live.typed && field.type !== 'select' && field.type !== 'list' && !isDate(field)) && (
           <button type="button" disabled={live.reading} onClick={live.onRefresh}
             title={live.typed ? 'Type in this field on the page and list what it suggests' : 'List what this dropdown offers on the page now'}
             className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-400">
@@ -209,12 +209,22 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
         <DateInput id={id} field={field} value={typeof value === 'string' ? value : ''}
           className={`${fieldClass} ${border}`} readOnly={readOnly} onChange={onChange} />
       ) : (
-        <input id={id} aria-label={field.label} disabled={readOnly} className={`${fieldClass} ${border}`}
-          list={live?.typed && live.options?.length ? `${id}-suggestions` : undefined}
-          inputMode={field.type === 'number' ? 'decimal' : undefined}
-          placeholder={field.type === 'date' ? 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30' : undefined}
-          value={typeof value === 'string' ? value : value == null ? '' : String(value)}
-          onChange={e => onChange(e.target.value)} />
+        <div className="relative">
+          <input id={id} aria-label={field.label} disabled={readOnly} className={`${fieldClass} ${border} ${live?.typed ? 'pr-9' : ''}`}
+            list={live?.typed && live.options?.length ? `${id}-suggestions` : undefined}
+            inputMode={field.type === 'number' ? 'decimal' : undefined}
+            placeholder={field.type === 'date' ? 'e.g. 2026-11-09, 9 Nov 2026 or 2026-11-09 18:30' : undefined}
+            value={typeof value === 'string' ? value : value == null ? '' : String(value)}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={e => { if (live?.typed && e.key === 'Enter') { e.preventDefault(); if (!live.reading) live.onRefresh() } }} />
+          {live?.typed && (
+            <button type="button" disabled={live.reading} onClick={live.onRefresh} aria-label="Refresh"
+              title="Type in this field on the page and list what it suggests (or press Enter)"
+              className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-gray-500 hover:text-brand-600 disabled:opacity-50 dark:text-gray-400 dark:hover:text-brand-400">
+              <RefreshCw className={`h-4 w-4 ${live.reading ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
       )}
 
       {live?.typed && live.options && live.options.length > 0 && (
