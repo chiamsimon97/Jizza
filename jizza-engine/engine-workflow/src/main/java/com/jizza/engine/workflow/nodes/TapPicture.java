@@ -89,7 +89,7 @@ final class TapPicture {
     try {
       shot = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
           "browser.screenshot", 1, shotInput, null, execution.runId(), execution.node().id(),
-          execution.runId() + ":" + execution.node().id() + ":" + execution.attempt()
+          DeviceActionNodeExecutor.commandKey(execution)
               + ":picture" + state.path("pictures").asInt(0),
           false));
     } catch (ValidationException | NotFoundException e) {

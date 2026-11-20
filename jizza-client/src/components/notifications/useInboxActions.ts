@@ -20,6 +20,7 @@ export function useInboxActions(): InboxActions {
     },
     decline: (n, reason) => after(notificationsApi.answer(n.id, 'DENY', undefined, reason || undefined)),
     reply: (n, text) => after(notificationsApi.answer(n.id, 'SUBMIT_INSTRUCTION', text)),
+    goBack: (n, node) => after(notificationsApi.answer(n.id, 'GO_BACK', node)),
     markRead: n => after(notificationsApi.markRead(n.id)),
     markUnread: n => after(notificationsApi.markUnread(n.id)),
     archive: n => after(notificationsApi.archive(n.id)),

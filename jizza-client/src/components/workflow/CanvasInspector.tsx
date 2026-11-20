@@ -15,6 +15,7 @@ import {
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 import { LayerFields } from './LayerFields'
+import { GOES_BACK, GoBackFields } from './GoBackFields'
 import { dataSourcesFor, type DeclaredField } from './dataMapping'
 import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type ModuleField } from './moduleContract'
 import type { ValueType } from './formula/functions'
@@ -391,6 +392,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
             </select>
           </Labelled>
         </>}
+
+        {GOES_BACK.has(node.type) && <GoBackFields node={node} graph={graph} setConfig={setConfig} />}
 
       </fieldset>
 
