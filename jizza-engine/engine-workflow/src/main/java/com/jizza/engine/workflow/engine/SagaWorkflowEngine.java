@@ -1250,7 +1250,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     NotificationBus bus = notifications.getIfAvailable();
     if (bus != null) {
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
-          prompt == null ? "This run needs your input to continue." : prompt,
+          prompt == null ? "This run needs your input to continue." : named(run, nodeId, prompt),
           detailFor(run, nodeId, ifNoAnswer, extra), run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
@@ -1260,11 +1260,24 @@ public class SagaWorkflowEngine implements WorkflowEngine,
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
   }
 
+  /** "This step needs…" says which step of which workflow, so the card reads on its own. */
+  private String named(WorkflowRunEntity run, String nodeId, String prompt) {
+    if (!prompt.startsWith("This step ")) return prompt;
+    String workflow = workflows.findById(run.getWorkflowId()).map(WorkflowEntity::getName).orElse(null);
+    String step = labelOf(run, nodeId);
+    String who = "Step \"" + step + "\"" + (workflow == null ? "" : " of workflow \"" + workflow + "\"");
+    return who + " " + prompt.substring("This step ".length());
+  }
+
   private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, FailedStepChoice ifNoAnswer,
                                JsonNode extra) {
     ObjectNode detail = Json.obj();
     if (extra != null && extra.isObject()) detail.setAll((ObjectNode) extra.deepCopy());
     detail.put("node", nodeId).put("workflowId", run.getWorkflowId().toString());
+    // So the card can say which workflow and which step in words, not by id.
+    workflows.findById(run.getWorkflowId()).ifPresent(w -> detail.put("workflowName", w.getName()));
+    String label = labelOf(run, nodeId);
+    if (label != null && !label.equals(nodeId)) detail.put("nodeLabel", label);
     if (ifNoAnswer != null) {
       detail.put("failedStep", true);
       ArrayNode choices = detail.putArray("choices");
