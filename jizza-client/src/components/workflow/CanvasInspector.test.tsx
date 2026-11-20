@@ -25,6 +25,11 @@ function open(graph: CanvasGraph, id: string, onSave = vi.fn(), onClose = vi.fn(
   return { onSave, onClose }
 }
 
+/** Opens every folded "More options" so the details behind them can be checked. */
+async function unfold() {
+  for (const b of await screen.findAllByRole('button', { name: /^More options/, expanded: false })) fireEvent.click(b)
+}
+
 describe('CanvasInspector', () => {
   it('offers a device\'s own tools with their fields, and its saved Shortcuts as a list', async () => {
     const spec = (over: Partial<DeviceActionSpec>): DeviceActionSpec => ({
@@ -135,6 +140,7 @@ describe('CanvasInspector', () => {
     expect(save).toBeEnabled()
 
     // Signing in with a bearer token makes the token mandatory too.
+    fireEvent.click(screen.getByRole('button', { name: /^Authentication/ }))
     fireEvent.change(screen.getByRole('combobox', { name: 'Authentication' }), { target: { value: 'bearer' } })
     expect(save).toBeDisabled()
     fireEvent.change(screen.getByLabelText(/^Token/), { target: { value: 'abc' } })
@@ -270,7 +276,7 @@ describe('CanvasInspector', () => {
     expect(screen.getByRole('textbox', { name: 'Element label' })).toHaveValue('Go button')
     type(screen.getByRole('textbox', { name: 'Selector value 1' }), '#continue')
     fireEvent.click(screen.getByRole('button', { name: 'Save selectors' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show options' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced options/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Trusted input' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -326,6 +332,7 @@ describe('CanvasInspector', () => {
     const { onSave } = open(graph, made.id)
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Send a picture of each item with the question' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Ask on the approval card/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Add a note' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Note 1' }), { target: { value: 'Check the running days' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add a question' }))
@@ -455,7 +462,14 @@ describe('CanvasInspector', () => {
     const after = addAfter(withLayer, made.id, 'b2', 'NOTIFY')
     const { onSave } = open(after.graph, made.id)
 
+    // Each field shows its value and Mandatory up front; where it is on the page, its kind and
+    // its group wait behind More options.
+    expect(await screen.findByRole('checkbox', { name: /Project is mandatory/ })).not.toBeChecked()
+    expect(screen.queryByRole('combobox', { name: 'Kind of Project' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit selectors' })).not.toBeInTheDocument()
+
     // A field that follows the one above it.
+    await unfold()
     fireEvent.change(await screen.findByRole('combobox', { name: 'Milestone follows' }), { target: { value: 'f1' } })
     expect(screen.getByTestId('layer-follows')).toHaveTextContent('Loads after Project is chosen')
 
@@ -492,6 +506,7 @@ describe('CanvasInspector', () => {
     const card = { strategies: [{ by: 'text', value: '7:00 PM' }], label: 'Showtime' }
     const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, inputs: { element: card, item: '{{ input.time }}' } } } : n) }
     const { onSave } = open(graph, made.id)
+    await unfold()
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Choose inside a card of another list first' }))
     type(await screen.findByRole('textbox', { name: 'Which card' }), '{{ input.theatre }}')
     fireEvent.click(screen.getByRole('checkbox', { name: 'The list loads more as you scroll' }))
@@ -521,6 +536,7 @@ describe('CanvasInspector', () => {
       list: { title: 'Book Now', kind: 'text', count: 2, inputName: 'bookNow', named: true, options: ['Book Now', 'Other dates'] } } } : n) }
     const { onSave } = open(graph, made.id)
     expect(await screen.findByRole('combobox', { name: 'Book Now' })).toHaveValue('Book Now')
+    await unfold()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Choose inside a card of another list first' }))
     // Still a list of the names it showed, not a mapping box.
     const item = await screen.findByRole('combobox', { name: 'Book Now' })
@@ -561,6 +577,7 @@ describe('CanvasInspector', () => {
     const inputs = { element: show, item: '10:45 PM', itemCss: 'div.times > div', within: { element: venue, item: '', itemCss: 'div.venue' } }
     const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config, target: 'b1', inputs } } : n) }
     const { onSave } = open(graph, made.id)
+    await unfold()
     expect(await screen.findByRole('textbox', { name: 'Item pattern (CSS)' })).toHaveValue('div.times > div')
     fireEvent.click(await screen.findByRole('button', { name: 'Load cards from the page' }))
     // The names loaded become the choices of the list's one field.
@@ -604,6 +621,7 @@ describe('CanvasInspector', () => {
     expect(screen.queryByRole('textbox', { name: 'Which card' })).toBeNull()
     const theatre = await screen.findByRole('combobox', { name: 'Theatre' })
     expect(theatre).toHaveValue('PVR Phoenix')
+    await unfold()
     expect(screen.getByRole('textbox', { name: 'Card name pattern (CSS)' })).toHaveValue('h3')
     expect(screen.getByText('Showtime', { selector: 'label, span, p' })).toBeInTheDocument()
     fireEvent.change(theatre, { target: { value: 'INOX Nexus' } })
@@ -720,7 +738,7 @@ describe('CanvasInspector', () => {
       }
       const { onSave } = open(graph, made.id)
       expect(await screen.findByText('Drop onto')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Show options' }))
+      fireEvent.click(screen.getByRole('button', { name: /^Advanced options/ }))
       fireEvent.click(await screen.findByRole('checkbox', { name: /Highlight the element/ }))
       fireEvent.change(screen.getByRole('spinbutton', { name: 'Tries before giving up' }), { target: { value: '5' } })
       fireEvent.change(screen.getByRole('spinbutton', { name: 'Seconds between tries' }), { target: { value: '2' } })

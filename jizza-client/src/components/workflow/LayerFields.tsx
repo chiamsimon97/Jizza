@@ -8,6 +8,7 @@ import {
   type CanvasGraph, type CanvasNode, type LayerButton, type LayerField, type LayerGroup,
 } from './canvasModel'
 import { MappedField, type MappingContext } from './MappedField'
+import { FoldSection, MoreOptions } from './MoreOptions'
 import { ElementField, Labelled, ListValueField, LoadFromPage, Section } from './CanvasInspector'
 
 const KINDS: { kind: LayerField['kind']; label: string }[] = [
@@ -30,6 +31,15 @@ const BUTTON_KINDS: { kind: NonNullable<LayerButton['kind']>; label: string }[] 
 
 const fieldName = (f: LayerField, i: number) =>
   f.label?.trim() || (f.element as { label?: string } | undefined)?.label?.trim() || `Field ${i + 1}`
+
+/** The name an element was picked with, such as "Submit button". */
+const rootLabel = (e: unknown) => {
+  const label = e && typeof e === 'object' ? (e as { label?: unknown }).label : undefined
+  return typeof label === 'string' && label.trim() ? label.trim() : undefined
+}
+
+/** Same test as the step's check before saving: the element was picked (it has selectors). */
+const hasElement = (e: unknown) => !!e && typeof e === 'object' && Array.isArray((e as { strategies?: unknown }).strategies)
 
 const valueText = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v))
 
@@ -157,68 +167,78 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
     const parent = fields.find(x => x.id === f.dependsOn)
     const choices = loaded[f.id] ?? (Array.isArray(f.options) ? f.options : [])
     const choosing = f.kind === 'select' || f.kind === 'radio' || f.kind === 'list'
+    const kindLabel = KINDS.find(k => k.kind === f.kind)?.label ?? f.kind
+    const groupTitle = groups.find(g => g.id === (f.group ?? groups[0].id))?.title
+    const missing = isMissing(`inputs.fields.${f.id}`)
+    const summary = [kindLabel, !isFixed && groups.length > 1 ? groupTitle : undefined,
+      parent ? `follows ${fieldName(parent, fields.indexOf(parent))}` : undefined].filter(Boolean).join(' · ')
     return (
       <div key={f.id} className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-800" data-testid={`layer-field-${f.id}`}>
         <div className="flex items-center gap-1">
           <input aria-label={`Name of ${name}`} className={`${fieldClass} flex-1 text-xs font-semibold`} value={f.label ?? ''} placeholder={name}
             onChange={e => setField(f.id, { label: e.target.value })} />
+          {!isFixed && <label className="flex shrink-0 items-center gap-1 px-1 text-[11px] text-gray-600 dark:text-gray-300"
+            title="Mandatory: ask me when it comes out empty">
+            <input type="checkbox" aria-label={`${name} is mandatory: ask me when it comes out empty`} checked={f.required === true}
+              onChange={e => setField(f.id, { required: e.target.checked || undefined })} />
+            Mandatory
+          </label>}
           <button type="button" aria-label={`Move ${name} up`} className="p-1 text-gray-400 hover:text-gray-700" onClick={() => move(f.id, -1)}><ArrowUp className="h-3.5 w-3.5" /></button>
           <button type="button" aria-label={`Move ${name} down`} className="p-1 text-gray-400 hover:text-gray-700" onClick={() => move(f.id, 1)}><ArrowDown className="h-3.5 w-3.5" /></button>
           <button type="button" aria-label={`Remove ${name}`} className="p-1 text-gray-400 hover:text-red-600" onClick={() => removeField(f.id)}><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
-        <ElementField label="Field on the page" value={f.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping}
-          required missing={isMissing(`inputs.fields.${f.id}`)} onChange={element => setField(f.id, { element })} />
-        <Labelled label="Kind">
-          <select aria-label={`Kind of ${name}`} className={fieldClass} value={f.kind}
-            onChange={e => setField(f.id, { kind: e.target.value as LayerField['kind'] })}>
-            {KINDS.map(k => <option key={k.kind} value={k.kind}>{k.label}</option>)}
-          </select>
-        </Labelled>
         {parent
           ? <p className="text-[11px] text-gray-500" data-testid="layer-follows">Loads after {fieldName(parent, fields.indexOf(parent))} is chosen. Leave it empty to choose from what the page lists then.</p>
           : null}
         {choosing && !parent
           ? <ListValueField label={isFixed ? 'Value' : 'Value for each run'} choices={choices} value={valueText(f.value)} mapping={mapping}
-              hint={isFixed ? 'Fixed: the same every run.' : 'Choose one, or map it from earlier steps.'}
               onChange={v => setField(f.id, { value: v })} />
-          : <Labelled group label={isFixed ? 'Value' : 'Value for each run'} hint={isFixed ? 'Fixed: the same every run.' : 'Map it from earlier steps, or type it.'}>
+          : <Labelled group label={isFixed ? 'Value' : 'Value for each run'}>
               <MappedField aria-label={`Value of ${name}`} mode="template" context={mapping} value={valueText(f.value)}
                 onChange={v => setField(f.id, { value: v })} />
             </Labelled>}
-        {f.kind === 'select' && f.element !== undefined && (
-          <LoadFromPage what="items" deviceId={deviceId} action="browser.listOptions" list={{ element: f.element }}
-            blocked={parent ? `Choose ${fieldName(parent, fields.indexOf(parent))} on the page first, then load these.` : undefined}
-            onLoaded={labels => { setLoaded(l => ({ ...l, [f.id]: labels })); if (!parent) setField(f.id, { options: labels }) }} />
-        )}
-        {!isFixed && <div className="grid grid-cols-2 gap-2">
-          <Labelled label="Group">
-            <select aria-label={`Group of ${name}`} className={fieldClass} value={f.group ?? groups[0].id}
-              onChange={e => setField(f.id, { group: e.target.value })}>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.title || g.id}</option>)}
+        <MoreOptions summary={summary} hasError={missing}>
+          <ElementField label="Field on the page" value={f.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping}
+            required missing={missing} onChange={element => setField(f.id, { element })} />
+          <Labelled label="Kind">
+            <select aria-label={`Kind of ${name}`} className={fieldClass} value={f.kind}
+              onChange={e => setField(f.id, { kind: e.target.value as LayerField['kind'] })}>
+              {KINDS.map(k => <option key={k.kind} value={k.kind}>{k.label}</option>)}
             </select>
           </Labelled>
-          <Labelled label="Follows" hint="Its choices load after that field is set.">
-            <select aria-label={`${name} follows`} className={fieldClass} value={f.dependsOn ?? ''}
-              onChange={e => setField(f.id, { dependsOn: e.target.value || undefined })}>
-              <option value="">Nothing</option>
-              {above.map(x => <option key={x.id} value={x.id}>{fieldName(x, fields.indexOf(x))}</option>)}
-            </select>
-          </Labelled>
-        </div>}
-        {!isFixed && <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-          <input type="checkbox" checked={f.required === true} onChange={e => setField(f.id, { required: e.target.checked || undefined })} />
-          Mandatory: ask me when it comes out empty
-        </label>}
-        <button type="button" className="text-[11px] text-brand-600 hover:underline dark:text-brand-300"
-          onClick={() => toSection(f, isFixed ? 'config' : 'static')}>
-          {isFixed ? 'Move to the values for each run' : 'Make it a fixed value'}
-        </button>
+          {f.kind === 'select' && f.element !== undefined && (
+            <LoadFromPage what="items" deviceId={deviceId} action="browser.listOptions" list={{ element: f.element }}
+              blocked={parent ? `Choose ${fieldName(parent, fields.indexOf(parent))} on the page first, then load these.` : undefined}
+              onLoaded={labels => { setLoaded(l => ({ ...l, [f.id]: labels })); if (!parent) setField(f.id, { options: labels }) }} />
+          )}
+          {!isFixed && <div className="grid grid-cols-2 gap-2">
+            <Labelled label="Group">
+              <select aria-label={`Group of ${name}`} className={fieldClass} value={f.group ?? groups[0].id}
+                onChange={e => setField(f.id, { group: e.target.value })}>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.title || g.id}</option>)}
+              </select>
+            </Labelled>
+            <Labelled label="Follows" hint="Its choices load after that field is set.">
+              <select aria-label={`${name} follows`} className={fieldClass} value={f.dependsOn ?? ''}
+                onChange={e => setField(f.id, { dependsOn: e.target.value || undefined })}>
+                <option value="">Nothing</option>
+                {above.map(x => <option key={x.id} value={x.id}>{fieldName(x, fields.indexOf(x))}</option>)}
+              </select>
+            </Labelled>
+          </div>}
+          <p className="text-[11px] text-gray-400">{isFixed ? 'Fixed: the same every run.' : choosing && !parent ? 'Choose one, or map it from earlier steps.' : 'Map it from earlier steps, or type it.'}</p>
+          <button type="button" className="self-start text-[11px] text-brand-600 hover:underline dark:text-brand-300"
+            onClick={() => toSection(f, isFixed ? 'config' : 'static')}>
+            {isFixed ? 'Move to the values for each run' : 'Make it a fixed value'}
+          </button>
+        </MoreOptions>
       </div>
     )
   }
 
   return <>
-    <Section title="Area of the page">
+    <FoldSection title="Area of the page" defaultOpen={fields.length === 0} hasError={!!scanError}
+      summary={rootLabel(inputs.root) ?? 'the whole page'}>
       <ElementField label="The box that holds the form (optional)" value={inputs.root} deviceId={deviceId} browsers={browsers} hasEarlierOpen
         mapping={mapping} onChange={root => write({ root })} />
       <div className="flex items-center gap-2">
@@ -230,7 +250,7 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
           : 'Choose a browser above to scan its page.'}</span>
       </div>
       {scanError && <p className="text-xs text-red-600">{scanError}</p>}
-    </Section>
+    </FoldSection>
 
     <Section title="Fixed values">
       <p className="text-[11px] text-gray-500">Filled first, the same on every run.</p>
@@ -279,8 +299,11 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
               <button type="button" aria-label={`Remove button ${b.name || i + 1}`} className="p-1 text-gray-400 hover:text-red-600"
                 onClick={() => (path ? setRemoving(b.id) : dropButton(b.id))}><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
-            <ElementField label="Button on the page" value={b.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping}
-              required onChange={element => setButton(b.id, { element })} />
+            <MoreOptions summary={rootLabel(b.element) ? `on the page: ${rootLabel(b.element)}` : 'not picked on the page yet'}
+              hasError={!hasElement(b.element)}>
+              <ElementField label="Button on the page" value={b.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping}
+                required missing={!hasElement(b.element)} onChange={element => setButton(b.id, { element })} />
+            </MoreOptions>
             {removing === b.id && (
               <div role="alertdialog" aria-label={`Remove ${b.name || 'button'}`} className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-700 dark:bg-amber-950/40">
                 <p className="text-gray-800 dark:text-gray-100">"{b.name || 'This button'}" leads to "{next?.label ?? 'a step'}". Where should those steps go?</p>

@@ -49,6 +49,8 @@ Add **Device layer** from the Web Automation steps, then open it.
 - **Buttons**: one row per button: its name, its kind and where it is on the page. **Add button** adds one, and with it a new path out of the step.
 - **Button to click**: the button the step clicks at the end. Map it from earlier steps to choose at run time, or leave it empty to be asked each run.
 
+Each field shows only its name, its value and **Mandatory**, so the step is quick to read. Where it is on the page (**Edit selectors**, **Pick on page**), its **Kind**, **Group**, **Follows**, **Load items from the page** and **Make it a fixed value** are under **More options** on that field; the short line beside it says what is set there. A field or button not yet picked on the page opens its **More options** by itself and shows **Needs attention** while folded. **Area of the page** folds the same way once the step has fields.
+
 ## Removing a button
 
 Removing a button that already has steps after it never deletes them. Jizza asks what to do with them:

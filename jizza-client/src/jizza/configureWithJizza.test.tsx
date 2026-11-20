@@ -49,6 +49,7 @@ describe('Configure using Jizza', () => {
     })
 
     expect(screen.getByRole('textbox', { name: 'URL' })).toHaveTextContent('https://api.example.com/rates')
+    fireEvent.click(screen.getByRole('button', { name: /^Query parameters/ }))
     expect(screen.getByRole('textbox', { name: 'name 1' })).toHaveValue('currency')
     expect(screen.getByText(/Jizza filled in these settings/)).toBeInTheDocument()
 
