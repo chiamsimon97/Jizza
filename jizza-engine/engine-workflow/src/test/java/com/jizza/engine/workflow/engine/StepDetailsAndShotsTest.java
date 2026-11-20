@@ -110,15 +110,20 @@ class StepDetailsAndShotsTest {
    * The train asked for is not on the page, so both lists are read before the person is asked.
    */
   private static EngineHarness chosenInsideACard(String screenshots) {
+    return chosenInsideACard(screenshots, "Vande Bharat", "AC Chair car (CC)");
+  }
+
+  /** The train and the class the step was given; a train that is listed is found, not asked. */
+  private static EngineHarness chosenInsideACard(String screenshots, String train, String coach) {
     EngineHarness harness = new EngineHarness(oneStep("""
         {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser"
          %s,
          "inputs":{"element":{"strategies":[{"by":"css","value":"td"}],"label":"Coaches"},
-                   "item":"AC Chair car (CC)",
+                   "item":"%s",
                    "within":{"element":{"strategies":[{"by":"css","value":".card"}],
                                         "label":"Trains"},
-                             "item":"Vande Bharat"}}}
-        """.formatted(screenshots)));
+                             "item":"%s"}}}
+        """.formatted(screenshots, coach, train)));
     String element = "\"element\":{\"$ref\":\"device-actions.json#/schemas/locatorBundle\"}";
     harness.deviceInputSchemas.put("browser.clickItem", Json.read("{\"type\":\"object\","
         + "\"properties\":{" + element + ",\"item\":{\"type\":\"string\"},"
@@ -179,6 +184,23 @@ class StepDetailsAndShotsTest {
     JsonNode form = harness.raised.get(harness.raised.size() - 1).context().path("form");
     assertThat(form.path("shots").path("byOption").path("TEJAS EXPRESS").asText())
         .isEqualTo("22222222-2222-2222-2222-222222222222");
+  }
+
+  @Test
+  void aTrainTheStepFindsOnThePageStillShowsItsPictureWhileTheClassIsAsked() {
+    // The train named is listed, so only the class is asked: the card still has the train's
+    // field (set to the train found) and shows its picture beside the class's.
+    EngineHarness harness = chosenInsideACard(",\"screenshots\":true", "CDG MDU SF EXP", "{{ input.coach }}");
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.PAUSED_WAITING_INSTRUCTION);
+    // Both lists were read with pictures.
+    assertThat(harness.deviceRequests.get(0).input().path("captureItems").asBoolean()).isTrue();
+    assertThat(harness.deviceRequests.get(1).input().path("captureItems").asBoolean()).isTrue();
+    JsonNode form = harness.raised.get(harness.raised.size() - 1).context().path("form");
+    assertThat(field(harness, "within.item").path("value").asText()).isEqualTo("CDG MDU SF EXP");
+    assertThat(form.path("shots").path("byOption").path("CDG MDU SF EXP").asText())
+        .isEqualTo("11111111-1111-1111-1111-111111111111");
   }
 
   @Test
