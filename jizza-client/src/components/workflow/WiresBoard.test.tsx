@@ -196,6 +196,31 @@ describe('WiresBoard', () => {
       expect(last().edges.some(e => e.from === 'start')).toBe(false)
     })
 
+    it('still wires when the browser drops the let-go, using the last step the wire was over', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      flat(view)
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', screen.getByRole('button', { name: /Exit of Hold seats/ }), 10, 10)
+      pointer('pointerMove', window, x, y)
+      fireEvent(window, createEvent.pointerCancel(window))
+      expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
+      expect(screen.queryByTestId('wire-drag')).not.toBeInTheDocument()
+    })
+
+    it('finishes a drag whose button was let go without a let-go event', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      flat(view)
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', screen.getByRole('button', { name: /Exit of Hold seats/ }), 10, 10)
+      pointer('pointerMove', window, x, y)
+      const ev = createEvent.pointerMove(window)
+      for (const [k, v] of Object.entries({ clientX: x + 2, clientY: y, buttons: 0 })) Object.defineProperty(ev, k, { value: v })
+      fireEvent(window, ev)
+      expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
+    })
+
     it('refuses a wire that would make a loop, and says why', () => {
       const { view, onChange } = show()
       flat(view)
@@ -358,7 +383,7 @@ describe('WiresBoard', () => {
 /** jsdom has no PointerEvent, so position, button and pointer are set on the event by hand. */
 function pointer(kind: 'pointerDown' | 'pointerMove' | 'pointerUp', el: HTMLElement | Window, x: number, y: number) {
   const ev = createEvent[kind](el)
-  for (const [k, v] of Object.entries({ clientX: x, clientY: y, button: 0, pointerId: 1 })) Object.defineProperty(ev, k, { value: v })
+  for (const [k, v] of Object.entries({ clientX: x, clientY: y, button: 0, buttons: kind === 'pointerUp' ? 0 : 1, pointerId: 1 })) Object.defineProperty(ev, k, { value: v })
   fireEvent(el, ev)
 }
 
