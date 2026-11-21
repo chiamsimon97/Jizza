@@ -94,6 +94,17 @@ public class ConversationController {
     return conversations.threads(CurrentUser.userId(), id);
   }
 
+  /**
+   * What Jizza remembers of the older messages once a long conversation was folded into a summary
+   * to keep each turn small; 204 while every message is still sent as written.
+   */
+  @GetMapping("/{id}/earlier")
+  public org.springframework.http.ResponseEntity<com.jizza.engine.api.dto.EarlierSummaryDto> earlier(@PathVariable UUID id) {
+    com.jizza.engine.api.dto.EarlierSummaryDto earlier = conversations.earlier(CurrentUser.userId(), id);
+    return earlier == null ? org.springframework.http.ResponseEntity.noContent().build()
+        : org.springframework.http.ResponseEntity.ok(earlier);
+  }
+
   /** The long-term memories learned from what was said here: a thread's own memory. */
   @GetMapping("/{id}/learned")
   public List<com.jizza.engine.api.dto.LearnedFactDto> learned(@PathVariable UUID id) {

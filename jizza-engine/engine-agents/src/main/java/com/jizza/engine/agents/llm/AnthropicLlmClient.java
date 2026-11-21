@@ -359,7 +359,12 @@ public class AnthropicLlmClient implements LlmClient {
           int index = event.path("index").asInt();
           ObjectNode block = event.path("content_block").deepCopy();
           blocks.put(index, block);
-          if ("tool_use".equals(block.path("type").asText())) toolJson.put(index, new StringBuilder());
+          String type = block.path("type").asText();
+          // The provider's own tool calls (a tool search) stream their input too; they are kept
+          // whole so the next request carries them back as they were.
+          if ("tool_use".equals(type) || "server_tool_use".equals(type)) {
+            toolJson.put(index, new StringBuilder());
+          }
         }
         case "content_block_delta" -> {
           int index = event.path("index").asInt();
@@ -421,11 +426,15 @@ public class AnthropicLlmClient implements LlmClient {
       List<ToolCall> calls = new ArrayList<>();
       List<JsonNode> content = new ArrayList<>();
       blocks.forEach((index, block) -> {
-        if ("tool_use".equals(block.path("type").asText())) {
+        String type = block.path("type").asText();
+        if ("tool_use".equals(type)) {
           String json = toolJson.get(index).toString();
           JsonNode input = json.isBlank() ? Json.obj() : Json.read(json);
           block.set("input", input);
           calls.add(new ToolCall(block.path("id").asText(), block.path("name").asText(), input));
+        } else if ("server_tool_use".equals(type)) {
+          String json = toolJson.get(index).toString();
+          if (!json.isBlank()) block.set("input", Json.read(json));
         }
         content.add(block);
       });
@@ -434,21 +443,48 @@ public class AnthropicLlmClient implements LlmClient {
     }
   }
 
+  /** The provider's tool search, which finds deferred tools by their names and descriptions. */
+  static final String TOOL_SEARCH_TYPE = "tool_search_tool_bm25_20251119";
+  static final String TOOL_SEARCH_NAME = "tool_search_tool_bm25";
+
   ObjectNode buildRequest(String model, List<Msg> messages, List<ToolSpec> tools) {
     AgentProperties.Caching caching = props.getAnthropic().getCaching();
     ObjectNode body = Json.obj();
     body.put("model", model);
     body.put("max_tokens", props.getAnthropic().getMaxOutputTokens());
+    String effort = effortFor(model);
+    if (effort != null) body.putObject("output_config").put("effort", effort);
 
+    // The first system message is the agent's own instructions, the same on every call. Anything
+    // after it changes from turn to turn; where the model accepts it, it goes after the person's
+    // message so the conversation before it stays cached.
+    int turn = lastUserIndex(messages);
+    boolean inline = turn >= 0 && props.getAnthropic().getInlineContext().isEnabled()
+        && AgentProperties.matches(model, props.getAnthropic().getInlineContext().getModels());
     List<String> system = new ArrayList<>();
+    List<String> context = new ArrayList<>();
+    for (Msg msg : messages) {
+      if (msg.role() != Msg.Role.SYSTEM) continue;
+      if (system.isEmpty() || !inline) system.add(msg.text());
+      else context.add(msg.text());
+    }
+
     ArrayNode apiMessages = body.putArray("messages");
     boolean inToolLoop = false;
+    ObjectNode beforeTurn = null;
     Map<Msg, List<ChatFiles.Content>> attached = attachedFiles(messages);
 
-    for (Msg msg : messages) {
+    for (int i = 0; i < messages.size(); i++) {
+      Msg msg = messages.get(i);
       switch (msg.role()) {
-        case SYSTEM -> system.add(msg.text());
-        case USER -> apiMessages.add(userMessage(msg.text(), attached.getOrDefault(msg, List.of())));
+        case SYSTEM -> { /* gathered above */ }
+        case USER -> {
+          if (i == turn && apiMessages.size() > 0) {
+            beforeTurn = (ObjectNode) apiMessages.get(apiMessages.size() - 1);
+          }
+          apiMessages.add(userMessage(msg.text(), attached.getOrDefault(msg, List.of())));
+          if (i == turn && !context.isEmpty()) apiMessages.add(systemNote(context));
+        }
         case ASSISTANT -> apiMessages.add(assistantMessage(msg));
         case TOOL -> {
           apiMessages.add(toolResultMessage(msg));
@@ -458,17 +494,22 @@ public class AnthropicLlmClient implements LlmClient {
     }
 
     ArrayNode apiTools = null;
+    ObjectNode lastShownTool = null;
     if (tools != null && !tools.isEmpty()) {
       apiTools = body.putArray("tools");
       // A stable order, so the same tools always make the same cacheable prefix.
       List<ToolSpec> ordered = new ArrayList<>(tools);
       ordered.sort(Comparator.comparing(ToolSpec::name));
+      boolean defer = shouldDefer(ordered);
       for (ToolSpec spec : ordered) {
         ObjectNode tool = apiTools.addObject();
         tool.put("name", spec.name());
         tool.put("description", spec.description() == null ? "" : spec.description());
         tool.set("input_schema", inputSchema(spec));
+        if (defer && spec.deferrable()) tool.put("defer_loading", true);
+        else lastShownTool = tool;
       }
+      if (defer) apiTools.addObject().put("type", TOOL_SEARCH_TYPE).put("name", TOOL_SEARCH_NAME);
     }
 
     if (!caching.isEnabled()) {
@@ -489,13 +530,78 @@ public class AnthropicLlmClient implements LlmClient {
         ObjectNode block = blocks.addObject().put("type", "text").put("text", system.get(i));
         if (i == 0) block.set("cache_control", ephemeral());
       }
-    } else if (apiTools != null) {
-      ((ObjectNode) apiTools.get(apiTools.size() - 1)).set("cache_control", ephemeral());
+    } else if (lastShownTool != null) {
+      // A deferred tool cannot carry a cache point, so it goes on the last one shown.
+      lastShownTool.set("cache_control", ephemeral());
     }
+    // With the changing context after the person's message, the conversation before it is the
+    // same on the next turn plus one exchange, so it is cached for that turn to read.
+    if (inline && beforeTurn != null) markForCache(beforeTurn);
     // Inside a tool loop the next round resends everything so far, so the conversation is cached
     // too; a one-off question is not, since nothing would ever read it back.
     if (inToolLoop) body.set("cache_control", ephemeral());
     return body;
+  }
+
+  /** The effort level set for the tier this model serves, when the model accepts one. */
+  String effortFor(String model) {
+    if (!AgentProperties.matches(model, props.getAnthropic().getEffortModels())) return null;
+    for (Map.Entry<ModelTier, String> tier : props.getModels().entrySet()) {
+      if (!model.equals(tier.getValue())) continue;
+      String effort = props.getAnthropic().getEffort().get(tier.getKey());
+      if (effort != null && !effort.isBlank()) return effort.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+    return null;
+  }
+
+  /** Where the person's message for this request is: the last user turn. */
+  private static int lastUserIndex(List<Msg> messages) {
+    for (int i = messages.size() - 1; i >= 0; i--) {
+      if (messages.get(i).role() == Msg.Role.USER) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Deferrable tools are deferred once there are enough of them to be worth a search, and only
+   * while at least one tool stays shown (the provider refuses a request with every tool deferred).
+   */
+  private boolean shouldDefer(List<ToolSpec> tools) {
+    AgentProperties.ToolSearch search = props.getAnthropic().getToolSearch();
+    if (!search.isEnabled()) return false;
+    long chars = 0;
+    boolean anyShown = false;
+    for (ToolSpec spec : tools) {
+      if (!spec.deferrable()) {
+        anyShown = true;
+        continue;
+      }
+      chars += spec.name().length() + (spec.description() == null ? 0 : spec.description().length())
+          + (spec.inputSchema() == null ? 0 : spec.inputSchema().toString().length());
+    }
+    return anyShown && chars > 0 && chars >= search.getMinChars();
+  }
+
+  /** The changing context, as a system note inside the conversation. */
+  private static ObjectNode systemNote(List<String> context) {
+    ObjectNode message = Json.obj();
+    message.put("role", "system");
+    ArrayNode content = message.putArray("content");
+    for (String text : context) {
+      content.addObject().put("type", "text").put("text", text == null ? "" : text);
+    }
+    return message;
+  }
+
+  /** A cache point on a message's last block, unless that block cannot carry one. */
+  private static void markForCache(ObjectNode message) {
+    JsonNode content = message.path("content");
+    if (!content.isArray() || content.isEmpty()) return;
+    JsonNode last = content.get(content.size() - 1);
+    if (!(last instanceof ObjectNode block)) return;
+    String type = block.path("type").asText();
+    if (REASONING_BLOCKS.contains(type) || type.isEmpty()) return;
+    block.set("cache_control", ephemeral());
   }
 
   /** Tools whose schema was reshaped already, so each is logged once rather than every call. */

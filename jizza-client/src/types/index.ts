@@ -604,7 +604,25 @@ export interface MessageDto {
     contributors?: Contribution[]; actions?: UiAction[]; jobId?: string; notificationId?: string; parentJobId?: string; approved?: boolean
     /** A reply in a thread, written by its lead. */
     lead?: { agentId: string; key: string; name: string }
+    /** The answers "Try again" replaced, oldest first; {@code deep} when the deeper model wrote it. */
+    versions?: ReplyVersion[]
+    /** The deeper model wrote this answer. */
+    deep?: boolean
   }
+}
+
+/** An earlier answer to the same message, kept when the user asked Jizza to try again. */
+export interface ReplyVersion {
+  text: string
+  /** Written by the deeper model ("Try again with a deeper model"). */
+  deep?: boolean
+}
+
+/** What Jizza remembers of a long chat's older messages, folded into a summary to keep turns small. */
+export interface EarlierSummary {
+  summary: string
+  /** The summary covers the messages sent before this moment. */
+  through: string
 }
 
 // ── Jobs (the Activity panel) ─────────────────────────────────────────────────

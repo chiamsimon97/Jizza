@@ -32,6 +32,21 @@ public record LlmResponse(String text, List<ToolCall> toolCalls, String stopReas
 
   public boolean wantsTools() { return toolCalls != null && !toolCalls.isEmpty(); }
 
+  /**
+   * The provider stopped part-way through its own work (a long tool search, say) and expects the
+   * same request again with this reply appended, to carry on where it left off.
+   */
+  public boolean paused() { return "pause_turn".equals(stopReason); }
+
+  /**
+   * The tokens a run's budget counts: a cache read costs a tenth of a fresh input token or less,
+   * so it counts as a tenth. Without this a long conversation read back from the cache would use
+   * up the budget as fast as one sent fresh, and the budget would stop turns that cost very little.
+   */
+  public int budgetTokens() {
+    return uncachedInputTokens() + cacheWriteTokens + (cacheReadTokens + 9) / 10 + outputTokens;
+  }
+
   /** Input tokens billed at the full rate: neither read from nor written to the cache. */
   public int uncachedInputTokens() {
     return Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);

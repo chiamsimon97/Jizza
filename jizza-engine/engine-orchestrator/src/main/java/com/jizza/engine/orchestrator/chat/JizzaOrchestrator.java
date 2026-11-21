@@ -84,17 +84,20 @@ public class JizzaOrchestrator implements Orchestrator {
     // A key pasted with API documentation is masked rather than sent (or the turn refused).
     String message = Redaction.scrub(input.message());
     List<Msg> history = scrubbed(input.history());
-    ModelTier tier = tiers.tierFor(userId, jizza, message, input.screen(), history);
+    // "Try again with a deeper model" asks for the deep tier outright, with no triage call.
+    JsonNode context = withoutDepth(input.context());
+    ModelTier tier = deepAsked(input.context()) ? ModelTier.DEEP
+        : tiers.tierFor(userId, jizza, message, input.screen(), history);
     history = withWorkspace(userId, history);
     recorder.beginTurn();
-    if (input.screen() != null) uiActions.beginTurn(stepInFocus(input.screen(), input.context()));
+    if (input.screen() != null) uiActions.beginTurn(stepInFocus(input.screen(), context));
     AgentResult result;
     List<DelegationRecorder.Contribution> contributions;
     List<UiAction> actions;
     try {
       String annotated = libraryHints == null ? message : libraryHints.annotate(userId, message);
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(annotated, input.screen(), input.context()), null, history, tier,
+          withScreen(annotated, input.screen(), context), null, history, tier,
           false, trace));
     } finally {
       contributions = recorder.endTurn();
@@ -135,7 +138,8 @@ public class JizzaOrchestrator implements Orchestrator {
     List<DelegationRecorder.Contribution> contributions;
     try {
       result = baseAgent.run(new AgentRequest(userId, lead.getId(), message, null,
-          scrubbed(input.history()), ModelTier.STANDARD, false, trace));
+          scrubbed(input.history()), deepAsked(input.context()) ? ModelTier.DEEP : ModelTier.STANDARD,
+          false, trace));
     } finally {
       contributions = recorder.endTurn();
     }
@@ -244,6 +248,23 @@ public class JizzaOrchestrator implements Orchestrator {
   }
 
   /** Tells the model where the user is, for this turn only. */
+  /** The user asked for this answer from the deeper model ("Try again with a deeper model"). */
+  static boolean deepAsked(JsonNode context) {
+    return context != null && "deep".equalsIgnoreCase(context.path(DEPTH).asText());
+  }
+
+  /** The screen context without the depth the client asked for, which is not about the screen. */
+  static JsonNode withoutDepth(JsonNode context) {
+    if (!(context instanceof com.fasterxml.jackson.databind.node.ObjectNode object) || !object.has(DEPTH)) {
+      return context;
+    }
+    com.fasterxml.jackson.databind.node.ObjectNode rest = object.deepCopy();
+    rest.remove(DEPTH);
+    return rest.isEmpty() ? null : rest;
+  }
+
+  static final String DEPTH = "depth";
+
   static String withScreen(String message, String screen, JsonNode context) {
     if (screen == null || screen.isBlank()) return message;
     if (WORKFLOW_PLANNER.equals(screen)) return message + "\n\n" + PLANNER_GUIDE;

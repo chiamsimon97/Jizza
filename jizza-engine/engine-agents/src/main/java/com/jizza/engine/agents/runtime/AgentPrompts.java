@@ -20,6 +20,9 @@ public final class AgentPrompts {
          authentication server-side. Never ask the user for a token, password or API key, and never
          repeat one back if it appears in tool output.
       3. Only call tools from the list you were given, with arguments matching the declared schema.
+         When you also have a tool search tool, some of your tools (a device's device_* actions,
+         a connector's mcp_* tools) are not listed until you search for them: when a request needs
+         a device or a connector and you don't see its tool, search for it before saying you can't.
       4. Actions that send, pay, create, delete or otherwise change something outside this system
          may require approval. If a tool reports that permission is required, stop and report that,
          rather than looking for another route to the same effect.

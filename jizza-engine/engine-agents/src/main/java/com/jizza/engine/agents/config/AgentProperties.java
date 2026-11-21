@@ -31,12 +31,29 @@ public class AgentProperties {
     private String apiKey;
     private String version = "2023-06-01";
     private Duration timeout = Duration.ofSeconds(120);
-    private int maxOutputTokens = 4096;
+    private int maxOutputTokens = 16_000;
     private final Retry retry = new Retry();
     private final Caching caching = new Caching();
+    private final ToolSearch toolSearch = new ToolSearch();
+    private final InlineContext inlineContext = new InlineContext();
+    /**
+     * How hard each tier thinks: low, medium, high, xhigh or max. Blank leaves the model's own
+     * default. Sent only to models in {@link #effortModels}, since older ones reject it.
+     */
+    private Map<ModelTier, String> effort = new EnumMap<>(ModelTier.class);
+    /** Model name prefixes that accept an effort level. */
+    private java.util.List<String> effortModels = new java.util.ArrayList<>(java.util.List.of(
+        "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5",
+        "claude-sonnet-4-6", "claude-sonnet-5", "claude-haiku-5", "claude-fable", "claude-mythos"));
 
     public Retry getRetry() { return retry; }
     public Caching getCaching() { return caching; }
+    public ToolSearch getToolSearch() { return toolSearch; }
+    public InlineContext getInlineContext() { return inlineContext; }
+    public Map<ModelTier, String> getEffort() { return effort; }
+    public void setEffort(Map<ModelTier, String> v) { this.effort = v; }
+    public java.util.List<String> getEffortModels() { return effortModels; }
+    public void setEffortModels(java.util.List<String> v) { this.effortModels = v; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String v) { this.baseUrl = v; }
     public String getApiKey() { return apiKey; }
@@ -83,6 +100,52 @@ public class AgentProperties {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
+  }
+
+  /**
+   * Tools found by search. Tools a provider marks deferrable (each paired device's actions, MCP
+   * servers' tools) are left out of the request up front once together they are large enough to be
+   * worth it, and the model finds the ones a request needs with the provider's tool search. Below
+   * the threshold every tool is sent as before, since a search would only add a step.
+   */
+  public static class ToolSearch {
+    private boolean enabled = true;
+    /** Deferrable tools are deferred once their definitions add up to this many characters. */
+    private int minChars = 30_000;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public int getMinChars() { return minChars; }
+    public void setMinChars(int v) { this.minChars = v; }
+  }
+
+  /**
+   * Where the context that changes from turn to turn goes (what is remembered for this request,
+   * the workspace summary, a thread's guide). Sent before the conversation, any change to it means
+   * the whole conversation is paid for again; sent as a system note after the person's message, the
+   * conversation before it is read from the provider's cache. Only models that accept a system note
+   * inside the conversation get it there; the others keep it with the instructions.
+   */
+  public static class InlineContext {
+    private boolean enabled = true;
+    /** Model name prefixes that accept a system note inside the conversation. */
+    private java.util.List<String> models = new java.util.ArrayList<>(java.util.List.of(
+        "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5-5", "claude-haiku-5",
+        "claude-fable", "claude-mythos"));
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public java.util.List<String> getModels() { return models; }
+    public void setModels(java.util.List<String> v) { this.models = v; }
+  }
+
+  /** True when {@code model} starts with one of {@code prefixes}. */
+  public static boolean matches(String model, java.util.List<String> prefixes) {
+    if (model == null || prefixes == null) return false;
+    for (String prefix : prefixes) {
+      if (prefix != null && !prefix.isBlank() && model.startsWith(prefix.trim())) return true;
+    }
+    return false;
   }
 
   public static class Loop {

@@ -2,6 +2,7 @@ package com.jizza.engine.api.orchestrator;
 
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
+import com.jizza.engine.api.dto.EarlierSummaryDto;
 import com.jizza.engine.api.dto.LearnedFactDto;
 import com.jizza.engine.api.dto.ThreadGuideDto;
 import java.util.List;
@@ -46,6 +47,14 @@ public interface ConversationStore {
    * everything after it are removed, so the edited message can be sent in its place.
    */
   void rewind(UUID userId, UUID conversationId, UUID messageId);
+
+  /**
+   * The summary that stands in for the conversation's older messages, or null while every message
+   * is still sent to the model as written.
+   */
+  default EarlierSummaryDto earlier(UUID userId, UUID conversationId) {
+    return null;
+  }
 
   /** A thread's learning file. */
   ThreadGuideDto guide(UUID userId, UUID threadId);

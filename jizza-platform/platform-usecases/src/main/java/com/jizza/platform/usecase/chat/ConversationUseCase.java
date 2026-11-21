@@ -115,6 +115,11 @@ public class ConversationUseCase {
     return store.summary(userId, conversationId);
   }
 
+  /** The summary standing in for the older messages, or null when there is none. */
+  public com.jizza.engine.api.dto.EarlierSummaryDto earlier(UUID userId, UUID conversationId) {
+    return store.earlier(userId, conversationId);
+  }
+
   public List<com.jizza.engine.api.dto.LearnedFactDto> learned(UUID userId, UUID conversationId) {
     return store.learned(userId, conversationId);
   }
