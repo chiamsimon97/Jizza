@@ -434,10 +434,35 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
   const startWire = (drag: Omit<WireDrag, 'at' | 'over'>, e: React.PointerEvent) => {
     if (readOnly || preview !== null || e.button !== 0) return
     e.stopPropagation()
+    e.preventDefault()
     wireGrab.current = { drag: { ...drag, at: drag.start, over: null }, sx: e.clientX, sy: e.clientY, moved: false }
+    // The board keeps the pointer for the whole drag, so the let-go always arrives, even when the
+    // handle that started it goes away or the pointer is let go outside the board.
+    const holder = content.current
+    try { holder?.setPointerCapture(e.pointerId) } catch { /* not every browser lets a non-target capture */ }
+    const done = (ev: { clientX: number; clientY: number } | null) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      window.removeEventListener('blur', onCancel)
+      try { holder?.releasePointerCapture(e.pointerId) } catch { /* already released */ }
+      const g = wireGrab.current
+      wireGrab.current = null
+      setWireDrag(null)
+      if (!g?.moved) return
+      justWired.current = true
+      window.setTimeout(() => { justWired.current = false }, 0)
+      // Where it was let go; without a position (the browser took the pointer), the last step it was over.
+      const p = ev ? boardPoint(ev) : null
+      const over = p ? stepAt(p.x, p.y) ?? (Math.hypot(p.x - g.drag.at[0], p.y - g.drag.at[1]) < 24 ? g.drag.over : null) : g.drag.over
+      finishRef.current(g.drag, over, ev ? { x: ev.clientX, y: ev.clientY } : { x: g.sx, y: g.sy })
+    }
     const onMove = (ev: PointerEvent) => {
       const g = wireGrab.current
       if (!g) return
+      // The button is no longer held but the let-go never came: finish here.
+      if (g.moved && ev.buttons === 0) { done(ev); return }
       if (!g.moved && Math.hypot(ev.clientX - g.sx, ev.clientY - g.sy) < 4) return
       g.moved = true
       const p = boardPoint(ev)
@@ -447,29 +472,13 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
       setHoverWire(null)
       setPending(null)
     }
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onCancel)
-      const g = wireGrab.current
-      wireGrab.current = null
-      setWireDrag(null)
-      if (!g?.moved) return
-      justWired.current = true
-      window.setTimeout(() => { justWired.current = false }, 0)
-      const p = boardPoint(ev)
-      finishWire(g.drag, p ? stepAt(p.x, p.y) : null, { x: ev.clientX, y: ev.clientY })
-    }
-    const onCancel = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onCancel)
-      wireGrab.current = null
-      setWireDrag(null)
-    }
+    const onUp = (ev: MouseEvent) => { if (wireGrab.current) done(ev) }
+    const onCancel = () => { if (wireGrab.current) done(null) }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('mouseup', onUp)
     window.addEventListener('pointercancel', onCancel)
+    window.addEventListener('blur', onCancel)
   }
 
   /** Where a dragged wire was let go: on a step it is wired there; on empty space its end comes off, or a new step is offered. */
@@ -491,6 +500,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
     // A wire from an exit let go on empty space asks what comes next, as on the canvas.
     setPicker(d.old ? { edge: d.old, at: { x: at.x + 12, y: at.y - 12 } } : { after: { from: d.from, branch: d.branch }, at: { x: at.x + 12, y: at.y - 12 } })
   }
+  // A drag ends after later renders, so it finishes with the board as it is then.
+  const finishRef = useRef(finishWire)
+  finishRef.current = finishWire
 
   useEffect(() => {
     if (!pending && !labelFor) return
