@@ -39,6 +39,7 @@ import com.jizza.platform.usecase.help.HelpGuidesUseCase;
 import com.jizza.platform.usecase.notification.NotificationUseCase;
 import com.jizza.platform.usecase.usage.UsageUseCase;
 import com.jizza.platform.usecase.workflow.RunHistoryUseCase;
+import com.jizza.platform.usecase.webauto.WebAutomationUseCase;
 import com.jizza.platform.usecase.workflow.WorkflowUseCase;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
@@ -111,6 +112,15 @@ public class PhoneController {
 
   public record SnoozeBody(Instant until) {}
 
+  /** {@code key}: the card's field to read choices for; {@code typed}: the text to suggest for. */
+  public record ChoicesBody(String key, String typed) {}
+
+  /**
+   * What the page lists now for one of the card's values: {@code options}, or {@code error} when
+   * the page could not be read or lists nothing.
+   */
+  public record Choices(List<String> options, String error) {}
+
   public record ArchiveBody(Boolean archived) {}
 
   public record RunBody(JsonNode input, Integer version) {}
@@ -141,6 +151,7 @@ public class PhoneController {
   private final AgentAdminUseCase agentAdmin;
   private final HelpGuidesUseCase help;
   private final com.jizza.engine.api.form.Forms forms;
+  private final WebAutomationUseCase web;
 
   public PhoneController(PhoneRequests phones, NotificationUseCase notifications,
                          RunHistoryUseCase history, WorkflowUseCase workflows,
@@ -148,7 +159,8 @@ public class PhoneController {
                          GuardrailsUseCase guardrails, AutonomyUseCase autonomy,
                          DeviceUseCase devices, AgentDirectory agents, AuditLog audit,
                          PhoneAskUseCase asking, AgentAdminUseCase agentAdmin,
-                         HelpGuidesUseCase help, com.jizza.engine.api.form.Forms forms) {
+                         HelpGuidesUseCase help, com.jizza.engine.api.form.Forms forms,
+                         WebAutomationUseCase web) {
     this.phones = phones;
     this.notifications = notifications;
     this.history = history;
@@ -165,6 +177,7 @@ public class PhoneController {
     this.agentAdmin = agentAdmin;
     this.help = help;
     this.forms = forms;
+    this.web = web;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------
@@ -427,6 +440,83 @@ public class PhoneController {
     record(phone, "device.phone.answered", id.toString(),
         Json.obj().put("kind", body.kind().name()));
     return answered;
+  }
+
+  /**
+   * Refresh on the approval card: reads what the page the run is on lists now for one of the
+   * card's values (a site's own dropdown, or the suggestions a field shows for the text typed), as
+   * the web card does. Only the fields the card itself offers can be read, on the browser it names.
+   */
+  @PublicEndpoint
+  @PostMapping("/notifications/{id}/choices")
+  public Choices choices(@PathVariable UUID id, @RequestBody(required = false) byte[] raw,
+                         HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
+    ChoicesBody body = parse(raw, ChoicesBody.class);
+    if (body == null || body.key() == null || body.key().isBlank()) {
+      throw new ValidationException("key is required");
+    }
+    NotificationDto item = notifications.get(phone.userId(), id);
+    if (item.status() != NotificationStatus.UNREAD && item.status() != NotificationStatus.READ) {
+      throw new ValidationException("This item is already answered");
+    }
+    JsonNode live = item.context() == null ? null : item.context().path("form").path("live");
+    JsonNode how = live == null ? null : live.path("fields").path(body.key());
+    if (how == null || !how.isObject() || !how.path("action").isTextual()
+        || !how.path("element").isObject()) {
+      throw new ValidationException("This value's choices cannot be read from the page");
+    }
+    UUID device;
+    try {
+      device = UUID.fromString(live.path("device").asText(""));
+    } catch (IllegalArgumentException e) {
+      throw new ValidationException("This value's choices cannot be read from the page");
+    }
+    boolean typedField = how.path("typed").asBoolean(false);
+    String typed = body.typed() == null ? "" : body.typed().trim();
+    if (typedField && typed.isEmpty()) {
+      return new Choices(List.of(), "Type a few letters first, then refresh.");
+    }
+    if (typed.length() > 200) throw new ValidationException("The text is too long");
+    var inputs = Json.obj();
+    if (live.path("session").isTextual() && !live.path("session").asText().isBlank()) {
+      inputs.put("session", live.path("session").asText());
+    }
+    inputs.set("element", how.path("element"));
+    if (typedField) inputs.put("text", typed);
+    com.jizza.engine.api.webauto.DesignTimeService.Result result;
+    try {
+      result = web.testStep(access(phone), device, how.path("action").asText(),
+          how.path("version").asInt(1), inputs);
+    } catch (com.jizza.engine.api.error.JizzaException e) {
+      return new Choices(List.of(), e.getMessage());
+    }
+    record(phone, "device.phone.choices_read", id.toString(), Json.obj().put("key", body.key()));
+    return choicesOf(result, typedField, typed);
+  }
+
+  /** The labels a page read gave, trimmed and without repeats, or why there are none. */
+  static Choices choicesOf(com.jizza.engine.api.webauto.DesignTimeService.Result result,
+                           boolean typed, String text) {
+    if (result == null || !"succeeded".equals(result.status())) {
+      String why = result == null ? null
+          : result.error() != null && result.error().detail() != null ? result.error().detail()
+          : result.message();
+      return new Choices(List.of(), why == null || why.isBlank() ? "The page could not be read." : why);
+    }
+    java.util.LinkedHashSet<String> labels = new java.util.LinkedHashSet<>();
+    JsonNode out = result.output() == null ? Json.obj() : result.output();
+    if (typed) {
+      out.path("options").forEach(o -> labels.add(o.asText("").trim()));
+    } else {
+      out.path("items").forEach(i -> labels.add(i.path("label").asText("").trim()));
+    }
+    labels.remove("");
+    if (labels.isEmpty()) {
+      return new Choices(List.of(), typed ? "The page suggests nothing for \"" + text + "\"."
+          : "The page lists nothing for it now.");
+    }
+    return new Choices(List.copyOf(labels), null);
   }
 
   /**
