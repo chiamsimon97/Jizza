@@ -92,8 +92,9 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
       McpProperties.Server server = exposed.config();
       ActionType type = server.getActionTypes().get(exposed.tool().name());
       boolean sideEffecting = type == null || type.sideEffecting();
+      // Deferrable: when the outside tools add up to a lot, the model searches for them.
       specs.add(new ToolSpec(exposed.name(), describe(exposed), schema(exposed.tool()),
-          sideEffecting));
+          sideEffecting, true));
     }
     return specs;
   }

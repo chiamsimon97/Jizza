@@ -149,8 +149,10 @@ jizza:
       base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
       api-key: ${ANTHROPIC_API_KEY:}
       version: "2023-06-01"
-      timeout: 120s
-      max-output-tokens: 4096
+      timeout: ${JIZZA_LLM_TIMEOUT:300s}
+      # Newer models think before they answer, and that thinking counts against this cap, so it
+      # leaves room for a long reply or a big workflow draft. Replies stream, so a long one is fine.
+      max-output-tokens: ${JIZZA_LLM_MAX_OUTPUT_TOKENS:16000}
       # A call that failed for a passing reason (rate limited, overloaded, a dropped connection)
       # is tried again with backoff, honouring the provider's retry-after.
       retry:
@@ -162,27 +164,58 @@ jizza:
       # conversation inside a tool loop. Turn off only for a proxy that rejects cache_control.
       caching:
         enabled: ${JIZZA_LLM_PROMPT_CACHING:true}
+      # Each paired browser offers about forty actions and an MCP server can offer dozens of tools.
+      # Once these add up to min-chars of definitions, they are left out of each request and the
+      # model finds the ones it needs with the provider's tool search.
+      tool-search:
+        enabled: ${JIZZA_LLM_TOOL_SEARCH:true}
+        min-chars: 30000
+      # What changes from turn to turn (memory for this request, the workspace summary, a thread's
+      # guide) goes after the person's message instead of before the conversation, so the
+      # conversation is read from the cache on the next turn. Only for the models listed.
+      inline-context:
+        enabled: ${JIZZA_LLM_INLINE_CONTEXT:true}
+        models: [claude-opus-4-8, claude-opus-5, claude-sonnet-5-5, claude-haiku-5, claude-fable, claude-mythos]
+      # How hard each tier thinks (low, medium, high, xhigh, max; blank = the model's default).
+      # Quick turns stay quick; Jizza's usual turns call several tools, which medium suits.
+      effort:
+        routing: ${JIZZA_EFFORT_ROUTING:low}
+        standard: ${JIZZA_EFFORT_STANDARD:medium}
+        deep: ${JIZZA_EFFORT_DEEP:high}
     # Model tiering: a cheap model routes, a stronger one does the hard work. Configuration, never
     # a literal, because model names change.
     models:
-      routing: ${JIZZA_MODEL_ROUTING:claude-haiku-4-5-20251001}
-      standard: ${JIZZA_MODEL_STANDARD:claude-sonnet-5}
-      deep: ${JIZZA_MODEL_DEEP:claude-opus-5}
+      routing: ${JIZZA_MODEL_ROUTING:claude-haiku-5-5}
+      standard: ${JIZZA_MODEL_STANDARD:claude-sonnet-5-5}
+      deep: ${JIZZA_MODEL_DEEP:claude-opus-5-5}
     # Jizza's simple turns (a greeting, a quick question, a hand-off to one specialist) run on the
     # routing model, chosen by a short check on that model; everything else stays on standard.
     routing:
       enabled: ${JIZZA_CHEAP_ROUTING:true}
       max-simple-chars: 600
+    # US dollars per million tokens. Cache reads are a share of the input price (0.1 unless set).
+    # Older models stay listed so earlier usage and an overridden tier are still priced.
     pricing:
+      claude-haiku-5-5:
+        input-per-million: 0.10
+        output-per-million: 0.50
+      claude-sonnet-5-5:
+        input-per-million: 2.0
+        output-per-million: 10.0
+        cache-read-multiplier: 0.05
+      claude-opus-5-5:
+        input-per-million: 4.0
+        output-per-million: 20.0
+        cache-read-multiplier: 0.05
       claude-haiku-4-5-20251001:
         input-per-million: 1.0
         output-per-million: 5.0
       claude-sonnet-5:
-        input-per-million: 3.0
-        output-per-million: 15.0
+        input-per-million: 2.0
+        output-per-million: 10.0
       claude-opus-5:
-        input-per-million: 15.0
-        output-per-million: 75.0
+        input-per-million: 5.0
+        output-per-million: 25.0
     loop:
       max-tool-iterations: 8
       max-tokens-per-run: 120000

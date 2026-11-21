@@ -94,6 +94,18 @@ class BaseAgentTest {
   }
 
   @Test
+  void aReplyThePausedProviderLeftUnfinishedIsSentBackToCarryOn() {
+    var paused = new com.jizza.engine.api.llm.LlmResponse("", List.of(), "pause_turn", 10, 2, "m");
+    var llm = new ScriptedLlm(List.of(paused, text("All done.")));
+    var result = agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "Find it"));
+
+    assertThat(result.text()).isEqualTo("All done.");
+    assertThat(llm.callCount()).isEqualTo(2);
+    List<Msg> second = llm.requests.get(1);
+    assertThat(second.get(second.size() - 1).role()).isEqualTo(Msg.Role.ASSISTANT);
+  }
+
+  @Test
   void anotherAccountsAgentIsNeverRun() {
     var llm = new ScriptedLlm(List.of(text("should not be said")));
     var stranger = java.util.UUID.randomUUID();

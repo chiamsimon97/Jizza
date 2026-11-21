@@ -39,6 +39,9 @@ import org.springframework.stereotype.Component;
  * The person's paired devices as tools for Jizza in chat: {@code device_<name>__<action>}, one per
  * action each device declared, so the guardrails can judge each action by what it does.
  *
+ * <p>They are deferrable: a browser alone declares about forty actions, so when there are many the
+ * model finds the one it needs by search rather than having them all in every request.
+ *
  * <p>Only the orchestrator gets them, as only it gets new MCP servers, and only for devices the
  * person paired themselves. The Capability Registry still runs every call (kill switch, schema,
  * {@code device_use} in the device's account, guardrails, audit); this provider only routes the
@@ -74,7 +77,7 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
             + e.device().getPlatform() + "). " + (e.spec().description() == null ? ""
             : e.spec().description()),
         e.spec().input() == null ? Json.obj().put("type", "object") : e.spec().input(),
-        e.spec().actionType().sideEffecting())).toList();
+        e.spec().actionType().sideEffecting(), true)).toList();
   }
 
   @Override

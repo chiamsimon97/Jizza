@@ -208,11 +208,16 @@ public class BaseAgent implements Agent {
         inputTokens += response.inputTokens();
         outputTokens += response.outputTokens();
         costs.record(req.userId(), model, response, "agent:" + agent.getKey());
-        budget.addTokens(response.inputTokens(), response.outputTokens());
+        budget.addTokens(response.budgetTokens() - response.outputTokens(), response.outputTokens());
         // A stop pressed while the model was thinking wins over whatever it came back with.
         Activity.checkCancelled();
 
         if (response.text() != null && !response.text().isBlank()) lastText = response.text();
+        if (response.paused() && !response.wantsTools()) {
+          // The provider paused its own work part-way; sending its reply back lets it carry on.
+          messages.add(Msg.assistantTurn(response));
+          continue;
+        }
         if (!response.wantsTools()) {
           audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.done",
               agent.getKey(), Json.obj().put("iterations", budget.iterations()));
