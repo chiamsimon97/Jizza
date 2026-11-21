@@ -525,9 +525,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             <span className="truncate text-xs text-gray-600 dark:text-gray-400" aria-live="polite">{status}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-          {canGroup && (
-            <button type="button" onClick={() => groupSteps(toGroup)} title={`Put the picked steps in a group (${MOD}+G). Shift+click steps to pick more.`}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+          {!readOnly && (
+            <button type="button" disabled={!canGroup} onClick={() => groupSteps(toGroup)}
+              title={canGroup ? `Put the picked steps in a group (${MOD}+G)` : 'Pick steps first: drag a box around them on empty space, or Shift+click each one'}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:disabled:hover:bg-gray-900">
               <Group className="h-3.5 w-3.5" />Group{toGroup.length > 1 ? ` ${toGroup.length}` : ''}
             </button>
           )}

@@ -156,6 +156,7 @@ describe('WiresBoard', () => {
 
     it('groups Shift+clicked steps', () => {
       const { last } = show()
+      expect(screen.getByRole('button', { name: /^Group$/ })).toBeDisabled()
       fireEvent.click(screen.getByRole('button', { name: 'Notify me: Open the site' }), { shiftKey: true })
       fireEvent.click(screen.getByRole('button', { name: 'Approval: OK these seats?' }), { shiftKey: true })
       fireEvent.click(screen.getByRole('button', { name: /^Group 2$/ }))
