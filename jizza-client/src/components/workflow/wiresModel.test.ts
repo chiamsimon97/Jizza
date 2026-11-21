@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fromGraph, toGraph, type CanvasGraph } from './canvasModel'
 import {
-  CARD_H, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
+  CARD_H, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route, setWireLabel, stepNumbers,
   wireKey, wireLabel, wiresLayout,
 } from './wiresModel'
 
@@ -147,5 +147,27 @@ describe('wiresModel', () => {
     const now = setWireLabel(placeStep(before, 'ok', { x: 400, y: 400 }), { from: 'ok', branch: 'approved' }, 'yes')
     const saved = keepWiresSettings(before, now, 'ok')
     expect(saved.nodes.find(n => n.id === 'ok')!.config).toMatchObject({ wiresAt: { x: 400, y: 400 }, wireLabels: { approved: 'yes' } })
+  })
+
+  it('re-wires an exit to another step, or takes the wire off', () => {
+    const g = booking()
+    const old = g.edges.find(e => e.from === 'ok' && e.branch === 'rejected')!
+    const moved = rewire(g, 'ok', 'rejected', 'tell', old)
+    expect(moved.edges).toContainEqual({ from: 'ok', to: 'tell', branch: 'rejected' })
+    expect(moved.edges.some(e => e.to === 'skip')).toBe(false)
+    expect(moved.edges.filter(e => e.from === 'ok')).toHaveLength(2)
+    expect(rewire(g, 'ok', 'rejected', null, old).edges.some(e => e.from === 'ok' && e.branch === 'rejected')).toBe(false)
+  })
+
+  it('offers only steps that make no loop, never Start, and nothing inside a locked group', () => {
+    const g = booking()
+    const targets = rewireTargets(g, 'hold', null, g.edges.find(e => e.from === 'hold'))
+    expect([...targets].sort()).toEqual(['skip', 'tell'])
+    const locked: CanvasGraph = { ...g, groups: [{ id: 'g', title: 'Seats', nodes: ['open', 'ok', 'skip'], locked: true, collapsed: false }] }
+    // A wire inside the locked group stays; a wire into the group can still be moved.
+    expect(rewireTargets(locked, 'open', null, locked.edges.find(e => e.from === 'open')).size).toBe(0)
+    expect(rewireTargets(locked, 'ok', 'approved', locked.edges.find(e => e.from === 'ok' && e.branch === 'approved')).has('skip')).toBe(false)
+    expect(rewireTargets(locked, 'ok', 'approved', locked.edges.find(e => e.from === 'ok' && e.branch === 'approved')).has('tell')).toBe(true)
+    expect(rewireTargets(locked, 'start', null, locked.edges.find(e => e.from === 'start')).has('ok')).toBe(true)
   })
 })

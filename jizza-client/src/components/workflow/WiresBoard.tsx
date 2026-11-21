@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, ArrowDown, Check, ChevronDown, ChevronRight, Copy, Globe, Group, Lock, LockOpen, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, Ungroup, X } from 'lucide-react'
+import { AlertCircle, ArrowDown, Cable, Check, ChevronDown, ChevronRight, Copy, Globe, Group, Lock, LockOpen, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, Ungroup, X } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { api } from '@/lib/api'
 import type { AgentDto, McpServer, RunDto, WorkflowDto } from '@/types'
 import {
-  NODE_META, PALETTE_GROUPS, addNode, applyStepEdit, cloneNodes, exitsOf, mainExitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, setNext, targetsFor,
+  NODE_META, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, cloneNodes, exitsOf, mainExitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, reaches, setNext,
   unreachable, updateNode, type CanvasEdge, type CanvasGraph, type ExitKey, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import { ContextMenu, NODE_ICON, StepPicker, exitLabel, summarise, type MenuAt, type MenuItem, type StepRun } from './canvasParts'
@@ -15,8 +15,8 @@ import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
 import { createGroup, foldedGraph, groupOfNode, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, removeFromGroup, ungroup, updateGroup, type StepGroup } from './groupModel'
 import {
-  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
-  wireKey, wireLabel, wiresLayout, type Box, type Route,
+  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route,
+  setWireLabel, stepNumbers, wireKey, wireLabel, wiresLayout, type Box, type Point, type Route,
 } from './wiresModel'
 
 interface Props {
@@ -31,6 +31,12 @@ interface Props {
 
 /** Where a step being dragged in would go. */
 type Suggestion = { kind: 'step'; id: string } | { kind: 'wire'; edge: CanvasEdge }
+
+/**
+ * A wire being dragged: out of an exit dot ('exit'), or by the end of a wire already there ('end').
+ * {@code old} is the wire the exit had, which the new one replaces.
+ */
+interface WireDrag { kind: 'exit' | 'end'; from: string; branch: ExitKey; old: CanvasEdge | null; start: Point; at: Point; over: string | null }
 
 /** What the board shows of a run, real or previewed. */
 interface RunView { nodes: Map<string, StepRun>; travelled: Set<string>; live: boolean }
@@ -76,8 +82,10 @@ const parseEntry = (raw: string): NodeType | PaletteEntry | null => {
 
 /**
  * The Wires view of a workflow: the same graph as the canvas, laid out top to bottom with
- * circuit-style wires. Drag a step onto a step or a wire and it wires itself in; hover a wire to
- * delete it, put a step on it or label it; hover a step to edit, clone or delete it.
+ * circuit-style wires. Drag a step onto a step or a wire and it wires itself in; drag from an exit
+ * dot to a step to wire it, or drag a wire's end to another step to re-wire it (let go on empty
+ * space to take it off); hover a wire to delete, re-wire, label it or put a step on it; hover a
+ * step to edit, clone or delete it.
  */
 export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }: Props) {
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
@@ -101,7 +109,12 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const stepTimer = useRef<number>()
   const [labelFor, setLabelFor] = useState<CanvasEdge | null>(null)
   const [labelDraft, setLabelDraft] = useState('')
-  const [picker, setPicker] = useState<{ edge: CanvasEdge; at: { x: number; y: number } } | null>(null)
+  /** The step picker: for a step on a wire, or a step after an exit (a wire let go on empty space). */
+  const [picker, setPicker] = useState<{ edge?: CanvasEdge; after?: { from: string; branch: ExitKey }; at: { x: number; y: number } } | null>(null)
+  const [wireDrag, setWireDrag] = useState<WireDrag | null>(null)
+  const wireGrab = useRef<{ drag: WireDrag; sx: number; sy: number; moved: boolean } | null>(null)
+  /** A click that ends a wire drag is not a click on the exit dot. */
+  const justWired = useRef(false)
   /** An exit clicked to wire it by hand; the next step clicked is where it goes. */
   const [pending, setPending] = useState<{ from: string; branch: ExitKey } | null>(null)
   const dragged = useRef<NodeType | PaletteEntry | null>(null)
@@ -246,7 +259,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   // ---- Hover --------------------------------------------------------------------------------
 
-  const quiet = !readOnly && !dragging && !moving && !marquee && preview === null && !pending && !labelFor && !picker
+  const quiet = !readOnly && !dragging && !moving && !marquee && !wireDrag && preview === null && !pending && !labelFor && !picker
   const wireOn = (k: string) => { window.clearTimeout(wireTimer.current); setHoverWire(k) }
   const wireOff = () => { window.clearTimeout(wireTimer.current); wireTimer.current = window.setTimeout(() => setHoverWire(null), 200) }
   const stepOn = (id: string) => { window.clearTimeout(stepTimer.current); setHoverStep(id) }
@@ -333,12 +346,99 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   // ---- Wiring by hand -----------------------------------------------------------------------
 
-  const validTargets = useMemo(() => (pending ? new Set(targetsFor(graph, pending.from).map(n => n.id)) : null), [graph, pending])
+  const wiredAt = useCallback((from: string, branch: ExitKey) => graph.edges.find(e => e.from === from && e.branch === branch) ?? null, [graph])
+  const validTargets = useMemo(() => {
+    if (wireDrag) return rewireTargets(graph, wireDrag.from, wireDrag.branch, wireDrag.old)
+    return pending ? rewireTargets(graph, pending.from, pending.branch, wiredAt(pending.from, pending.branch)) : null
+  }, [graph, pending, wireDrag, wiredAt])
   const connectTo = (id: string) => {
     if (!pending || !validTargets?.has(id)) return
     commit(setNext(graph, pending.from, pending.branch, id))
     setPending(null)
     flash('Wired.')
+  }
+
+  /** Why a wire can't go to a step, said when it is let go there. */
+  const whyNot = (d: WireDrag, id: string): string => {
+    const node = byId.get(id)
+    if (!node || id === d.from) return ''
+    if (node.type === 'TRIGGER') return 'Nothing can be wired into Start.'
+    if (lockedGroupOf(graph, d.from) && (isLockedEdge(graph, { from: d.from, to: id }) || (d.old && isLockedEdge(graph, d.old)))) {
+      return 'That wire is inside a locked group. Unlock the group to change it.'
+    }
+    if (reaches(graph, id, d.from)) return 'That would make a loop, which a workflow can’t run.'
+    return 'That step can’t be wired here.'
+  }
+
+  /** The step under a point while a wire is dragged, with a little room around each card. */
+  const stepAt = (x: number, y: number): string | null => {
+    for (const n of graph.nodes) {
+      const b = layout.at.get(n.id)
+      if (b && x >= b.x - 12 && x <= b.x + CARD_W + 12 && y >= b.y - 12 && y <= b.y + CARD_H + 12) return n.id
+    }
+    return null
+  }
+
+  /** Starts dragging a wire; moves and the let-go are followed on the window, so they keep going if the hover toolbar goes. */
+  const startWire = (drag: Omit<WireDrag, 'at' | 'over'>, e: React.PointerEvent) => {
+    if (readOnly || preview !== null || e.button !== 0) return
+    e.stopPropagation()
+    wireGrab.current = { drag: { ...drag, at: drag.start, over: null }, sx: e.clientX, sy: e.clientY, moved: false }
+    const onMove = (ev: PointerEvent) => {
+      const g = wireGrab.current
+      if (!g) return
+      if (!g.moved && Math.hypot(ev.clientX - g.sx, ev.clientY - g.sy) < 4) return
+      g.moved = true
+      const p = boardPoint(ev)
+      if (!p) return
+      g.drag = { ...g.drag, at: [p.x, p.y], over: stepAt(p.x, p.y) }
+      setWireDrag(g.drag)
+      setHoverWire(null)
+      setPending(null)
+    }
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      const g = wireGrab.current
+      wireGrab.current = null
+      setWireDrag(null)
+      if (!g?.moved) return
+      justWired.current = true
+      window.setTimeout(() => { justWired.current = false }, 0)
+      const p = boardPoint(ev)
+      finishWire(g.drag, p ? stepAt(p.x, p.y) : null, { x: ev.clientX, y: ev.clientY })
+    }
+    const onCancel = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      wireGrab.current = null
+      setWireDrag(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
+  /** Where a dragged wire was let go: on a step it is wired there; on empty space its end comes off, or a new step is offered. */
+  const finishWire = (d: WireDrag, over: string | null, at: { x: number; y: number }) => {
+    const fromLabel = byId.get(d.from)?.label
+    if (over) {
+      if (over === d.from || (d.old && d.old.to === over)) return
+      if (!rewireTargets(graph, d.from, d.branch, d.old).has(over)) { flash(whyNot(d, over)); return }
+      commit(rewire(graph, d.from, d.branch, over, d.old))
+      flash(d.old ? `Re-wired: “${fromLabel}” now goes to “${byId.get(over)?.label}”.` : `Wired “${fromLabel}” to “${byId.get(over)?.label}”.`)
+      return
+    }
+    if (d.kind === 'end' && d.old) {
+      if (isLockedEdge(graph, d.old)) return
+      commit(rewire(graph, d.from, d.branch, null, d.old))
+      flash('Wire taken off.')
+      return
+    }
+    // A wire from an exit let go on empty space asks what comes next, as on the canvas.
+    setPicker(d.old ? { edge: d.old, at: { x: at.x + 12, y: at.y - 12 } } : { after: { from: d.from, branch: d.branch }, at: { x: at.x + 12, y: at.y - 12 } })
   }
 
   useEffect(() => {
@@ -492,10 +592,17 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   // ---- Status -------------------------------------------------------------------------------
 
   const ranCount = view ? [...view.nodes.values()].filter(s => s === 'done').length : 0
-  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, drag on empty space to pick steps, or drop a new one onto a step or a wire.')
+  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, drag from an exit dot or a wire’s end to (re-)wire, or drop a new one onto a step or a wire.')
+  if (!toast && quiet && hoverWire && routes.get(hoverWire)) status = 'Drag the round handle at the arrow to another step to re-wire it. Let go on empty space to take it off.'
   if (marquee) status = 'Let go to pick the steps inside the box. Hold Shift to add to the steps already picked.'
   if (!toast && picked.size) status = `${picked.size} ${picked.size === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`
   if (moving) status = moving.size > 1 ? 'Let go to put the group here.' : 'Let go to put the step here. Auto align lines everything up again.'
+  if (wireDrag) {
+    const over = wireDrag.over && wireDrag.over !== wireDrag.from ? byId.get(wireDrag.over) : undefined
+    status = over
+      ? validTargets?.has(over.id) ? `Let go to wire “${byId.get(wireDrag.from)?.label}” to “${over.label}”.` : whyNot(wireDrag, over.id)
+      : wireDrag.kind === 'end' ? 'Let go on a step to re-wire, or on empty space to take the wire off.' : 'Let go on a step to wire it, or on empty space to add a new step.'
+  }
   if (pending) status = `Click the step that comes after “${byId.get(pending.from)?.label}”${pending.branch ? ` (${exitLabel(pending.branch, byId.get(pending.from))})` : ''}. Esc cancels.`
   if (dragging) status = suggest?.kind === 'step' ? `Drop to wire it in after “${byId.get(suggest.id)?.label}”.`
     : suggest?.kind === 'wire' ? 'Drop to put it on this wire. Steps below move down.' : 'Hover a step or a wire to wire it in.'
@@ -519,6 +626,19 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const hoveredStep = quiet && hoverStep ? byId.get(hoverStep) : undefined
   const hoveredBox = hoveredStep ? layout.at.get(hoveredStep.id) : undefined
   const labelRoute = labelFor ? routes.get(wireKey(labelFor)) : undefined
+  // The wire being dragged: it snaps onto a step it can go to, and follows the pointer otherwise.
+  const dragLine = useMemo(() => {
+    if (!wireDrag) return null
+    const overBox = wireDrag.over && validTargets?.has(wireDrag.over) ? layout.at.get(wireDrag.over) : undefined
+    if (overBox) {
+      const end = inPoint(overBox)
+      const r = route(wireDrag.start, end, (layout.depth.get(wireDrag.over!) ?? 0) === (layout.depth.get(wireDrag.from) ?? 0) + 1)
+      return { d: r.d, end, ok: true }
+    }
+    const [x1, y1] = wireDrag.start
+    const [x2, y2] = wireDrag.at
+    return { d: `M${x1} ${y1} C${x1} ${y1 + 60} ${x2} ${y2 - 60} ${x2} ${y2}`, end: wireDrag.at, ok: false }
+  }, [wireDrag, validTargets, layout])
 
   return (
     <div className="jizza-wires flex h-[calc(100vh-19rem)] min-h-[560px] overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
@@ -667,12 +787,13 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               {[...routes.entries()].map(([k, r]) => {
                 const tone = WIRE_TONE(r.edge.branch)
                 const sugHot = suggest?.kind === 'wire' && wireKey(suggest.edge) === k
-                const hot = sugHot || (quiet && hoverWire === k) || (labelFor && wireKey(labelFor) === k) || (picker && wireKey(picker.edge) === k)
+                const hot = sugHot || (quiet && hoverWire === k) || (labelFor && wireKey(labelFor) === k) || (picker?.edge && wireKey(picker.edge) === k)
                 const hotColor = sugHot ? 'rgb(var(--brand-500))' : HOVER_BLUE
                 const skipped = !!view && !view.travelled.has(k) && view.nodes.get(r.edge.from) === 'done'
                 const dim = (focusIds && !sugHot) || (view && !view.travelled.has(k))
+                const lifted = !!wireDrag?.old && wireKey(wireDrag.old) === k
                 return (
-                  <g key={k} style={{ opacity: dim ? 0.4 : 1 }}>
+                  <g key={k} style={{ opacity: lifted ? 0.15 : dim ? 0.4 : 1 }}>
                     <path d={r.d} fill="none" stroke={tone.line} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={skipped ? '4 5' : undefined} />
                     <polygon points={ARROW_HEAD(r.end)} fill={tone.head} />
                     {hot && <>
@@ -696,6 +817,14 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                   <polygon points={ARROW_HEAD(r.end, true)} fill="rgb(var(--brand-500))" className="jw-head" />
                 </g>
               ))}
+              {dragLine && (
+                <g data-testid="wire-drag">
+                  <path d={dragLine.d} fill="none" stroke={dragLine.ok ? 'rgb(var(--brand-500))' : HOVER_BLUE} strokeWidth={2.25} strokeDasharray={dragLine.ok ? undefined : '6 5'} strokeLinecap="round" strokeLinejoin="round" />
+                  {dragLine.ok
+                    ? <polygon points={ARROW_HEAD(dragLine.end, true)} fill="rgb(var(--brand-500))" />
+                    : <circle cx={dragLine.end[0]} cy={dragLine.end[1]} r={5} fill="#fff" stroke={HOVER_BLUE} strokeWidth={2} />}
+                </g>
+              )}
             </svg>
 
             {groups.map(g => {
@@ -736,7 +865,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               const agent = n.type === 'AGENT_STEP' ? agents?.find(a => a.id === n.config.agentId) : undefined
               const state = view?.nodes.get(n.id)
               const waiting = !!view && !state
-              const target = suggest?.kind === 'step' && suggest.id === n.id
+              const target = (suggest?.kind === 'step' && suggest.id === n.id) || (!!wireDrag && wireDrag.over === n.id && !!validTargets?.has(n.id))
               const isSel = selected === n.id || editing === n.id || picked.has(n.id)
               const problems = issuesByNode.get(n.id)
               const canTarget = !!validTargets?.has(n.id)
@@ -782,7 +911,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                     : 'border-gray-200 shadow-sm hover:shadow-md dark:border-gray-700'}`}
                   style={{
                     left: box.x, top: box.y, width: CARD_W, height: CARD_H,
-                    opacity: (focusIds && !focusIds.has(n.id)) ? 0.35 : waiting ? 0.45 : pending && !canTarget && pending.from !== n.id ? 0.45 : 1,
+                    opacity: (focusIds && !focusIds.has(n.id)) ? 0.35 : waiting ? 0.45 : (pending || wireDrag) && !canTarget && (pending ?? wireDrag)!.from !== n.id ? 0.45 : 1,
                     cursor: pending ? (canTarget ? 'pointer' : 'not-allowed') : moving?.has(n.id) ? 'grabbing' : readOnly ? 'pointer' : 'grab',
                     zIndex: moving?.has(n.id) ? 20 : undefined,
                     boxShadow: moving?.has(n.id) ? '0 18px 40px rgb(0 0 0 / 0.18)' : undefined,
@@ -805,7 +934,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                         {note && <span title={note}><Pencil className="h-3 w-3" aria-label="Has a note" /></span>}
                         {num ? String(num).padStart(2, '0') : '—'}
                       </span>}
-                  {pending && canTarget && <span className="jw-pulse absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-brand-500 bg-brand-100" />}
+                  {(pending || wireDrag) && canTarget && <span className="jw-pulse absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-brand-500 bg-brand-100" />}
                 </button>
               )
             })}
@@ -824,10 +953,13 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                 const name = exitLabel(b, n)
                 return (
                   <div key={`${n.id}:${b ?? 'out'}`} className="absolute z-[5]" style={{ left: x, top: y }}>
-                    <button type="button" disabled={readOnly || fixedExit} title={fixedExit ? 'Locked: this wire is inside a locked group' : undefined} aria-label={`${name ? `"${name}" exit` : 'Exit'} of ${n.label}. Click, then click the step that comes next.`}
-                      onClick={() => { setPending(picking ? null : { from: n.id, branch: b }); setSelected(null) }}
-                      className={`absolute -left-1.5 -top-1.5 h-3 w-3 rounded-full border-[1.5px] bg-white transition-transform hover:scale-150 disabled:hover:scale-100 dark:bg-gray-900 ${picking ? 'jw-pulse border-brand-500 bg-brand-500' : ''}`}
-                      style={picking ? undefined : { borderColor: tone.head }} />
+                    <button type="button" disabled={readOnly || fixedExit}
+                      title={fixedExit ? 'Locked: this wire is inside a locked group' : readOnly ? undefined : 'Drag to a step to wire it, or click, then click the step'}
+                      aria-label={`${name ? `"${name}" exit` : 'Exit'} of ${n.label}. Drag to the step that comes next, or click, then click it.`}
+                      onPointerDown={e => { if (!fixedExit) startWire({ kind: 'exit', from: n.id, branch: b, old: wired ?? null, start: [x, y] }, e) }}
+                      onClick={() => { if (justWired.current) return; setPending(picking ? null : { from: n.id, branch: b }); setSelected(null) }}
+                      className={`absolute -left-1.5 -top-1.5 h-3 w-3 cursor-crosshair rounded-full border-[1.5px] bg-white transition-transform hover:scale-150 disabled:cursor-default disabled:hover:scale-100 dark:bg-gray-900 ${picking ? 'jw-pulse border-brand-500 bg-brand-500' : ''}`}
+                      style={{ ...(picking ? {} : { borderColor: tone.head }), touchAction: 'none' }} />
                     {name && <span className={`pointer-events-none absolute left-2 top-1.5 max-w-[72px] truncate text-[10px] font-bold uppercase tracking-wide ${tone.text}`}>{name}</span>}
                   </div>
                 )
@@ -835,11 +967,22 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             })}
 
             {hoveredRoute && (
+              <button type="button" aria-label={`Move the end of the wire from ${byId.get(hoveredRoute.edge.from)?.label}`} title="Drag to another step to re-wire"
+                className="absolute z-30 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 bg-white shadow active:cursor-grabbing dark:bg-gray-900"
+                style={{ left: hoveredRoute.end[0], top: hoveredRoute.end[1] - 5, borderColor: HOVER_BLUE, touchAction: 'none' }}
+                onMouseEnter={() => wireOn(hoverWire!)} onMouseLeave={wireOff}
+                onPointerDown={e => startWire({ kind: 'end', from: hoveredRoute.edge.from, branch: hoveredRoute.edge.branch, old: hoveredRoute.edge, start: hoveredRoute.pts[0] }, e)} />
+            )}
+            {hoveredRoute && (
               <div className="absolute z-30 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 animate-fade-in" style={{ left: hoveredRoute.mid[0], top: hoveredRoute.mid[1] }}
                 onMouseEnter={() => wireOn(hoverWire!)} onMouseLeave={wireOff}>
                 <div className="flex items-center gap-0.5 rounded-lg border-[1.5px] border-dashed bg-white p-0.5 shadow-md dark:bg-gray-900" style={{ borderColor: HOVER_BLUE }}>
                   <BarButton label="Delete wire" onClick={() => { commit(setNext(graph, hoveredRoute.edge.from, hoveredRoute.edge.branch, null)); setHoverWire(null); flash('Wire deleted.') }}>
                     <Scissors className="h-4 w-4" />
+                  </BarButton>
+                  <Divider />
+                  <BarButton label="Re-wire" onClick={() => { setPending({ from: hoveredRoute.edge.from, branch: hoveredRoute.edge.branch }); setSelected(null); setHoverWire(null) }}>
+                    <Cable className="h-4 w-4" />
                   </BarButton>
                   <Divider />
                   <BarButton label="Add step" tone="blue" onClick={e => { setPicker({ edge: hoveredRoute.edge, at: { x: e.clientX + 12, y: e.clientY - 12 } }); setHoverWire(null) }}>
@@ -927,9 +1070,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
       {menu && <ContextMenu at={menu.at} items={menu.items} onClose={() => setMenu(null)} />}
       {picker && (
-        <StepPicker at={picker.at} title="Add a step on this wire" agents={agents} allowEnd={false} onClose={() => setPicker(null)}
+        <StepPicker at={picker.at} title={picker.after ? 'Add the next step' : 'Add a step on this wire'} agents={agents} allowEnd={!!picker.after} onClose={() => setPicker(null)}
           onPick={(entry, agent) => {
-            const r = insertOnEdge(graph, picker.edge, entry)
+            const r = picker.after ? addAfter(graph, picker.after.from, picker.after.branch, entry) : insertOnEdge(graph, picker.edge!, entry)
             commit(agent ? assignAgent(r.graph, r.id, agent) : r.graph)
             setSelected(r.id)
             setPicker(null)
