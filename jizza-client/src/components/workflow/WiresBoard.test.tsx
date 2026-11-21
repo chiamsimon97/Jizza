@@ -190,6 +190,29 @@ describe('WiresBoard', () => {
       expect(last().groups![0].nodes.sort()).toEqual(['ok', 'open'])
     })
 
+    it('starts the box on the empty space beside the steps too, dragging either way', () => {
+      const { view, last } = show()
+      const region = view.container.querySelector('[role="region"]') as HTMLElement
+      const board = region.firstElementChild as HTMLElement
+      // The steps sit in the middle of a wider board: 300px of empty space on their left.
+      board.getBoundingClientRect = () => ({ left: 300, top: 0, right: 2300, bottom: 2000, width: 2000, height: 2000, x: 300, y: 0, toJSON: () => ({}) })
+      const ok = wiresLayout(booking()).at.get('ok')!
+      pointer('pointerDown', region, 20, 0)
+      pointer('pointerMove', region, 300 + ok.x + 20, ok.y + 20)
+      pointer('pointerUp', region, 300 + ok.x + 20, ok.y + 20)
+      fireEvent.click(screen.getByRole('button', { name: /^Group \d+$/ }))
+      expect(last().groups![0].nodes).toEqual(expect.arrayContaining(['ok', 'open']))
+    })
+
+    it('renames a group from the pencil on its title bar', () => {
+      const { last } = show(grouped(false))
+      fireEvent.click(screen.getByRole('button', { name: 'Rename Pick seats' }))
+      const input = screen.getByRole('textbox', { name: 'Group title' })
+      fireEvent.change(input, { target: { value: 'Coach and date' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(last().groups![0].title).toBe('Coach and date')
+    })
+
     it('offers the board actions on a right-click on empty space, and groups from there', () => {
       const { view, last } = show()
       const board = view.container.querySelector('[role="region"] > div') as HTMLElement

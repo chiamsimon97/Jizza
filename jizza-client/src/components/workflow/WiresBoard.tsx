@@ -115,6 +115,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   /** A box being dragged on empty space to pick the steps it touches, in board coordinates. */
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; add: boolean } | null>(null)
   const marqueeDone = useRef(false)
+  /** The group whose title should open for typing, asked for at this moment. */
+  const [renaming, setRenaming] = useState<{ id: string; at: number } | null>(null)
   /** The right-click menu that is open, if any. */
   const [menu, setMenu] = useState<{ at: MenuAt; items: MenuItem[] } | null>(null)
   /** On a read-only board folding a group is only for the viewer. */
@@ -370,7 +372,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     if (!made) { flash('Shift+click the steps to group first (not Start, and not steps in a locked group).'); return }
     commit(made.graph)
     setPicked(new Set())
-    flash('Grouped. Double-click the title to rename it, or click the padlock to lock it.')
+    setRenaming({ id: made.id, at: Date.now() })
+    flash('Grouped. Type a title and press Enter; click the padlock to lock it.')
   }
   const toggleFold = (id: string) => {
     if (readOnly) { setViewFolds(prev => new Map(prev).set(id, !isFolded(id))); return }
@@ -615,46 +618,46 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
           </div>
         </div>
 
-        <div role="region" aria-label="Workflow wires" className="absolute inset-0 overflow-auto bg-gray-50 pt-11 dark:bg-gray-950"
-          style={{ backgroundImage: 'radial-gradient(rgb(var(--gray-300)) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
+        <div role="region" aria-label="Workflow wires" className="absolute inset-0 select-none overflow-auto bg-gray-50 pt-11 dark:bg-gray-950"
+          style={{ touchAction: marquee ? 'none' : undefined, backgroundImage: 'radial-gradient(rgb(var(--gray-300)) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
           onDragOver={onDragOver} onDrop={onDrop}
           onContextMenu={e => { if (e.target === e.currentTarget || e.target === content.current) boardMenu(e) }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setSuggest(null) }}
+          onPointerDown={e => {
+            // Dragging on empty space draws a box; the steps it touches are picked (Shift adds to them).
+            if (readOnly || pending || preview !== null || e.button !== 0 || (e.target !== e.currentTarget && e.target !== content.current)) return
+            const p = boardPoint(e)
+            if (!p) return
+            setMarquee({ x1: p.x, y1: p.y, x2: p.x, y2: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey })
+            e.currentTarget.setPointerCapture?.(e.pointerId)
+          }}
+          onPointerMove={e => {
+            if (!marquee) return
+            const p = boardPoint(e)
+            if (p) setMarquee({ ...marquee, x2: p.x, y2: p.y })
+          }}
+          onPointerUp={() => {
+            if (!marquee) return
+            const m = marquee
+            setMarquee(null)
+            const [l, r] = [Math.min(m.x1, m.x2), Math.max(m.x1, m.x2)]
+            const [t, b] = [Math.min(m.y1, m.y2), Math.max(m.y1, m.y2)]
+            if (r - l < 4 && b - t < 4) return
+            marqueeDone.current = true
+            const hit = graph.nodes.filter(n => {
+              const box = layout.at.get(n.id)
+              return box && n.type !== 'TRIGGER' && box.x < r && box.x + CARD_W > l && box.y < b && box.y + CARD_H > t
+            }).map(n => n.id)
+            setPicked(prev => new Set([...(m.add ? prev : []), ...hit]))
+            setSelected(null)
+            if (hit.length) flash(`${hit.length} ${hit.length === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`)
+          }}
+          onPointerCancel={() => setMarquee(null)}
           onClick={e => {
             if (marqueeDone.current) { marqueeDone.current = false; return }
             if (e.target === e.currentTarget || e.target === content.current) { setSelected(null); setPending(null); setPicked(new Set()) }
           }}>
-          <div ref={content} className="relative mx-auto select-none" style={{ width: layout.width, height: layout.height, touchAction: marquee ? 'none' : undefined }}
-            onPointerDown={e => {
-              // Dragging on empty space draws a box; the steps it touches are picked (Shift adds to them).
-              if (readOnly || pending || preview !== null || e.button !== 0 || e.target !== content.current) return
-              const p = boardPoint(e)
-              if (!p) return
-              setMarquee({ x1: p.x, y1: p.y, x2: p.x, y2: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey })
-              e.currentTarget.setPointerCapture?.(e.pointerId)
-            }}
-            onPointerMove={e => {
-              if (!marquee) return
-              const p = boardPoint(e)
-              if (p) setMarquee({ ...marquee, x2: p.x, y2: p.y })
-            }}
-            onPointerUp={() => {
-              if (!marquee) return
-              const m = marquee
-              setMarquee(null)
-              const [l, r] = [Math.min(m.x1, m.x2), Math.max(m.x1, m.x2)]
-              const [t, b] = [Math.min(m.y1, m.y2), Math.max(m.y1, m.y2)]
-              if (r - l < 4 && b - t < 4) return
-              marqueeDone.current = true
-              const hit = graph.nodes.filter(n => {
-                const box = layout.at.get(n.id)
-                return box && n.type !== 'TRIGGER' && box.x < r && box.x + CARD_W > l && box.y < b && box.y + CARD_H > t
-              }).map(n => n.id)
-              setPicked(prev => new Set([...(m.add ? prev : []), ...hit]))
-              setSelected(null)
-              if (hit.length) flash(`${hit.length} ${hit.length === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`)
-            }}
-            onPointerCancel={() => setMarquee(null)}>
+          <div ref={content} className="relative mx-auto select-none" style={{ width: layout.width, height: layout.height }}>
             {marquee && (
               <div aria-hidden className="pointer-events-none absolute z-40 rounded-md border border-brand-500 bg-brand-500/10"
                 style={{ left: Math.min(marquee.x1, marquee.x2), top: Math.min(marquee.y1, marquee.y2), width: Math.abs(marquee.x2 - marquee.x1), height: Math.abs(marquee.y2 - marquee.y1) }} />
@@ -716,6 +719,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                   onFold={() => toggleFold(g.id)}
                   onLock={() => commit(updateGroup(graph, g.id, { locked: !g.locked }))}
                   onRename={title => commit(updateGroup(graph, g.id, { title }))}
+                  renameAsk={renaming?.id === g.id ? renaming.at : undefined}
                   onUngroup={() => { commit(ungroup(graph, g.id)); flash('Ungrouped. The steps stay where they are.') }}
                   onPointerDown={e => { if (!readOnly && e.button === 0 && preview === null && !pending) startMove(`group:${g.id}`, g.nodes, e) }}
                   onPointerMove={e => dragMove(`group:${g.id}`, e)}
@@ -958,8 +962,8 @@ const GROUP_PAD = 16
 const GROUP_HEAD = 30
 
 /** A step group's box: a title bar to drag, rename, lock, fold or ungroup it, around its steps. */
-function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, onUngroup, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
-  group: StepGroup; box: { x: number; y: number; w: number; h: number }; readOnly: boolean
+function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, renameAsk, onUngroup, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
+  group: StepGroup; box: { x: number; y: number; w: number; h: number }; readOnly: boolean; renameAsk?: number
   onFold: () => void; onLock: () => void; onRename: (title: string) => void; onUngroup: () => void
   onPointerDown: (e: React.PointerEvent) => void; onPointerMove: (e: React.PointerEvent) => void
   onPointerUp: (e: React.PointerEvent) => void; onPointerCancel: () => void
@@ -967,6 +971,7 @@ function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, onUngroup,
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(group.title)
   useEffect(() => { if (!editing) setTitle(group.title) }, [group.title, editing])
+  useEffect(() => { if (renameAsk && !readOnly) setEditing(true) }, [renameAsk]) // eslint-disable-line react-hooks/exhaustive-deps
   const finish = (keep: boolean) => {
     setEditing(false)
     if (keep && title.trim() !== group.title) onRename(title.trim())
@@ -990,6 +995,10 @@ function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, onUngroup,
               onKeyDown={e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false) }}
               className="min-w-0 flex-1 rounded bg-white px-1.5 py-0.5 text-xs font-semibold text-gray-900 outline-none ring-1 ring-brand-500 dark:bg-gray-900 dark:text-gray-100" />
           : <span className="min-w-0 flex-1 truncate" title={readOnly ? name : `${name} (double-click to rename)`}>{name}</span>}
+        {!readOnly && !editing && (
+          <button type="button" onClick={() => setEditing(true)} aria-label={`Rename ${name}`} title="Rename"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded opacity-70 hover:bg-black/10 hover:opacity-100"><Pencil className="h-3.5 w-3.5" /></button>
+        )}
         <span className="shrink-0 font-normal opacity-70">{group.nodes.length} {group.nodes.length === 1 ? 'step' : 'steps'}</span>
         {readOnly
           ? group.locked && <Lock className="mx-1 h-3.5 w-3.5 shrink-0" aria-label="Locked" />

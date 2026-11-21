@@ -146,6 +146,8 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
   const flow = useReactFlow()
   const wrapper = useRef<HTMLDivElement>(null)
   const [selNodes, setSelNodes] = useState<string[]>([])
+  /** The group whose title should open for typing, asked for at this moment. */
+  const [renaming, setRenaming] = useState<{ id: string; at: number } | null>(null)
   const [selEdges, setSelEdges] = useState<string[]>([])
   const [hovered, setHovered] = useState<string | null>(null)
   const hoverTimer = useRef<number>()
@@ -281,6 +283,7 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     if (!made) { notify('Select one or more steps (not Start, and not steps in a locked group) to group them.'); return }
     commit(made.graph)
     select([])
+    setRenaming({ id: made.id, at: Date.now() })
   }, [readOnly, selNodes, graph, commit, select, notify])
 
   const place = useCallback((entry: NodeType | PaletteEntry, at?: { x: number; y: number }, agent?: AgentDto) => {
@@ -506,6 +509,7 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     if (!g || readOnly) return
     setMenu({
       at, items: [
+        { label: 'Rename', onSelect: () => setRenaming({ id, at: Date.now() }) },
         { label: 'Select its steps', onSelect: () => { if (isFolded(id)) toggleFold(id); select([...g.nodes]) } },
         { label: g.locked ? 'Unlock' : 'Lock', onSelect: () => commit(updateGroup(graph, id, { locked: !g.locked })) },
         { label: isFolded(id) ? 'Unfold' : 'Fold', onSelect: () => toggleFold(id) },
@@ -542,10 +546,11 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         onToggleFold: () => toggleFold(g.id),
         onToggleLock: readOnly ? undefined : () => commit(updateGroup(graph, g.id, { locked: !g.locked })),
         onRename: readOnly ? undefined : (title: string) => commit(updateGroup(graph, g.id, { title })),
+        renameAsk: renaming?.id === g.id ? renaming.at : undefined,
         onMenu: readOnly ? undefined : (at: MenuAt) => groupMenu(g.id, at),
       },
     }]
-  }), [graph, isFolded, sizeOf, readOnly, issuesByNode, runInfo, toggleFold, commit, groupMenu])
+  }), [graph, isFolded, sizeOf, readOnly, issuesByNode, runInfo, toggleFold, commit, groupMenu, renaming])
 
   const nodes: Node<StepData | GroupData>[] = useMemo(() => {
     const used = new Set(graph.edges.map(edgeId))
