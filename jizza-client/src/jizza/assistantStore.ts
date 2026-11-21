@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, StartRunCard, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
+import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyVersion, StartRunCard, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -58,7 +58,22 @@ export interface AssistantMessage {
   handback?: { conversationId: string; reason?: string }
   error?: boolean
   stopped?: boolean
+  /** The answers "Try again" replaced, oldest first, to page back to. */
+  versions?: ReplyVersion[]
+  /** This answer came from the deeper model. */
+  deep?: boolean
+  /** When the server stored it; messages sent this session have none. */
+  createdAt?: string
 }
+
+/** What a turn asks beyond its text: a deeper model, and the answers it replaces. */
+export interface TurnExtras {
+  depth?: 'deep'
+  versions?: ReplyVersion[]
+}
+
+/** How many earlier answers a reply keeps, as the server does. */
+export const MAX_VERSIONS = 5
 
 export interface Question {
   text: string
@@ -118,7 +133,12 @@ interface AssistantState {
    */
   threadsNext: boolean
 
-  send: (text: string) => Promise<void>
+  send: (text: string, extras?: TurnExtras) => Promise<void>
+  /**
+   * Asks again for the reply {@code id}: the message it answered is sent once more in its place,
+   * and the replaced answer is kept as an earlier version. {@code deeper} uses the deeper model.
+   */
+  tryAgain: (id: number, deeper?: boolean) => Promise<void>
   /**
    * Replaces the user's message {@code id} with {@code text}: it and everything after it are
    * removed (on the server too), then the new text is sent in its place.
@@ -455,6 +475,29 @@ export const useAssistantStore = create<AssistantState>()(
         if (e.type === 'job.cancelled') finish(e.jobId, 'cancelled', e.payload.summary)
       }
 
+      /**
+       * Takes the conversation back to just before the user's message {@code id}: it and everything
+       * after it go, on the server too. False when there is no such message.
+       */
+      const rewindFrom = async (id: number) => {
+        const { messages, conversationId, incognito } = get()
+        const i = messages.findIndex(m => m.id === id && m.role === 'user')
+        if (i < 0) return false
+        const target = messages[i]
+        if (conversationId && !incognito && target.jobId) {
+          const serverId = target.serverId ?? (await conversationsApi.messages(conversationId))
+            .find(m => m.role === 'user' && m.jobId === target.jobId)?.id
+          if (serverId) await conversationsApi.rewind(conversationId, serverId)
+        }
+        const gone = new Set(messages.slice(i).map(m => m.jobId).filter(Boolean))
+        set(s => ({
+          messages: s.messages.slice(0, s.messages.findIndex(m => m.id === id)),
+          jobOrder: s.jobOrder.filter(j => !gone.has(j)),
+          conversationsVersion: s.conversationsVersion + 1,
+        }))
+        return true
+      }
+
       return {
         messages: [],
         conversationId: undefined,
@@ -473,7 +516,7 @@ export const useAssistantStore = create<AssistantState>()(
         savedPlans: {},
         threadsNext: false,
 
-        send: async (raw) => {
+        send: async (raw, extras) => {
           const text = raw.trim()
           if (!text || get().thinking) return
           // Answering a question clears its choices so they can't be tapped twice.
@@ -507,7 +550,11 @@ export const useAssistantStore = create<AssistantState>()(
               message: text, clientMessageId,
               screen: ctx.screen,
               // The viewer's time zone rides along, so "tomorrow" in a request means their tomorrow.
-              context: { ...(ctx.data ? (ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data) : {}), timeZone: viewerZone() },
+              context: {
+                ...(ctx.data ? (ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data) : {}), timeZone: viewerZone(),
+                ...(extras?.depth ? { depth: extras.depth } : {}),
+                ...(extras?.versions?.length ? { versions: extras.versions } : {}),
+              },
               ...(incognito ? { incognito: true } : { conversationId }),
             })
             set(s => ({
@@ -519,7 +566,8 @@ export const useAssistantStore = create<AssistantState>()(
               expanded: { ...s.expanded, [ref.jobId]: true },
               messages: [
                 ...s.messages.map((m, i) => (i === s.messages.length - 1 && m.role === 'user' ? { ...m, jobId: ref.jobId } : m)),
-                { id: nextId++, role: 'assistant', text: '', streaming: true, jobId: ref.jobId },
+                { id: nextId++, role: 'assistant', text: '', streaming: true, jobId: ref.jobId,
+                  ...(extras?.versions?.length ? { versions: extras.versions } : {}), ...(extras?.depth === 'deep' ? { deep: true } : {}) },
               ],
               conversationsVersion: s.conversationsVersion + 1,
             }))
@@ -544,23 +592,21 @@ export const useAssistantStore = create<AssistantState>()(
 
         edit: async (id, raw) => {
           const text = raw.trim()
-          const { messages, conversationId, incognito, thinking } = get()
-          if (!text || thinking) return
-          const i = messages.findIndex(m => m.id === id && m.role === 'user')
-          if (i < 0) return
-          const target = messages[i]
-          if (conversationId && !incognito && target.jobId) {
-            const serverId = target.serverId ?? (await conversationsApi.messages(conversationId))
-              .find(m => m.role === 'user' && m.jobId === target.jobId)?.id
-            if (serverId) await conversationsApi.rewind(conversationId, serverId)
-          }
-          const gone = new Set(messages.slice(i).map(m => m.jobId).filter(Boolean))
-          set(s => ({
-            messages: s.messages.slice(0, s.messages.findIndex(m => m.id === id)),
-            jobOrder: s.jobOrder.filter(j => !gone.has(j)),
-            conversationsVersion: s.conversationsVersion + 1,
-          }))
-          await get().send(text)
+          if (!text || get().thinking) return
+          if (await rewindFrom(id)) await get().send(text)
+        },
+
+        tryAgain: async (id, deeper) => {
+          const { messages, thinking } = get()
+          if (thinking) return
+          const i = messages.findIndex(m => m.id === id && m.role === 'assistant')
+          const asked = [...messages.slice(0, Math.max(i, 0))].reverse().find(m => m.role === 'user')
+          if (i < 0 || !asked) return
+          const reply = messages[i]
+          // A reply that failed or said nothing is not worth paging back to.
+          const replaced = reply.text && !reply.error ? [{ text: reply.text, ...(reply.deep ? { deep: true } : {}) }] : []
+          const versions = [...(reply.versions ?? []), ...replaced].slice(-MAX_VERSIONS)
+          if (await rewindFrom(asked.id)) await get().send(asked.text, { ...(deeper ? { depth: 'deep' as const } : {}), versions })
         },
 
         stop: async () => {
@@ -664,7 +710,7 @@ export async function loadJob(jobId: string) {
 
 function messageFromDto(m: MessageDto): AssistantMessage {
   if (m.role === 'event') {
-    return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId }
+    return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId, createdAt: m.createdAt }
   }
   const actions = m.metadata?.actions ?? []
   const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs } = execute(actions, false)
@@ -688,6 +734,9 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     runs,
     lead: m.metadata?.lead,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
+    ...(m.metadata?.versions?.length ? { versions: m.metadata.versions } : {}),
+    ...(m.metadata?.deep ? { deep: true } : {}),
+    createdAt: m.createdAt,
   }
 }
 

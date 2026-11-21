@@ -128,6 +128,16 @@ class DefaultConversationStore implements ConversationStore {
 
   @Override
   @Transactional(readOnly = true)
+  public com.jizza.engine.api.dto.EarlierSummaryDto earlier(UUID userId, UUID conversationId) {
+    ConversationEntity entity = owned(userId, conversationId);
+    if (entity.getSummary() == null || entity.getSummary().isBlank() || entity.getSummaryThrough() == null) {
+      return null;
+    }
+    return new com.jizza.engine.api.dto.EarlierSummaryDto(entity.getSummary(), entity.getSummaryThrough());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public List<LearnedFactDto> learned(UUID userId, UUID conversationId) {
     owned(userId, conversationId);
     // Restricted facts are shown only after a fresh step-up, on the Memory page.

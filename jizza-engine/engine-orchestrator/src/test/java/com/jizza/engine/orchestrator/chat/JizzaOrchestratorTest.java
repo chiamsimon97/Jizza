@@ -85,6 +85,21 @@ class JizzaOrchestratorTest {
   }
 
   @Test
+  void tryingAgainWithADeeperModelSkipsTheRoutingCheck() {
+    answerWith("A closer look.");
+    orchestrator.respond(userId, new Orchestrator.TurnInput("hello", null, List.of(), UUID.randomUUID(),
+        Json.obj().put("depth", "deep")));
+
+    ArgumentCaptor<AgentRequest> request = ArgumentCaptor.forClass(AgentRequest.class);
+    Mockito.verify(baseAgent).run(request.capture());
+    assertThat(request.getValue().tier()).isEqualTo(ModelTier.DEEP);
+    Mockito.verify(tiers, Mockito.never()).tierFor(any(), any(), any(), any(), any());
+    assertThat(JizzaOrchestrator.withoutDepth(Json.obj().put("depth", "deep"))).isNull();
+    assertThat(JizzaOrchestrator.withoutDepth(Json.obj().put("depth", "deep").put("stepId", "n1")).toString())
+        .isEqualTo("{\"stepId\":\"n1\"}");
+  }
+
+  @Test
   void answersInJizzasVoice() {
     answerWith("Your sleep is trending up.");
     assertThat(ask("How did I sleep?").text()).isEqualTo("Your sleep is trending up.");

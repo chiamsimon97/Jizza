@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { ConversationSummary, JobDto, LearnedFact, MessageDto, ThreadGuide } from '@/types'
+import type { ConversationSummary, EarlierSummary, JobDto, LearnedFact, MessageDto, ThreadGuide } from '@/types'
 
 /** A file name made of a title, the way the server names its exports. */
 function slug(title: string | undefined, fallback: string) {
@@ -59,6 +59,10 @@ export const conversationsApi = {
   /** Saves a thread's learning file as a .md file. */
   downloadGuide: (id: string, title: string | undefined) =>
     save(`/api/conversations/${id}/guide/download`, `${slug(title, 'thread')}-guide.md`),
+
+  /** The summary standing in for a long chat's older messages; null while every message is sent as written. */
+  earlier: async (id: string) =>
+    (await api.get<EarlierSummary | undefined>(`/api/conversations/${id}/earlier`)) ?? null,
 
   jobs: (id: string) =>
     api.get<JobDto[]>(`/api/conversations/${id}/jobs`),

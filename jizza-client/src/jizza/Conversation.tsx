@@ -1,5 +1,5 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, Send, ShieldQuestion, Split, Square, SquareSlash, X } from 'lucide-react'
+import { FormEvent, Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
@@ -20,6 +20,7 @@ import { workflowsApi } from '@/api/workflows'
 import type { LibraryEntry } from '@/types'
 import { useContextStore } from './contextStore'
 import { Markdown } from './Markdown'
+import { earlierMarker, took } from './replyMeta'
 import { UserStepsCard, cardLinks } from './UserStepsCard'
 import { StartRunCard } from './StartRunCard'
 import { RunInChat } from './RunInChat'
@@ -51,7 +52,7 @@ interface ConversationProps {
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
-  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit } = useAssistantStore()
+  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, conversationId, lastReplyId } = useAssistantStore()
   const [input, setInput] = useState('')
   // The message being replied to: quoted above what the user writes.
   const [replyTo, setReplyTo] = useState<{ who: string; text: string } | null>(null)
@@ -196,11 +197,15 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     if (reply) inputRef.current?.focus()
   }
 
-  const retry = (id: number) => {
-    const i = messages.findIndex(m => m.id === id)
-    const asked = [...messages.slice(0, i)].reverse().find(m => m.role === 'user')
-    if (asked) void send(asked.text)
-  }
+  // Only the latest reply can be asked again: asking an older one would drop everything after it.
+  const lastReply = messages.map(m => m.role).lastIndexOf('assistant')
+  const earlier = useQuery({
+    queryKey: ['conversation', conversationId, 'earlier', lastReplyId],
+    queryFn: () => conversationsApi.earlier(conversationId!),
+    enabled: !!conversationId && !incognito,
+    staleTime: 60_000,
+  })
+  const earlierAt = earlier.data ? earlierMarker(messages, earlier.data.through) : -1
 
   const contextual = ctx.kind === 'builder' || ctx.kind === 'step'
   const shownIntro = intro ?? (contextual ? {
@@ -248,11 +253,16 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
           )}
 
           {messages.map((msg, i) => (
-            <MessageBubble key={msg.id} msg={msg} compact={compact} onChoose={option => choose(msg.question!, option)} onOpenJob={onOpenJob}
-              inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
-              onSendMany={text => void send(text)} onRetry={msg.error && !thinking ? () => retry(msg.id) : undefined}
-              onReply={() => reply(msg)} busy={thinking} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
-              sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
+            <Fragment key={msg.id}>
+              {i === earlierAt && earlier.data && <EarlierNote summary={earlier.data.summary} />}
+              <MessageBubble msg={msg} compact={compact} onChoose={option => choose(msg.question!, option)} onOpenJob={onOpenJob}
+                inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
+                onSendMany={text => void send(text)}
+                onTryAgain={!thinking && !msg.streaming && (msg.error || i === lastReply) && messages.slice(0, i).some(m => m.role === 'user')
+                  ? deeper => void tryAgain(msg.id, deeper) : undefined}
+                onReply={() => reply(msg)} busy={thinking} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
+                sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
+            </Fragment>
           ))}
 
           {/* Between sending and the job starting there is no reply bubble yet to show progress in. */}
@@ -412,13 +422,13 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onRetry, onReply, onEdit, sentToThread, busy }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onTryAgain, onReply, onEdit, sentToThread, busy }: {
   msg: AssistantMessage; compact: boolean; busy?: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
   /** Sends several ticked answers together. */
   onSendMany: (text: string) => void
-  /** Asks again after a reply that failed. */
-  onRetry?: () => void
+  /** Asks again for this reply, keeping this answer as an earlier version; {@code deeper} uses the deeper model. */
+  onTryAgain?: (deeper: boolean) => void
   /** Quotes this message in the next one. */
   onReply: () => void
   /** The user's own message: replaces it, and everything after it, with the edited text. */
@@ -427,6 +437,12 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
   sentToThread?: boolean
 }) {
   const [editing, setEditing] = useState(false)
+  // Which answer is shown when "Try again" left earlier ones: the latest unless the user paged back.
+  const versionCount = (msg.versions?.length ?? 0) + 1
+  const [shown, setShown] = useState<number | null>(null)
+  const current = shown === null || shown >= versionCount - 1
+  const shownText = current ? msg.text : msg.versions![shown].text
+  const shownDeep = current ? msg.deep : msg.versions![shown].deep
   if (msg.role === 'event') {
     return (
       <div className="flex items-center gap-2 py-1 animate-fade-in" role="note">
@@ -503,17 +519,26 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
             ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
             : 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
         }`}>
-          {msg.error ? msg.text : <Markdown text={msg.text} hideLinks={cardLinks(msg.userSteps)} />}
+          {msg.error ? msg.text : <Markdown text={shownText} hideLinks={current ? cardLinks(msg.userSteps) : undefined} />}
           {msg.streaming && !msg.text && <TypingDots />}
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
-        {!msg.streaming && msg.text && !msg.error && <MessageActions text={msg.text} onReply={onReply} align="start" />}
-        {onRetry && (
-          <button type="button" onClick={onRetry}
-            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
-            <RotateCcw className="h-3 w-3" /> Try again
-          </button>
+        {(versionCount > 1 || (!msg.streaming && msg.text && !msg.error) || onTryAgain) && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {versionCount > 1 && !msg.streaming && (
+              <VersionPager index={current ? versionCount - 1 : shown!} count={versionCount} deep={shownDeep}
+                onPick={i => setShown(i >= versionCount - 1 ? null : i)} />
+            )}
+            {!msg.streaming && msg.text && !msg.error && <MessageActions text={shownText} onReply={onReply} align="start" />}
+            {onTryAgain && msg.error && (
+              <button type="button" onClick={() => onTryAgain(false)}
+                className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
+                <RotateCcw className="h-3 w-3" /> Try again
+              </button>
+            )}
+            {onTryAgain && !msg.error && <TryAgainButtons onTryAgain={onTryAgain} />}
+          </div>
         )}
         {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
         {msg.proposal && <AgentProposalCard proposal={msg.proposal} />}
@@ -522,14 +547,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
         {msg.jobId && !msg.streaming && <Approvals jobId={msg.jobId} />}
         {msg.jobId && inlineDiscussion && !msg.streaming && <Discussion jobId={msg.jobId} />}
         {msg.jobId && onOpenJob && !inlineDiscussion && !msg.streaming && (
-          <button
-            type="button"
-            onClick={() => onOpenJob(msg.jobId!)}
-            className="inline-flex w-fit items-center gap-0.5 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300"
-          >
-            See how this was done
-            <ChevronRight className="h-3 w-3" />
-          </button>
+          <WhatIDid jobId={msg.jobId} onOpen={() => onOpenJob(msg.jobId!)} />
         )}
         {msg.question && <QuestionCard question={msg.question} onChoose={onChoose} onSendMany={onSendMany} />}
         {!msg.streaming && msg.startRun && <StartRunCard card={msg.startRun} />}
@@ -769,6 +787,73 @@ function QuestionCard({ question, onChoose, onSendMany }: { question: Question; 
 }
 
 /** Reply, Edit (the user's own messages) and Copy, under a message; shown on hover, always on touch. */
+/** The line where Jizza's summary of the older messages takes over, with the summary to read. */
+function EarlierNote({ summary }: { summary: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex flex-col gap-2 py-1 animate-fade-in" role="note">
+      <div className="flex items-center gap-2">
+        <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+          className="inline-flex max-w-[85%] items-center gap-1.5 text-center text-xs text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
+          <ScrollText className="h-3 w-3 shrink-0" />
+          Jizza remembers the messages above as a summary, so long chats stay quick
+          <span className="font-medium underline underline-offset-2">{open ? 'Hide' : 'View'}</span>
+        </button>
+        <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+      </div>
+      {open && (
+        <div className="mx-auto w-full max-w-2xl rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-300">
+          <Markdown text={summary} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** "‹ 2 / 3 ›": pages between a reply's answers when "Try again" left earlier ones. */
+function VersionPager({ index, count, deep, onPick }: { index: number; count: number; deep?: boolean; onPick: (i: number) => void }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs text-gray-500 dark:text-gray-400" aria-label="Answers">
+      <button type="button" onClick={() => onPick(index - 1)} disabled={index === 0} aria-label="Earlier answer" title="Earlier answer"
+        className="grid h-6 w-6 place-items-center rounded-md transition-colors enabled:hover:bg-gray-100 enabled:hover:text-gray-700 disabled:opacity-40 dark:enabled:hover:bg-gray-800 dark:enabled:hover:text-gray-200">
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span className="tabular-nums">{index + 1} / {count}</span>
+      <button type="button" onClick={() => onPick(index + 1)} disabled={index === count - 1} aria-label="Later answer" title="Later answer"
+        className="grid h-6 w-6 place-items-center rounded-md transition-colors enabled:hover:bg-gray-100 enabled:hover:text-gray-700 disabled:opacity-40 dark:enabled:hover:bg-gray-800 dark:enabled:hover:text-gray-200">
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+      {deep && <span className="ml-1 inline-flex items-center gap-0.5 text-brand-600 dark:text-brand-300"><Sparkles className="h-3 w-3" /> Deeper model</span>}
+    </span>
+  )
+}
+
+/** Ask for the latest reply again, the same way or with the deeper model. */
+function TryAgainButtons({ onTryAgain }: { onTryAgain: (deeper: boolean) => void }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/msg:opacity-100 [@media(hover:none)]:opacity-100">
+      <ActionButton label="Try again" onClick={() => onTryAgain(false)}><RotateCcw className="h-3.5 w-3.5" /></ActionButton>
+      <ActionButton label="Try again with a deeper model" onClick={() => onTryAgain(true)}><Sparkles className="h-3.5 w-3.5" /></ActionButton>
+    </span>
+  )
+}
+
+/** Under a reply: what Jizza did for it, in one line, and how long it took. Opens the details. */
+function WhatIDid({ jobId, onOpen }: { jobId: string; onOpen: () => void }) {
+  const job = useAssistantStore(s => s.jobs[jobId])
+  const summary = job?.status !== 'running' ? job?.summary?.trim().replace(/\.$/, '') : undefined
+  const duration = job && job.status !== 'running' ? took(job.startedAt, job.finishedAt) : undefined
+  const line = [summary, duration].filter(Boolean).join(' · ')
+  return (
+    <button type="button" onClick={onOpen} title="See how this was done"
+      className="inline-flex w-fit max-w-full items-center gap-0.5 text-left text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
+      <span className="truncate">{line || 'See how this was done'}</span>
+      <ChevronRight className="h-3 w-3 shrink-0" />
+    </button>
+  )
+}
+
 function MessageActions({ text, onReply, onEdit, align = 'end' }: { text: string; onReply: () => void; onEdit?: () => void; align?: 'start' | 'end' }) {
   const [copied, setCopied] = useState(false)
   const copy = () => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }

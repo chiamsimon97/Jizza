@@ -310,6 +310,12 @@ public class TurnRunner implements ChatService {
       if (persist) {
         ObjectNode meta = metadata(ref, answer);
         if (lead != null) meta.set("lead", lead);
+        // "Try again" keeps the answers this one replaced, so the user can page back to them.
+        com.fasterxml.jackson.databind.node.ArrayNode versions = earlierVersions(s.context());
+        if (versions != null) meta.set(VERSIONS, versions);
+        if (s.context() != null && "deep".equalsIgnoreCase(s.context().path("depth").asText())) {
+          meta.put("deep", true);
+        }
         store.finish(ref.jobId(), status, done.text(), meta, summary, done);
       }
       if (persist) {
@@ -386,10 +392,40 @@ public class TurnRunner implements ChatService {
    * for reading dates such as "tomorrow", not something on screen); null when nothing is left.
    */
   static com.fasterxml.jackson.databind.JsonNode screenContext(com.fasterxml.jackson.databind.JsonNode context) {
-    if (!(context instanceof ObjectNode object) || !object.has("timeZone")) return context;
+    if (!(context instanceof ObjectNode object) || !(object.has("timeZone") || object.has(VERSIONS))) {
+      return context;
+    }
     ObjectNode rest = object.deepCopy();
     rest.remove("timeZone");
+    rest.remove(VERSIONS);
     return rest.isEmpty() ? null : rest;
+  }
+
+  /** The answers a "Try again" replaced, oldest first, kept with the new reply. Never sent to the model. */
+  static final String VERSIONS = "versions";
+  static final int MAX_VERSIONS = 5;
+  static final int MAX_VERSION_CHARS = 20_000;
+
+  /**
+   * The earlier answers the client sent with a "Try again", trimmed to the last {@link
+   * #MAX_VERSIONS} and to {@link #MAX_VERSION_CHARS} each; null when there are none.
+   */
+  static com.fasterxml.jackson.databind.node.ArrayNode earlierVersions(
+      com.fasterxml.jackson.databind.JsonNode context) {
+    if (context == null || !context.path(VERSIONS).isArray()) return null;
+    List<ObjectNode> kept = new java.util.ArrayList<>();
+    for (com.fasterxml.jackson.databind.JsonNode v : context.path(VERSIONS)) {
+      String text = v.isTextual() ? v.asText() : v.path("text").asText("");
+      if (text.isBlank()) continue;
+      ObjectNode version = Json.obj().put("text",
+          text.length() > MAX_VERSION_CHARS ? text.substring(0, MAX_VERSION_CHARS) : text);
+      if (v.path("deep").asBoolean(false)) version.put("deep", true);
+      kept.add(version);
+    }
+    if (kept.isEmpty()) return null;
+    com.fasterxml.jackson.databind.node.ArrayNode out = Json.mapper().createArrayNode();
+    kept.subList(Math.max(0, kept.size() - MAX_VERSIONS), kept.size()).forEach(out::add);
+    return out;
   }
 
   /**
