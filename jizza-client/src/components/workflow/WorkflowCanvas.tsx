@@ -7,7 +7,7 @@ import ReactFlow, {
   type OnConnectStartParams,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { ChevronDown, Globe, Keyboard, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
+import { ChevronDown, Globe, Group, Keyboard, Lock, Maximize2, Minimize2, Plus, Redo2, Search, Sparkles, Undo2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
@@ -21,6 +21,10 @@ import {
   ContextMenu, NODE_ICON, StepNode, StepPicker, Wire, exitOf, handleOf,
   type Exit, type MenuAt, type MenuItem, type StepData, type StepRun, type WireData,
 } from './canvasParts'
+import {
+  createGroup, groupBounds, groupOfNode, groupsOf, isLockedEdge, keepLockedArrangement, lockedChange, lockedGroupOf, moveGroup, removeFromGroup, ungroup, updateGroup,
+} from './groupModel'
+import { GROUP_DRAG, GroupNode, groupRun, type GroupData } from './groupParts'
 import { RecordFlow } from '@/components/web/RecordFlow'
 import { CanvasInspector, type ToolOption, type WorkflowOption } from './CanvasInspector'
 import { canConfigureWithJizza } from '@/jizza/commands'
@@ -35,7 +39,7 @@ interface Props {
   focusNode?: string | null
 }
 
-const nodeTypes = { step: StepNode }
+const nodeTypes = { step: StepNode, stepGroup: GroupNode }
 const edgeTypes = { wire: Wire }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MOD = isMac ? '⌘' : 'Ctrl'
@@ -232,7 +236,52 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
 
   // ---- Editing operations -------------------------------------------------------------------
 
-  const commit = history.commit
+  /** A short message over the canvas, such as why a change to a locked group was refused. */
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<number>()
+  const notify = useCallback((text: string) => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice(text)
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 4500)
+  }, [])
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), [])
+
+  /**
+   * Every edit goes through here. Locked groups keep their arrangement (Tidy up moves them as a
+   * block), and a change to what is inside one is refused with a note saying why.
+   */
+  const commit = useCallback((next: CanvasGraph, key?: string): boolean => {
+    const kept = keepLockedArrangement(graph, next)
+    const why = lockedChange(graph, kept)
+    if (why) { notify(why); return false }
+    history.commit(kept, key)
+    return true
+  }, [graph, history, notify])
+
+  /** On a read-only canvas folding a group is only for the viewer, so it lives here. */
+  const [viewFolds, setViewFolds] = useState<Map<string, boolean>>(() => new Map())
+  const isFolded = useCallback((id: string) => {
+    const g = groupsOf(graph).find(x => x.id === id)
+    return readOnly && viewFolds.has(id) ? viewFolds.get(id)! : !!g?.collapsed
+  }, [graph, readOnly, viewFolds])
+  const toggleFold = useCallback((id: string) => {
+    if (readOnly) { setViewFolds(prev => new Map(prev).set(id, !isFolded(id))); return }
+    const folding = !isFolded(id)
+    commit(updateGroup(graph, id, { collapsed: folding }))
+    if (folding) {
+      // Its steps go out of sight, and so do their settings.
+      const g = groupsOf(graph).find(x => x.id === id)
+      if (g && selNodes.some(n => g.nodes.includes(n))) select(selNodes.filter(n => !g.nodes.includes(n)))
+    }
+  }, [readOnly, isFolded, commit, graph, selNodes, select])
+
+  const groupSelection = useCallback((ids = selNodes) => {
+    if (readOnly) return
+    const made = createGroup(graph, ids)
+    if (!made) { notify('Select one or more steps (not Start, and not steps in a locked group) to group them.'); return }
+    commit(made.graph)
+    select([])
+  }, [readOnly, selNodes, graph, commit, select, notify])
 
   const place = useCallback((entry: NodeType | PaletteEntry, at?: { x: number; y: number }, agent?: AgentDto) => {
     const anchor = graph.nodes.find(n => n.id === selNodes[0]) ?? graph.nodes[graph.nodes.length - 1]
@@ -272,15 +321,18 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
 
   const deleteSelection = useCallback(() => {
     if (readOnly) return
-    const nodes = selNodes.filter(id => graph.nodes.find(n => n.id === id)?.type !== 'TRIGGER')
-    if (!nodes.length && !selEdges.length) return
-    let next: CanvasGraph = { ...graph, edges: graph.edges.filter(e => !selEdges.includes(edgeId(e))) }
+    const removable = selNodes.filter(id => graph.nodes.find(n => n.id === id)?.type !== 'TRIGGER')
+    const nodes = removable.filter(id => !lockedGroupOf(graph, id))
+    const wires = selEdges.filter(id => { const e = graph.edges.find(x => edgeId(x) === id); return !e || !isLockedEdge(graph, e) })
+    if (nodes.length < removable.length || wires.length < selEdges.length) notify('Steps and wiring in a locked group were kept. Unlock the group to delete them.')
+    if (!nodes.length && !wires.length) return
+    let next: CanvasGraph = { ...graph, edges: graph.edges.filter(e => !wires.includes(edgeId(e))) }
     for (const id of nodes) next = removeNode(next, id)
     // The step whose settings were open is gone, and its unsaved changes with it.
     unsaved.current = false
     commit(next)
     select([])
-  }, [readOnly, selNodes, selEdges, graph, commit, select])
+  }, [readOnly, selNodes, selEdges, graph, commit, select, notify])
 
   const copy = useCallback((ids = selNodes) => {
     const picked = ids.filter(id => graph.nodes.find(n => n.id === id)?.type !== 'TRIGGER')
@@ -365,13 +417,14 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
       else if (mod && key === 'v') { e.preventDefault(); paste() }
       else if (mod && key === 'd') { e.preventDefault(); duplicate() }
       else if (mod && key === 'a') { e.preventDefault(); select(graph.nodes.map(n => n.id)) }
+      else if (mod && key === 'g' && !e.shiftKey) { e.preventDefault(); groupSelection() }
       else if (e.key === 'Tab' && !mod) { e.preventDefault(); openPickerCentered() }
       else if (!mod && e.shiftKey && key === 't') { e.preventDefault(); tidyUp() }
     }
     // Capture, so Escape is claimed before the slide-over around the canvas sees it.
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [fullscreen, picker, menu, help, selNodes, selEdges, readOnly, deleteSelection, history, copy, paste, duplicate, select, graph, openPickerCentered, tidyUp, flow, onFullscreen])
+  }, [fullscreen, picker, menu, help, selNodes, selEdges, readOnly, deleteSelection, history, copy, paste, duplicate, select, graph, openPickerCentered, tidyUp, flow, onFullscreen, groupSelection])
 
   // ---- React Flow wiring ------------------------------------------------------------------
 
@@ -411,8 +464,8 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         {
           label: 'Delete', shortcut: 'Del', danger: true, divider: true,
           onSelect: () => {
+            if (!commit(removeNode(graph, id))) return
             if (selNodes.length === 1 && selNodes[0] === id) unsaved.current = false
-            commit(removeNode(graph, id))
             select(selNodes.filter(s => s !== id))
           },
         },
@@ -425,15 +478,71 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
 
   const onAddAfter = useCallback((from: string, branch: Exit, at: { x: number; y: number }) => setPicker({ kind: 'after', from, branch, at }), [])
 
-  const nodes: Node<StepData>[] = useMemo(() => {
+  const sizeOf = useCallback((n: CanvasNode) => sizes.get(n.id) ?? { width: NODE_W, height: NODE_H }, [sizes])
+
+  /** Steps hidden in a folded group, by the group that stands in for them. */
+  const foldedInto = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const g of groupsOf(graph)) if (isFolded(g.id)) for (const id of g.nodes) map.set(id, g.id)
+    return map
+  }, [graph, isFolded])
+
+  const groupMenu = useCallback((id: string, at: MenuAt) => {
+    const g = groupsOf(graph).find(x => x.id === id)
+    if (!g || readOnly) return
+    setMenu({
+      at, items: [
+        { label: 'Select its steps', onSelect: () => { if (isFolded(id)) toggleFold(id); select([...g.nodes]) } },
+        { label: g.locked ? 'Unlock' : 'Lock', onSelect: () => commit(updateGroup(graph, id, { locked: !g.locked })) },
+        { label: isFolded(id) ? 'Unfold' : 'Fold', onSelect: () => toggleFold(id) },
+        {
+          label: 'Ungroup', divider: true, disabled: g.locked,
+          onSelect: () => commit(ungroup(graph, id)),
+        },
+      ],
+    })
+  }, [graph, readOnly, isFolded, toggleFold, select, commit])
+
+  const groupNodes: Node<GroupData>[] = useMemo(() => groupsOf(graph).flatMap(g => {
+    const folded = isFolded(g.id)
+    const box = groupBounds(graph, { ...g, collapsed: folded }, sizeOf)
+    if (!box) return []
+    return [{
+      id: g.id,
+      type: 'stepGroup',
+      position: { x: box.x, y: box.y },
+      width: box.width, height: box.height,
+      style: { width: box.width, height: box.height, pointerEvents: folded ? 'all' : 'none' },
+      zIndex: folded ? 0 : -1,
+      selectable: false,
+      focusable: false,
+      deletable: false,
+      draggable: !readOnly,
+      dragHandle: `.${GROUP_DRAG}`,
+      data: {
+        group: g,
+        collapsed: folded,
+        readOnly,
+        issues: g.nodes.filter(id => (issuesByNode.get(id)?.length ?? 0) > 0).length,
+        run: folded ? groupRun(g.nodes.map(id => runInfo?.nodes.get(id))) : undefined,
+        onToggleFold: () => toggleFold(g.id),
+        onToggleLock: readOnly ? undefined : () => commit(updateGroup(graph, g.id, { locked: !g.locked })),
+        onRename: readOnly ? undefined : (title: string) => commit(updateGroup(graph, g.id, { title })),
+        onMenu: readOnly ? undefined : (at: MenuAt) => groupMenu(g.id, at),
+      },
+    }]
+  }), [graph, isFolded, sizeOf, readOnly, issuesByNode, runInfo, toggleFold, commit, groupMenu])
+
+  const nodes: Node<StepData | GroupData>[] = useMemo(() => {
     const used = new Set(graph.edges.map(edgeId))
-    return graph.nodes.map(n => ({
+    return [...groupNodes, ...graph.nodes.map((n): Node<StepData> => ({
       id: n.id,
       type: 'step',
       position: { x: n.x, y: n.y },
       ...sizes.get(n.id),
+      hidden: foldedInto.has(n.id),
       selected: selNodes.includes(n.id),
-      deletable: !readOnly && n.type !== 'TRIGGER',
+      deletable: !readOnly && n.type !== 'TRIGGER' && !lockedGroupOf(graph, n.id),
       data: {
         node: n,
         agent: agents?.find(a => a.id === n.config.agentId),
@@ -446,8 +555,8 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         onAddAfter: (b, at) => onAddAfter(n.id, b, at),
         onMenu: readOnly ? undefined : at => stepMenu(n.id, at),
       },
-    }))
-  }, [graph, sizes, selNodes, readOnly, agents, issuesByNode, orphans, runInfo, onAddAfter, menu, stepMenu])
+    }))]
+  }, [graph, groupNodes, foldedInto, sizes, selNodes, readOnly, agents, issuesByNode, orphans, runInfo, onAddAfter, menu, stepMenu])
 
   const onHover = useCallback((id: string | null) => {
     window.clearTimeout(hoverTimer.current)
@@ -455,23 +564,30 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     else hoverTimer.current = window.setTimeout(() => setHovered(null), 180)
   }, [])
 
-  const edges: Edge<WireData>[] = useMemo(() => graph.edges.map(e => {
+  const edges: Edge<WireData>[] = useMemo(() => graph.edges.flatMap(e => {
     const id = edgeId(e)
     const reached = runInfo?.nodes.get(e.to)
     const travelled = !!runInfo && runInfo.ran.has(e.from) && (runInfo.ran.has(e.to) || reached === 'running' || reached === 'waiting' || reached === 'failed')
-    return {
-      id, source: e.from, target: e.to, sourceHandle: handleOf(e.branch), targetHandle: 'in', type: 'wire',
+    // A folded group stands in for its steps: wires inside it go, wires in and out meet its card.
+    const from = foldedInto.get(e.from)
+    const to = foldedInto.get(e.to)
+    if (from && from === to) return []
+    const locked = isLockedEdge(graph, e)
+    const fixed = readOnly || locked || !!from || !!to
+    return [{
+      id, source: from ?? e.from, target: to ?? e.to, sourceHandle: from ? 'out' : handleOf(e.branch), targetHandle: 'in', type: 'wire',
       selected: selEdges.includes(id),
       animated: travelled && runInfo?.live,
-      updatable: !readOnly,
+      updatable: !fixed,
+      deletable: !fixed,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: travelled ? '#10b981' : '#9ca3af' },
       data: {
-        branch: e.branch, travelled, hovered: hovered === id, readOnly, onHover,
+        branch: e.branch, travelled, hovered: hovered === id, readOnly: fixed, onHover,
         onInsert: (_: string, at: { x: number; y: number }) => setPicker({ kind: 'wire', edge: e, at }),
         onDelete: () => { commit({ ...graph, edges: graph.edges.filter(x => x !== e) }); select([]); setHovered(null) },
       },
-    }
-  }), [graph, selEdges, hovered, readOnly, runInfo, onHover, commit, select])
+    }]
+  }), [graph, foldedInto, selEdges, hovered, readOnly, runInfo, onHover, commit, select])
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     let moved: Map<string, { x: number; y: number }> | null = null
@@ -489,14 +605,25 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
       })
     }
     if (moved) {
+      let next = graph
+      // Dragging a group's title bar moves all its steps.
+      for (const g of groupsOf(graph)) {
+        const to = moved.get(g.id)
+        if (!to) continue
+        const box = groupBounds(graph, { ...g, collapsed: isFolded(g.id) }, sizeOf)
+        if (box) next = moveGroup(next, g.id, to.x - box.x, to.y - box.y)
+        moved.delete(g.id)
+      }
       const at = moved
-      history.replace({ ...graph, nodes: graph.nodes.map(n => (at.has(n.id) ? { ...n, x: Math.round(at.get(n.id)!.x), y: Math.round(at.get(n.id)!.y) } : n)) })
+      next = { ...next, nodes: next.nodes.map(n => (at.has(n.id) ? { ...n, x: Math.round(at.get(n.id)!.x), y: Math.round(at.get(n.id)!.y) } : n)) }
+      // A step of a locked group drags the whole group with it, so its arrangement stays.
+      history.replace(keepLockedArrangement(graph, next))
     }
     if (selects.length) {
       const next = applySelection(selNodes, selects)
       if (next !== selNodes && mayLeave(next)) { setFocusNote(false); setAskJizza(null); setSelNodes(next) }
     }
-  }, [readOnly, graph, history, selNodes, mayLeave])
+  }, [readOnly, graph, history, selNodes, mayLeave, isFolded, sizeOf])
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const selects = changes.filter((c): c is EdgeSelectionChange => c.type === 'select')
@@ -506,6 +633,10 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
   const isValidConnection = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return false
     if (graph.nodes.find(n => n.id === c.target)?.type === 'TRIGGER') return false
+    // Nothing new inside a locked group, and an exit wired inside one stays as it is.
+    if (isLockedEdge(graph, { from: c.source, to: c.target })) return false
+    const current = graph.edges.find(e => e.from === c.source && e.branch === exitOf(c.sourceHandle))
+    if (current && isLockedEdge(graph, current)) return false
     // A wire back to something that leads here would make a loop, which the engine refuses.
     return !reaches(graph, c.target, c.source)
   }, [graph])
@@ -562,6 +693,7 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
 
   const nodeMenu = useCallback((e: React.MouseEvent, node: Node) => {
     e.preventDefault()
+    if (node.type === 'stepGroup') { groupMenu(node.id, { x: e.clientX, y: e.clientY }); return }
     const ids = selNodes.includes(node.id) ? selNodes : [node.id]
     if (!selNodes.includes(node.id)) select([node.id])
     const onlyStart = ids.every(id => graph.nodes.find(n => n.id === id)?.type === 'TRIGGER')
@@ -574,6 +706,10 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         ...(ids.length === 1 && groupButtonsOf(graph.nodes.find(n => n.id === node.id)).length > 0 && !buttonPathsAfter(graph, node.id) ? [
           { label: 'Branch by button clicked', onSelect: () => { const made = branchByButton(graph, node.id); if (made) { commit(made.graph); select([made.id]) } } },
         ] : []),
+        { label: 'Group steps', shortcut: `${MOD}+G`, disabled: onlyStart, onSelect: () => groupSelection(ids) },
+        ...(ids.length === 1 && groupOfNode(graph, node.id) && !lockedGroupOf(graph, node.id) ? [
+          { label: 'Remove from group', onSelect: () => commit(removeFromGroup(graph, node.id)) },
+        ] : []),
         { label: 'Disconnect', onSelect: () => commit({ ...graph, edges: graph.edges.filter(x => !ids.includes(x.from) && !ids.includes(x.to)) }) },
         ...(ids.length === 1 && branchesFrom(graph, node.id) ? [
           { label: 'Select steps from here', onSelect: () => select([node.id, ...descendantsOf(graph, node.id)]) },
@@ -584,13 +720,12 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
           onSelect: () => {
             let g = graph
             for (const id of ids) if (g.nodes.find(n => n.id === id)?.type !== 'TRIGGER') g = removeNode(g, id)
-            commit(g)
-            select([])
+            if (commit(g)) select([])
           },
         },
       ],
     })
-  }, [selNodes, select, graph, readOnly, copy, duplicate, commit])
+  }, [selNodes, select, graph, readOnly, copy, duplicate, commit, groupSelection, groupMenu])
 
   const paneMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -685,7 +820,7 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} className="!bg-gray-50 dark:!bg-gray-950" />
           <Controls showInteractive={false} position="bottom-left" />
           <MiniMap pannable zoomable position="bottom-right" nodeBorderRadius={8} style={selected ? { marginRight: 432 } : undefined}
-            nodeColor={n => MINIMAP[(n.data as StepData).node.type]} maskColor="rgb(var(--gray-500) / 0.12)" />
+            nodeColor={n => (n.type === 'stepGroup' ? 'rgba(245, 158, 11, 0.18)' : MINIMAP[(n.data as StepData).node.type])} maskColor="rgb(var(--gray-500) / 0.12)" />
 
           <Panel position="top-left">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -712,6 +847,8 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
                 <ToolButton label={`Undo (${MOD}+Z)`} disabled={!history.canUndo} onClick={history.undo}><Undo2 className="h-4 w-4" /></ToolButton>
                 <ToolButton label={`Redo (${MOD}+Shift+Z)`} disabled={!history.canRedo} onClick={history.redo}><Redo2 className="h-4 w-4" /></ToolButton>
                 <ToolButton label="Tidy up (Shift+T)" onClick={tidyUp}><Sparkles className="h-4 w-4" /></ToolButton>
+                <ToolButton label={`Group the selected steps (${MOD}+G)`} disabled={!selNodes.some(id => graph.nodes.find(n => n.id === id)?.type !== 'TRIGGER')}
+                  onClick={() => groupSelection()}><Group className="h-4 w-4" /></ToolButton>
               </>}
               <ToolButton label="Keyboard shortcuts" onClick={() => setHelp(v => !v)}><Keyboard className="h-4 w-4" /></ToolButton>
               <ToolButton label={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'} onClick={() => onFullscreen(!fullscreen)}>
@@ -720,6 +857,14 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
             </div>
             {help && <Shortcuts />}
           </Panel>
+
+          {notice && (
+            <Panel position="bottom-left" style={{ marginLeft: 56, marginRight: selected ? 432 : 16 }}>
+              <p role="status" className="mb-1 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow ring-1 ring-inset ring-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100">
+                <Lock className="h-3.5 w-3.5 shrink-0" />{notice}
+              </p>
+            </Panel>
+          )}
 
           {graph.nodes.length === 1 && !readOnly && (
             <Panel position="top-center">
@@ -732,9 +877,12 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
         {/* Over the canvas rather than beside it: resizing the canvas under the pointer would turn
             the click that opened it into a click on empty canvas. */}
         {selected && (
-        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows} readOnly={readOnly}
+        <CanvasInspector key={selected.id} node={selected} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows}
+          readOnly={readOnly || !!lockedGroupOf(graph, selected.id)}
+          lockedIn={readOnly ? undefined : lockedGroupOf(graph, selected.id)?.title}
+          onUnlock={() => { const g = lockedGroupOf(graph, selected.id); if (g) commit(updateGroup(graph, g.id, { locked: false })) }}
           issues={agentIssues.get(selected.id) ?? []} step={runInfo?.steps.get(selected.id)} runSteps={runInfo?.steps} focusNote={focusNote} askJizza={askJizza === selected.id} onDirty={onDirty}
-          onSave={edited => { unsaved.current = false; commit(applyStepEdit(graph, edited, selected.id)); select([]) }}
+          onSave={edited => { if (!commit(applyStepEdit(graph, edited, selected.id))) return; unsaved.current = false; select([]) }}
           onBranchByButton={edited => {
             unsaved.current = false
             const saved = applyStepEdit(graph, edited, selected.id)
@@ -816,7 +964,7 @@ function Shortcuts() {
   const rows: Array<[string, string]> = [
     ['Add a step', 'Tab'], ['Connect', 'Drag from a dot to a step'], ['Reconnect', 'Click a wire, drag its end'],
     ['Delete', 'Del / Backspace'], ['Undo / redo', `${MOD}+Z / ${MOD}+Shift+Z`], ['Copy / paste', `${MOD}+C / ${MOD}+V`],
-    ['Duplicate', `${MOD}+D`], ['Select all', `${MOD}+A`], ['Select an area', 'Shift+drag'], ['Tidy up', 'Shift+T'], ['Fit to screen', '1'],
+    ['Duplicate', `${MOD}+D`], ['Select all', `${MOD}+A`], ['Select an area', 'Shift+drag'], ['Group steps', `${MOD}+G`], ['Tidy up', 'Shift+T'], ['Fit to screen', '1'],
   ]
   return (
     <div className="mt-1.5 w-72 rounded-xl border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900">

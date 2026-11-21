@@ -13,6 +13,7 @@ import {
 import { NODE_ICON, StepPicker, exitLabel, summarise, type StepRun } from './canvasParts'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
+import { lockedChange, lockedGroupOf, updateGroup } from './groupModel'
 import {
   CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
   wireKey, wireLabel, wiresLayout, type Route,
@@ -132,10 +133,13 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   /** An edit to the graph. Any preview stops, as it no longer matches the flow. */
   const commit = useCallback((next: CanvasGraph) => {
+    // Step groups are drawn on the Canvas; their locks hold here too.
+    const why = lockedChange(graph, next)
+    if (why) { flash(why); return }
     window.clearInterval(previewTimer.current)
     setPreview(null)
     onChange(next)
-  }, [onChange])
+  }, [onChange, graph, flash])
 
   const mayLeave = useCallback(() => {
     if (!unsaved.current) return true
@@ -689,7 +693,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
         )}
 
         {editNode && (
-          <CanvasInspector key={editNode.id} node={editNode} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows} readOnly={readOnly}
+          <CanvasInspector key={editNode.id} node={editNode} graph={graph} agents={agents} tools={tools} mcpServers={mcpServers} functions={functions} workflows={workflows}
+            readOnly={readOnly || !!lockedGroupOf(graph, editNode.id)}
+            lockedIn={readOnly ? undefined : lockedGroupOf(graph, editNode.id)?.title}
+            onUnlock={() => { const g = lockedGroupOf(graph, editNode.id); if (g) commit(updateGroup(graph, g.id, { locked: false })) }}
             issues={[]} step={realRun?.steps.get(editNode.id)} runSteps={realRun?.steps} onDirty={onDirty}
             onSave={edited => { unsaved.current = false; commit(keepWiresSettings(applyStepEdit(graph, edited, editNode.id), graph, editNode.id)); setEditing(null) }}
             onClose={() => { unsaved.current = false; setEditing(null) }} />

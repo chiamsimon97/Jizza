@@ -66,4 +66,21 @@ class WorkflowGraphTest {
         List.of(new WorkflowEdge("t", "x", null)));
     assertThat(WorkflowGraph.from(g.toJson()).fingerprint()).isEqualTo(g.fingerprint());
   }
+
+  @Test
+  void keepsBuilderStepGroupsThroughARoundTripWithoutChangingTheFingerprint() {
+    var json = com.jizza.engine.api.util.Json.read("""
+        {"nodes":[{"id":"t","type":"TRIGGER","label":"Start"},{"id":"a","type":"AGENT_STEP","label":"A"}],
+         "edges":[{"from":"t","to":"a","branch":null}],
+         "groups":[{"id":"grp_1","title":"Pick coach","nodes":["a"],"locked":true,"collapsed":false}]}
+        """);
+    var g = WorkflowGraph.from(json);
+    assertThat(g.groups()).isNotNull();
+    var back = g.toJson();
+    assertThat(back.path("groups").get(0).path("title").asText()).isEqualTo("Pick coach");
+    assertThat(back.path("groups").get(0).path("locked").asBoolean()).isTrue();
+    var plain = new WorkflowGraph(g.nodes(), g.edges());
+    assertThat(plain.fingerprint()).isEqualTo(g.fingerprint());
+    assertThat(plain.toJson().has("groups")).isFalse();
+  }
 }

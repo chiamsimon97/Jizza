@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ChevronDown, ChevronUp, ExternalLink, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, Lock, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { fieldClass } from '@/components/ui/SlideOver'
 import { TeamTrailList, groupByTeam } from '@/components/agents/agentParts'
@@ -95,7 +95,7 @@ function usePanelWidth() {
   return { panel, width, handle: { onPointerDown, onKeyDown } }
 }
 
-export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, functions, workflows, issues: extraIssues, step, runSteps, readOnly, focusNote, askJizza, onDirty, onSave, onBranchByButton, onClose }: {
+export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mcpServers, functions, workflows, issues: extraIssues, step, runSteps, readOnly, lockedIn, onUnlock, focusNote, askJizza, onDirty, onSave, onBranchByButton, onClose }: {
   node: CanvasNode; graph: CanvasGraph; agents?: AgentDto[]; tools?: ToolOption[]; workflows?: WorkflowOption[]
   /** The MCP servers added under Connectors, for the MCP tool step. */
   mcpServers?: McpServer[]
@@ -106,6 +106,10 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
   /** Problems the step has beyond its settings, such as an agent that is paused. */
   issues: string[]
   step?: RunStepDto; readOnly: boolean
+  /** The title of the locked group this step is in; its settings are shown but not editable. */
+  lockedIn?: string
+  /** Unlocks that group, so the step can be edited. */
+  onUnlock?: () => void
   /** Opens with the note field in focus ("Add note" on the step's menu). */
   focusNote?: boolean
   /** Opens with Jizza working on this step ("Configure using Jizza" on the step's menu). */
@@ -231,6 +235,14 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
         <button type="button" onClick={close} aria-label="Close step settings"
           className="grid h-7 w-7 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
       </div>
+
+      {lockedIn !== undefined && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="flex-1">This step is in the locked group “{lockedIn || 'Untitled group'}”. Unlock the group to change it.</span>
+          {onUnlock && <button type="button" onClick={onUnlock} className="shrink-0 font-medium underline underline-offset-2">Unlock</button>}
+        </p>
+      )}
 
       {filledByJizza && (
         <p className="flex items-start gap-1.5 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 ring-1 ring-inset ring-brand-500/20 animate-fade-in dark:bg-brand-500/10 dark:text-brand-200">
