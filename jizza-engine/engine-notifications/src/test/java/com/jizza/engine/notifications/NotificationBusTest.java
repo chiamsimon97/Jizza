@@ -180,6 +180,37 @@ class NotificationBusTest {
   }
 
   @Test
+  void goingBackResumesTheRunAtAStepTheItemOfferedAndOnlyThose() {
+    UUID runId = UUID.randomUUID();
+    var detail = com.jizza.engine.api.util.Json.obj().put("node", "check");
+    var back = detail.putArray("back");
+    back.addObject().put("node", "coach").put("label", "Choose coach");
+    back.addObject().put("node", "train").put("label", "Choose train");
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.forRun(userId, "Check availability?", detail, runId));
+
+    assertThatThrownBy(() -> bus.answer(raised.id(), Answer.goBack("payment")))
+        .isInstanceOf(ValidationException.class);
+    var answered = bus.answer(raised.id(), Answer.goBack("train"));
+
+    assertThat(answered.status()).isEqualTo(NotificationStatus.SUBMITTED);
+    assertThat(answered.submittedInstruction()).isEqualTo("Go back to Choose train");
+    var payload = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+    verify(engine).resume(eq(runId), payload.capture());
+    assertThat(payload.getValue().path("back").asText()).isEqualTo("train");
+    assertThat(payload.getValue().path("node").asText()).isEqualTo("check");
+  }
+
+  @Test
+  void anItemThatOffersNoBackCannotGoBack() {
+    var raised = bus.raise(NotificationKind.PERMISSION_REQUEST, agentId,
+        NotificationContext.forRun(userId, "Send the invoice?", null, UUID.randomUUID()));
+
+    assertThatThrownBy(() -> bus.answer(raised.id(), Answer.goBack(null)))
+        .isInstanceOf(ValidationException.class);
+  }
+
+  @Test
   void approvingAReviewApprovesTheProcedureAndRejectingReturnsTheFeedback() {
     UUID workflowId = UUID.randomUUID();
     var approve = bus.raise(NotificationKind.WORKFLOW_REVIEW, agentId,

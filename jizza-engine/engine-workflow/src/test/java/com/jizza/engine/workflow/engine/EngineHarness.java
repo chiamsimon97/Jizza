@@ -200,6 +200,11 @@ public final class EngineHarness {
         .filter(s -> s.getRunId().equals(inv.getArgument(0))
             && s.getNodeId().equals(inv.getArgument(1)))
         .findFirst());
+    org.mockito.Mockito.doAnswer(inv -> {
+      WorkflowRunStepEntity step = inv.getArgument(0);
+      stepRows.removeIf(s -> s.getId().equals(step.getId()));
+      return null;
+    }).when(steps).delete(any());
     when(steps.findByRunIdOrderByStartedAtAsc(any())).thenAnswer(inv -> stepRows.stream()
         .filter(s -> s.getRunId().equals(inv.<UUID>getArgument(0))).toList());
 

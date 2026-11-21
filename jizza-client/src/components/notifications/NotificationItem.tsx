@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlarmClock, Archive, ArchiveRestore, Bell, Check, ChevronDown, Clock, GitBranch, History,
-  Info, ListTodo, Mail, MailOpen, MessageCircleQuestion, MoreHorizontal, ShieldCheck, Wrench, X, type LucideIcon,
+  Info, ListTodo, Mail, MailOpen, MessageCircleQuestion, MoreHorizontal, ShieldCheck, Undo2, Wrench, X, type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
   KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
-  runChoicesFor, cannotBeUndone,
+  runChoicesFor, cannotBeUndone, backStepsOf,
 } from './inbox'
 import { StepApprovalForm } from './StepApprovalForm'
 import { DeviceHelpCard } from './DeviceHelpCard'
@@ -32,6 +32,8 @@ export interface InboxActions {
   approveAlways: (n: NotificationDto, inputs?: Record<string, unknown>) => Promise<unknown>
   decline: (n: NotificationDto, reason: string) => Promise<unknown>
   reply: (n: NotificationDto, text: string) => Promise<unknown>
+  /** Back to an earlier step of the run (`node`, or the first one offered) to choose again. */
+  goBack: (n: NotificationDto, node?: string) => Promise<unknown>
   markRead: (n: NotificationDto) => Promise<unknown>
   markUnread: (n: NotificationDto) => Promise<unknown>
   archive: (n: NotificationDto) => Promise<unknown>
@@ -85,6 +87,10 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const asksDetails = !!stepForm?.fields.some(f => f.key.startsWith('details.') || f.type === 'note')
   const canApprove = stillEmpty.length === 0
   const approvedValues = () => (stepForm ? answerValues(stepForm, values) : undefined)
+  // The step allows going back: Back re-runs an earlier step so the person can choose again.
+  const backSteps = useMemo(() => (open && !deviceHelp ? backStepsOf(n) : []), [n, open, deviceHelp])
+  const [backTo, setBackTo] = useState<string>('')
+  const backTarget = backSteps.find(s => s.node === backTo) ?? backSteps[0]
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key)
@@ -308,6 +314,22 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
             )}
 
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+            {mode === 'idle' && backTarget && (
+              <div data-testid="go-back" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/60 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+                <Button size="sm" variant="secondary" loading={busy === 'back'} disabled={busy !== null}
+                  onClick={() => void run('back', () => actions.goBack(n, backTarget.node))}>
+                  <Undo2 className="h-4 w-4" />Back to {backTarget.label}
+                </Button>
+                {backSteps.length > 1 && (
+                  <select aria-label="Go back to" value={backTarget.node} onChange={e => setBackTo(e.target.value)}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                    {backSteps.map(s => <option key={s.node} value={s.node}>{s.label}</option>)}
+                  </select>
+                )}
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">Runs that step again so you can choose differently; the steps after it run again too.</span>
+              </div>
+            )}
 
             {mode === 'idle' && <div className="mt-3 flex flex-wrap items-center gap-2">
               {open && n.kind === 'INSTRUCTION_REQUIRED' && (

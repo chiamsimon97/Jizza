@@ -15,6 +15,7 @@ import {
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 import { LayerFields } from './LayerFields'
+import { GOES_BACK, GoBackFields } from './GoBackFields'
 import { dataSourcesFor, type DeclaredField } from './dataMapping'
 import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type ModuleField } from './moduleContract'
 import type { ValueType } from './formula/functions'
@@ -391,6 +392,8 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
             </select>
           </Labelled>
         </>}
+
+        {GOES_BACK.has(node.type) && <GoBackFields node={node} graph={graph} setConfig={setConfig} />}
 
       </fieldset>
 
@@ -1746,10 +1749,14 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   const cardChoices = loadedCards ?? groups.map(g => g.label)
   // The items of the card chosen; with the card mapped (chosen each run), the items of every card.
   const currentCard = typeof within.item === 'string' ? within.item : ''
+  // Inside a card with no card's items known (the card box just ticked, nothing loaded yet): the
+  // names the list showed when recorded still offer the item, such as a card's Book Now, so the
+  // field stays a list instead of turning into a mapping box.
+  const cardItems = fixedCard ? groups.find(g => g.label === within.item)?.items ?? [] : [...new Set(groups.flatMap(g => g.items))]
   const itemChoices = loadedItems && (!inCard || loadedItems.card === currentCard)
     ? loadedItems.items
-    : inCard
-      ? fixedCard ? groups.find(g => g.label === within.item)?.items ?? [] : [...new Set(groups.flatMap(g => g.items))]
+    : inCard && cardItems.length > 0
+      ? cardItems
       : list.options ?? []
   const chooseCard = (value: string) => {
     // A new card has other items: an item chosen from the old card's names goes.

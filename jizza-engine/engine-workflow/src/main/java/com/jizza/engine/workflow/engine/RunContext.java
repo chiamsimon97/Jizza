@@ -26,6 +26,8 @@ import java.util.Map;
  *   "pausedFor":    "instruction",        // or "permission"
  *   "pausedNode":   "nodeId",
  *   "approvals":    { "nodeId": true }, // steps the user approved after a pause
+ *   "trail":        ["nodeId"],         // steps that finished, in order (for going back)
+ *   "asked":        ["nodeId"],         // steps that stopped to ask the person
  *
  *   "ready":    ["nodeId"],                       // steps that can run now, in order
  *   "parked":   { "nodeId": { "reason": "timer", "wakeAt": "..." } },
@@ -343,6 +345,80 @@ public final class RunContext {
   public void recordLast(String nodeId) { root.put("last", nodeId); }
 
   public String last() { return root.path("last").isTextual() ? root.get("last").asText() : null; }
+
+  // ── going back: the order steps finished in, and which of them asked the person ──
+
+  /** Records that a step finished, at the end of the run's trail (once, at its latest place). */
+  public void recordTrail(String nodeId) {
+    removeFrom(root.withArray("trail"), nodeId);
+    root.withArray("trail").add(nodeId);
+  }
+
+  /** The steps that finished, in the order they finished. */
+  public List<String> trail() {
+    List<String> ids = new ArrayList<>();
+    root.path("trail").forEach(n -> ids.add(n.asText()));
+    return ids;
+  }
+
+  /** Records that a step stopped to ask the person (an approval card, a choice from a list). */
+  public void recordAsked(String nodeId) {
+    for (JsonNode n : root.withArray("asked")) if (n.asText().equals(nodeId)) return;
+    root.withArray("asked").add(nodeId);
+  }
+
+  public boolean asked(String nodeId) {
+    for (JsonNode n : root.path("asked")) if (n.asText().equals(nodeId)) return true;
+    return false;
+  }
+
+  /**
+   * Forgets what this run knew about a step, as if it had not run yet: its result, its answers,
+   * its bookkeeping and its place on the frontier. The paths that reached it are kept (see
+   * {@link #forgetArrivalsFrom}). Used when the person goes back to an earlier step, so that step
+   * and the ones after it run again.
+   */
+  public void forgetStep(String nodeId) {
+    for (String key : List.of("nodes", "instructions", "branch", "approvals", "approvedInputs",
+        "state", "parked", "joinDeadlines", "abandoned")) {
+      if (root.path(key).isObject()) ((ObjectNode) root.get(key)).remove(nodeId);
+    }
+    if (root.path("ready").isArray()) removeFrom((ArrayNode) root.get("ready"), nodeId);
+    if (root.path("trail").isArray()) removeFrom((ArrayNode) root.get("trail"), nodeId);
+    if (root.path("asked").isArray()) removeFrom((ArrayNode) root.get("asked"), nodeId);
+    if (nodeId.equals(pausedNode())) clearPause();
+    if (nodeId.equals(last())) root.remove("last");
+  }
+
+  /**
+   * Counts that the person went back to before a step, so it runs again: what it sends a device
+   * then is new, never mistaken for what it sent the first time. Kept when the step is forgotten.
+   */
+  public void recordRound(String nodeId) {
+    root.withObject("/rounds").put(nodeId, round(nodeId) + 1);
+  }
+
+  /** How many times the run went back to before this step; 0 when it never did. */
+  public int round(String nodeId) {
+    return root.path("rounds").path(nodeId).asInt(0);
+  }
+
+    /**
+   * Forgets the paths that came from these steps, wherever they arrived, so the steps after them
+   * wait for them again. Paths from other steps (another branch into a join) still count.
+   */
+  public void forgetArrivalsFrom(java.util.Collection<String> from) {
+    if (!root.path("arrivals").isObject()) return;
+    root.get("arrivals").forEach(forNode -> {
+      if (forNode.isObject()) from.forEach(((ObjectNode) forNode)::remove);
+    });
+  }
+
+  private static void removeFrom(ArrayNode array, String value) {
+    for (int i = array.size() - 1; i >= 0; i--) {
+      if (array.get(i).asText().equals(value)) array.remove(i);
+    }
+  }
 
   public void recordResult(JsonNode result) {
     root.set("result", result == null ? Json.obj() : result);

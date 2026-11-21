@@ -503,6 +503,36 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps the item a list to choose from once the card box is ticked with no cards loaded', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element'], properties: {
+            element: locator, item: { type: 'string' }, within: { type: 'object' } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const made = addAfter(emptyGraph(), 'start', null, WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!)
+    const button = { strategies: [{ by: 'css', value: 'button.btn' }], label: 'Book Now' }
+    const graph = { ...made.graph, nodes: made.graph.nodes.map(n => n.id === made.id ? { ...n, config: { ...n.config,
+      inputs: { element: button, item: 'Book Now' },
+      list: { title: 'Book Now', kind: 'text', count: 2, inputName: 'bookNow', named: true, options: ['Book Now', 'Other dates'] } } } : n) }
+    const { onSave } = open(graph, made.id)
+    expect(await screen.findByRole('combobox', { name: 'Book Now' })).toHaveValue('Book Now')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choose inside a card of another list first' }))
+    // Still a list of the names it showed, not a mapping box.
+    const item = await screen.findByRole('combobox', { name: 'Book Now' })
+    expect(item).toHaveValue('Book Now')
+    type(await screen.findByRole('textbox', { name: 'Which card' }), '{{ input.trains }}')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === made.id)!
+    expect(saved.config.inputs).toMatchObject({ item: 'Book Now', within: { item: '{{ input.trains }}' } })
+    vi.unstubAllGlobals()
+  })
+
   it('loads the cards and items of a list from the page to choose from', async () => {
     queryClient.clear()
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }

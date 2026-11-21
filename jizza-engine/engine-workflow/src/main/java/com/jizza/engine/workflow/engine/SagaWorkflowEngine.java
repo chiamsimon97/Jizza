@@ -354,6 +354,9 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     }
     RunContext context = RunContext.of(run.getContext());
     String node = waitingStep(run, context, instruction);
+    if (instruction != null && instruction.isObject() && instruction.has(GoBack.ANSWER)) {
+      return goBack(run, context, node, instruction.path(GoBack.ANSWER).asText(""));
+    }
     String reason = context.parked().getOrDefault(node, context.pausedFor());
 
     if (PAUSED_FOR_PERMISSION.equals(reason)) {
@@ -438,6 +441,57 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     audit.record(run.getUserId(), ActorType.USER, null, "run.instruction_submitted",
         run.getId().toString(), Json.obj().put("node", node));
     return advance(runId);
+  }
+
+  /**
+   * The person went back from the step waiting on them to an earlier one, to choose again: that
+   * step runs again and asks afresh with what the page lists now (first going back pages in the
+   * browser when the waiting step says so), and every step after it runs again after it.
+   *
+   * @param to the step to go back to; blank for the first one the question offered
+   */
+  private RunDto goBack(WorkflowRunEntity run, RunContext context, String from, String to) {
+    WorkflowGraph graph = graphFor(workflows.findById(run.getWorkflowId())
+        .orElseThrow(() -> new NotFoundException("Workflow", run.getWorkflowId())),
+        run.getVersion());
+    WorkflowNode node = graph.node(from)
+        .orElseThrow(() -> new ValidationException("Step '" + from + "' is not in this run"));
+    node = StepOverrides.apply(node, context.stepOverrides());
+    List<GoBack.Step> offered = GoBack.offer(graph, context, node);
+    if (offered.isEmpty()) {
+      throw new ValidationException("Step '" + labelOf(run, from) + "' has no earlier step to "
+          + "go back to. Turn on Allow going back on the step to offer it.");
+    }
+    String wanted = to == null || to.isBlank() ? offered.get(0).node() : to;
+    GoBack.Step target = offered.stream().filter(s -> s.node().equals(wanted)).findFirst()
+        .orElseThrow(() -> new ValidationException("From '" + labelOf(run, from) + "' you can go "
+            + "back to " + String.join(" or ", offered.stream().map(s -> "'" + s.label() + "'")
+                .toList())));
+
+    Set<String> redo = new java.util.LinkedHashSet<>(GoBack.stepsFrom(graph, target.node()));
+    redo.add(from);
+    for (String id : redo) {
+      stopStepWork(run.getId(), context, id, "You went back to an earlier step");
+      closeQuestions(run.getId(), id, "Closed: you went back to '" + target.label() + "'");
+      steps.findByRunIdAndNodeId(run.getId(), id).ifPresent(steps::delete);
+      context.forgetStep(id);
+      context.recordRound(id);
+    }
+    context.forgetArrivalsFrom(redo);
+    context.enqueue(target.node());
+    ObjectNode state = context.state(target.node());
+    state.put(GoBack.ASK_AGAIN, true);
+    int pages = GoBack.pagesBack(node.config());
+    if (pages > 0) state.put(GoBack.PAGES_BACK, pages);
+
+    run.setContext(context.toJson());
+    run.setStatus(RunStatus.RUNNING);
+    run.setCurrentNode(target.node());
+    runs.save(run);
+    audit.record(run.getUserId(), ActorType.USER, null, "run.went_back",
+        run.getId().toString(), Json.obj().put("from", from).put("to", target.node())
+            .put("pagesBack", pages));
+    return advance(run.getId());
   }
 
   /** The step's last attempt never reached the device, so nothing can have gone through. */
@@ -1064,6 +1118,10 @@ public class SagaWorkflowEngine implements WorkflowEngine,
 
   /** Stops the child runs and the device command a dropped step started. */
   private void stopStepWork(UUID runId, RunContext context, String nodeId) {
+    stopStepWork(runId, context, nodeId, "The join waiting for this step stopped waiting");
+  }
+
+  private void stopStepWork(UUID runId, RunContext context, String nodeId, String why) {
     JsonNode state = context.peekState(nodeId);
     for (JsonNode child : state.path("children")) {
       if (!child.path("runId").isTextual()) continue;
@@ -1072,15 +1130,14 @@ public class SagaWorkflowEngine implements WorkflowEngine,
             || childRun.getStatus() == RunStatus.CANCELLED) {
           return;
         }
-        cancelChild(childRun, "the join waiting for it stopped waiting");
+        cancelChild(childRun, why.toLowerCase(java.util.Locale.ROOT));
       });
     }
     com.jizza.engine.api.device.DeviceCommands commands =
         deviceCommands == null ? null : deviceCommands.getIfAvailable();
     if (commands != null && state.path("commandId").isTextual()) {
       try {
-        commands.cancel(UUID.fromString(state.get("commandId").asText()),
-            "The join waiting for this step stopped waiting");
+        commands.cancel(UUID.fromString(state.get("commandId").asText()), why);
       } catch (RuntimeException e) {
         log.warn("Run {}: could not cancel the device command of step {}", runId, nodeId, e);
       }
@@ -1110,6 +1167,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
                           RunContext context) {
     context.dequeue(node.id());
     context.recordLast(node.id());
+    context.recordTrail(node.id());
     String outlet = ROUTES_BY_OUTLET.contains(node.type()) ? context.branchOf(node.id()) : null;
     // A check step ("is it there?") with a No way out takes that way on no and its usual one on
     // yes. With nothing wired to No it carries on either way, as it always has.
@@ -1245,13 +1303,17 @@ public class SagaWorkflowEngine implements WorkflowEngine,
                              String reason, String prompt, NotificationKind kind, Instant until,
                              FailedStepChoice ifNoAnswer, JsonNode extra) {
     context.park(nodeId, reason, until);
+    if (PAUSED_FOR_PERMISSION.equals(reason)) context.recordAsked(nodeId);
     save(run, context);
 
     NotificationBus bus = notifications.getIfAvailable();
     if (bus != null) {
+      ObjectNode detail = detailFor(run, nodeId, ifNoAnswer, extra);
+      ArrayNode back = backChoices(run, context, nodeId);
+      if (back != null) detail.set(GoBack.ANSWER, back);
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
           prompt == null ? "This run needs your input to continue." : named(run, nodeId, prompt),
-          detailFor(run, nodeId, ifNoAnswer, extra), run.getId()));
+          detail, run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
           run.getId(), nodeId);
@@ -1267,6 +1329,17 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     String step = labelOf(run, nodeId);
     String who = "Step \"" + step + "\"" + (workflow == null ? "" : " of workflow \"" + workflow + "\"");
     return who + " " + prompt.substring("This step ".length());
+  }
+
+  /** The earlier steps a question offers to go back to (Allow going back); null for none. */
+  private ArrayNode backChoices(WorkflowRunEntity run, RunContext context, String nodeId) {
+    WorkflowGraph graph = workflows.findById(run.getWorkflowId())
+        .map(w -> graphFor(w, run.getVersion())).orElse(null);
+    if (graph == null) return null;
+    WorkflowNode node = graph.node(nodeId).map(n -> StepOverrides.apply(n, context.stepOverrides()))
+        .orElse(null);
+    if (node == null || !GoBack.allowed(node.config())) return null;
+    return GoBack.describe(GoBack.offer(graph, context, node));
   }
 
   private ObjectNode detailFor(WorkflowRunEntity run, String nodeId, FailedStepChoice ifNoAnswer,

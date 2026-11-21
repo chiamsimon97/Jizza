@@ -154,12 +154,51 @@ public class DefaultNotificationBus implements NotificationBus {
       throw new ValidationException("An informational item has nothing to answer");
     }
 
+    if (answer.kind() == Answer.Kind.GO_BACK) return answerGoBack(entity, answer);
     return switch (entity.getKind()) {
       case PERMISSION_REQUEST -> answerPermission(entity, answer);
       case WORKFLOW_REVIEW -> answerReview(entity, answer);
       case INSTRUCTION_REQUIRED -> answerInstruction(entity, answer);
       case INFO -> throw new ValidationException("An informational item has nothing to answer");
     };
+  }
+
+  /**
+   * Back, on a run's question whose step allows going back: the run goes back to the earlier
+   * step named (or the first the item offers) and asks there again. Only steps the item offered
+   * can be named.
+   */
+  private NotificationDto answerGoBack(NotificationEntity entity, Answer answer) {
+    JsonNode offered = entity.getContext() == null ? null : entity.getContext().get("back");
+    if (entity.getRunId() == null || offered == null || !offered.isArray() || offered.isEmpty()) {
+      throw new ValidationException("This item has no earlier step to go back to");
+    }
+    String wanted = blankToNull(answer.instruction());
+    JsonNode target = null;
+    for (JsonNode step : offered) {
+      if (wanted == null || wanted.equals(step.path("node").asText())) {
+        target = step;
+        break;
+      }
+    }
+    if (target == null) {
+      throw new ValidationException("That step is not one this item can go back to");
+    }
+    if (runHasEnded(entity.getRunId())) {
+      close(entity, RUN_ALREADY_ENDED);
+      return toDto(entity);
+    }
+    String label = target.path("label").asText(target.path("node").asText());
+    entity.setStatus(NotificationStatus.SUBMITTED);
+    entity.setSubmittedInstruction("Go back to " + label);
+    entity.setAnsweredAt(Instant.now());
+    entity.setSnoozedUntil(null);
+    notifications.save(entity);
+
+    audit.record(entity.getUserId(), ActorType.USER, null, "notification.went_back",
+        entity.getId().toString(), Json.obj().put("to", target.path("node").asText()));
+    resumeRun(entity, Json.obj().put("back", target.path("node").asText()));
+    return toDto(entity);
   }
 
   /** Longest answer passed on to a device (a CAPTCHA's text, a code, a short value). */
