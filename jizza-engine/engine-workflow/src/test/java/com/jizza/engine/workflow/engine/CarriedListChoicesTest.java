@@ -172,4 +172,46 @@ class CarriedListChoicesTest {
     assertThat(run.status()).isEqualTo(RunStatus.DONE);
     assertThat(harness.raised).isEmpty();
   }
+
+  @Test
+  void aChainOfListsIsShownOutermostFirst() {
+    // Trains, then Coaches that load after Trains, then Dates that load after Coaches.
+    String step = """
+        {"preset":"web","action":"browser.clickItem","version":1,"target":"sameBrowser",
+         "list":{"title":"%s","named":true%s},
+         "inputs":{"element":{"strategies":[{"by":"css","value":"td"}],"label":"x"},
+                   "item":"{{ input.%s }}"}}
+        """;
+    String after = ",\"dependsOn\":{\"title\":\"%s\",\"relation\":\"after\"}";
+    WorkflowGraph graph = new WorkflowGraph(List.of(
+        new WorkflowNode("start", NodeType.TRIGGER, "start", null, null),
+        new WorkflowNode("train", NodeType.DEVICE_ACTION, "train",
+            Json.read(step.formatted("Trains", "", "trains")), null),
+        new WorkflowNode("coach", NodeType.DEVICE_ACTION, "coach",
+            Json.read(step.formatted("Coaches", after.formatted("Trains"), "coaches")), null),
+        new WorkflowNode("date", NodeType.DEVICE_ACTION, "date",
+            Json.read(step.formatted("Dates", after.formatted("Coaches"), "dates")), null),
+        new WorkflowNode("finish", NodeType.END, "finish", null, null)),
+        List.of(new WorkflowEdge("start", "train", null), new WorkflowEdge("train", "coach", null),
+            new WorkflowEdge("coach", "date", null), new WorkflowEdge("date", "finish", null)));
+    EngineHarness harness = harness(graph);
+    var trains = listing("MS NCJ VB EXP (20627)", "TEJAS EXPRESS (22671)");
+    var coaches = listing("AC Chair car (CC)", "Exec. Chair Car (EC)");
+    var dates = listing("Fri, 27 Nov", "Sat, 28 Nov");
+    harness.deviceOutputQueues.put("browser.listItems",
+        new ArrayDeque<>(List.of(trains, trains, coaches, coaches, dates)));
+
+    var run = harness.engine.start(harness.workflow.getId(), 1, Json.obj(), "manual");
+    harness.engine.resume(run.id(), Json.obj().put("approved", true).set("inputs",
+        Json.obj().put("item", "TEJAS EXPRESS (22671)")));
+    assertThat(form(harness).path("carried").toString())
+        .isEqualTo("[{\"label\":\"Trains\",\"value\":\"TEJAS EXPRESS (22671)\"}]");
+    harness.engine.resume(run.id(), Json.obj().put("approved", true).set("inputs",
+        Json.obj().put("item", "Exec. Chair Car (EC)")));
+
+    assertThat(harness.raised).hasSize(3);
+    assertThat(form(harness).path("carried").toString())
+        .isEqualTo("[{\"label\":\"Trains\",\"value\":\"TEJAS EXPRESS (22671)\"},"
+            + "{\"label\":\"Coaches\",\"value\":\"Exec. Chair Car (EC)\"}]");
+  }
 }

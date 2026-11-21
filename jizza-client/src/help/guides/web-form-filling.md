@@ -72,7 +72,7 @@ More ways to say which one:
 
 Several steps often choose inside the same card: one step picks the train and its coach, the next picks a date in that train, the next clicks Book Now in it. Once a step of the run has chosen the train, the later steps that choose inside the train list (the same list name, or the same mapped value such as `{{ input.trains }}`) carry that train on. Their approval doesn't ask for the train again: it shows **Chosen in earlier steps** with the train, and anything else already chosen in it, such as the coach, and asks only for what is new (the date).
 
-When a list only shows its choices after another one is chosen, such as dates that appear once a coach is picked, open the step and set **Loads after** to that list (Coaches). The approval then lists that choice, and the card it was made in, as chosen earlier too. If the page no longer lists the train chosen earlier, the approval asks for it again from what the page lists now.
+When a list only shows its choices after another one is chosen, such as dates that appear once a coach is picked, open the step and set **Loads after** to that list (Coaches). The dropdown names each list with the lists it follows (**Trains › Coaches**), and the step shows the whole order it is chosen in: **Trains › Coaches › Dates**. The approval then lists those choices in the same order (the train, then the coach) as chosen earlier. If the page no longer lists the train chosen earlier, the approval asks for it again from what the page lists now.
 
 When you choose a card on the approval yourself, you can tick **choose this one without asking**. The next time the run asks for the same thing (say "Ramayana"), Let Jizza decide picks your choice on its own while the page still lists it.
 

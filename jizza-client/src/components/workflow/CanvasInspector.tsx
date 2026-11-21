@@ -1727,10 +1727,43 @@ interface RecordedListNames {
  * a dropdown of the names it showed when recorded (or loaded from the page now), which can also be
  * mapped from earlier steps. The items follow the card chosen.
  */
+/** A list another one can load after: its name, the input it is mapped from, and the lists it
+ *  follows in turn, outermost first (Trains for Coaches). */
+interface EarlierList { title: string; inputName?: string; chain: string[] }
+
+/** What each list of the workflow follows: the card list it is chosen in, and the list it loads after. */
+function listParents(graph: CanvasGraph): Map<string, string[]> {
+  const parents = new Map<string, string[]>()
+  for (const n of graph.nodes) {
+    const list = asInputs(n.config.list)
+    if (typeof list.title !== 'string' || !list.title.trim()) continue
+    const follows = asInputs(list.dependsOn)
+    const direct = [
+      typeof list.withinTitle === 'string' ? list.withinTitle.trim() : '',
+      follows.relation !== 'inside' && typeof follows.title === 'string' ? follows.title.trim() : '',
+    ].filter(Boolean)
+    if (!parents.has(list.title.trim())) parents.set(list.title.trim(), direct)
+  }
+  return parents
+}
+
+/** The lists one list follows, outermost first: Trains › Coaches for Dates that load after Coaches. */
+function chainOf(parents: Map<string, string[]>, direct: string[]): string[] {
+  const out: string[] = []
+  const visit = (title: string, depth: number) => {
+    if (depth > 6 || out.includes(title)) return
+    for (const parent of parents.get(title) ?? []) visit(parent, depth + 1)
+    if (!out.includes(title)) out.push(title)
+  }
+  direct.forEach(t => visit(t, 0))
+  return out
+}
+
 /** The names of the other steps' lists in the workflow (Trains, Coaches), with the input each is
- *  mapped from, which a list can load after. */
-function earlierLists(graph: CanvasGraph, nodeId: string): { title: string; inputName?: string }[] {
-  const out = new Map<string, { title: string; inputName?: string }>()
+ *  mapped from and the lists it follows, which a list can load after. */
+function earlierLists(graph: CanvasGraph, nodeId: string): EarlierList[] {
+  const parents = listParents(graph)
+  const out = new Map<string, EarlierList>()
   for (const n of graph.nodes) {
     if (n.id === nodeId) continue
     const list = asInputs(n.config.list)
@@ -1738,7 +1771,8 @@ function earlierLists(graph: CanvasGraph, nodeId: string): { title: string; inpu
     const add = (title: unknown, value: unknown) => {
       if (typeof title !== 'string' || !title.trim() || out.has(title.trim())) return
       const input = typeof value === 'string' ? /^\s*\{\{\s*input\.([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(value)?.[1] : undefined
-      out.set(title.trim(), { title: title.trim(), ...(input ? { inputName: input } : {}) })
+      const name = title.trim()
+      out.set(name, { title: name, ...(input ? { inputName: input } : {}), chain: chainOf(parents, parents.get(name) ?? []) })
     }
     add(list.withinTitle, asInputs(inputs.within).item)
     add(list.title, inputs.item)
@@ -1758,7 +1792,7 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   pictures?: unknown
   onPictures?: (value: Pictures | undefined) => void
   /** The other lists of the workflow this one can load after, and how to set it. */
-  earlierLists?: { title: string; inputName?: string }[]
+  earlierLists?: EarlierList[]
   onFollows?: (dependsOn: RecordedListNames['dependsOn'] | undefined) => void
 }) {
   const within = asInputs(inputs.within)
@@ -1804,6 +1838,15 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
     setInputs({ within: { ...within, item: value }, ...(stale ? { item: undefined } : {}) })
   }
   const follows = list.dependsOn?.title
+  // Every list this one follows, outermost first: the card list it is in, then what it loads after
+  // and what that follows in turn (Trains › Coaches for Dates).
+  const followChain = (() => {
+    const after = follows && list.dependsOn?.relation !== 'inside' ? follows : undefined
+    const found = after ? earlierLists.find(l => l.title === after) : undefined
+    const chain = [...(found?.chain ?? []), ...(after ? [after] : [])]
+    const card = inCard && list.withinTitle ? list.withinTitle : undefined
+    return card && !chain.includes(card) ? [card, ...chain] : chain
+  })()
   const fields = pictureFields(inCard)
   const picturesSwitch = (field: PictureField, what: string, hint: string) => onPictures && (
     <div className="space-y-1">
@@ -1830,8 +1873,11 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
         <option value="">Nothing: its choices show on their own</option>
         {[...earlierLists, ...(follows && list.dependsOn?.relation !== 'inside' && !earlierLists.some(l => l.title === follows) ? [{ title: follows }] : [])]
           .filter(l => l.title !== (list.named ? list.title : undefined))
-          .map(l => <option key={l.title} value={l.title}>{l.title}</option>)}
+          .map(l => <option key={l.title} value={l.title}>{[...('chain' in l ? l.chain : []), l.title].join(' › ')}</option>)}
       </select>
+      {followChain.length > 0 && <p className="text-[11px] text-gray-700 dark:text-gray-300" data-testid="list-chain">
+        Chosen in order: {[...followChain, itemName ?? 'this list'].join(' › ')}
+      </p>}
       <span className="block text-[11px] text-gray-500">Such as Dates that show once a Coach is chosen. When an earlier step of the run chose it (and the card it is in), the approval shows those choices as fixed instead of asking again.</span>
     </label>}
     {inCard && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">

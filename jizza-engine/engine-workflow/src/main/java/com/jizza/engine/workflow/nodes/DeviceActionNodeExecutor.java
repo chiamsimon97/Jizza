@@ -272,7 +272,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     // The card chosen inside, when an earlier step of this run already chose it (the train chosen
     // with its coach), is carried on rather than asked for again; the card shows it as fixed.
     boolean carriedCard = pickKey != null
-        && CarriedPicks.carry(execution.context(), nodeId, config, (ObjectNode) inputs, state);
+        && CarriedPicks.carry(execution.context(), nodeId, config, (ObjectNode) inputs, state,
+            id -> execution.graph() == null ? null
+                : execution.graph().node(id).map(n -> n.config()).orElse(null));
     // A dropdown marked dynamic is read from the page each run; a static one chooses from the
     // items read while recording.
     boolean listed = WebStepForm.CLICK_ITEMS.contains(spec.action())

@@ -723,7 +723,10 @@ describe('CanvasInspector', () => {
     const after = await screen.findByTestId('list-loads-after')
     expect(after).toHaveValue('')
     expect(Array.from((after as HTMLSelectElement).options).map(o => o.value)).toEqual(['', 'Trains', 'Coaches'])
+    // Coaches is chosen inside a train: the option names both, in order.
+    expect(Array.from((after as HTMLSelectElement).options).map(o => o.textContent)).toContain('Trains › Coaches')
     fireEvent.change(after, { target: { value: 'Coaches' } })
+    expect(screen.getByTestId('list-chain')).toHaveTextContent('Chosen in order: Trains › Coaches › Dates')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === date.id)!

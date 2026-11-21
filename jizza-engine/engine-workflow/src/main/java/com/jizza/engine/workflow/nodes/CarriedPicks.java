@@ -71,6 +71,12 @@ final class CarriedPicks {
    */
   static boolean carry(RunContext context, String nodeId, JsonNode config, ObjectNode inputs,
                        ObjectNode state) {
+    return carry(context, nodeId, config, inputs, state, id -> null);
+  }
+
+  /** As above; {@code configOf} gives another step's settings, to follow a chain of lists. */
+  static boolean carry(RunContext context, String nodeId, JsonNode config, ObjectNode inputs,
+                       ObjectNode state, java.util.function.Function<String, JsonNode> configOf) {
     List<RunContext.Pick> picks = context.picks();
     List<Carried> carried = new ArrayList<>();
     boolean carriedCard = false;
@@ -90,23 +96,9 @@ final class CarriedPicks {
         carriedCard = true;
       }
     }
-    // The list this one loads after (the coach the dates follow): read on the card, never sent.
-    JsonNode follows = list.path("dependsOn");
-    if (follows.isObject() && !"inside".equals(follows.path("relation").asText("after"))) {
-      String title = follows.path("title").asText(null);
-      String input = follows.path("inputName").asText("").strip();
-      String source = input.isEmpty() ? null : "{{input." + input + "}}";
-      RunContext.Pick pick = find(picks, nodeId, source, title);
-      if (pick != null) {
-        // The parents of that choice first (the train the coach is in), then the choice itself.
-        for (RunContext.Pick other : picks) {
-          if (other.nodeId().equals(pick.nodeId()) && other != pick && named(other)) {
-            carried.add(new Carried(null, other.list().strip(), other.value()));
-          }
-        }
-        carried.add(new Carried(null, label(title, pick, "Chosen earlier"), pick.value()));
-      }
-    }
+    // The list this one loads after (the coach the dates follow), and the lists that one follows
+    // in turn (the train the coach is in): read on the card in that order, never sent.
+    carried.addAll(followed(picks, nodeId, list.path("dependsOn"), configOf));
     List<Carried> unique = dedupe(carried);
     if (unique.isEmpty()) {
       state.remove(STATE);
@@ -156,6 +148,40 @@ final class CarriedPicks {
       out.add(new RunContext.Pick(nodeId, list.path("title").asText(null),
           sourceKey(configured.get("item")), item));
     }
+    return out;
+  }
+
+  /**
+   * The chain of choices a list loads after, outermost first: the coach the dates follow is
+   * preceded by the train it was chosen in, and by whatever list the coach's own step loads after.
+   */
+  private static List<Carried> followed(List<RunContext.Pick> picks, String nodeId,
+                                        JsonNode follows,
+                                        java.util.function.Function<String, JsonNode> configOf) {
+    List<List<Carried>> hops = new ArrayList<>();
+    Set<String> seen = new java.util.HashSet<>();
+    seen.add(nodeId);
+    for (int depth = 0; depth < 6 && follows.isObject()
+        && !"inside".equals(follows.path("relation").asText("after")); depth++) {
+      String title = follows.path("title").asText(null);
+      String input = follows.path("inputName").asText("").strip();
+      String source = input.isEmpty() ? null : "{{input." + input + "}}";
+      RunContext.Pick pick = find(picks, nodeId, source, title);
+      if (pick == null || !seen.add(pick.nodeId())) break;
+      List<Carried> hop = new ArrayList<>();
+      // The card that choice was made in (the train of the coach), then the choice itself.
+      for (RunContext.Pick other : picks) {
+        if (other.nodeId().equals(pick.nodeId()) && other != pick && named(other)) {
+          hop.add(new Carried(null, other.list().strip(), other.value()));
+        }
+      }
+      hop.add(new Carried(null, label(title, pick, "Chosen earlier"), pick.value()));
+      hops.add(0, hop);
+      JsonNode next = configOf.apply(pick.nodeId());
+      follows = next == null ? Json.obj() : next.path("list").path("dependsOn");
+    }
+    List<Carried> out = new ArrayList<>();
+    hops.forEach(out::addAll);
     return out;
   }
 
