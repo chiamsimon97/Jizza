@@ -360,6 +360,16 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     requestAnimationFrame(() => flow.fitView({ padding: 0.2, duration: 300, maxZoom: 1 }))
   }, [graph, commit, flow])
 
+  const goToStart = useCallback(() => {
+    const start = graph.nodes.find(n => n.type === 'TRIGGER')
+    if (start) flow.setCenter(start.x + NODE_W / 2, start.y + NODE_H / 2, { zoom: Math.max(flow.getZoom(), 0.8), duration: 300 })
+  }, [graph.nodes, flow])
+  const focusSearch = useCallback(() => {
+    const input = wrapper.current?.querySelector<HTMLInputElement>('input[aria-label="Search steps"]')
+    input?.focus()
+    input?.select()
+  }, [])
+
   const openPickerCentered = useCallback(() => {
     const rect = wrapper.current?.getBoundingClientRect()
     const at = rect ? { x: rect.left + rect.width / 2 - 128, y: rect.top + 80 } : { x: 200, y: 200 }
@@ -410,6 +420,10 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
       }
       if (mod && key === 'c') { copy(); return }
       if (!mod && key === '1') { flow.fitView({ padding: 0.2, duration: 300, maxZoom: 1 }); return }
+      if (!mod && (key === '+' || key === '=')) { flow.zoomIn({ duration: 200 }); return }
+      if (!mod && (key === '-' || key === '_')) { flow.zoomOut({ duration: 200 }); return }
+      if (!mod && key === '0') { flow.zoomTo(1, { duration: 200 }); return }
+      if (!mod && key === '/' && !readOnly) { e.preventDefault(); focusSearch(); return }
       if (readOnly) return
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection() }
       else if (mod && key === 'z' && !e.shiftKey) { e.preventDefault(); history.undo() }
@@ -424,7 +438,7 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     // Capture, so Escape is claimed before the slide-over around the canvas sees it.
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [fullscreen, picker, menu, help, selNodes, selEdges, readOnly, deleteSelection, history, copy, paste, duplicate, select, graph, openPickerCentered, tidyUp, flow, onFullscreen, groupSelection])
+  }, [fullscreen, picker, menu, help, selNodes, selEdges, readOnly, deleteSelection, history, copy, paste, duplicate, select, graph, openPickerCentered, tidyUp, flow, onFullscreen, groupSelection, focusSearch])
 
   // ---- React Flow wiring ------------------------------------------------------------------
 
@@ -727,20 +741,31 @@ function CanvasEditor({ graph, history, readOnly, run, focusNode, fullscreen, on
     })
   }, [selNodes, select, graph, readOnly, copy, duplicate, commit, groupSelection, groupMenu])
 
+  // The menu on empty canvas: getting around, arranging, and the selected steps.
   const paneMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    if (readOnly) return
     const drop = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+    const groupable = selNodes.some(id => graph.nodes.find(n => n.id === id)?.type !== 'TRIGGER' && !lockedGroupOf(graph, id))
+    const view: MenuItem[] = [
+      { label: 'Go to Start', onSelect: goToStart },
+      { label: 'Zoom in', shortcut: '+', divider: true, onSelect: () => flow.zoomIn({ duration: 200 }) },
+      { label: 'Zoom out', shortcut: '−', onSelect: () => flow.zoomOut({ duration: 200 }) },
+      { label: 'Reset zoom', shortcut: '0', onSelect: () => flow.zoomTo(1, { duration: 200 }) },
+      { label: 'Fit to screen', shortcut: '1', onSelect: () => flow.fitView({ padding: 0.2, duration: 300, maxZoom: 1 }) },
+    ]
     setMenu({
-      at: { x: e.clientX, y: e.clientY },
-      items: [
-        { label: 'Add a step here', shortcut: 'Tab', onSelect: () => setPicker({ kind: 'free', at: { x: e.clientX, y: e.clientY }, drop: { x: drop.x + NODE_W / 2, y: drop.y + NODE_H / 2 } }) },
-        { label: 'Paste', shortcut: `${MOD}+V`, disabled: !clipboard, onSelect: paste },
+      at: { x: e.clientX, y: e.clientY, flipX: e.clientX },
+      items: readOnly ? view : [
+        ...view,
+        { label: 'Tidy up', shortcut: 'Shift+T', divider: true, onSelect: tidyUp },
+        { label: selNodes.length > 1 ? `Group ${selNodes.length} steps` : 'Group steps', shortcut: `${MOD}+G`, divider: true, disabled: !groupable, onSelect: () => groupSelection() },
         { label: 'Select all', shortcut: `${MOD}+A`, onSelect: () => select(graph.nodes.map(n => n.id)) },
-        { label: 'Tidy up', shortcut: 'Shift+T', onSelect: tidyUp },
+        { label: 'Paste', shortcut: `${MOD}+V`, disabled: !clipboard, onSelect: paste },
+        { label: 'Add a step here', shortcut: 'Tab', divider: true, onSelect: () => setPicker({ kind: 'free', at: { x: e.clientX, y: e.clientY }, drop: { x: drop.x + NODE_W / 2, y: drop.y + NODE_H / 2 } }) },
+        { label: 'Search steps', shortcut: '/', onSelect: focusSearch },
       ],
     })
-  }, [readOnly, flow, paste, select, graph, tidyUp])
+  }, [readOnly, flow, paste, select, graph, tidyUp, selNodes, groupSelection, goToStart, focusSearch])
 
   const [folded, setFolded] = useState<Set<string>>(() => new Set())
   const q = paletteQuery.trim().toLowerCase()
@@ -964,7 +989,7 @@ function Shortcuts() {
   const rows: Array<[string, string]> = [
     ['Add a step', 'Tab'], ['Connect', 'Drag from a dot to a step'], ['Reconnect', 'Click a wire, drag its end'],
     ['Delete', 'Del / Backspace'], ['Undo / redo', `${MOD}+Z / ${MOD}+Shift+Z`], ['Copy / paste', `${MOD}+C / ${MOD}+V`],
-    ['Duplicate', `${MOD}+D`], ['Select all', `${MOD}+A`], ['Select an area', 'Shift+drag'], ['Group steps', `${MOD}+G`], ['Tidy up', 'Shift+T'], ['Fit to screen', '1'],
+    ['Duplicate', `${MOD}+D`], ['Select all', `${MOD}+A`], ['Select an area', 'Shift+drag'], ['Group steps', `${MOD}+G`], ['Tidy up', 'Shift+T'], ['Fit to screen', '1'], ['Zoom in / out / reset', '+ / − / 0'], ['Search steps', '/'], ['More options', 'Right-click'],
   ]
   return (
     <div className="mt-1.5 w-72 rounded-xl border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900">

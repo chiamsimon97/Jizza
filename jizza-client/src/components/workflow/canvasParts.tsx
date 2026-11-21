@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
@@ -401,9 +401,15 @@ export function ContextMenu({ at, items, onClose }: { at: MenuAt; items: MenuIte
     window.addEventListener('pointerdown', away, true)
     return () => window.removeEventListener('pointerdown', away, true)
   }, [onClose])
+  // Once it is drawn, move it up if it runs off the bottom of the window (a long menu, or one opened low).
+  const [top, setTop] = useState(Math.min(at.y, window.innerHeight - items.length * 34 - 16))
+  useLayoutEffect(() => {
+    const h = box.current?.offsetHeight ?? 0
+    setTop(Math.max(8, Math.min(at.y, window.innerHeight - h - 8)))
+  }, [at.y, items.length])
   // In document.body, for the same reason as StepPicker: otherwise it opens away from the step.
   return createPortal(
-    <div ref={box} role="menu" style={{ left: at.x + MENU_W + 12 > window.innerWidth && at.flipX !== undefined ? Math.max(8, at.flipX - MENU_W) : Math.min(at.x, window.innerWidth - MENU_W - 12), top: Math.min(at.y, window.innerHeight - items.length * 34 - 16) }}
+    <div ref={box} role="menu" style={{ left: at.x + MENU_W + 12 > window.innerWidth && at.flipX !== undefined ? Math.max(8, at.flipX - MENU_W) : Math.min(at.x, window.innerWidth - MENU_W - 12), top }}
       className="fixed z-[70] w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-xl animate-fade-in dark:border-gray-700 dark:bg-gray-900">
       {items.map(item => (<div key={item.label}>
         {item.divider && <div role="separator" className="my-1 h-px bg-gray-200 dark:bg-gray-700" />}
@@ -413,7 +419,7 @@ export function ContextMenu({ at, items, onClose }: { at: MenuAt; items: MenuIte
             ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10'
             : 'text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
           <span className="flex-1">{item.label}</span>
-          {item.shortcut && <kbd className="text-[11px] text-gray-400">{item.shortcut}</kbd>}
+          {item.shortcut && <kbd className="shrink-0 whitespace-nowrap text-[11px] text-gray-400">{item.shortcut}</kbd>}
         </button>
       </div>))}
     </div>,
