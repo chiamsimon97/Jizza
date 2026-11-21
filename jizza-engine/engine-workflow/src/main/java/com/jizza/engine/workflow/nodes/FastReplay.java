@@ -166,7 +166,9 @@ final class FastReplay {
       command = broker.submit(new DeviceCommandRequest(execution.userId(),
           browser == null ? null : browser.workspaceId(), target, ACTION, 1, input,
           Duration.ofSeconds(timeoutSec), execution.runId(), execution.node().id(),
-          execution.runId() + ":" + execution.node().id() + ":batch", false));
+          execution.runId() + ":" + execution.node().id() + ":batch"
+              + (execution.context().round(execution.node().id()) > 0
+                  ? ":r" + execution.context().round(execution.node().id()) : ""), false));
     } catch (RuntimeException e) {
       // Most often the browser has no browser.runSteps yet: the steps go one by one.
       log.debug("Fast replay not used for run {}: {}", execution.runId(), e.getMessage());

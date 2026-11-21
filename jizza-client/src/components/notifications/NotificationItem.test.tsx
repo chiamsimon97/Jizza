@@ -23,7 +23,7 @@ const PASSENGER = {
 function actions(): InboxActions {
   const done = vi.fn().mockResolvedValue(undefined)
   return {
-    approve: done, approveAlways: done, decline: done, reply: done, markRead: done,
+    approve: done, approveAlways: done, decline: done, reply: done, goBack: done, markRead: done,
     markUnread: done, archive: done, unarchive: done, snooze: done,
   }
 }
@@ -231,5 +231,47 @@ describe('a device layer card', () => {
     expect(inbox.approve).toHaveBeenCalledWith(layer, expect.objectContaining({
       'fields.0.value': 'MGR CHENNAI CTL - MAS', 'fields.1.value': 'Sleeper (SL)' }))
     testStep.mockRestore()
+  })
+})
+
+describe('a step that allows going back', () => {
+  const CHECK = {
+    id: 'n9', kind: 'PERMISSION_REQUEST', status: 'UNREAD', createdAt: '2026-11-20T10:00:00Z', runId: 'r1',
+    body: 'This step needs your approval before it asks your browser to check availability.',
+    context: {
+      node: 'check',
+      back: [{ node: 'coach', label: 'Choose coach' }, { node: 'train', label: 'Choose train' }],
+    },
+  } as unknown as NotificationDto
+
+  function show(n: NotificationDto, inbox: InboxActions) {
+    render(
+      <MemoryRouter>
+        <NotificationItem n={n} now={Date.parse('2026-11-20T10:01:00Z')} actions={inbox}
+          focused={false} onFocus={() => {}} command={null} onCommandHandled={() => {}} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('offers Back beside Approve, to the latest step that asked, or one picked', async () => {
+    const inbox = actions()
+    show(CHECK, inbox)
+    expect(screen.getByRole('button', { name: /approve/i })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Choose coach' }))
+    await waitFor(() => expect(inbox.goBack).toHaveBeenCalledWith(CHECK, 'coach'))
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Go back to' }), { target: { value: 'train' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Choose train' }))
+    await waitFor(() => expect(inbox.goBack).toHaveBeenCalledWith(CHECK, 'train'))
+  })
+
+  it('shows no Back where the step does not allow it, or once answered', () => {
+    show({ ...CHECK, context: { node: 'check' } } as unknown as NotificationDto, actions())
+    expect(screen.queryByTestId('go-back')).toBeNull()
+  })
+
+  it('shows no Back on an answered item', () => {
+    show({ ...CHECK, status: 'SUBMITTED' } as unknown as NotificationDto, actions())
+    expect(screen.queryByTestId('go-back')).toBeNull()
   })
 })

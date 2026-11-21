@@ -1,7 +1,8 @@
 import { api } from '@/lib/api'
 import type { NotificationDto, NotificationSummary } from '@/types'
 
-export type AnswerKind = 'APPROVE' | 'DENY' | 'SUBMIT_INSTRUCTION'
+/** GO_BACK: back to an earlier step of the run (its id as `instruction`) to choose again. */
+export type AnswerKind = 'APPROVE' | 'DENY' | 'SUBMIT_INSTRUCTION' | 'GO_BACK'
 
 export const notificationsApi = {
   list: (unreadOnly = false) =>
