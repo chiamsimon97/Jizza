@@ -14,7 +14,7 @@ A group is only how the workflow looks in the editor. The steps run exactly as t
 
 ## Make a group
 
-1. Open the workflow in the **Canvas** view.
+1. Open the workflow in the **Canvas** view (for the **Wires** view, see below).
 2. Select the steps: Shift+click each one, or Shift+drag a box around them.
 3. Press **Ctrl+G** (**⌘+G** on a Mac), click the group button in the toolbar at the top right, or right-click a selected step and choose **Group steps**.
 4. Double-click the group's title bar and type a title, such as *Choose coach and date*. Press Enter.
@@ -48,8 +48,17 @@ The **⋮** on the title bar has:
 
 Right-click a step in an unlocked group and choose **Remove from group** to take just that step out.
 
+## In the Wires view
+
+Groups show in the **Wires** view too, with the same title bar. They are the same groups as on the Canvas, so a group made, locked or folded in one view looks the same in the other.
+
+- **Make a group:** pick the steps by dragging a box around them on empty space (hold Shift to add more), or Shift+click each step. Then press **Ctrl+G** (**⌘+G** on a Mac) or click **Group** at the top.
+- **Rename:** double-click the title bar.
+- **Lock, fold, ungroup:** use the padlock, the arrow, and the ungroup button on the title bar.
+- **Move:** drag the title bar to move the whole group. In a locked group, dragging any of its steps moves the whole group too.
+- In a locked group, the exit dots and wires inside it can't be changed, and its steps have no Delete button.
+
 ## Good to know
 
-- Locks apply in the **Wires** view too: the steps of a locked group can't be changed there either. Groups are drawn only on the Canvas.
 - Undo (Ctrl+Z) undoes grouping, locking and folding like any other change.
 - Copying or cloning grouped steps makes plain copies outside the group.

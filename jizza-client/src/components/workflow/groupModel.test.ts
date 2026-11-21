@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyStepEdit, fromGraph, removeNode, setNext, tidy, toGraph, type CanvasGraph, type CanvasNode } from './canvasModel'
-import { createGroup, groupBounds, isLockedEdge, keepLockedArrangement, lockedChange, moveGroup, readGroups, removeFromGroup, ungroup, updateGroup } from './groupModel'
+import { createGroup, foldedGraph, groupBounds, isLockedEdge, keepLockedArrangement, lockedChange, moveGroup, readGroups, removeFromGroup, ungroup, updateGroup } from './groupModel'
 
 const node = (id: string, x: number, type: CanvasNode['type'] = 'TRANSFORM'): CanvasNode => ({ id, type, label: id, config: {}, x, y: 100 })
 
@@ -109,5 +109,20 @@ describe('step groups', () => {
     expect(box).toEqual({ x: 230, y: 46, width: 490, height: 166 })
     const folded = groupBounds(g, { ...g.groups![0], collapsed: true }, size)!
     expect([folded.x, folded.y, folded.width]).toEqual([230, 46, 240])
+  })
+})
+
+describe('folded groups in the Wires view', () => {
+  it('stands one step in for a folded group and joins its wires to it', () => {
+    const g = locked()
+    const id = g.groups![0].id
+    const { graph, into } = foldedGraph(g, x => x === id)
+    expect(graph.nodes.map(n => n.id)).toEqual(['start', 'pay', id])
+    expect(graph.edges).toEqual([
+      { from: 'start', to: id, branch: null },
+      { from: id, to: 'pay', branch: null },
+    ])
+    expect(into.get('coach')).toBe(id)
+    expect(foldedGraph(g, () => false).graph).toBe(g)
   })
 })

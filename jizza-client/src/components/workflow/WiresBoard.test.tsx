@@ -149,6 +149,54 @@ describe('WiresBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Auto align/ }))
     expect(last().nodes.find(n => n.id === 'skip')!.config).not.toHaveProperty('wiresAt')
   })
+
+  describe('step groups', () => {
+    const grouped = (locked: boolean, collapsed = false): CanvasGraph =>
+      ({ ...booking(), groups: [{ id: 'g1', title: 'Pick seats', nodes: ['open', 'ok'], locked, collapsed }] })
+
+    it('groups Shift+clicked steps', () => {
+      const { last } = show()
+      fireEvent.click(screen.getByRole('button', { name: 'Notify me: Open the site' }), { shiftKey: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Approval: OK these seats?' }), { shiftKey: true })
+      fireEvent.click(screen.getByRole('button', { name: /^Group 2$/ }))
+      expect(last().groups).toEqual([expect.objectContaining({ title: 'Group 1', nodes: ['open', 'ok'], locked: false })])
+    })
+
+    it('draws a locked group whose inside wires and steps cannot be changed', () => {
+      const { onChange } = show(grouped(true))
+      expect(screen.getByText('Pick seats')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Exit of Open the site/ })).toBeDisabled()
+      // The wire from Open the site into OK these seats? takes no hover; the one into the group still does.
+      expect(document.querySelectorAll('path[stroke="transparent"]')).toHaveLength(3)
+      fireEvent.mouseEnter(screen.getByRole('button', { name: 'Approval: OK these seats?' }))
+      expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Ungroup/ })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Unlock group' }))
+      expect((onChange.mock.calls.at(-1)![0] as CanvasGraph).groups![0].locked).toBe(false)
+    })
+
+    it('picks the steps inside a box dragged on empty space, then groups them', () => {
+      const { view, last } = show()
+      const board = view.container.querySelector('[role="region"] > div') as HTMLElement
+      board.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000, width: 2000, height: 2000, x: 0, y: 0, toJSON: () => ({}) })
+      const layout = wiresLayout(booking())
+      const open = layout.at.get('open')!
+      const ok = layout.at.get('ok')!
+      pointer('pointerDown', board, open.x - 10, open.y - 10)
+      pointer('pointerMove', board, ok.x + 20, ok.y + 20)
+      pointer('pointerUp', board, ok.x + 20, ok.y + 20)
+      fireEvent.click(screen.getByRole('button', { name: /^Group 2$/ }))
+      expect(last().groups![0].nodes.sort()).toEqual(['ok', 'open'])
+    })
+
+    it('folds a group into one card that its wires meet', () => {
+      const { last } = show(grouped(false, true))
+      expect(screen.queryByRole('button', { name: 'Notify me: Open the site' })).not.toBeInTheDocument()
+      expect(screen.getByText('Pick seats')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Unfold Pick seats' }))
+      expect(last().groups![0].collapsed).toBe(false)
+    })
+  })
 })
 
 /** jsdom has no PointerEvent, so position, button and pointer are set on the event by hand. */
