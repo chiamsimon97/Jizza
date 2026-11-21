@@ -21,6 +21,7 @@ import com.jizza.engine.api.webauto.LocatorFixes;
 import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
 import com.jizza.engine.persistence.repository.WorkflowStorageRepository;
+import com.jizza.engine.workflow.engine.GoBack;
 import com.jizza.engine.workflow.engine.NodeExecutor;
 import com.jizza.engine.workflow.engine.RunContext;
 import com.jizza.engine.workflow.sandbox.JexlSandbox;
@@ -104,7 +105,8 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     if (state.hasNonNull(FastReplay.BATCH_COMMAND)) {
       Outcome batched = fastReplay.follow(execution, broker);
       if (batched != null) return batched;
-    } else if (fastReplay.enabled() && !state.has("commandId")) {
+    } else if (fastReplay.enabled() && !state.has("commandId")
+        && !state.has(GoBack.ASK_AGAIN) && !state.has(GoBack.PAGES_BACK)) {
       Outcome batched = fastReplay.start(execution, broker, actions, autonomyGate,
           actorFor(execution), this::render);
       if (batched != null) return batched;
@@ -170,6 +172,12 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     if (!inputs.isObject()) return Outcome.permanentFailure("The step's inputs must be an object");
     if (browserAction && browser != null && !config.path("inputs").has("session")) {
       ((ObjectNode) inputs).put("session", browser.sessionId());
+    }
+    if (browserAction && state.path(GoBack.PAGES_BACK).asInt(0) > 0) {
+      // The person went back to this step from a later one: first back to the page it was on.
+      Outcome going = pagesBack(execution, broker, state, target, workspaceId,
+          inputs.path("session").isTextual() ? inputs.get("session").asText() : null);
+      if (going != null) return going;
     }
     if ("browser.open".equals(spec.action()) && execution.context().needsNewBrowserSession()) {
       ((ObjectNode) inputs).put("in", "newSession");
@@ -516,7 +524,9 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     List<String> missing = form.stream().filter(WebStepForm.Field::missing)
         .filter(f -> !f.key().startsWith("_"))
         .map(WebStepForm.Field::label).toList();
-    boolean asks = !approved && (decision.needsPermission() || decision.needsJizza());
+    // Gone back to from a later step: the person chooses again, whatever the step would pick.
+    boolean again = !approved && state.path(GoBack.ASK_AGAIN).asBoolean(false);
+    boolean asks = !approved && (decision.needsPermission() || decision.needsJizza()) || again;
     // A step with details attached always stops: the person reads them and answers, then it
     // goes on with their answers as its details output.
     boolean asksDetails = !details.isEmpty() && !approved;
@@ -528,6 +538,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           ? (missing.size() == 1 ? missing.get(0) + " has" : String.join(", ", missing) + " have")
               + " no value, so fill " + (missing.size() == 1 ? "it" : "them") + " in to go on"
           : asksDetails && !asks ? "Answer what it asks for to go on"
+          : again ? "You went back to choose again"
           : decision.reason();
       return ask(execution, state, spec, target, form, pick ? labels(choices) : null, why);
     }
@@ -549,7 +560,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     try {
       command = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
           spec.action(), spec.version(), inputs, timeout, execution.runId(),
-          nodeId, execution.runId() + ":" + nodeId + ":" + execution.attempt()
+          nodeId, commandKey(execution)
               + (state.path("sends").asInt(0) > 0 ? ":s" + state.path("sends").asInt() : ""),
           false));
     } catch (ValidationException | NotFoundException e) {
@@ -895,7 +906,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     try {
       listing = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
           listAction, 1, listInput, null, execution.runId(), execution.node().id(),
-          execution.runId() + ":" + execution.node().id() + ":" + execution.attempt() + ":list"
+          commandKey(execution) + ":list"
               + state.path("lists").asInt(0),
           false));
       state.put("lists", state.path("lists").asInt(0) + 1);
@@ -907,6 +918,61 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return listChoices(execution, broker, state, target, workspaceId, listAction, listInput, into);
     }
     return Outcome.awaitDevice(listing.deadlineAt());
+  }
+
+  /**
+   * Goes back {@code pagesBack} pages in the browser, one command at a time, before the step runs
+   * again. A page with no history to go back through is left as it is.
+   *
+   * @return what the run waits for, or null once the browser is back
+   */
+  private Outcome pagesBack(Execution execution, DeviceCommands broker, ObjectNode state,
+                            DeviceTarget target, UUID workspaceId, String session) {
+    if (state.hasNonNull("backCommandId")) {
+      DeviceCommandDto going = broker.find(UUID.fromString(state.get("backCommandId").asText()))
+          .orElse(null);
+      if (going != null && !going.status().finished()) return Outcome.awaitDevice(going.deadlineAt());
+      state.remove("backCommandId");
+      boolean moved = going != null
+          && going.status() == com.jizza.engine.api.device.DeviceCommandStatus.SUCCEEDED
+          && going.output() != null && going.output().path("moved").asBoolean(true);
+      int left = state.path(GoBack.PAGES_BACK).asInt(0) - 1;
+      if (!moved || left <= 0) {
+        state.remove(GoBack.PAGES_BACK);
+        return null;
+      }
+      state.put(GoBack.PAGES_BACK, left);
+    }
+    ObjectNode input = Json.obj();
+    if (session != null) input.put("session", session);
+    DeviceCommandDto going;
+    try {
+      going = broker.submit(new DeviceCommandRequest(execution.userId(), workspaceId, target,
+          "browser.back", 1, input, null, execution.runId(), execution.node().id(),
+          commandKey(execution) + ":back"
+              + state.path("backs").asInt(0),
+          false));
+      state.put("backs", state.path("backs").asInt(0) + 1);
+    } catch (ValidationException | NotFoundException e) {
+      // Going back is a courtesy: the step still runs on the page as it is.
+      state.remove(GoBack.PAGES_BACK);
+      return null;
+    }
+    state.put("backCommandId", going.id().toString());
+    if (going.status().finished()) {
+      return pagesBack(execution, broker, state, target, workspaceId, session);
+    }
+    return Outcome.awaitDevice(going.deadlineAt());
+  }
+
+  /**
+   * The start of the idempotency key of what this attempt of the step sends a device. A step run
+   * again after the person went back to before it gets new keys, so it is really sent again.
+   */
+  static String commandKey(Execution execution) {
+    int round = execution.context().round(execution.node().id());
+    return execution.runId() + ":" + execution.node().id() + ":" + execution.attempt()
+        + (round > 0 ? ":r" + round : "");
   }
 
   /** Whose guardrails judge the step: the workflow's agent, or the person's Jizza. */

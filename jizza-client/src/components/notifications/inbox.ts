@@ -66,6 +66,19 @@ export function runChoicesFor(n: NotificationDto): typeof RUN_CHOICES {
   ]
 }
 
+/** An earlier step a run's question can go back to, to choose again (Allow going back). */
+export interface BackStep { node: string; label: string }
+
+/** The earlier steps this question offers to go back to, the first one the default. */
+export function backStepsOf(n: NotificationDto): BackStep[] {
+  const back = n.context?.back
+  if (!Array.isArray(back) || !n.runId) return []
+  return back.flatMap(b => {
+    const s = b as { node?: unknown; label?: unknown }
+    return typeof s?.node === 'string' ? [{ node: s.node, label: typeof s.label === 'string' && s.label ? s.label : s.node }] : []
+  })
+}
+
 /** A question raised because a workflow step failed, which the run choices can answer. */
 export function isFailedStep(n: NotificationDto): boolean {
   if (n.kind !== 'INSTRUCTION_REQUIRED' || !n.runId) return false
