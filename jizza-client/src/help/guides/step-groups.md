@@ -58,6 +58,12 @@ Groups show in the **Wires** view too, with the same title bar. They are the sam
 - **Move:** drag the title bar to move the whole group. In a locked group, dragging any of its steps moves the whole group too.
 - In a locked group, the exit dots and wires inside it can't be changed, and its steps have no Delete button.
 
+## Right-click menus
+
+Right-click empty space in either view for quick actions: **Go to Start**, zoom and **Fit to screen** (Canvas), **Preview path** (Wires), **Tidy up** or **Auto align**, **Group steps** for the steps you picked, **Select all**, and **Search steps**. The keys for each are shown beside it.
+
+Right-click a step for its own options, including **Group**, **Remove from group** and **Lock group**.
+
 ## Good to know
 
 - Undo (Ctrl+Z) undoes grouping, locking and folding like any other change.

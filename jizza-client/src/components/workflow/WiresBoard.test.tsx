@@ -190,6 +190,30 @@ describe('WiresBoard', () => {
       expect(last().groups![0].nodes.sort()).toEqual(['ok', 'open'])
     })
 
+    it('offers the board actions on a right-click on empty space, and groups from there', () => {
+      const { view, last } = show()
+      const board = view.container.querySelector('[role="region"] > div') as HTMLElement
+      fireEvent.contextMenu(board, { clientX: 10, clientY: 10 })
+      const menu = screen.getByRole('menu')
+      for (const item of ['Go to Start', 'Preview path', 'Auto align', 'Group steps', 'Pick all steps', 'Search steps']) {
+        expect(within(menu).getByRole('menuitem', { name: new RegExp(item) })).toBeInTheDocument()
+      }
+      expect(within(menu).getByRole('menuitem', { name: /^Group steps/ })).toBeDisabled()
+      fireEvent.click(within(menu).getByRole('menuitem', { name: /Pick all steps/ }))
+      fireEvent.contextMenu(board, { clientX: 10, clientY: 10 })
+      fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Group 4 steps/ }))
+      expect(last().groups![0].nodes).toHaveLength(4)
+    })
+
+    it('offers step actions on a right-click on a step, and keeps a locked step from being deleted', () => {
+      show(grouped(true))
+      fireEvent.contextMenu(screen.getByRole('button', { name: 'Approval: OK these seats?' }), { clientX: 10, clientY: 10 })
+      const menu = screen.getByRole('menu')
+      expect(within(menu).getByRole('menuitem', { name: /Delete/ })).toBeDisabled()
+      expect(within(menu).getByRole('menuitem', { name: /Unlock group/ })).toBeInTheDocument()
+      expect(within(menu).queryByRole('menuitem', { name: /Remove from group/ })).not.toBeInTheDocument()
+    })
+
     it('folds a group into one card that its wires meet', () => {
       const { last } = show(grouped(false, true))
       expect(screen.queryByRole('button', { name: 'Notify me: Open the site' })).not.toBeInTheDocument()

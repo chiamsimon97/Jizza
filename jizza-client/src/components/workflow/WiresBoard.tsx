@@ -10,10 +10,10 @@ import {
   NODE_META, PALETTE_GROUPS, addNode, applyStepEdit, cloneNodes, exitsOf, mainExitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, setNext, targetsFor,
   unreachable, updateNode, type CanvasEdge, type CanvasGraph, type ExitKey, type NodeType, type PaletteEntry,
 } from './canvasModel'
-import { NODE_ICON, StepPicker, exitLabel, summarise, type StepRun } from './canvasParts'
+import { ContextMenu, NODE_ICON, StepPicker, exitLabel, summarise, type MenuAt, type MenuItem, type StepRun } from './canvasParts'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
-import { createGroup, foldedGraph, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, ungroup, updateGroup, type StepGroup } from './groupModel'
+import { createGroup, foldedGraph, groupOfNode, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, removeFromGroup, ungroup, updateGroup, type StepGroup } from './groupModel'
 import {
   CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
   wireKey, wireLabel, wiresLayout, type Box, type Route,
@@ -115,6 +115,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   /** A box being dragged on empty space to pick the steps it touches, in board coordinates. */
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; add: boolean } | null>(null)
   const marqueeDone = useRef(false)
+  /** The right-click menu that is open, if any. */
+  const [menu, setMenu] = useState<{ at: MenuAt; items: MenuItem[] } | null>(null)
   /** On a read-only board folding a group is only for the viewer. */
   const [viewFolds, setViewFolds] = useState<Map<string, boolean>>(() => new Map())
   const justMoved = useRef(false)
@@ -383,10 +385,72 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
       const t = e.target as HTMLElement
       if (t.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'g' && toGroup.length) { e.preventDefault(); groupSteps(toGroup) }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && content.current?.closest('.jizza-wires')?.matches(':hover')) { e.preventDefault(); pickAll() }
+      else if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); focusSearch() }
+      else if (e.key === 'Escape' && picked.size && !pending && !labelFor) setPicked(new Set())
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
+  // ---- Right-click menus --------------------------------------------------------------------
+
+  const goToStart = () => {
+    const box = startId ? layout.at.get(startId) : undefined
+    const region = content.current?.parentElement
+    if (!box || !region || !content.current) return
+    region.scrollTo({ left: content.current.offsetLeft + box.x + CARD_W / 2 - region.clientWidth / 2, top: Math.max(0, box.y - 60), behavior: 'smooth' })
+    setSelected(startId ?? null)
+  }
+  const focusSearch = () => {
+    const input = content.current?.closest('.jizza-wires')?.querySelector<HTMLInputElement>('input[aria-label="Search steps"]')
+    input?.focus()
+    input?.select()
+  }
+  const pickAll = () => { setPicked(new Set(graph.nodes.filter(n => n.type !== 'TRIGGER' && !into.has(n.id)).map(n => n.id))); setSelected(null) }
+
+  /** The menu on empty space: getting around, arranging, and the picked steps. */
+  const boardMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const view: MenuItem[] = [
+      { label: 'Go to Start', onSelect: goToStart },
+      { label: preview === null ? 'Preview path' : 'Clear preview', divider: true, onSelect: preview === null ? startPreview : stopPreview },
+    ]
+    setMenu({
+      at: { x: e.clientX, y: e.clientY, flipX: e.clientX },
+      items: readOnly ? view : [
+        ...view,
+        { label: 'Auto align', disabled: !arranged, onSelect: () => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') } },
+        { label: toGroup.length > 1 ? `Group ${toGroup.length} steps` : 'Group steps', shortcut: `${MOD}+G`, divider: true, disabled: !canGroup, onSelect: () => groupSteps(toGroup) },
+        { label: 'Pick all steps', shortcut: `${MOD}+A`, onSelect: pickAll },
+        { label: 'Clear picked steps', shortcut: 'Esc', disabled: !picked.size && !selected, onSelect: () => { setPicked(new Set()); setSelected(null) } },
+        { label: 'Search steps', shortcut: '/', divider: true, onSelect: focusSearch },
+      ],
+    })
+  }
+
+  /** The menu on a step: its settings, copies, its group. */
+  const stepMenu = (e: React.MouseEvent, id: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const node = byId.get(id)
+    if (!node) return
+    const isStart = node.type === 'TRIGGER'
+    const group = groupOfNode(graph, id)
+    const ids = picked.has(id) ? [...picked] : [id]
+    const items: MenuItem[] = [{ label: readOnly || lockedGroupOf(graph, id) ? 'Open settings' : 'Edit settings', onSelect: () => openSettings(id) }]
+    if (!readOnly) {
+      if (!isStart) items.push({ label: 'Clone', onSelect: () => cloneStep(id) })
+      items.push({ label: 'Wire to the next step', onSelect: () => { setPending({ from: id, branch: exitsOf(node)[0] ?? null }); setSelected(null) }, disabled: exitsOf(node).length === 0 })
+      if (!isStart) {
+        items.push({ label: ids.length > 1 ? `Group ${ids.length} steps` : 'Group this step', shortcut: `${MOD}+G`, divider: true, disabled: !!lockedGroupOf(graph, id), onSelect: () => groupSteps(ids) })
+        if (group && !group.locked) items.push({ label: 'Remove from group', onSelect: () => commit(removeFromGroup(graph, id)) })
+        if (group) items.push({ label: group.locked ? 'Unlock group' : 'Lock group', onSelect: () => commit(updateGroup(graph, group.id, { locked: !group.locked })) })
+        items.push({ label: 'Delete', danger: true, divider: true, disabled: !!lockedGroupOf(graph, id), onSelect: () => removeStep(id) })
+      }
+    }
+    setMenu({ at: { x: e.clientX, y: e.clientY, flipX: e.clientX }, items })
+  }
 
   /** Starts moving steps by hand: one step, or every step of its group when it is locked. */
   const startMove = (key: string, ids: string[], e: React.PointerEvent) => {
@@ -554,6 +618,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
         <div role="region" aria-label="Workflow wires" className="absolute inset-0 overflow-auto bg-gray-50 pt-11 dark:bg-gray-950"
           style={{ backgroundImage: 'radial-gradient(rgb(var(--gray-300)) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
           onDragOver={onDragOver} onDrop={onDrop}
+          onContextMenu={e => { if (e.target === e.currentTarget || e.target === content.current) boardMenu(e) }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setSuggest(null) }}
           onClick={e => {
             if (marqueeDone.current) { marqueeDone.current = false; return }
@@ -701,6 +766,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                   onPointerUp={e => { if (endMove(`step:${n.id}`, e)) justMoved.current = true }}
                   onPointerCancel={() => { grab.current = null; setMoving(null) }}
                   onDoubleClick={() => openSettings(n.id)}
+                  onContextMenu={e => stepMenu(e, n.id)}
                   onMouseEnter={() => stepOn(n.id)} onMouseLeave={stepOff}
                   title={problems?.join('\n')}
                   className={`absolute flex items-center gap-3 rounded-2xl border bg-white px-3.5 text-left transition-[box-shadow,opacity,transform,border-color] duration-150 dark:bg-gray-900 ${
@@ -855,6 +921,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
         )}
       </div>
 
+      {menu && <ContextMenu at={menu.at} items={menu.items} onClose={() => setMenu(null)} />}
       {picker && (
         <StepPicker at={picker.at} title="Add a step on this wire" agents={agents} allowEnd={false} onClose={() => setPicker(null)}
           onPick={(entry, agent) => {
