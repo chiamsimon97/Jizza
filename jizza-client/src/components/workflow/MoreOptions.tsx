@@ -5,7 +5,8 @@ import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
  * Details on demand for a step's settings: the important values stay in view so the step is easy
  * to review, and the rest (selectors, kinds, groups, patterns, timings…) sit behind this toggle.
  *
- * The details stay mounted while folded (only hidden), so a pick in progress or a half-typed
+ * The details stay mounted while folded (only hidden: the `hidden` class too, since a `flex`
+ * class would override the hidden attribute in the browser), so a pick in progress or a half-typed
  * value is not lost. When something inside needs fixing (`hasError`), it opens by itself; if the
  * person folds it again, the toggle keeps a "Needs attention" badge so the problem never hides.
  */
@@ -50,7 +51,7 @@ export function MoreOptions({ label = 'More options', summary, hasError, default
         {!open && summary && <span className="min-w-0 truncate">· {summary}</span>}
         {!open && hasError && <Attention />}
       </button>
-      <div id={id} hidden={!open} className="flex flex-col gap-2 border-l-2 border-gray-100 pl-3 dark:border-gray-800">
+      <div id={id} hidden={!open} className={open ? 'flex flex-col gap-2 border-l-2 border-gray-100 pl-3 dark:border-gray-800' : 'hidden'}>
         {children}
       </div>
     </div>
@@ -73,7 +74,7 @@ export function FoldSection({ title, summary, hasError, defaultOpen, children }:
         {!open && summary && <span className="min-w-0 truncate text-[11px] text-gray-400">· {summary}</span>}
         {!open && hasError && <Attention />}
       </button>
-      <div id={id} hidden={!open} className="flex flex-col gap-2">
+      <div id={id} hidden={!open} className={open ? 'flex flex-col gap-2' : 'hidden'}>
         {children}
       </div>
     </section>

@@ -8,7 +8,11 @@ describe('MoreOptions', () => {
     const toggle = screen.getByRole('button', { name: /More options · Dropdown · Book Ticket/ })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('textbox', { name: 'Kind' })).not.toBeInTheDocument()
+    // jsdom applies no CSS: a display class such as flex would show the folded part in a browser.
+    const folded = document.getElementById(toggle.getAttribute('aria-controls')!)!
+    expect(folded.className).toBe('hidden')
     fireEvent.click(toggle)
+    expect(folded.className).not.toMatch(/\bhidden\b/)
     expect(screen.getByRole('textbox', { name: 'Kind' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Hide more options' })).toHaveAttribute('aria-expanded', 'true')
   })
