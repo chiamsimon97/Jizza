@@ -60,6 +60,7 @@ Groups show in the **Wires** view too, with the same title bar. They are the sam
 - **Lock, fold, ungroup:** use the padlock, the arrow, and the ungroup button on the title bar.
 - **Move:** drag the title bar to move the whole group. In a locked group, dragging any of its steps moves the whole group too.
 - In a locked group, the exit dots and wires inside it can't be changed, and its steps have no Delete button.
+- Wires into and out of a locked group can still be re-wired: drag an exit dot or a wire's end to another step (see [Re-wiring steps in the Wires view](/help/wires-rewiring)).
 
 ## Right-click menus
 

@@ -128,6 +128,113 @@ describe('WiresBoard', () => {
     expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
   })
 
+  describe('re-wiring by dragging', () => {
+    /** Board coordinates are client coordinates in these tests. */
+    const flat = (view: ReturnType<typeof show>['view']) => {
+      const board = view.container.querySelector('[role="region"] > div') as HTMLElement
+      board.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000, width: 2000, height: 2000, x: 0, y: 0, toJSON: () => ({}) })
+    }
+    const middle = (id: string, graph = booking()) => {
+      const b = wiresLayout(graph).at.get(id)!
+      return [b.x + CARD_W / 2, b.y + CARD_H / 2] as const
+    }
+    const withLoose = () => {
+      const graph = booking()
+      graph.nodes.push({ id: 'loose', type: 'NOTIFY', label: 'Loose end', config: { message: 'x' }, x: 0, y: 0 })
+      return graph
+    }
+
+    it('drags from an exit dot to a step to wire it', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      flat(view)
+      const dot = screen.getByRole('button', { name: /Exit of Hold seats/ })
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', dot, 10, 10)
+      pointer('pointerMove', window, x, y)
+      expect(screen.getByTestId('wire-drag')).toBeInTheDocument()
+      pointer('pointerUp', window, x, y)
+      expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
+      expect(screen.queryByTestId('wire-drag')).not.toBeInTheDocument()
+    })
+
+    it('drags a wired exit to another step, moving its wire', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      flat(view)
+      const dot = screen.getByRole('button', { name: /"rejected" exit of OK these seats/ })
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', dot, 10, 10)
+      pointer('pointerMove', window, x, y)
+      pointer('pointerUp', window, x, y)
+      expect(last().edges).toContainEqual({ from: 'ok', to: 'loose', branch: 'rejected' })
+      expect(last().edges.some(e => e.to === 'skip')).toBe(false)
+    })
+
+    it('drags the end of a hovered wire to another step, or off onto empty space', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      flat(view)
+      fireEvent.mouseEnter(hitArea(view.container, 0))
+      const end = screen.getByRole('button', { name: 'Move the end of the wire from Start' })
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', end, 10, 10)
+      pointer('pointerMove', window, x, y)
+      pointer('pointerUp', window, x, y)
+      expect(last().edges).toContainEqual({ from: 'start', to: 'loose', branch: null })
+      expect(last().edges.some(e => e.from === 'start' && e.to === 'open')).toBe(false)
+    })
+
+    it('takes a wire off when its end is let go on empty space', () => {
+      const { view, last } = show()
+      flat(view)
+      fireEvent.mouseEnter(hitArea(view.container, 0))
+      pointer('pointerDown', screen.getByRole('button', { name: 'Move the end of the wire from Start' }), 10, 10)
+      pointer('pointerMove', window, 1900, 1900)
+      pointer('pointerUp', window, 1900, 1900)
+      expect(last().edges.some(e => e.from === 'start')).toBe(false)
+    })
+
+    it('refuses a wire that would make a loop, and says why', () => {
+      const { view, onChange } = show()
+      flat(view)
+      const [x, y] = middle('open')
+      pointer('pointerDown', screen.getByRole('button', { name: /"approved" exit of OK these seats/ }), 10, 10)
+      pointer('pointerMove', window, x, y)
+      pointer('pointerUp', window, x, y)
+      expect(onChange).not.toHaveBeenCalled()
+      expect(screen.getByText(/would make a loop/)).toBeInTheDocument()
+    })
+
+    it('keeps wires inside a locked group, but lets the wire into it move', () => {
+      const graph: CanvasGraph = { ...withLoose(), groups: [{ id: 'g1', title: 'Pick seats', nodes: ['open', 'ok'], locked: true, collapsed: false }] }
+      const { view, onChange, last } = show(graph)
+      flat(view)
+      // Open the site → OK these seats? is inside the group: its exit dot is locked.
+      const dot = screen.getByRole('button', { name: /Exit of Open the site/ })
+      pointer('pointerDown', dot, 10, 10)
+      pointer('pointerMove', window, 1900, 1900)
+      pointer('pointerUp', window, 1900, 1900)
+      expect(onChange).not.toHaveBeenCalled()
+      // Start → Open the site comes into the group, so it can be re-wired.
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', screen.getByRole('button', { name: /Exit of Start/ }), 10, 10)
+      pointer('pointerMove', window, x, y)
+      pointer('pointerUp', window, x, y)
+      expect(last().edges).toContainEqual({ from: 'start', to: 'loose', branch: null })
+    })
+
+    it('re-wires from the hover toolbar: Re-wire, then click the step', () => {
+      const graph = withLoose()
+      const { view, last } = show(graph)
+      fireEvent.mouseEnter(hitArea(view.container, 0))
+      fireEvent.click(screen.getByRole('button', { name: 'Re-wire' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Notify me: Loose end' }))
+      expect(last().edges).toContainEqual({ from: 'start', to: 'loose', branch: null })
+      expect(last().edges.some(e => e.from === 'start' && e.to === 'open')).toBe(false)
+    })
+  })
+
   it('moves a step by dragging it, and puts it back in line with auto align', () => {
     const { onChange, last } = show()
     const step = screen.getByRole('button', { name: 'Notify me: Tell me it was skipped' })
@@ -248,7 +355,7 @@ describe('WiresBoard', () => {
 })
 
 /** jsdom has no PointerEvent, so position, button and pointer are set on the event by hand. */
-function pointer(kind: 'pointerDown' | 'pointerMove' | 'pointerUp', el: HTMLElement, x: number, y: number) {
+function pointer(kind: 'pointerDown' | 'pointerMove' | 'pointerUp', el: HTMLElement | Window, x: number, y: number) {
   const ev = createEvent[kind](el)
   for (const [k, v] of Object.entries({ clientX: x, clientY: y, button: 0, pointerId: 1 })) Object.defineProperty(ev, k, { value: v })
   fireEvent(el, ev)

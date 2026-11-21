@@ -4,8 +4,9 @@
  * time, so the canvas keeps its own layout untouched.
  */
 
+import { isLockedEdge } from './groupModel'
 import {
-  addAfter, exitsOf, insertOnEdge, mainExitsOf, removeNode, setNext, updateNode,
+  addAfter, exitsOf, insertOnEdge, mainExitsOf, reaches, removeNode, setNext, updateNode,
   type CanvasEdge, type CanvasGraph, type ExitKey, type PaletteEntry, type NodeType,
 } from './canvasModel'
 
@@ -247,6 +248,36 @@ export function deleteStep(graph: CanvasGraph, id: string): { graph: CanvasGraph
     return { graph: setNext(next, ins[0].from, ins[0].branch, outs[0].to), joined: true }
   }
   return { graph: next, joined: false }
+}
+
+/**
+ * The steps an exit can be wired to, as the canvas allows: not Start, not the step itself, nothing
+ * that leads back to it (a loop), and nothing that would add a wire inside a locked group. When a
+ * wire is being moved, {@code old} is that wire, which no longer counts.
+ */
+export function rewireTargets(graph: CanvasGraph, from: string, branch: ExitKey, old?: CanvasEdge | null): Set<string> {
+  const without = old ? { ...graph, edges: graph.edges.filter(e => !(e.from === old.from && e.branch === old.branch)) } : graph
+  const current = graph.edges.find(e => e.from === from && e.branch === branch)
+  const out = new Set<string>()
+  // An exit wired inside a locked group stays as it is.
+  if (current && isLockedEdge(graph, current)) return out
+  if (old && isLockedEdge(graph, old)) return out
+  for (const n of graph.nodes) {
+    if (n.type === 'TRIGGER' || n.id === from) continue
+    if (isLockedEdge(graph, { from, to: n.id })) continue
+    if (reaches(without, n.id, from)) continue
+    out.add(n.id)
+  }
+  return out
+}
+
+/**
+ * Re-wires an exit to another step: the wire it had (or the wire {@code old} being moved off
+ * another exit) is replaced. With no step, the wire is taken off.
+ */
+export function rewire(graph: CanvasGraph, from: string, branch: ExitKey, to: string | null, old?: CanvasEdge | null): CanvasGraph {
+  const without = old ? { ...graph, edges: graph.edges.filter(e => !(e.from === old.from && e.branch === old.branch)) } : graph
+  return setNext(without, from, branch, to)
 }
 
 /** A wire's label, kept in the settings of the step it leaves, by exit. */
