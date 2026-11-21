@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -360,3 +361,85 @@ function pointer(kind: 'pointerDown' | 'pointerMove' | 'pointerUp', el: HTMLElem
   for (const [k, v] of Object.entries({ clientX: x, clientY: y, button: 0, pointerId: 1 })) Object.defineProperty(ev, k, { value: v })
   fireEvent(el, ev)
 }
+
+/** A board that keeps its own graph, as the workflow form does, so undo and paste build on each other. */
+function Live({ start, seen }: { start: CanvasGraph; seen: (g: CanvasGraph) => void }) {
+  const [graph, setGraph] = useState(start)
+  return <WiresBoard graph={graph} onChange={g => { seen(g); setGraph(g) }} />
+}
+
+describe('WiresBoard editing tools', () => {
+  beforeEach(() => {
+    queryClient.clear()
+    vi.spyOn(api, 'get').mockResolvedValue([])
+  })
+
+  function live(graph = booking()) {
+    const seen = vi.fn()
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><Live start={graph} seen={seen} /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // Shortcuts apply once the pointer has been in the board.
+    fireEvent.pointerDown(view.container.querySelector('.jizza-wires')!)
+    return { view, last: () => seen.mock.calls.at(-1)![0] as CanvasGraph }
+  }
+
+  it('undoes and redoes a change from the toolbar and the keyboard', () => {
+    const { last } = live()
+    const step = screen.getByRole('button', { name: 'Notify me: Open the site' })
+    fireEvent.mouseEnter(step)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(last().nodes.some(n => n.id === 'open')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: /^Undo/ }))
+    expect(last().nodes.some(n => n.id === 'open')).toBe(true)
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: true })
+    expect(last().nodes.some(n => n.id === 'open')).toBe(false)
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(last().nodes.some(n => n.id === 'open')).toBe(true)
+  })
+
+  it('copies, pastes and deletes picked steps with the keyboard', () => {
+    const { last } = live()
+    fireEvent.click(screen.getByRole('button', { name: 'Notify me: Hold seats' }))
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true })
+    expect(last().nodes.filter(n => n.label === 'Hold seats')).toHaveLength(2)
+    // The pasted copy is picked, so Delete takes it away again.
+    fireEvent.keyDown(window, { key: 'Delete' })
+    expect(last().nodes.filter(n => n.label === 'Hold seats')).toHaveLength(1)
+  })
+
+  it('offers copy, disconnecting and notes on a step, and adds a note', () => {
+    const { last } = live()
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Notify me: Open the site' }), { clientX: 10, clientY: 10 })
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: /Copy/ })).toBeInTheDocument()
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /Disconnect/ }))
+    expect(last().edges.some(e => e.from === 'open' || e.to === 'open')).toBe(false)
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Notify me: Open the site' }), { clientX: 10, clientY: 10 })
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Add note/ }))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
+  it('goes full screen and back with Escape', () => {
+    live()
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
+    expect(document.body.querySelector('.fixed.inset-0 .jizza-wires')).not.toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(document.body.querySelector('.fixed.inset-0 .jizza-wires')).toBeNull()
+  })
+
+  it('warns about a step whose agent is paused', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (url: string) => (url.startsWith('/api/agents')
+      ? [{ id: 'a1', key: 'mail', name: 'Mailer', status: 'active', enabled: false }]
+      : []) as never)
+    live(fromGraph({
+      nodes: [{ id: 'start', type: 'TRIGGER', label: 'Start', config: {} }, { id: 'send', type: 'AGENT_STEP', label: 'Send', config: { agentId: 'a1', instruction: 'Send it' } }],
+      edges: [{ from: 'start', to: 'send' }],
+    }))
+    const step = await screen.findByRole('button', { name: /Send$/ })
+    await vi.waitFor(() => expect(step.getAttribute('title')).toContain('Mailer is paused'))
+  })
+})

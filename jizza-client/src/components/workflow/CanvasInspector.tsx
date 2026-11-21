@@ -432,7 +432,7 @@ export function CanvasInspector({ node: opened, graph: canvas, agents, tools, mc
       )}
 
       {node.type !== 'TRIGGER' && (
-        <Labelled label="Note" hint="Shown on the step in the canvas. It does not change what the step does.">
+        <Labelled label="Note" hint="Shown on the step when you hover its pencil mark. It does not change what the step does.">
           <textarea ref={note} className={fieldClass} rows={2} disabled={readOnly} value={str('note')}
             onChange={e => setConfig({ note: e.target.value || undefined })} />
         </Labelled>

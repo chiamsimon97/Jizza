@@ -1,22 +1,18 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from 'reactflow'
 import {
-  AlertCircle, Bell, Bot, Braces, Check, CircleSlash, Clock, Code2, Database, Filter, Flag, GitBranch, GitMerge, Hand, Loader2, MoreVertical, Play, Plug, Plus, Repeat, Search,
-  Server, ShieldCheck, Shuffle, Signpost, Split, Trash2, Webhook, Workflow, X,
+  Bell, Bot, Braces, Clock, Code2, Database, Filter, Flag, GitBranch, GitMerge, Hand, Play, Plug, Repeat, Search,
+  Server, ShieldCheck, Shuffle, Signpost, Split, Webhook, Workflow,
   MonitorSmartphone,
 } from 'lucide-react'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import type { AgentDto } from '@/types'
-import { NODE_META, NODE_W, PALETTE, casesOf, exitsOf, groupOf, isCheckStep, isLayerStep, layerButtonsOf, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
+import { NODE_META, PALETTE, casesOf, groupOf, isCheckStep, isLayerStep, layerButtonsOf, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry } from './canvasModel'
 import { fieldsOf } from './moduleContract'
 
 export type Exit = ExitKey
-/** How a step did in the run shown on the canvas. */
+/** How a step did in the run shown in the builder. */
 export type StepRun = 'done' | 'failed' | 'skipped' | 'running' | 'waiting'
-
-export const handleOf = (b: Exit) => b ?? 'out'
-export const exitOf = (handle: string | null | undefined): Exit => (handle && handle !== 'out' && handle !== 'in' ? handle : null)
 
 /** What an exit is called next to its dot. A paths step's cases go by their labels, so it needs the node. */
 export function exitLabel(b: Exit, node?: CanvasNode): string {
@@ -38,151 +34,11 @@ export function exitLabel(b: Exit, node?: CanvasNode): string {
   return 'abc'.includes(b) ? `path ${'abc'.indexOf(b) + 1}` : b
 }
 
-/** Whether an exit is the "go" or "stop" side of a choice, for its colour. */
-const exitTone = (b: Exit): 'yes' | 'no' | 'other' => (b === 'true' || b === 'approved' ? 'yes' : b === 'false' || b === 'rejected' ? 'no' : 'other')
-
 export const NODE_ICON: Record<NodeType, typeof Bot> = {
   TRIGGER: Play, AGENT_STEP: Bot, HUMAN_INTERVENTION: Hand, CONNECTOR_TOOL: Plug, TRANSFORM: Shuffle, BRANCH: GitBranch, END: Flag,
   PARALLEL: Split, JOIN: GitMerge, WAIT: Clock, SUB_WORKFLOW: Workflow, FOR_EACH: Repeat,
   APPROVAL: ShieldCheck, HTTP_REQUEST: Webhook, FILTER: Filter, SWITCH: Signpost, SET_VARIABLE: Braces, STORAGE: Database, NOTIFY: Bell,
   MCP_TOOL: Server, SCRIPT: Code2, DEVICE_ACTION: MonitorSmartphone,
-}
-
-const EXIT_TOP: Record<number, string[]> = { 1: ['50%'], 2: ['48%', '76%'], 3: ['40%', '62%', '84%'] }
-/** Past three exits (a paths step), each gets this many pixels below the header and the card grows to fit. */
-const EXIT_GAP = 22
-const EXIT_FIRST = 40
-
-/** Where each of a node's exits sits, from the top of the card. */
-const exitTops = (n: number): string[] => EXIT_TOP[n] ?? Array.from({ length: n }, (_, i) => `${EXIT_FIRST + i * EXIT_GAP}px`)
-
-/** Room in the card body for the exit labels on the right and the dots below the text. */
-function bodyPad(node: CanvasNode, exits: number): string {
-  if (node.type === 'BRANCH') return 'pb-5 pr-10'
-  if (node.type === 'PARALLEL') return 'pb-7 pr-14'
-  if (node.type === 'APPROVAL') return 'pb-5 pr-20'
-  if (node.type === 'SWITCH' || isLayerStep(node)) return exits <= 2 ? 'pb-5 pr-20' : 'pb-7 pr-20'
-  return ''
-}
-
-export interface StepData {
-  node: CanvasNode
-  agent?: AgentDto
-  issues: string[]
-  orphan: boolean
-  run?: StepRun
-  /** Exits with nothing connected yet, which get an n8n-style "+" to add the next step. */
-  freeExits: Exit[]
-  readOnly: boolean
-  /** Whether this step's options menu is open, which keeps its button showing. */
-  menuOpen: boolean
-  onAddAfter: (branch: Exit, at: { x: number; y: number }) => void
-  /** Opens the step's options menu next to its button; none on a read-only canvas. */
-  onMenu?: (at: MenuAt) => void
-}
-
-const RUN_RING: Record<StepRun, string> = {
-  done: 'ring-2 ring-emerald-500',
-  failed: 'ring-2 ring-red-500',
-  skipped: 'opacity-60',
-  running: 'ring-2 ring-sky-500 animate-pulse',
-  waiting: 'ring-2 ring-amber-500',
-}
-
-/** One step on the canvas: a card with an input on the left and its exits on the right. */
-export const StepNode = memo(function StepNode({ data, selected }: NodeProps<StepData>) {
-  const { node, agent, issues, orphan, run, freeExits, readOnly, menuOpen, onAddAfter, onMenu } = data
-  const meta = NODE_META[node.type]
-  const Icon = NODE_ICON[node.type]
-  const exits: Exit[] = exitsOf(node)
-  const tops = exitTops(exits.length)
-  const summary = summarise(node, agent)
-
-  return (
-    <div className={`group relative rounded-xl border bg-white shadow-sm transition-shadow dark:bg-gray-900 ${
-      selected ? 'border-brand-500 shadow-md ring-4 ring-brand-500/20' : 'border-gray-200 hover:shadow-md dark:border-gray-700'} ${
-      run ? RUN_RING[run] : ''}`} style={{ width: NODE_W, minHeight: exits.length > 3 ? EXIT_FIRST + exits.length * EXIT_GAP : undefined }}>
-      {node.type !== 'TRIGGER' && (
-        <Handle type="target" position={Position.Left} id="in"
-          className="!h-3.5 !w-3.5 !rounded-full !border-2 !border-white !bg-gray-400 transition-transform hover:!scale-125 dark:!border-gray-900" />
-      )}
-
-      <div className={`flex items-center gap-1.5 rounded-t-[11px] px-2.5 py-1 text-[11px] font-semibold ${meta.tone}`}>
-        {node.type === 'AGENT_STEP' && agent ? <AgentLogo agentKey={agent.key} avatar={agent.avatar} size={14} /> : <Icon className="h-3.5 w-3.5" />}
-        <span className="truncate">{node.type === 'AGENT_STEP' && agent ? agent.name : meta.label}</span>
-        <span className="ml-auto flex items-center gap-1">
-          {run && <RunBadge run={run} />}
-          {onMenu && (
-            <button type="button" aria-label={`More options for ${node.label}`} title="More options" aria-haspopup="menu" aria-expanded={menuOpen}
-              onClick={e => {
-                e.stopPropagation()
-                const r = e.currentTarget.getBoundingClientRect()
-                // Beside the button, or on its left when there is no room on the right.
-                onMenu({ x: r.right + 6, y: r.top, flipX: r.left - 6 })
-              }}
-              className={`nodrag -my-0.5 -mr-1 grid h-5 w-5 place-items-center rounded transition-opacity hover:bg-black/15 focus-visible:opacity-100 ${
-                menuOpen ? 'bg-black/15 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-              <MoreVertical className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </span>
-      </div>
-      <div className={`px-2.5 py-2 ${bodyPad(node, exits.length)}`}>
-        <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{node.label}</p>
-        {summary && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{summary}</p>}
-      </div>
-      {typeof node.config.note === 'string' && node.config.note.trim() && (
-        <p title={node.config.note} className="mx-2 mb-2 line-clamp-3 whitespace-pre-line rounded-md bg-yellow-50 px-2 py-1 text-[11px] leading-snug text-yellow-900 ring-1 ring-inset ring-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-200 dark:ring-yellow-500/30">
-          {node.config.note}
-        </p>
-      )}
-
-      {(issues.length > 0 || orphan) && (
-        <span title={[...issues, ...(orphan ? ['Nothing leads here from Start, so this step will never run.'] : [])].join('\n')}
-          className={`absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full text-white shadow ${issues.length ? 'bg-red-500' : 'bg-amber-500'}`}>
-          <AlertCircle className="h-3.5 w-3.5" />
-        </span>
-      )}
-
-      {exits.map((b, i) => {
-        const top = tops[i]
-        const free = freeExits.includes(b)
-        const tone = b === null && isCheckStep(node) ? 'yes' : exitTone(b)
-        return (
-          <div key={handleOf(b)}>
-            {b && (
-              <span className={`pointer-events-none absolute right-2.5 max-w-[72px] -translate-y-1/2 truncate text-[10px] font-semibold uppercase ${
-                tone === 'yes' ? 'text-emerald-600' : tone === 'no' ? 'text-red-500' : b === 'else' ? 'text-gray-500' : 'text-teal-600 dark:text-teal-400'}`}
-                style={{ top }}>{exitLabel(b, node)}</span>
-            )}
-            <Handle type="source" position={Position.Right} id={handleOf(b)} style={{ top }}
-              className={`!h-3.5 !w-3.5 !rounded-full !border-2 !border-white transition-transform hover:!scale-125 dark:!border-gray-900 ${
-                tone === 'yes' ? '!bg-emerald-500' : tone === 'no' ? '!bg-red-500' : '!bg-gray-500'}`} />
-            {free && !readOnly && (
-              <div className="nodrag nopan absolute flex items-center" style={{ top, left: '100%', transform: 'translateY(-50%)' }}>
-                <span className="ml-2 h-px w-5 bg-gray-300 dark:bg-gray-600" />
-                <button type="button" aria-label={`Add a step after ${node.label}${b ? ` (${exitLabel(b, node)})` : ''}`}
-                  title="Add the next step"
-                  onClick={e => { e.stopPropagation(); onAddAfter(b, { x: e.clientX, y: e.clientY }) }}
-                  className="grid h-6 w-6 place-items-center rounded-md border border-gray-300 bg-white text-gray-500 shadow-sm transition-colors hover:border-brand-500 hover:bg-brand-50 hover:text-brand-600 dark:border-gray-600 dark:bg-gray-900 dark:hover:bg-brand-500/15">
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-})
-
-function RunBadge({ run }: { run: StepRun }) {
-  const cls = 'grid h-4 w-4 place-items-center rounded-full bg-white/90 text-[10px]'
-  if (run === 'done') return <span className={`${cls} text-emerald-600`} title="Done in the last run"><Check className="h-3 w-3" /></span>
-  if (run === 'failed') return <span className={`${cls} text-red-600`} title="Failed in the last run"><X className="h-3 w-3" /></span>
-  if (run === 'skipped') return <span className={`${cls} text-gray-500`} title="Skipped in the last run"><CircleSlash className="h-3 w-3" /></span>
-  if (run === 'waiting') return <span className={`${cls} text-amber-600`} title="Waiting for you"><Hand className="h-3 w-3" /></span>
-  return <span className={`${cls} text-sky-600`} title="Running now"><Loader2 className="h-3 w-3 animate-spin" /></span>
 }
 
 export function summarise(node: CanvasNode, agent?: AgentDto): string {
@@ -243,54 +99,6 @@ function describeDuration(iso: string): string {
   if (!m) return iso
   const [n, unit] = m[1] ? [Number(m[1]), 'day'] : [Number(m[2]), m[3] === 'H' ? 'hour' : 'minute']
   return `${n} ${unit}${n === 1 ? '' : 's'}`
-}
-
-export interface WireData {
-  branch: Exit
-  /** Whether the run shown on the canvas went along this wire. */
-  travelled: boolean
-  hovered: boolean
-  readOnly: boolean
-  onHover: (id: string | null) => void
-  onInsert: (id: string, at: { x: number; y: number }) => void
-  onDelete: (id: string) => void
-}
-
-/** A wire between two steps, with buttons to put a step on it or remove it, like n8n. */
-export const Wire = memo(function Wire(props: EdgeProps<WireData>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected, markerEnd } = props
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition })
-  if (!data) return null
-  const active = selected || data.hovered
-  const tone = exitTone(data.branch)
-  const stroke = selected ? 'rgb(var(--brand-500))' : data.travelled ? '#10b981' : tone === 'no' ? '#f87171' : tone === 'yes' ? '#34d399' : '#9ca3af'
-  return (
-    <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} interactionWidth={22}
-        style={{ stroke, strokeWidth: active ? 2.5 : 2, strokeDasharray: tone === 'no' ? '6 4' : undefined }} />
-      <EdgeLabelRenderer>
-        <div className="nodrag nopan absolute flex items-center gap-1"
-          style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, pointerEvents: 'all' }}
-          onMouseEnter={() => data.onHover(id)} onMouseLeave={() => data.onHover(null)}>
-          {active && !data.readOnly && <>
-            <WireButton label="Add a step here" onClick={e => data.onInsert(id, { x: e.clientX, y: e.clientY })}><Plus className="h-3.5 w-3.5" /></WireButton>
-            <WireButton label="Delete this connection" danger onClick={() => data.onDelete(id)}><Trash2 className="h-3.5 w-3.5" /></WireButton>
-          </>}
-        </div>
-      </EdgeLabelRenderer>
-    </>
-  )
-})
-
-function WireButton({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: (e: React.MouseEvent) => void; children: ReactNode }) {
-  return (
-    <button type="button" aria-label={label} title={label} onClick={e => { e.stopPropagation(); onClick(e) }}
-      className={`grid h-6 w-6 place-items-center rounded-md border bg-white shadow-sm transition-colors dark:bg-gray-900 ${danger
-        ? 'border-gray-300 text-gray-500 hover:border-red-400 hover:bg-red-50 hover:text-red-600 dark:border-gray-600 dark:hover:bg-red-500/15'
-        : 'border-gray-300 text-gray-500 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-600 dark:border-gray-600 dark:hover:bg-brand-500/15'}`}>
-      {children}
-    </button>
-  )
 }
 
 /**

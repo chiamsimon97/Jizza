@@ -281,7 +281,7 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
     </Section>
 
     <Section title="Buttons">
-      <p className="text-[11px] text-gray-500">Each button is its own path out of this step on the canvas.</p>
+      <p className="text-[11px] text-gray-500">Each button is its own path out of this step.</p>
       {isMissing('inputs.buttons') && <p className="text-xs text-red-600">Add the buttons of the area, each with a name and its place on the page.</p>}
       {buttons.map((b, i) => {
         const path = pathOf(b.id)
@@ -318,7 +318,7 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
                   <Button type="button" size="sm" variant="secondary" onClick={() => dropButton(b.id)}>Disconnect them</Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => { setRemoving(undefined); setMoveTo('') }}>Keep the button</Button>
                 </div>
-                <p className="text-[11px] text-gray-500">Disconnected steps stay on the canvas, marked as never reached, until you connect or delete them.</p>
+                <p className="text-[11px] text-gray-500">Disconnected steps stay in the workflow, marked as never reached, until you connect or delete them.</p>
               </div>
             )}
           </div>

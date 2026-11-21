@@ -115,42 +115,6 @@ export function removeFromGroup(graph: CanvasGraph, nodeId: string): CanvasGraph
   }
 }
 
-/** Moves every step of a group by the same amount, keeping its arrangement. */
-export function moveGroup(graph: CanvasGraph, id: string, dx: number, dy: number): CanvasGraph {
-  const g = groupsOf(graph).find(x => x.id === id)
-  if (!g || (!dx && !dy)) return graph
-  return { ...graph, nodes: graph.nodes.map(n => (g.nodes.includes(n.id) ? { ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) } : n)) }
-}
-
-/**
- * Puts the steps of each locked group back in their arrangement after a change that moved some of
- * them on their own (Tidy up, Auto arrange): the group's first step that moved leads, and the rest
- * keep their places around it.
- */
-export function keepLockedArrangement(before: CanvasGraph, after: CanvasGraph): CanvasGraph {
-  const was = new Map(before.nodes.map(n => [n.id, n]))
-  let next = after
-  for (const g of groupsOf(before)) {
-    if (!g.locked) continue
-    const now = new Map(next.nodes.map(n => [n.id, n]))
-    const lead = g.nodes.find(id => {
-      const a = was.get(id); const b = now.get(id)
-      return a && b && (a.x !== b.x || a.y !== b.y)
-    })
-    if (!lead) continue
-    const dx = now.get(lead)!.x - was.get(lead)!.x
-    const dy = now.get(lead)!.y - was.get(lead)!.y
-    next = {
-      ...next,
-      nodes: next.nodes.map(n => {
-        const a = was.get(n.id)
-        return g.nodes.includes(n.id) && a ? { ...n, x: a.x + dx, y: a.y + dy } : n
-      }),
-    }
-  }
-  return next
-}
-
 const edgeKey = (e: CanvasEdge) => `${e.from}>${e.branch ?? ''}>${e.to}`
 /** A step's settings, without where the Wires view placed it or how it labels its wires. */
 const stepKey = (n: CanvasNode) => {
@@ -187,29 +151,6 @@ export function lockedChange(before: CanvasGraph, after: CanvasGraph): string | 
     }
   }
   return null
-}
-
-/** The box around a group's steps on the canvas, with room for its title bar. */
-export const GROUP_PAD = 20
-export const GROUP_HEADER = 34
-export const GROUP_FOLDED_W = 240
-export const GROUP_FOLDED_H = 76
-
-export function groupBounds(
-  graph: CanvasGraph, group: StepGroup, sizeOf: (n: CanvasNode) => { width: number; height: number },
-): { x: number; y: number; width: number; height: number } | null {
-  const members = graph.nodes.filter(n => group.nodes.includes(n.id))
-  if (!members.length) return null
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const n of members) {
-    const s = sizeOf(n)
-    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y)
-    maxX = Math.max(maxX, n.x + s.width); maxY = Math.max(maxY, n.y + s.height)
-  }
-  const x = minX - GROUP_PAD
-  const y = minY - GROUP_PAD - GROUP_HEADER
-  if (group.collapsed) return { x, y, width: GROUP_FOLDED_W, height: GROUP_FOLDED_H }
-  return { x, y, width: maxX - minX + GROUP_PAD * 2, height: maxY - minY + GROUP_PAD * 2 + GROUP_HEADER }
 }
 
 /**

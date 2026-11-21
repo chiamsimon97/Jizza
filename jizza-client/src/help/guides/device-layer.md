@@ -12,7 +12,7 @@ Many pages are one form you fill in and send: a **Create task** page with a Stag
 
 - The fields are filled in a set order: the **fixed values** first, then the **values for each run**, group by group.
 - A dropdown that **follows** another one (Milestone follows Project) is filled only after the one it follows is chosen and its choices have loaded.
-- Each button of the area is **its own path** on the canvas. The run goes on along the button the step clicked.
+- Each button of the area is **its own path** out of the step in the workflow builder. The run goes on along the button the step clicked.
 
 ## Record it
 
@@ -39,7 +39,7 @@ Each Device layer step in the side panel's step list has an **Edit form** button
 
 When Map as a layer can't find the form by itself, use **New form layer**: the same card starts empty, you pick each field and button on the page, and **Add form step** records the step.
 
-## Build it on the canvas
+## Build it in the workflow builder
 
 Add **Device layer** from the Web Automation steps, then open it.
 
@@ -56,7 +56,7 @@ Each field shows only its name, its value and **Mandatory**, so the step is quic
 Removing a button that already has steps after it never deletes them. Jizza asks what to do with them:
 
 - **Move its steps to** another button, then **Move**; or
-- **Disconnect them**, which leaves them on the canvas, unconnected, for you to reconnect or delete; or
+- **Disconnect them**, which leaves them in the workflow, unconnected, for you to reconnect or delete; or
 - **Keep the button**.
 
 ## When it runs
