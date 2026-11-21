@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from 'reactflow'
-import { AlertCircle, ChevronDown, ChevronRight, Lock, LockOpen, MoreVertical } from 'lucide-react'
+import { AlertCircle, ChevronDown, ChevronRight, Lock, LockOpen, MoreVertical, Pencil } from 'lucide-react'
 import type { StepGroup } from './groupModel'
 import type { MenuAt, StepRun } from './canvasParts'
 
@@ -16,6 +16,8 @@ export interface GroupData {
   onToggleFold: () => void
   onToggleLock?: () => void
   onRename?: (title: string) => void
+  /** Changes whenever the title should open for typing (Rename in a menu, or a group just made). */
+  renameAsk?: number
   onMenu?: (at: MenuAt) => void
 }
 
@@ -32,12 +34,13 @@ const RUN_TEXT: Record<StepRun, string> = {
  * for them. Only the title bar takes the pointer, so wires and steps inside stay clickable.
  */
 export const GroupNode = memo(function GroupNode({ data }: NodeProps<GroupData>) {
-  const { group, issues, run, readOnly, collapsed, onToggleFold, onToggleLock, onRename, onMenu } = data
+  const { group, issues, run, readOnly, collapsed, onToggleFold, onToggleLock, onRename, renameAsk, onMenu } = data
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(group.title)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => { if (!editing) setTitle(group.title) }, [group.title, editing])
   useEffect(() => { if (editing) input.current?.select() }, [editing])
+  useEffect(() => { if (renameAsk && onRename) setEditing(true) }, [renameAsk]) // eslint-disable-line react-hooks/exhaustive-deps
   const finish = (keep: boolean) => {
     setEditing(false)
     if (keep && onRename && title.trim() !== group.title) onRename(title.trim())
@@ -74,6 +77,13 @@ export const GroupNode = memo(function GroupNode({ data }: NodeProps<GroupData>)
           <span className="min-w-0 flex-1 truncate" title={onRename ? `${group.title || 'Untitled group'} (double-click to rename)` : group.title}>
             {group.title || 'Untitled group'}
           </span>
+        )}
+        {onRename && !editing && (
+          <button type="button" onClick={e => { e.stopPropagation(); setEditing(true) }}
+            aria-label={`Rename ${group.title || 'group'}`} title="Rename"
+            className="nodrag grid h-6 w-6 shrink-0 place-items-center rounded opacity-70 hover:bg-black/10 hover:opacity-100">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
         )}
         {!collapsed && <span className="shrink-0 font-normal opacity-70">{count}</span>}
         {issues > 0 && collapsed && (
