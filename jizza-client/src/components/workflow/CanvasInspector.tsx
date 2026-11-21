@@ -15,6 +15,7 @@ import {
 } from './canvasModel'
 import { NODE_ICON } from './canvasParts'
 import { LayerFields } from './LayerFields'
+import { FoldSection, MoreOptions, countOf } from './MoreOptions'
 import { GOES_BACK, GoBackFields } from './GoBackFields'
 import { dataSourcesFor, type DeclaredField } from './dataMapping'
 import { FIELD_TYPES, fieldsOf, isModule, moduleInputs, moduleOutputs, type ModuleField } from './moduleContract'
@@ -452,6 +453,11 @@ const BODY_TYPES = [
   { value: 'none', label: 'No body' },
 ] as const
 
+const AUTH_NAMES: Record<string, string> = { none: 'none', basic: 'username and password', bearer: 'bearer token', apiKey: 'API key' }
+
+/** How many name/value rows a query or header setting holds. */
+const pairCount = (value: unknown) => value && typeof value === 'object' ? Object.keys(value).length : 0
+
 const CONTENT_TYPES = ['application/json', 'application/xml', 'text/xml', 'text/plain', 'text/html', 'text/csv']
 
 /** A webhook step: request, query parameters, sign-in, headers, payload and how to read the answer. */
@@ -477,11 +483,12 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
       <MappedField aria-label="URL" placeholder="https://…" mode="template" context={mapping} mono invalid={isMissing('url')} value={s('url')} onChange={v => setConfig({ url: v })} />
     </Labelled>
 
-    <Section title="Query parameters">
+    <FoldSection title="Query parameters" summary={countOf(pairCount(c.queryParams), 'parameter')}>
       <PairsField key={`${node.id}:query`} mapping={mapping} value={c.queryParams} onChange={v => setConfig({ queryParams: v })} namePlaceholder="name" valuePlaceholder="value" addLabel="Add a parameter" />
-    </Section>
+    </FoldSection>
 
-    <Section title="Authentication">
+    <FoldSection title="Authentication" summary={AUTH_NAMES[authType] ?? authType}
+      hasError={['auth.username', 'auth.token', 'auth.name', 'auth.value'].some(isMissing)}>
       <select aria-label="Authentication" className={fieldClass} value={authType}
         onChange={e => setConfig({ auth: e.target.value === 'none' ? undefined : { type: e.target.value, ...(e.target.value === 'apiKey' ? { in: 'header' } : {}) } })}>
         <option value="none">None</option>
@@ -521,11 +528,11 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
       {authType !== 'none' && (
         <p className="text-[11px] text-gray-400">Saved with the workflow. For a service you sign in to, a connector keeps the credential out of it. Values can use {'{{ vars.… }}'}.</p>
       )}
-    </Section>
+    </FoldSection>
 
-    <Section title="Headers">
+    <FoldSection title="Headers" summary={countOf(pairCount(c.headers), 'header')}>
       <PairsField key={`${node.id}:headers`} mapping={mapping} value={c.headers} onChange={v => setConfig({ headers: v })} namePlaceholder="Header" valuePlaceholder="value" addLabel="Add a header" />
-    </Section>
+    </FoldSection>
 
     {method !== 'GET' && method !== 'DELETE' && (
       <Section title="Payload">
@@ -572,7 +579,7 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
       </Section>
     )}
 
-    <Section title="Response">
+    <FoldSection title="Response" summary={`read as ${s('responseType') || 'worked out'}${c.failOnError === false ? ', errors carry on' : ''}`}>
       <Labelled label="Read the response as" hint={`Later steps read nodes.${node.id}.status, .ok, .headers and .body.`}>
         <select className={fieldClass} value={s('responseType') || 'auto'} onChange={e => setConfig({ responseType: e.target.value === 'auto' ? undefined : e.target.value })}>
           <option value="auto">Work it out (JSON when it is JSON)</option>
@@ -584,7 +591,7 @@ function WebhookFields({ node, setConfig, isMissing, mapping }: { node: CanvasNo
         <input type="checkbox" checked={c.failOnError !== false} onChange={e => setConfig({ failOnError: e.target.checked ? undefined : false })} />
         Fail the step when the server answers with an error
       </label>
-    </Section>
+    </FoldSection>
   </>
 }
 
@@ -1393,7 +1400,6 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
   const schema = (spec?.input ?? {}) as { properties?: Record<string, WebProperty>; required?: string[] }
   const required = new Set(schema.required ?? [])
   const elementAction = WEB_ELEMENT_INPUT_ACTIONS.has(action)
-  const [more, setMore] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<WebTestResult>()
   const [testError, setTestError] = useState('')
@@ -1551,10 +1557,10 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
       </div>
     )}
 
-    <Section title="Ask on the approval card">
+    <FoldSection title="Ask on the approval card" summary={countOf(Array.isArray((node.config.details as { blocks?: unknown } | undefined)?.blocks) ? (node.config.details as { blocks: unknown[] }).blocks.length : 0, 'note or question', 'notes and questions')}>
       <StepDetailsEditor nodeId={node.id} value={node.config.details} mapping={mapping}
         onChange={details => setConfig({ details })} />
-    </Section>
+    </FoldSection>
 
     {ordinary.map(([key, property]) => key === 'item' && action === 'browser.clickOneOf'
       ? <WebSchemaField key={key} name={key} required={required.has(key)}
@@ -1595,12 +1601,8 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
           mapping={mapping} onChange={value => setInput(key, value)} />
     )}
 
-    <Section title="Advanced options">
-      <button type="button" aria-expanded={more} onClick={() => setMore(v => !v)}
-        className="inline-flex items-center gap-1 self-start text-xs text-brand-600 dark:text-brand-300">
-        {more ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} {more ? 'Hide options' : 'Show options'}
-      </button>
-      {more && <>
+    <FoldSection title="Advanced options" summary="timeout, retries, what happens on failure">
+      {<>
         {hasHighlight && <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
           <input type="checkbox" checked={inputs.highlight === true} onChange={e => setInput('highlight', e.target.checked || undefined)} /> Highlight the element while the step runs
         </label>}
@@ -1647,7 +1649,7 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
           </Labelled>
         )}
       </>}
-    </Section>
+    </FoldSection>
 
     <Section title="Test step">
       <p className="text-[11px] text-gray-500">Test step uses the values as written.</p>
@@ -1795,6 +1797,8 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
         : 'Map it from earlier steps, or choose one of the names the list showed.'}
       onChange={v => setInput('item', v)} />}
     {withItem && picturesSwitch('item', 'item', 'Reading the list also takes a picture of each card (the first 20), and the question shows the picture of whichever one you pick.')}
+    <MoreOptions summary={[inCard ? 'inside a card' : undefined, loads ? 'loads more as you scroll' : undefined, 'load from the page, patterns'].filter(Boolean).join(' · ')}
+      hasError={inCard && within.element === undefined}>
     {inputs.element !== undefined && <LoadFromPage what="items" deviceId={deviceId} list={itemList}
       blocked={inCard && !fixedCard ? 'Choose a card above (a fixed one, not mapped) to load its items.' : undefined}
       onLoaded={labels => setLoadedItems({ card: currentCard, items: labels })} />}
@@ -1833,6 +1837,7 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
           onChange={e => setInput('loadMore', { ...loadMore, rounds: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })} />
       </Labelled>
     </div>}
+    </MoreOptions>
   </div>
 }
 
@@ -2141,6 +2146,10 @@ const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] =
   { kind: 'combobox', label: 'Search and choose', hint: 'What to type; the suggestion that matches is chosen.' },
 ]
 
+/** Same test as the step's check before saving: picked on the page, or mapped. */
+const located = (element: unknown) => typeof element === 'string' ? element.includes('{{')
+  : Array.isArray((element as { strategies?: unknown[] } | undefined)?.strategies) && (element as { strategies: unknown[] }).strategies.length > 0
+
 const asRows = (value: unknown): FormFieldRow[] =>
   Array.isArray(value) ? value.filter((v): v is FormFieldRow => !!v && typeof v === 'object') : []
 
@@ -2172,12 +2181,24 @@ function FillFormFields({ value, browsers, deviceId, mapping, missing, onChange 
           <div key={index} className="space-y-2 rounded-lg border border-gray-200 p-2 dark:border-gray-800">
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</span>
+              <label className="flex shrink-0 items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300"
+                title="Mandatory: if its value comes out empty, ask me to fill it in before the step runs">
+                <input type="checkbox" aria-label={`${label} is mandatory: if its value comes out empty, ask me to fill it in before the step runs`}
+                  checked={row.required === true} onChange={e => set(index, { required: e.target.checked })} />
+                Mandatory
+              </label>
               <button type="button" aria-label={`Remove ${label}`} onClick={() => onChange(rows.filter((_, i) => i !== index))}
                 className="text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
+            <Labelled group label="Value" hint={kind.hint}>
+              <MappedField aria-label={`Value of ${label}`} mode="template" context={mapping}
+                value={Array.isArray(row.value) ? row.value.join(', ') : row.value == null ? '' : String(row.value)}
+                onChange={v => set(index, { value: v })} />
+            </Labelled>
+            <MoreOptions summary={kind.label} hasError={missing && !located(row.element)}>
             <ElementField label={row.kind === 'checkboxes' || row.kind === 'radio' ? 'Group (or one box in it)' : 'Field'}
               value={row.element} deviceId={deviceId} browsers={browsers} hasEarlierOpen mapping={mapping} required
-              onChange={element => set(index, { element })} />
+              missing={missing && !located(row.element)} onChange={element => set(index, { element })} />
             <div className="grid grid-cols-2 gap-2">
               <Labelled label="Kind">
                 <select aria-label={`Kind of ${label}`} className={fieldClass} value={kind.kind}
@@ -2190,21 +2211,13 @@ function FillFormFields({ value, browsers, deviceId, mapping, missing, onChange 
                   onChange={e => set(index, { label: e.target.value })} />
               </Labelled>
             </div>
-            <Labelled group label="Value" hint={kind.hint}>
-              <MappedField aria-label={`Value of ${label}`} mode="template" context={mapping}
-                value={Array.isArray(row.value) ? row.value.join(', ') : row.value == null ? '' : String(row.value)}
-                onChange={v => set(index, { value: v })} />
-            </Labelled>
             {row.kind === 'date' && (
               <Labelled label="Date format (text fields only)" hint="Such as DD/MM/YYYY. Date pickers built into the browser need none.">
                 <input aria-label={`Date format of ${label}`} className={fieldClass} value={row.format ?? ''}
                   onChange={e => set(index, { format: e.target.value })} />
               </Labelled>
             )}
-            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-              <input type="checkbox" checked={row.required === true} onChange={e => set(index, { required: e.target.checked })} />
-              Mandatory: if its value comes out empty, ask me to fill it in before the step runs
-            </label>
+            </MoreOptions>
           </div>
         )
       })}
@@ -2268,6 +2281,8 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
       setPickError(problem?.detail ?? problem?.title ?? (e instanceof Error ? e.message : 'Could not start picking.'))
     }
   }
+  // Once picked, picking again sits beside Edit selectors: one line instead of three.
+  const inline = !template && strategies.length > 0 && !!pickDevice
   const cancelPick = () => {
     const id = picking
     setPicking(undefined)
@@ -2282,6 +2297,7 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
           <span className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300">
             {typeof bundle.label === 'string' && bundle.label ? bundle.label : strategies.length ? `${strategies.length} selector${strategies.length === 1 ? '' : 's'}` : 'No element selected'}
           </span>
+          {inline && <Button type="button" variant="secondary" size="sm" disabled={!pickDevice} onClick={startPick}>Pick on page</Button>}
           <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit selectors</Button>
         </div>
         {(preview || pagePreview) && pickDevice && <div className="mt-2 flex items-start gap-2">
@@ -2296,7 +2312,7 @@ export function ElementField({ label: fieldLabel = 'Element', value, deviceId, b
         <span className="flex-1">Click the element in {family}… Press Esc in {family} to cancel</span>
         <Button type="button" variant="secondary" size="sm" onClick={cancelPick}>Cancel</Button>
       </div>
-    ) : <>
+    ) : !inline && <>
       {!deviceId && online.length > 1 && (
         <select aria-label="Browser to pick in" className={fieldClass} value={chosen} onChange={e => setChosen(e.target.value)}>
           <option value="">Choose a browser…</option>
@@ -2522,10 +2538,12 @@ function DeviceActionFields({ node, catalog, setConfig, isMissing, mapping }: {
       </Labelled>
     ))}
     {spec && (
+      <MoreOptions summary={typeof node.config.timeoutSec === 'number' ? `time limit ${node.config.timeoutSec} s` : `time limit ${spec.defaultTimeoutSec} s`}>
       <Labelled label="Time limit (seconds)" hint={`How long the device has to finish, including waiting for it to come online. Default ${spec.defaultTimeoutSec} s.`}>
         <input className={fieldClass} type="number" min={1} value={typeof node.config.timeoutSec === 'number' ? node.config.timeoutSec : ''}
           onChange={e => setConfig({ timeoutSec: e.target.value === '' ? undefined : Number(e.target.value) })} />
       </Labelled>
+      </MoreOptions>
     )}
   </>
 }

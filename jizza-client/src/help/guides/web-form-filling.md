@@ -21,6 +21,8 @@ Add **Fill form** from the Web Automation steps. Add one row per field:
 
 An optional field whose value comes out empty is left as the page has it.
 
+Each row shows its name, **Value** and **Mandatory**; **Field**, **Kind**, **Name on approvals** and **Date format** are under **More options**, which opens by itself when a field still needs picking.
+
 Set **Send button** to have the step press it after filling. The step then reads what the site says is wrong (such as "Enter a 10-digit number" under the phone field). When the site refuses the form, the run stops and your approval shows each message next to its value. Fix the values and approve, and the form is filled and sent again.
 
 The single steps take mapped values too: **Set text**, **Select item** (items comma-separated, or a list), **Set checkbox** (choose "Map from earlier steps…" and map yes or no), **Check items** for a checkbox group, and **Set date**.
