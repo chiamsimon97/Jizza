@@ -13,7 +13,7 @@ for (const p of PAGES) {
         .filter(el => {
           const r = el.getBoundingClientRect()
           return r.width > 0 && r.right > width + 1 && getComputedStyle(el).position !== 'fixed'
-            && !el.closest('[data-allow-overflow], .overflow-x-auto, .overflow-auto, .overflow-x-scroll, .react-flow')
+            && !el.closest('[data-allow-overflow], .overflow-x-auto, .overflow-auto, .overflow-x-scroll')
         })
         .slice(0, 3)
         .map(el => `${el.tagName.toLowerCase()}.${String(el.className).split(' ').slice(0, 3).join('.')} right=${Math.round(el.getBoundingClientRect().right)}`)

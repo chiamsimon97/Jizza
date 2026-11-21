@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyStepEdit, fromGraph, removeNode, setNext, tidy, toGraph, type CanvasGraph, type CanvasNode } from './canvasModel'
-import { createGroup, foldedGraph, groupBounds, isLockedEdge, keepLockedArrangement, lockedChange, moveGroup, readGroups, removeFromGroup, ungroup, updateGroup } from './groupModel'
+import { applyStepEdit, fromGraph, removeNode, setNext, toGraph, type CanvasGraph, type CanvasNode } from './canvasModel'
+import { createGroup, foldedGraph, isLockedEdge, lockedChange, readGroups, removeFromGroup, ungroup, updateGroup } from './groupModel'
 
 const node = (id: string, x: number, type: CanvasNode['type'] = 'TRANSFORM'): CanvasNode => ({ id, type, label: id, config: {}, x, y: 100 })
 
@@ -77,7 +77,6 @@ describe('step groups', () => {
     expect(lockedChange(g, setNext(g, 'start', null, 'date'))).toBeNull()
     expect(lockedChange(g, updateGroup(g, id, { locked: false }))).toBeNull()
     expect(lockedChange(g, updateGroup(g, id, { collapsed: true, title: 'Seats' }))).toBeNull()
-    expect(lockedChange(g, moveGroup(g, id, 40, 20))).toBeNull()
     // Where the Wires view puts a step is not one of its settings.
     expect(lockedChange(g, { ...g, nodes: g.nodes.map(n => (n.id === 'date' ? { ...n, config: { wiresAt: { x: 8, y: 8 } } } : n)) })).toBeNull()
     // Unlocked, anything goes.
@@ -90,25 +89,6 @@ describe('step groups', () => {
     expect(isLockedEdge(g, { from: 'coach', to: 'date' })).toBe(true)
     expect(isLockedEdge(g, { from: 'date', to: 'pay' })).toBe(false)
     expect(isLockedEdge(g, { from: 'start', to: 'coach' })).toBe(false)
-  })
-
-  it('keeps a locked group in its arrangement when steps are tidied or one is dragged', () => {
-    const g = { ...locked(), nodes: locked().nodes.map(n => (n.id === 'date' ? { ...n, y: 300 } : n)) }
-    const tidied = keepLockedArrangement(g, tidy(g))
-    const coach = tidied.nodes.find(n => n.id === 'coach')!
-    const date = tidied.nodes.find(n => n.id === 'date')!
-    expect([date.x - coach.x, date.y - coach.y]).toEqual([250, 200])
-    const dragged = keepLockedArrangement(g, { ...g, nodes: g.nodes.map(n => (n.id === 'coach' ? { ...n, x: n.x + 30, y: n.y + 10 } : n)) })
-    expect(dragged.nodes.find(n => n.id === 'date')).toMatchObject({ x: 530, y: 310 })
-  })
-
-  it('draws a box around its steps, or a small card when folded', () => {
-    const g = locked()
-    const size = () => ({ width: 200, height: 92 })
-    const box = groupBounds(g, g.groups![0], size)!
-    expect(box).toEqual({ x: 230, y: 46, width: 490, height: 166 })
-    const folded = groupBounds(g, { ...g.groups![0], collapsed: true }, size)!
-    expect([folded.x, folded.y, folded.width]).toEqual([230, 46, 240])
   })
 })
 

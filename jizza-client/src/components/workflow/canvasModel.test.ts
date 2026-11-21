@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { stepsFromGraph } from '@/components/forms/WorkflowForm'
 import {
-  addAfter, addNode, applyStepEdit, newNode, branchByButton, buttonPathsAfter, clickedCondition, arrangeFrom, branchesFrom, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
+  addAfter, addNode, applyStepEdit, newNode, branchByButton, buttonPathsAfter, clickedCondition, cloneNodes, descendantsOf, emptyGraph, exitsOf, fieldIssues, fromDuration, fromGraph, insertChain, insertOnEdge, issues, nextCaseId, problems, recordedItem, setNext, targetsFor, tidy,
   toDuration, toGraph, type CanvasGraph, unreachable, updateNode, NODE_META, PALETTE, PALETTE_GROUPS, WEB_PALETTE,
 } from './canvasModel'
 
@@ -29,8 +28,6 @@ describe('canvasModel', () => {
     expect(saved.edges).toEqual([{ from: 'start', to: graph.nodes[1].id, branch: null }])
     expect(saved.nodes[1].config).toEqual({ ui: { x: 300, y: 150 } })
     expect(fromGraph(saved).nodes[1]).toMatchObject({ x: 300, y: 150, type: 'HUMAN_INTERVENTION' })
-    // A straight line of agent and ask steps still opens in the step list.
-    expect(stepsFromGraph(saved)).toEqual([{ kind: 'ask', instruction: undefined }])
   })
 
   it('says what a branch is missing and never offers a connection that would loop', () => {
@@ -95,8 +92,6 @@ describe('canvasModel', () => {
     expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('at least two paths'))
     // A new wait starts at an hour, so it has nothing to fill in.
     expect(problems(g.graph)).not.toContainEqual(expect.stringContaining('how long to wait'))
-    // A graph with parallel paths can't be shown as a step list.
-    expect(stepsFromGraph(saved)).toBeNull()
   })
 
   it('checks wait lengths and the workflow a step runs', () => {
@@ -175,27 +170,12 @@ describe('canvasModel', () => {
     expect(set('SET_VARIABLE', { variables: [{ name: 'bad name', expr: '1' }] })).toEqual([expect.stringContaining('needs a name')])
   })
 
-  it('selects and arranges the steps after a split, as a tree that keeps its paths apart', () => {
+  it('finds every step after a split', () => {
     const branch = addAfter(emptyGraph(), 'start', null, 'BRANCH')
     const yes = addAfter(branch.graph, branch.id, 'true', 'NOTIFY')
     const no = addAfter(yes.graph, branch.id, 'false', 'TRANSFORM')
     const after = addAfter(no.graph, no.id, null, 'END')
-    const g = after.graph
-    expect(branchesFrom(g, branch.id)).toBe(true)
-    expect(branchesFrom(g, 'start')).toBe(false)
-    expect(descendantsOf(g, branch.id).sort()).toEqual([yes.id, no.id, after.id].sort())
-
-    const scattered = updateNode(updateNode(g, yes.id, { x: 5, y: 900 }), no.id, { x: 5, y: 905 })
-    const arranged = arrangeFrom(scattered, branch.id)
-    const at = (id: string) => arranged.nodes.find(n => n.id === id)!
-    const root = at(branch.id)
-    expect(root).toEqual(scattered.nodes.find(n => n.id === branch.id))
-    expect(at(yes.id).x).toBeGreaterThan(root.x)
-    expect(at(yes.id).x).toBe(at(no.id).x)
-    expect(Math.abs(at(yes.id).y - at(no.id).y)).toBeGreaterThanOrEqual(130)
-    expect(at(after.id).x).toBeGreaterThan(at(no.id).x)
-    // Start is outside what was arranged and stays put.
-    expect(at('start')).toEqual(scattered.nodes.find(n => n.id === 'start'))
+    expect(descendantsOf(after.graph, branch.id).sort()).toEqual([yes.id, no.id, after.id].sort())
   })
 
   it('asks an MCP tool step for a server, then for one of its tools', () => {

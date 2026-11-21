@@ -319,17 +319,6 @@
 @keyframes jz-ring { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.45); opacity: 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* The workflow canvas (React Flow) in the app's colours, light and dark. */
-.jizza-flow .react-flow__controls { border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); border: 1px solid rgb(var(--gray-200)); }
-.jizza-flow .react-flow__controls-button { background: white; border-bottom-color: rgb(var(--gray-200)); }
-.jizza-flow .react-flow__controls-button:hover { background: rgb(var(--gray-100)); }
-.jizza-flow .react-flow__minimap { border-radius: 0.5rem; overflow: hidden; border: 1px solid rgb(var(--gray-200)); }
-.dark .jizza-flow .react-flow__controls { border-color: rgb(var(--gray-700)); }
-.dark .jizza-flow .react-flow__controls-button { background: rgb(var(--gray-900)); border-bottom-color: rgb(var(--gray-700)); fill: rgb(var(--gray-300)); }
-.dark .jizza-flow .react-flow__controls-button:hover { background: rgb(var(--gray-800)); }
-.dark .jizza-flow .react-flow__minimap { background: rgb(var(--gray-900)); border-color: rgb(var(--gray-700)); }
-.jizza-flow .react-flow__edge.selected .react-flow__edge-path { filter: drop-shadow(0 0 3px rgb(var(--brand-500) / 0.5)); }
-
 /* The agents team chart: a top-down org tree with elbow connectors between a manager and its reports. */
 .org-tree { --org-line: rgb(var(--gray-300)); }
 .dark .org-tree { --org-line: rgb(var(--gray-700)); }

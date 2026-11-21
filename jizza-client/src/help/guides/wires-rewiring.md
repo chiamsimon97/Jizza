@@ -1,6 +1,6 @@
 ---
-title: Re-wiring steps in the Wires view
-summary: Drag from an exit dot, or drag the end of a wire, to connect steps in the Wires view the same way as on the Canvas.
+title: Wiring steps
+summary: Drag from an exit dot, or drag the end of a wire, to connect steps in the workflow builder, or take a wire off.
 section: Automation
 order: 26
 updated: 2026-11-21
@@ -13,7 +13,7 @@ Each step has a small dot on its bottom edge for every way out of it (one dot, o
 1. Press on an exit dot and drag. A wire follows the pointer.
 2. Let go on the step that should come next. The wire snaps onto a step it can go to, and the steps it can't go to fade.
 
-Let go on empty space instead and Jizza asks which new step to add there. If that exit already had a wire, the new step goes on that wire, between the two steps.
+Let go on empty space instead and Jizza asks which new step to add there (or lets you record it). If that exit already had a wire, the new step goes on that wire, between the two steps.
 
 You can still click an exit dot, then click the step, if you prefer.
 
@@ -25,7 +25,9 @@ You can still click an exit dot, then click the step, if you prefer.
 
 ## Take a wire off
 
-Drag a wire's end handle and let go on empty space, or hover the wire and click the scissors.
+Drag a wire's end handle and let go on empty space, or hover the wire and click the scissors. To take every wire off a step at once, right-click it and choose **Disconnect**.
+
+Hovering a wire also lets you put a step on it (**+**) or give it a label that shows when you hover it.
 
 ## What can't be wired
 

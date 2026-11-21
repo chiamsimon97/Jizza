@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, ArrowDown, Cable, Check, ChevronDown, ChevronRight, Copy, Globe, Group, Lock, LockOpen, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, Ungroup, X } from 'lucide-react'
+import {
+  AlertCircle, ArrowDown, Cable, Check, ChevronDown, ChevronRight, Copy, Globe, Group, Keyboard, Lock, LockOpen, Maximize2, Minimize2, Pencil, Play, Plus, Redo2, Scissors, Search,
+  Sparkles, Tag, Trash2, Undo2, Ungroup, X,
+} from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
 import { api } from '@/lib/api'
 import type { AgentDto, McpServer, RunDto, WorkflowDto } from '@/types'
 import {
-  NODE_META, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, cloneNodes, exitsOf, mainExitsOf, freeSpot, insertOnEdge, issues as findIssues, newNode, reaches, setNext,
-  unreachable, updateNode, type CanvasEdge, type CanvasGraph, type ExitKey, type NodeType, type PaletteEntry,
+  NODE_META, PALETTE_GROUPS, addAfter, addNode, applyStepEdit, branchByButton, buttonPathsAfter, cloneNodes, descendantsOf, exitsOf, groupButtonsOf, insertChain, mainExitsOf, freeSpot,
+  insertOnEdge, issues as findIssues, newNode, reaches, setNext, unreachable, updateNode, type CanvasEdge, type CanvasGraph, type CanvasNode, type ExitKey, type NodeType, type PaletteEntry,
 } from './canvasModel'
 import { ContextMenu, NODE_ICON, StepPicker, exitLabel, summarise, type MenuAt, type MenuItem, type StepRun } from './canvasParts'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
-import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
+import { RUN_LABEL, groupRun, loadTools, runState } from './runState'
+import { useHistory } from './history'
+import { RecordFlow } from '@/components/web/RecordFlow'
+import { canConfigureWithJizza } from '@/jizza/commands'
 import { createGroup, foldedGraph, groupOfNode, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, removeFromGroup, ungroup, updateGroup, type StepGroup } from './groupModel'
 import {
   CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route,
@@ -27,7 +34,12 @@ interface Props {
   run?: RunDto | null
   /** A step to open the settings of, such as the one a fix or a failed run points at. */
   focusNode?: string | null
+  /** A short board for showing a workflow inside a card, without the step list or full screen. */
+  compact?: boolean
 }
+
+/** What was copied, kept across workflows so steps can be pasted into another one. */
+let clipboard: { graph: CanvasGraph; ids: string[] } | null = null
 
 /** Where a step being dragged in would go. */
 type Suggestion = { kind: 'step'; id: string } | { kind: 'wire'; edge: CanvasEdge }
@@ -61,6 +73,11 @@ const STEP_RING: Record<StepRun, string> = {
   failed: 'border-red-500 ring-4 ring-red-500/15',
   skipped: 'border-dashed opacity-50',
 }
+const GROUP_RUN_TEXT: Record<StepRun, string> = {
+  done: 'Done in the last run', failed: 'A step failed in the last run', skipped: 'Skipped in the last run',
+  running: 'Running now', waiting: 'Waiting for you',
+}
+
 const STEP_BADGE: Record<StepRun, { text: string; tone: string }> = {
   done: { text: 'Done', tone: 'bg-brand-500 text-white' },
   running: { text: 'Running', tone: 'bg-brand-500 text-white' },
@@ -81,13 +98,14 @@ const parseEntry = (raw: string): NodeType | PaletteEntry | null => {
 }
 
 /**
- * The Wires view of a workflow: the same graph as the canvas, laid out top to bottom with
- * circuit-style wires. Drag a step onto a step or a wire and it wires itself in; drag from an exit
- * dot to a step to wire it, or drag a wire's end to another step to re-wire it (let go on empty
- * space to take it off); hover a wire to delete, re-wire, label it or put a step on it; hover a
- * step to edit, clone or delete it.
+ * The workflow builder: the workflow's steps laid out top to bottom with circuit-style wires. Drag
+ * a step onto a step or a wire and it wires itself in; drag from an exit dot to a step to wire it,
+ * or drag a wire's end to another step to re-wire it (let go on empty space to take it off); hover
+ * a wire to delete, re-wire, label it or put a step on it; hover a step to edit, clone or delete it.
  */
-export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }: Props) {
+export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, compact = false }: Props) {
+  const history = useHistory(graph, onChange)
+  const [fullscreen, setFullscreen] = useState(false)
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const { data: tools } = useQuery({ queryKey: ['workflow-canvas-tools'], queryFn: loadTools, enabled: !readOnly, staleTime: 60_000 })
   const { data: mcpServers } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list().catch(() => [] as McpServer[]), enabled: !readOnly, staleTime: 30_000 })
@@ -142,6 +160,15 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const [showRun, setShowRun] = useState(true)
   const [paletteQuery, setPaletteQuery] = useState('')
   const [folded, setFolded] = useState<Set<string>>(() => new Set(['Web Automation', 'Data', 'Flow control']))
+  /** Whether the open step settings start at the note, or with Jizza on them. */
+  const [focusNote, setFocusNote] = useState(false)
+  const [askJizza, setAskJizza] = useState(false)
+  /** Where recorded steps go once the person has reviewed them. */
+  const [recordAt, setRecordAt] = useState<{ from: string | null; branch: ExitKey } | null>(null)
+  const [help, setHelp] = useState(false)
+  /** The pointer was last in this board, so its keyboard shortcuts apply. */
+  const active = useRef(false)
+  const pastes = useRef(0)
 
   useEffect(() => { if (focusNode) setEditing(focusNode) }, [focusNode])
   useEffect(() => () => {
@@ -155,15 +182,18 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     toastTimer.current = window.setTimeout(() => setToast(''), 3200)
   }, [])
 
-  /** An edit to the graph. Any preview stops, as it no longer matches the flow. */
-  const commit = useCallback((next: CanvasGraph) => {
-    // Step groups are drawn on the Canvas; their locks hold here too.
+  /**
+   * Every edit goes through here, as its own undo step. A change to what is inside a locked group
+   * is refused with a note saying why. Any preview stops, as it no longer matches the flow.
+   */
+  const commit = useCallback((next: CanvasGraph): boolean => {
     const why = lockedChange(graph, next)
-    if (why) { flash(why); return }
+    if (why) { flash(why); return false }
     window.clearInterval(previewTimer.current)
     setPreview(null)
-    onChange(next)
-  }, [onChange, graph, flash])
+    history.commit(next)
+    return true
+  }, [history, graph, flash])
 
   const mayLeave = useCallback(() => {
     if (!unsaved.current) return true
@@ -171,8 +201,10 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     unsaved.current = false
     return true
   }, [])
-  const openSettings = useCallback((id: string | null) => {
-    if (id === editing || !mayLeave()) return
+  const openSettings = useCallback((id: string | null, how?: { note?: boolean; jizza?: boolean }) => {
+    if (id !== editing && !mayLeave()) return
+    setFocusNote(!!how?.note)
+    setAskJizza(!!how?.jizza)
     setEditing(id)
     if (id) setSelected(id)
   }, [editing, mayLeave])
@@ -214,11 +246,30 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   const numbers = useMemo(() => stepNumbers(graph), [graph])
   const issueList = useMemo(() => findIssues(graph), [graph])
+  // Problems with the agent a step points at, which its settings can't show by themselves.
+  const agentIssues = useMemo(() => {
+    const map = new Map<string, string[]>()
+    if (agents) {
+      for (const n of graph.nodes) {
+        const id = n.type === 'AGENT_STEP' ? n.config.agentId : undefined
+        if (typeof id !== 'string' || !id) continue
+        const a = agents.find(x => x.id === id)
+        const problem = !a ? 'The agent for this step no longer exists. Choose another.'
+          : a.status === 'archived' ? `${a.name} is archived. Restore it or choose another agent.`
+          : a.status === 'draft' ? `${a.name} is still a draft. Activate it before this runs.`
+          : !a.enabled ? `${a.name} is paused, so this step will fail until it is resumed.`
+          : null
+        if (problem) map.set(n.id, [problem])
+      }
+    }
+    return map
+  }, [agents, graph.nodes])
   const issuesByNode = useMemo(() => {
     const map = new Map<string, string[]>()
     for (const i of issueList) if (i.nodeId) map.set(i.nodeId, [...(map.get(i.nodeId) ?? []), i.message])
+    for (const [id, list] of agentIssues) map.set(id, [...(map.get(id) ?? []), ...list])
     return map
-  }, [issueList])
+  }, [issueList, agentIssues])
   const orphans = useMemo(() => unreachable(graph), [graph])
   const startId = graph.nodes.find(n => n.type === 'TRIGGER')?.id
 
@@ -333,15 +384,15 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     flash('Added. Click an exit dot, then this step, to wire it in.')
   }
 
-  const addFromPalette = (entry: NodeType | PaletteEntry) => {
+  const addFromPalette = (entry: NodeType | PaletteEntry, agent?: AgentDto) => {
+    const withAgent = (r: { graph: CanvasGraph; id: string }) => (agent ? assignAgent(r.graph, r.id, agent) : r.graph)
     const r = selected ? dropOnStep(graph, selected, entry) : null
-    if (r) { commit(r.graph); setSelected(r.id); flash(`Wired in after “${byId.get(selected!)?.label}”.`); return }
+    if (r) { if (commit(withAgent(r))) { setSelected(r.id); flash(`Wired in after “${byId.get(selected!)?.label}”.`) } return }
     // Without a selected step it goes after the last step with a free exit.
     const last = [...graph.nodes].reverse().find(n => mainExitsOf(n).some(b => !graph.edges.some(e => e.from === n.id && e.branch === b)))
     const at = looseSpot()
     const added = addNode(graph, entry, at.x, at.y, last?.id ?? null)
-    commit(added.graph)
-    setSelected(added.id)
+    if (commit(withAgent(added))) setSelected(added.id)
   }
 
   // ---- Wiring by hand -----------------------------------------------------------------------
@@ -458,12 +509,64 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     flash('Cloned. Click an exit dot, then the copy, to wire it in.')
   }
   const removeStep = (id: string) => {
-    if (editing === id) { unsaved.current = false; setEditing(null) }
     const r = deleteStep(graph, id)
-    commit(r.graph)
+    if (!commit(r.graph)) return
+    if (editing === id) { unsaved.current = false; setEditing(null) }
     setSelected(null)
     setHoverStep(null)
     flash(r.joined ? 'Deleted. The steps either side are still joined.' : 'Deleted.')
+  }
+  /** Deletes several steps in one undo step; Start and steps in a locked group stay. */
+  const removeSteps = (ids: string[]) => {
+    const removable = ids.filter(id => byId.get(id) && byId.get(id)!.type !== 'TRIGGER')
+    const doomed = removable.filter(id => !lockedGroupOf(graph, id))
+    if (!doomed.length) { if (removable.length) flash('Steps in a locked group were kept. Unlock the group to delete them.'); return }
+    if (doomed.length === 1 && doomed.length === removable.length) { removeStep(doomed[0]); return }
+    const next = doomed.reduce((g, id) => deleteStep(g, id).graph, graph)
+    if (!commit(next)) return
+    if (editing && doomed.includes(editing)) { unsaved.current = false; setEditing(null) }
+    setSelected(null)
+    setPicked(new Set())
+    flash(doomed.length < removable.length
+      ? `Deleted ${doomed.length} steps. Steps in a locked group were kept.`
+      : `Deleted ${doomed.length} steps.`)
+  }
+  /** The picked steps, else the selected one. */
+  const chosen = () => (picked.size ? [...picked] : selected ? [selected] : [])
+  const copySteps = (ids = chosen()) => {
+    const steps = ids.filter(id => byId.get(id)?.type !== 'TRIGGER')
+    if (!steps.length) return
+    clipboard = { graph, ids: steps }
+    pastes.current = 0
+    flash(`Copied ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}. Paste with ${MOD}+V, here or in another workflow.`)
+  }
+  const pasteSteps = () => {
+    if (readOnly || !clipboard) return
+    pastes.current += 1
+    const r = cloneNodes(graph, clipboard.ids, clipboard.graph, 60 * pastes.current)
+    if (!r.ids.length || !commit(r.graph)) return
+    setPicked(new Set(r.ids))
+    setSelected(null)
+    flash('Pasted. Click an exit dot, then a pasted step, to wire them in.')
+  }
+  const duplicateSteps = (ids = chosen()) => {
+    const steps = ids.filter(id => byId.get(id)?.type !== 'TRIGGER')
+    if (readOnly || !steps.length) return
+    if (steps.length === 1) { cloneStep(steps[0]); return }
+    const r = cloneNodes(graph, steps, graph, 60)
+    if (!r.ids.length || !commit(r.graph)) return
+    setPicked(new Set(r.ids))
+    setSelected(null)
+    flash(`Cloned ${r.ids.length} steps.`)
+  }
+  /** Takes every wire in and out of the steps off, leaving the steps where they are. */
+  const disconnect = (ids: string[]) => {
+    if (commit({ ...graph, edges: graph.edges.filter(e => !ids.includes(e.from) && !ids.includes(e.to)) })) flash('Disconnected.')
+  }
+  /** Adds a Paths step after a step that clicks one of several buttons: one path per button. */
+  const branchOnButton = (id: string) => {
+    const made = branchByButton(graph, id)
+    if (made && commit(made.graph)) { setSelected(made.id); flash('Added a path for each button.') }
   }
   // ---- Step groups -------------------------------------------------------------------------
 
@@ -483,17 +586,40 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const canGroup = !readOnly && toGroup.some(id => byId.get(id)?.type !== 'TRIGGER' && !lockedGroupOf(graph, id))
 
   useEffect(() => {
-    if (readOnly) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
       if (t.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'g' && toGroup.length) { e.preventDefault(); groupSteps(toGroup) }
-      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && content.current?.closest('.jizza-wires')?.matches(':hover')) { e.preventDefault(); pickAll() }
-      else if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); focusSearch() }
-      else if (e.key === 'Escape' && picked.size && !pending && !labelFor) setPicked(new Set())
+      const mod = e.metaKey || e.ctrlKey
+      const key = e.key.toLowerCase()
+      // The rest of the page's shortcuts are left alone unless the pointer was last in the board.
+      const here = active.current || fullscreen
+      if (e.key === 'Escape') {
+        if (menu || help || picker) { setMenu(null); setHelp(false); setPicker(null) }
+        else if (pending || labelFor) return
+        else if (picked.size) setPicked(new Set())
+        else if (fullscreen) setFullscreen(false)
+        else return
+        // Handled here, before the slide-over around the board takes Escape as "close".
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (here && mod && key === 'c') { copySteps(); return }
+      if (readOnly) return
+      if (mod && !e.shiftKey && key === 'g' && toGroup.length) { e.preventDefault(); groupSteps(toGroup) }
+      else if (mod && key === 'a' && (here || content.current?.closest('.jizza-wires')?.matches(':hover'))) { e.preventDefault(); pickAll() }
+      else if (key === '/' && !mod) { e.preventDefault(); focusSearch() }
+      else if (!here) return
+      else if (mod && key === 'z' && !e.shiftKey) { e.preventDefault(); history.undo() }
+      else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); history.redo() }
+      else if (mod && key === 'v') { e.preventDefault(); pasteSteps() }
+      else if (mod && key === 'd') { e.preventDefault(); duplicateSteps() }
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && chosen().length) { e.preventDefault(); removeSteps(chosen()) }
+      else if (e.key === 'Tab' && !mod && !e.shiftKey) { e.preventDefault(); openPickerCentered() }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Capture, so Escape is claimed before the slide-over around the board sees it.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   })
 
   // ---- Right-click menus --------------------------------------------------------------------
@@ -510,6 +636,12 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     input?.focus()
     input?.select()
   }
+  const openPickerCentered = () => {
+    const rect = content.current?.closest('.jizza-wires')?.getBoundingClientRect()
+    setPicker({ at: rect ? { x: rect.left + rect.width / 2 - 128, y: rect.top + 80 } : { x: 200, y: 200 } })
+  }
+  /** Picks a step and every step after it, such as one side of a choice. */
+  const pickFrom = (id: string) => { setPicked(new Set([id, ...descendantsOf(graph, id)].filter(x => byId.get(x)?.type !== 'TRIGGER'))); setSelected(null) }
   const pickAll = () => { setPicked(new Set(graph.nodes.filter(n => n.type !== 'TRIGGER' && !into.has(n.id)).map(n => n.id))); setSelected(null) }
 
   /** The menu on empty space: getting around, arranging, and the picked steps. */
@@ -519,15 +651,20 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
       { label: 'Go to Start', onSelect: goToStart },
       { label: preview === null ? 'Preview path' : 'Clear preview', divider: true, onSelect: preview === null ? startPreview : stopPreview },
     ]
+    const at = { x: e.clientX, y: e.clientY }
     setMenu({
-      at: { x: e.clientX, y: e.clientY, flipX: e.clientX },
+      at: { ...at, flipX: e.clientX },
       items: readOnly ? view : [
         ...view,
         { label: 'Auto align', disabled: !arranged, onSelect: () => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') } },
+        { label: 'Undo', shortcut: `${MOD}+Z`, divider: true, disabled: !history.canUndo, onSelect: history.undo },
+        { label: 'Redo', shortcut: `${MOD}+Shift+Z`, disabled: !history.canRedo, onSelect: history.redo },
         { label: toGroup.length > 1 ? `Group ${toGroup.length} steps` : 'Group steps', shortcut: `${MOD}+G`, divider: true, disabled: !canGroup, onSelect: () => groupSteps(toGroup) },
         { label: 'Pick all steps', shortcut: `${MOD}+A`, onSelect: pickAll },
         { label: 'Clear picked steps', shortcut: 'Esc', disabled: !picked.size && !selected, onSelect: () => { setPicked(new Set()); setSelected(null) } },
-        { label: 'Search steps', shortcut: '/', divider: true, onSelect: focusSearch },
+        { label: 'Paste', shortcut: `${MOD}+V`, disabled: !clipboard, onSelect: pasteSteps },
+        { label: 'Add a step', shortcut: 'Tab', divider: true, onSelect: () => setPicker({ at }) },
+        { label: 'Search steps', shortcut: '/', onSelect: focusSearch },
       ],
     })
   }
@@ -541,18 +678,52 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     const isStart = node.type === 'TRIGGER'
     const group = groupOfNode(graph, id)
     const ids = picked.has(id) ? [...picked] : [id]
-    const items: MenuItem[] = [{ label: readOnly || lockedGroupOf(graph, id) ? 'Open settings' : 'Edit settings', onSelect: () => openSettings(id) }]
-    if (!readOnly) {
-      if (!isStart) items.push({ label: 'Clone', onSelect: () => cloneStep(id) })
-      items.push({ label: 'Wire to the next step', onSelect: () => { setPending({ from: id, branch: exitsOf(node)[0] ?? null }); setSelected(null) }, disabled: exitsOf(node).length === 0 })
+    const locked = !!lockedGroupOf(graph, id)
+    const note = typeof node.config.note === 'string' && node.config.note.trim()
+    const items: MenuItem[] = [{ label: readOnly || locked ? 'Open settings' : 'Edit settings', onSelect: () => openSettings(id) }]
+    if (readOnly) {
+      if (!isStart) items.push({ label: 'Copy', shortcut: `${MOD}+C`, onSelect: () => copySteps(ids) })
+    } else {
+      if (canConfigureWithJizza(node.type) && !locked) items.push({ label: 'Configure using Jizza', onSelect: () => openSettings(id, { jizza: true }) })
+      if (!isStart && !locked) items.push({ label: note ? 'Edit note' : 'Add note', onSelect: () => openSettings(id, { note: true }) })
       if (!isStart) {
-        items.push({ label: ids.length > 1 ? `Group ${ids.length} steps` : 'Group this step', shortcut: `${MOD}+G`, divider: true, disabled: !!lockedGroupOf(graph, id), onSelect: () => groupSteps(ids) })
+        items.push(
+          { label: ids.length > 1 ? `Clone ${ids.length} steps` : 'Clone', shortcut: `${MOD}+D`, divider: true, onSelect: () => duplicateSteps(ids) },
+          { label: 'Copy', shortcut: `${MOD}+C`, onSelect: () => copySteps(ids) },
+        )
+      }
+      items.push({ label: 'Wire to the next step', divider: isStart, onSelect: () => { setPending({ from: id, branch: exitsOf(node)[0] ?? null }); setSelected(null) }, disabled: exitsOf(node).length === 0 })
+      if (ids.length === 1 && groupButtonsOf(node).length > 0 && !buttonPathsAfter(graph, id) && !locked) {
+        items.push({ label: 'Branch by button clicked', onSelect: () => branchOnButton(id) })
+      }
+      if (exitsOf(node).length > 1 || graph.edges.filter(x => x.from === id).length > 1) items.push({ label: 'Pick steps from here', onSelect: () => pickFrom(id) })
+      if (!isStart) items.push({ label: 'Disconnect', disabled: locked, onSelect: () => disconnect(ids) })
+      if (!isStart) {
+        items.push({ label: ids.length > 1 ? `Group ${ids.length} steps` : 'Group this step', shortcut: `${MOD}+G`, divider: true, disabled: locked, onSelect: () => groupSteps(ids) })
         if (group && !group.locked) items.push({ label: 'Remove from group', onSelect: () => commit(removeFromGroup(graph, id)) })
         if (group) items.push({ label: group.locked ? 'Unlock group' : 'Lock group', onSelect: () => commit(updateGroup(graph, group.id, { locked: !group.locked })) })
-        items.push({ label: 'Delete', danger: true, divider: true, disabled: !!lockedGroupOf(graph, id), onSelect: () => removeStep(id) })
+        items.push({ label: ids.length > 1 ? `Delete ${ids.length} steps` : 'Delete', shortcut: 'Del', danger: true, divider: true, disabled: locked, onSelect: () => removeSteps(ids) })
       }
     }
     setMenu({ at: { x: e.clientX, y: e.clientY, flipX: e.clientX }, items })
+  }
+
+  /** The menu on a group's title bar. */
+  const groupMenu = (e: React.MouseEvent, g: StepGroup) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (readOnly) return
+    const folded = isFolded(g.id)
+    setMenu({
+      at: { x: e.clientX, y: e.clientY, flipX: e.clientX },
+      items: [
+        { label: 'Rename', onSelect: () => setRenaming({ id: g.id, at: Date.now() }) },
+        { label: 'Pick its steps', onSelect: () => { if (folded) toggleFold(g.id); setPicked(new Set(g.nodes)); setSelected(null) } },
+        { label: g.locked ? 'Unlock' : 'Lock', onSelect: () => commit(updateGroup(graph, g.id, { locked: !g.locked })) },
+        { label: folded ? 'Unfold' : 'Fold', onSelect: () => toggleFold(g.id) },
+        { label: 'Ungroup', divider: true, disabled: g.locked, onSelect: () => { if (commit(ungroup(graph, g.id))) flash('Ungrouped. The steps stay where they are.') } },
+      ],
+    })
   }
 
   /** Starts moving steps by hand: one step, or every step of its group when it is locked. */
@@ -640,8 +811,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     return { d: `M${x1} ${y1} C${x1} ${y1 + 60} ${x2} ${y2 - 60} ${x2} ${y2}`, end: wireDrag.at, ok: false }
   }, [wireDrag, validTargets, layout])
 
-  return (
-    <div className="jizza-wires flex h-[calc(100vh-19rem)] min-h-[560px] overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+  const board = (
+    <div onPointerDownCapture={() => { active.current = true }} onPointerLeave={() => { if (!fullscreen) active.current = false }}
+      className={`jizza-wires flex overflow-hidden border-gray-200 dark:border-gray-800 ${fullscreen ? 'h-full' : compact ? 'h-full rounded-lg' : 'h-[calc(100vh-19rem)] min-h-[560px] rounded-xl border'}`}>
       <style>{WIRES_CSS}</style>
       {!readOnly && (
         <aside className="hidden w-52 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-gray-200 bg-gray-50 p-2.5 dark:border-gray-800 dark:bg-gray-950 sm:flex">
@@ -711,7 +883,14 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             )}
             <span className="truncate text-xs text-gray-600 dark:text-gray-400" aria-live="polite">{status}</span>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="relative flex shrink-0 items-center gap-1.5">
+          {!readOnly && (
+            <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-900">
+              <ToolButton label="Add a step (Tab)" onClick={openPickerCentered}><Plus className="h-4 w-4" /></ToolButton>
+              <ToolButton label={`Undo (${MOD}+Z)`} disabled={!history.canUndo} onClick={history.undo}><Undo2 className="h-4 w-4" /></ToolButton>
+              <ToolButton label={`Redo (${MOD}+Shift+Z)`} disabled={!history.canRedo} onClick={history.redo}><Redo2 className="h-4 w-4" /></ToolButton>
+            </div>
+          )}
           {!readOnly && (
             <button type="button" disabled={!canGroup} onClick={() => groupSteps(toGroup)}
               title={canGroup ? `Put the picked steps in a group (${MOD}+G)` : 'Pick steps first: drag a box around them on empty space, or Shift+click each one'}
@@ -735,6 +914,15 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                 <X className="h-3.5 w-3.5" />Clear preview
               </button>}
+          {!compact && (
+            <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-900">
+              <ToolButton label="Keyboard shortcuts" onClick={() => setHelp(v => !v)}><Keyboard className="h-4 w-4" /></ToolButton>
+              <ToolButton label={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'} onClick={() => setFullscreen(v => !v)}>
+                {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </ToolButton>
+            </div>
+          )}
+          {help && <Shortcuts readOnly={readOnly} />}
           </div>
         </div>
 
@@ -834,6 +1022,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                 const issues = g.nodes.filter(id => issuesByNode.has(id)).length
                 return (
                   <FoldedGroup key={g.id} group={g} box={box} issues={issues} readOnly={readOnly}
+                    run={view ? groupRun(g.nodes.map(id => view.nodes.get(id))) : undefined}
+                    onMenu={e => groupMenu(e, g)}
                     onFold={() => toggleFold(g.id)} onLock={() => commit(updateGroup(graph, g.id, { locked: !g.locked }))} />
                 )
               }
@@ -845,6 +1035,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               const h = Math.max(...boxes.map(b => b.y)) + CARD_H + GROUP_PAD + 14 - y
               return (
                 <GroupFrame key={g.id} group={g} box={{ x, y, w, h }} readOnly={readOnly}
+                  onMenu={e => groupMenu(e, g)}
                   onFold={() => toggleFold(g.id)}
                   onLock={() => commit(updateGroup(graph, g.id, { locked: !g.locked }))}
                   onRename={title => commit(updateGroup(graph, g.id, { title }))}
@@ -1062,24 +1253,50 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             readOnly={readOnly || !!lockedGroupOf(graph, editNode.id)}
             lockedIn={readOnly ? undefined : lockedGroupOf(graph, editNode.id)?.title}
             onUnlock={() => { const g = lockedGroupOf(graph, editNode.id); if (g) commit(updateGroup(graph, g.id, { locked: false })) }}
-            issues={[]} step={realRun?.steps.get(editNode.id)} runSteps={realRun?.steps} onDirty={onDirty}
-            onSave={edited => { unsaved.current = false; commit(keepWiresSettings(applyStepEdit(graph, edited, editNode.id), graph, editNode.id)); setEditing(null) }}
+            issues={agentIssues.get(editNode.id) ?? []} step={realRun?.steps.get(editNode.id)} runSteps={realRun?.steps} onDirty={onDirty}
+            focusNote={focusNote} askJizza={askJizza}
+            onSave={edited => { if (!commit(keepWiresSettings(applyStepEdit(graph, edited, editNode.id), graph, editNode.id))) return; unsaved.current = false; setEditing(null) }}
+            onBranchByButton={edited => {
+              unsaved.current = false
+              const saved = keepWiresSettings(applyStepEdit(graph, edited, editNode.id), graph, editNode.id)
+              const made = branchByButton(saved, editNode.id)
+              if (!commit(made?.graph ?? saved)) return
+              setEditing(null)
+              setSelected(made?.id ?? editNode.id)
+            }}
             onClose={() => { unsaved.current = false; setEditing(null) }} />
         )}
       </div>
 
       {menu && <ContextMenu at={menu.at} items={menu.items} onClose={() => setMenu(null)} />}
       {picker && (
-        <StepPicker at={picker.at} title={picker.after ? 'Add the next step' : 'Add a step on this wire'} agents={agents} allowEnd={!!picker.after} onClose={() => setPicker(null)}
-          onPick={(entry, agent) => {
-            const r = picker.after ? addAfter(graph, picker.after.from, picker.after.branch, entry) : insertOnEdge(graph, picker.edge!, entry)
-            commit(agent ? assignAgent(r.graph, r.id, agent) : r.graph)
-            setSelected(r.id)
+        <StepPicker at={picker.at} title={picker.after ? 'Add the next step' : picker.edge ? 'Add a step on this wire' : 'Add a step'} agents={agents}
+          allowEnd={!picker.edge} onClose={() => setPicker(null)}
+          onRecord={readOnly ? undefined : () => {
+            setRecordAt(picker.after ?? (picker.edge ? { from: picker.edge.from, branch: picker.edge.branch } : { from: selected, branch: null }))
             setPicker(null)
+          }}
+          onPick={(entry, agent) => {
+            setPicker(null)
+            if (!picker.after && !picker.edge) { addFromPalette(entry, agent); return }
+            const r = picker.after ? addAfter(graph, picker.after.from, picker.after.branch, entry) : insertOnEdge(graph, picker.edge!, entry)
+            if (commit(agent ? assignAgent(r.graph, r.id, agent) : r.graph)) setSelected(r.id)
+          }} />
+      )}
+      {!readOnly && (
+        <RecordFlow open={!!recordAt} mode="insert" onClose={() => setRecordAt(null)}
+          onInsert={chain => {
+            const from = recordAt?.from ?? startId
+            if (!from) return
+            const r = insertChain(graph, from, recordAt?.branch ?? null, chain as { nodes: CanvasNode[]; edges: CanvasEdge[] })
+            if (commit(r.graph)) { setSelected(r.ids[0] ?? null); flash(`Added ${r.ids.length} recorded ${r.ids.length === 1 ? 'step' : 'steps'}.`) }
           }} />
       )}
     </div>
   )
+  // Full screen has to leave the slide-over: its open animation leaves a transform that would pin
+  // a "fixed" element to the panel instead of the window.
+  return fullscreen ? createPortal(<div className="fixed inset-0 z-50 bg-white dark:bg-gray-950">{board}</div>, document.body) : board
 }
 
 function BarButton({ label, onClick, tone, active, children }: {
@@ -1099,14 +1316,44 @@ function BarButton({ label, onClick, tone, active, children }: {
 
 const Divider = () => <span className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
 
+function ToolButton({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick}
+      className="grid h-7 w-7 place-items-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:opacity-35 disabled:hover:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
+      {children}
+    </button>
+  )
+}
+
+function Shortcuts({ readOnly }: { readOnly: boolean }) {
+  const rows: Array<[string, string]> = readOnly
+    ? [['Open a step', 'Double-click'], ['Copy steps', `${MOD}+C`], ['More options', 'Right-click']]
+    : [
+        ['Add a step', 'Tab'], ['Wire', 'Drag from an exit dot to a step'], ['Re-wire', 'Hover a wire, drag its end'], ['Open a step', 'Double-click'],
+        ['Delete', 'Del / Backspace'], ['Undo / redo', `${MOD}+Z / ${MOD}+Shift+Z`], ['Copy / paste', `${MOD}+C / ${MOD}+V`], ['Clone', `${MOD}+D`],
+        ['Pick steps', 'Shift+click, or drag on empty space'], ['Pick all', `${MOD}+A`], ['Group steps', `${MOD}+G`], ['Search steps', '/'], ['More options', 'Right-click'],
+      ]
+  return (
+    <div className="absolute right-0 top-full z-40 mt-1.5 w-80 rounded-xl border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900">
+      {rows.map(([what, how]) => (
+        <div key={what} className="flex justify-between gap-3 py-0.5">
+          <span className="text-gray-600 dark:text-gray-400">{what}</span>
+          <kbd className="text-right font-sans text-gray-900 dark:text-gray-100">{how}</kbd>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MOD = isMac ? '⌘' : 'Ctrl'
 const GROUP_PAD = 16
 const GROUP_HEAD = 30
 
 /** A step group's box: a title bar to drag, rename, lock, fold or ungroup it, around its steps. */
-function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, renameAsk, onUngroup, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
+function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, renameAsk, onUngroup, onMenu, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
   group: StepGroup; box: { x: number; y: number; w: number; h: number }; readOnly: boolean; renameAsk?: number
+  onMenu: (e: React.MouseEvent) => void
   onFold: () => void; onLock: () => void; onRename: (title: string) => void; onUngroup: () => void
   onPointerDown: (e: React.PointerEvent) => void; onPointerMove: (e: React.PointerEvent) => void
   onPointerUp: (e: React.PointerEvent) => void; onPointerCancel: () => void
@@ -1129,6 +1376,7 @@ function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, renameAsk,
         style={{ touchAction: 'none' }}
         onPointerDown={e => { if (!(e.target as HTMLElement).closest('button, input')) onPointerDown(e) }}
         onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
+        onContextMenu={onMenu}
         onDoubleClick={() => { if (!readOnly) setEditing(true) }}>
         <button type="button" onClick={onFold} aria-label={`Fold ${name}`} title="Fold into one card"
           className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10"><ChevronDown className="h-4 w-4" /></button>
@@ -1162,14 +1410,23 @@ function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, renameAsk,
 }
 
 /** A folded group: one card standing in for its steps. */
-function FoldedGroup({ group, box, issues, readOnly, onFold, onLock }: {
-  group: StepGroup; box: Box; issues: number; readOnly: boolean; onFold: () => void; onLock: () => void
+function FoldedGroup({ group, box, issues, readOnly, run, onFold, onLock, onMenu }: {
+  group: StepGroup; box: Box; issues: number; readOnly: boolean; run?: StepRun; onFold: () => void; onLock: () => void
+  onMenu: (e: React.MouseEvent) => void
 }) {
   const name = group.title || 'Untitled group'
   return (
-    <div data-testid={`wires-group-${group.id}`} className={`absolute flex flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm dark:bg-gray-900 ${group.locked ? 'border-amber-500/70' : 'border-dashed border-brand-500/60'}`}
+    <div data-testid={`wires-group-${group.id}`} onContextMenu={onMenu}
+      className={`absolute flex flex-col overflow-visible rounded-2xl border-2 bg-white shadow-sm dark:bg-gray-900 ${run ? STEP_RING[run] : group.locked ? 'border-amber-500/70' : 'border-dashed border-brand-500/60'}`}
       style={{ left: box.x, top: box.y, width: CARD_W, height: CARD_H }}>
-      <div className={`flex h-[30px] items-center gap-1 px-1.5 text-xs font-semibold ${group.locked
+      {run && (
+        <span title={GROUP_RUN_TEXT[run]} className={`absolute -top-2.5 right-3 z-10 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow ${STEP_BADGE[run].tone}`}>
+          {run === 'done' && <Check className="h-3 w-3" strokeWidth={3} />}
+          {run === 'running' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />}
+          {STEP_BADGE[run].text}
+        </span>
+      )}
+      <div className={`flex h-[30px] items-center gap-1 rounded-t-[14px] px-1.5 text-xs font-semibold ${group.locked
         ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100' : 'bg-brand-50 text-brand-900 dark:bg-brand-500/15 dark:text-brand-100'}`}>
         <button type="button" onClick={onFold} aria-label={`Unfold ${name}`} title="Show its steps"
           className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10"><ChevronRight className="h-4 w-4" /></button>

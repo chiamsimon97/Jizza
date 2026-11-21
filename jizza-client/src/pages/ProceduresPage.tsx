@@ -12,7 +12,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Dialog } from '@/components/ui/Dialog'
 import { fieldClass } from '@/components/ui/SlideOver'
-import { WorkflowCanvas } from '@/components/workflow/WorkflowCanvas'
+import { WiresBoard } from '@/components/workflow/WiresBoard'
 import { fromGraph } from '@/components/workflow/canvasModel'
 import { changesBetween, stateOf, stepsOf, type ProcedureState } from '@/components/workflow/procedureModel'
 
@@ -183,7 +183,7 @@ function ProcedureCard({ procedure: p, focused }: { procedure: ProcedureSummary;
             </div>
             {diagram
               ? <div className="h-80 overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800">
-                  <WorkflowCanvas graph={fromGraph(wf.graph)} onChange={() => {}} readOnly />
+                  <WiresBoard graph={fromGraph(wf.graph)} onChange={() => {}} readOnly compact />
                 </div>
               : <ol className="space-y-1">
                   {steps.map((s, i) => (

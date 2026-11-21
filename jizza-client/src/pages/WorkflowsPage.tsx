@@ -5,7 +5,7 @@ import { History, Workflow, Plus, Shield, Sparkles } from 'lucide-react'
 import { WorkflowPlanner } from '@/jizza/WorkflowPlanner'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { WorkflowForm, stepsFromGraph } from '@/components/forms/WorkflowForm'
+import { WorkflowForm } from '@/components/forms/WorkflowForm'
 import type { WorkflowDto } from '@/types'
 import { useFormStore } from '@/jizza/formStore'
 import { workflowsApi } from '@/api/workflows'
@@ -27,10 +27,9 @@ export function WorkflowsPage() {
     queryFn: () => workflowsApi.list(),
   })
 
-  // A saved workflow opens in the same builder, with its graph read back into steps.
+  // A saved workflow opens in the same builder.
   const openWorkflow = (wf: WorkflowDto, focusNode?: string) => {
-    const steps = stepsFromGraph(wf.graph)
-    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, version: wf.version, graph: wf.graph, ...(steps ? { steps } : {}), ...(focusNode ? { focusNode } : {}) })
+    openForm('new_workflow', { id: wf.id, name: wf.name, description: wf.description, status: wf.status, version: wf.version, graph: wf.graph, ...(focusNode ? { focusNode } : {}) })
   }
 
   // The run history links here with ?open=<id> to jump straight into that workflow's builder, and
