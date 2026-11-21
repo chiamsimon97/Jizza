@@ -1,6 +1,7 @@
 package com.jizza.engine.api.workflow.graph;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jizza.engine.api.enums.NodeType;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.util.Json;
@@ -13,13 +14,26 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/** The workflow DAG as stored in {@code workflows.graph}. */
+/**
+ * The workflow DAG as stored in {@code workflows.graph}.
+ *
+ * <p>{@code groups} is the builder's step groups (a title, the steps in it, whether it is locked
+ * or folded). It is kept as the builder wrote it so it survives a save, and is otherwise ignored:
+ * the engine runs grouped steps like any others, and it is not part of the {@link #fingerprint()}.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record WorkflowGraph(List<WorkflowNode> nodes, List<WorkflowEdge> edges) {
+public record WorkflowGraph(List<WorkflowNode> nodes, List<WorkflowEdge> edges,
+                            @JsonInclude(JsonInclude.Include.NON_NULL)
+                            com.fasterxml.jackson.databind.JsonNode groups) {
 
   public WorkflowGraph {
     nodes = nodes == null ? List.of() : List.copyOf(nodes);
     edges = edges == null ? List.of() : List.copyOf(edges);
+    if (groups != null && !groups.isArray()) groups = null;
+  }
+
+  public WorkflowGraph(List<WorkflowNode> nodes, List<WorkflowEdge> edges) {
+    this(nodes, edges, null);
   }
 
   public static WorkflowGraph from(com.fasterxml.jackson.databind.JsonNode json) {

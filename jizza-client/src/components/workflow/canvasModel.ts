@@ -7,6 +7,7 @@
  */
 
 import { contractIssues } from './moduleContract'
+import { readGroups, writeGroups, type StepGroup } from './groupModel'
 
 export type NodeType = 'TRIGGER' | 'AGENT_STEP' | 'HUMAN_INTERVENTION' | 'CONNECTOR_TOOL' | 'TRANSFORM' | 'BRANCH' | 'END'
   | 'PARALLEL' | 'JOIN' | 'WAIT' | 'SUB_WORKFLOW' | 'FOR_EACH'
@@ -55,6 +56,8 @@ export interface CanvasEdge {
 export interface CanvasGraph {
   nodes: CanvasNode[]
   edges: CanvasEdge[]
+  /** Step groups drawn on the canvas; the engine ignores them. See groupModel. */
+  groups?: StepGroup[]
 }
 
 /** A palette item may be a plain node type or a ready-configured version of one. */
@@ -206,7 +209,7 @@ export function emptyGraph(): CanvasGraph {
 
 /** Reads an engine graph. Saved canvas positions are used; anything else is laid out left to right. */
 export function fromGraph(graph: unknown): CanvasGraph {
-  const g = graph as { nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>> } | null
+  const g = graph as { nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>>; groups?: unknown } | null
   if (!g || !Array.isArray(g.nodes) || g.nodes.length === 0) return emptyGraph()
 
   const edges: CanvasEdge[] = (Array.isArray(g.edges) ? g.edges : []).map(e => ({
@@ -223,7 +226,8 @@ export function fromGraph(graph: unknown): CanvasGraph {
       config, x: typeof ui?.x === 'number' ? ui.x : at.x, y: typeof ui?.y === 'number' ? ui.y : at.y,
     }
   })
-  return { nodes, edges }
+  const groups = readGroups(g.groups, nodes)
+  return groups.length ? { nodes, edges, groups } : { nodes, edges }
 }
 
 /** Columns by the longest path from the start (so every edge points right), rows in order. */
@@ -354,6 +358,7 @@ export function applyStepEdit(graph: CanvasGraph, edited: CanvasGraph, id: strin
   if (!node || !graph.nodes.some(n => n.id === id)) return graph
   const ids = new Set(graph.nodes.map(n => n.id))
   return {
+    ...graph,
     nodes: graph.nodes.map(n => (n.id === id ? { ...node, x: n.x, y: n.y } : n)),
     edges: [...graph.edges.filter(e => e.from !== id), ...edited.edges.filter(e => e.from === id && ids.has(e.to))],
   }
@@ -379,7 +384,7 @@ export function insertOnEdge(graph: CanvasGraph, edge: CanvasEdge, type: NodeTyp
   // The onward path leaves from the first exit: a branch's "yes", a parallel step's first lane,
   // an approval's "approved", a paths step's first case.
   if (node.type !== 'END') edges.push({ from: node.id, to: edge.to, branch: exitsOf(node)[0] })
-  return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
+  return { graph: { ...graph, nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 /** Adds a step on a given exit of a node, replacing whatever that exit pointed at before. */
@@ -410,7 +415,7 @@ export function insertChain(graph: CanvasGraph, from: string, branch: ExitKey, c
   const nodes = chain.nodes.map(n => ({ ...n, id: ids.get(n.id)!, config: structuredClone(n.config), x: at.x + (n.x - first.x), y: at.y + (n.y - first.y) }))
   const edges = chain.edges.map(e => ({ ...e, from: ids.get(e.from)!, to: ids.get(e.to)! }))
   const previous = graph.edges.find(e => e.from === from && e.branch === branch)?.to
-  let next: CanvasGraph = { nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }
+  let next: CanvasGraph = { ...graph, nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }
   next = setNext(next, from, branch, ids.get(heads[0].id)!)
   if (previous && tails.length === 1) next = setNext(next, ids.get(tails[0].id)!, null, previous)
   return { graph: next, ids: nodes.map(n => n.id) }
@@ -425,7 +430,7 @@ export function cloneNodes(graph: CanvasGraph, ids: string[], source: CanvasGrap
   const map = new Map(picked.map(n => [n.id, newId(n.type)]))
   const nodes = picked.map(n => ({ ...n, id: map.get(n.id)!, config: structuredClone(n.config), x: n.x + offset, y: n.y + offset }))
   const edges = source.edges.filter(e => map.has(e.from) && map.has(e.to)).map(e => ({ ...e, from: map.get(e.from)!, to: map.get(e.to)! }))
-  return { graph: { nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }, ids: nodes.map(n => n.id) }
+  return { graph: { ...graph, nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges] }, ids: nodes.map(n => n.id) }
 }
 
 /** Steps further up the flow, whose results a step can read as nodes.<id>. */
@@ -438,6 +443,7 @@ export function toGraph(graph: CanvasGraph) {
   return {
     nodes: graph.nodes.map(n => ({ id: n.id, type: n.type, label: n.label, config: { ...n.config, ui: { x: n.x, y: n.y } } })),
     edges: graph.edges.map(e => ({ from: e.from, to: e.to, branch: e.branch })),
+    ...writeGroups(graph),
   }
 }
 
@@ -573,7 +579,7 @@ export function branchByButton(graph: CanvasGraph, stepId: string, buttons?: str
   const edges = graph.edges.filter(e => e.from !== stepId)
   edges.push({ from: stepId, to: node.id, branch: null })
   for (const to of onward) for (const exit of exitsOf(node)) edges.push({ from: node.id, to, branch: exit })
-  return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
+  return { graph: { ...graph, nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 /** Points one exit of a node at another node, or clears it. */
@@ -593,7 +599,7 @@ export function addNode(graph: CanvasGraph, type: NodeType | PaletteEntry, x: nu
   const chosen = candidates.find(n => n.id === after)
     ?? candidates.sort((a, b) => dist(a, x, y) - dist(b, x, y))[0]
   const edges = chosen ? [...graph.edges, { from: chosen.id, to: node.id, branch: freeExit(chosen)! }] : graph.edges
-  return { graph: { nodes: [...graph.nodes, node], edges }, id: node.id }
+  return { graph: { ...graph, nodes: [...graph.nodes, node], edges }, id: node.id }
 }
 
 const dist = (n: CanvasNode, x: number, y: number) => (n.x - x) ** 2 + (n.y - y) ** 2
@@ -618,7 +624,11 @@ export function targetsFor(graph: CanvasGraph, from: string): CanvasNode[] {
 }
 
 export function removeNode(graph: CanvasGraph, id: string): CanvasGraph {
-  return { nodes: graph.nodes.filter(n => n.id !== id), edges: graph.edges.filter(e => e.from !== id && e.to !== id) }
+  const groups = graph.groups?.map(g => ({ ...g, nodes: g.nodes.filter(n => n !== id) })).filter(g => g.nodes.length > 0)
+  return {
+    ...graph, nodes: graph.nodes.filter(n => n.id !== id), edges: graph.edges.filter(e => e.from !== id && e.to !== id),
+    ...(graph.groups ? { groups } : {}),
+  }
 }
 
 export function updateNode(graph: CanvasGraph, id: string, patch: Partial<CanvasNode>): CanvasGraph {
