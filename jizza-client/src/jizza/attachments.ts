@@ -5,7 +5,8 @@ import { chatApi, type ChatFileUpload } from '@/api/chat'
  * <attachment> block that the chat shows as a tag rather than as text. Text files go in as text.
  * PDFs and photos are uploaded when picked and the block refers to them (ref="<id>"), so the model
  * reads the file itself; the block also carries a PDF's text, for later turns and other readers.
- * Other binary files go in by name only.
+ * Word, Excel and PowerPoint files are uploaded too, for the server to read their text, which goes
+ * into the block as text. Other binary files go in by name only.
  */
 
 export type AttachmentKind = 'file' | 'image' | 'folder'
@@ -21,6 +22,8 @@ export interface Attachment {
   read: (budget: number) => Promise<string>
   /** A PDF or photo's upload, started when it was picked; null when it failed. */
   uploaded?: Promise<ChatFileUpload | null>
+  /** Uploaded only for its text: the block carries the text and does not refer to the file. */
+  textOnly?: boolean
 }
 
 /** What the model can read itself (AnthropicLlmClient): PDFs, and photos up to 5 MB. */
@@ -30,6 +33,13 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 export function modelReads(file: { name: string; type: string; size: number }) {
   const type = file.type || (extension(file.name) === 'pdf' ? 'application/pdf' : '')
   return MODEL_READS.has(type) && (type === 'application/pdf' || file.size <= MAX_PHOTO_BYTES)
+}
+
+/** Office files whose text the server reads on upload (TextExtractor): Word, Excel, PowerPoint. */
+const SERVER_READS = new Set(['docx', 'xlsx', 'pptx'])
+
+export function serverReads(file: { name: string }) {
+  return SERVER_READS.has(extension(file.name))
 }
 
 /** What the server takes in one message (ChatUseCase.MAX_MESSAGE_CHARS), less a margin. */
@@ -60,7 +70,10 @@ function cut(text: string, budget: number) {
 }
 
 async function contentOf(file: File, budget: number) {
-  if (!isText(file)) return `(${file.type || 'binary'} file, ${size(file.size)}; Jizza can't open this kind of file yet)`
+  if (!isText(file)) {
+    const old = ['doc', 'xls', 'ppt'].includes(extension(file.name))
+    return `(${file.type || 'binary'} file, ${size(file.size)}; Jizza can't open this kind of file yet${old ? '. Save it as .docx, .xlsx or .pptx and attach it again' : ''})`
+  }
   if (file.size > MAX_TEXT_BYTES) return `(${size(file.size)}, too large to include)`
   return cut(await textOf(file), budget)
 }
@@ -83,6 +96,17 @@ function size(bytes: number) {
 /** A file picked with "Add files or photos". */
 export function fileAttachment(file: File): Attachment {
   const kind = file.type.startsWith('image/') ? 'image' : 'file'
+  if (serverReads(file)) {
+    const uploaded = chatApi.uploadFile(file).catch(() => null)
+    return {
+      id: nextId(), kind, name: file.name, uploaded, textOnly: true,
+      read: async budget => {
+        const upload = await uploaded
+        if (!upload) return `(${size(file.size)}; the upload failed, so Jizza can't open it)`
+        return upload.text.trim() ? cut(upload.text.trim(), budget) : '(no text could be read from this file)'
+      },
+    }
+  }
   if (!modelReads(file)) return { id: nextId(), kind, name: file.name, read: budget => contentOf(file, budget) }
   const uploaded = chatApi.uploadFile(file).catch(() => null)
   return {
@@ -176,7 +200,7 @@ export async function withAttachments(text: string, attachments: Attachment[]): 
   for (let i = 0; i < attachments.length; i++) {
     const a = attachments[i]
     const upload = a.uploaded ? await a.uploaded : null
-    const ref = upload ? ` ref="${upload.id}"` : ''
+    const ref = upload && !a.textOnly ? ` ref="${upload.id}"` : ''
     const head = `<attachment kind="${a.kind}" name="${escapeName(a.name)}"${ref}>\n`
     const tail = '\n</attachment>'
     // Split what is left evenly between this attachment and the ones after it.

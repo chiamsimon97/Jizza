@@ -1,5 +1,5 @@
 import { FormEvent, Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Globe, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
@@ -9,7 +9,7 @@ import { agentsApi } from '@/api/agents'
 import { AgentLogo } from '@/components/brand/AgentLogo'
 import { Button } from '@/components/ui/Button'
 import { loadJob, resumeConversation, useAssistantStore, type AssistantMessage, type Question } from './assistantStore'
-import type { ThreadCard as ThreadCardData } from '@/types'
+import type { ReplyFeedback, ThreadCard as ThreadCardData, WebSource } from '@/types'
 import { JizzaOrb } from './JizzaOrb'
 import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { AgentProposalCard } from './AgentProposalCard'
@@ -24,6 +24,7 @@ import { earlierMarker, took } from './replyMeta'
 import { UserStepsCard, cardLinks } from './UserStepsCard'
 import { StartRunCard } from './StartRunCard'
 import { RunInChat } from './RunInChat'
+import { matchAgents, mentionOf, mentionQuery } from './mentions'
 import { fileAttachment, folderFromFiles, pickLinkedFolder, splitAttachments, withAttachments, type Attachment, type AttachmentKind } from './attachments'
 
 const SUGGESTIONS = [
@@ -52,7 +53,7 @@ interface ConversationProps {
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
-  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, conversationId, lastReplyId } = useAssistantStore()
+  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, rate, conversationId, lastReplyId, setThreadsNext } = useAssistantStore()
   const [input, setInput] = useState('')
   // The message being replied to: quoted above what the user writes.
   const [replyTo, setReplyTo] = useState<{ who: string; text: string } | null>(null)
@@ -72,6 +73,15 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   const runMenuOpen = runTyped !== null && !runClosed && (runnable.isLoading || runChoices.length > 0)
   useEffect(() => { setMenuIndex(0) }, [runTyped])
   useEffect(() => { if (runTyped === null) setRunClosed(false) }, [runTyped === null]) // eslint-disable-line react-hooks/exhaustive-deps
+  // "@" and part of a name: the specialists who could answer this message themselves.
+  const mentionTyped = mentionQuery(input)
+  const [mentionClosed, setMentionClosed] = useState(false)
+  const { data: allAgents } = useQuery({ queryKey: ['agents'], queryFn: () => agentsApi.list(), staleTime: 300_000 })
+  const mentionChoices = mentionTyped !== null && !mentionClosed ? matchAgents(allAgents ?? [], mentionTyped).slice(0, 8) : []
+  useEffect(() => { setMenuIndex(0) }, [mentionTyped])
+  useEffect(() => { if (mentionTyped === null) setMentionClosed(false) }, [mentionTyped === null]) // eslint-disable-line react-hooks/exhaustive-deps
+  // "/model": the next message goes to the deeper model, then it is back to the usual one.
+  const [nextDeep, setNextDeep] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // Files and folders from the "+" menu, tagged above the message box until sent (a linked folder stays).
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -94,6 +104,8 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     }
   }
   const detach = (id: string) => setAttachments(list => list.filter(a => a.id !== id))
+  // Files dragged over the message box: it lights up, and dropping attaches them.
+  const [dragging, setDragging] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const onDictated = useCallback((text: string) => { void send(text) }, [send])
@@ -131,10 +143,51 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
         setAttaching(false)
       }
     }
+    // "@Kai …" is answered by Kai; the name stays in the message so the chat reads the same later.
+    const addressee = mentionOf(written, allAgents ?? [])
+    const extras = { ...(nextDeep ? { depth: 'deep' as const } : {}), ...(addressee ? { mention: addressee.id } : {}) }
     setInput('')
     setReplyTo(null)
+    setNextDeep(false)
     setAttachments(list => list.filter(a => a.linked))
-    void send(message)
+    void send(message, extras)
+  }
+
+  /** A specialist picked after "@": their name goes in the box, ready for the message. */
+  function pickAgent(a: { name: string }) {
+    const text = `@${a.name} `
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); el.setSelectionRange(text.length, text.length) }
+    })
+  }
+
+  /** "/thread": threads on for this chat, and a sentence to finish saying what the thread is for. */
+  async function startThread() {
+    if (incognito) {
+      localReply('/thread', 'Threads are kept with a saved chat, so they are not available in incognito.')
+      return
+    }
+    if (!conversationId) setThreadsNext(true)
+    else {
+      try {
+        await conversationsApi.update(conversationId, { threads: true })
+        useAssistantStore.setState(s => ({ conversationsVersion: s.conversationsVersion + 1 }))
+      } catch {
+        localReply('/thread', 'I couldn\'t switch threads on for this chat. Try the Threads button at the top.')
+        return
+      }
+    }
+    insertText('Start a new thread about ')
+  }
+
+  function insertText(text: string) {
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+    })
   }
 
   function openSlashMenu() {
@@ -180,14 +233,10 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
     if (command.run === 'new') newConversation()
     else if (command.run === 'help') localReply(`/${command.name}`, helpText(ctx))
     else if (command.run === 'leave') { if (token !== undefined) useContextStore.getState().pop(token) }
+    else if (command.run === 'thread') void startThread()
+    else if (command.run === 'model') setNextDeep(d => !d)
     else if (command.prompt) { if (!thinking) void send(command.prompt) }
-    else if (command.insert) {
-      setInput(command.insert)
-      requestAnimationFrame(() => {
-        const el = inputRef.current
-        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
-      })
-    }
+    else if (command.insert) insertText(command.insert)
   }
 
   function choose(q: Question, option: string) {
@@ -261,6 +310,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
                 onTryAgain={!thinking && !msg.streaming && (msg.error || i === lastReply) && messages.slice(0, i).some(m => m.role === 'user')
                   ? deeper => void tryAgain(msg.id, deeper) : undefined}
                 onReply={() => reply(msg)} busy={thinking} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
+                onRate={msg.role === 'assistant' && conversationId && !incognito && msg.jobId ? feedback => rate(msg.id, feedback) : undefined}
                 sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
             </Fragment>
           ))}
@@ -297,6 +347,22 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
               ))}
             </ul>
           )}
+          {mentionChoices.length > 0 && (
+            <ul role="listbox" aria-label="Specialists"
+              className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+              <li className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Who should answer</li>
+              {mentionChoices.map((a, i) => (
+                <li key={a.id} role="option" aria-selected={i === menuIndex}>
+                  <button type="button" onMouseEnter={() => setMenuIndex(i)} onMouseDown={e => e.preventDefault()} onClick={() => pickAgent(a)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${i === menuIndex ? 'bg-brand-50 dark:bg-brand-500/15' : ''}`}>
+                    <AgentLogo agentKey={a.key} size={18} />
+                    <span className="truncate font-medium text-gray-800 dark:text-gray-100">{a.name}</span>
+                    {a.domain && <span className="truncate text-xs text-gray-500 dark:text-gray-400">{a.domain}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {commands.length > 0 && (
             <ul role="listbox" aria-label="Shortcuts"
               className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
@@ -313,6 +379,17 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </ul>
           )}
           <ContextChip className="mb-1.5 px-1" />
+          {nextDeep && (
+            <div className="mb-1.5 px-1">
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 py-1 pl-2 pr-1 text-xs text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                <Sparkles className="h-3.5 w-3.5" /> Deeper model for the next message
+                <button type="button" aria-label="Use the usual model" onClick={() => setNextDeep(false)}
+                  className="grid h-4 w-4 place-items-center rounded text-brand-400 hover:bg-brand-100 hover:text-brand-700 dark:hover:bg-brand-500/20">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            </div>
+          )}
           {attachments.length > 0 && (
             <ul aria-label="Attached" className="mb-1.5 flex flex-wrap gap-1.5 px-1">
               {attachments.map(a => (
@@ -346,7 +423,16 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </div>
           )}
         </div>
-        <div className={`${width} flex items-end gap-2 rounded-2xl border border-gray-300 bg-white p-2 shadow-sm transition-all focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900`}>
+        <div
+          onDragOver={e => { if (hasFiles(e.dataTransfer)) { e.preventDefault(); setDragging(true) } }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => {
+            if (!hasFiles(e.dataTransfer)) return
+            e.preventDefault()
+            setDragging(false)
+            attach(Array.from(e.dataTransfer.files).map(fileAttachment))
+          }}
+          className={`${width} flex items-end gap-2 rounded-2xl border bg-white p-2 shadow-sm transition-all focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/15 dark:bg-gray-900 ${dragging ? 'border-brand-500 ring-4 ring-brand-500/15' : 'border-gray-300 dark:border-gray-700'}`}>
           <AttachMenu
             onFiles={() => fileInputRef.current?.click()}
             onSlash={openSlashMenu}
@@ -377,10 +463,26 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             rows={1}
             value={dictation.listening ? dictation.interim : input}
             onChange={e => setInput(e.target.value)}
+            onPaste={e => {
+              // Pasted files (a screenshot, a copied document) attach; pasted text stays text.
+              const files = Array.from(e.clipboardData?.files ?? [])
+              if (files.length === 0) return
+              e.preventDefault()
+              attach(files.map(fileAttachment))
+            }}
             placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : placeholder ?? (contextual ? 'Ask about this, or type / for shortcuts…' : 'Ask Jizza to do something… (/ for shortcuts)')}
             readOnly={dictation.listening}
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
             onKeyDown={e => {
+              if (mentionChoices.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMenuIndex(i => (i + (e.key === 'ArrowDown' ? 1 : mentionChoices.length - 1)) % mentionChoices.length)
+                  return
+                }
+                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); pickAgent(mentionChoices[menuIndex] ?? mentionChoices[0]); return }
+                if (e.key === 'Escape') { e.preventDefault(); setMentionClosed(true); return }
+              }
               if (runChoices.length > 0) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault()
@@ -414,7 +516,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
         </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
-            Enter to send · Shift+Enter for a new line · / for shortcuts · /run starts a workflow · + to add files or a folder · Ctrl+K opens Jizza anywhere
+            Enter to send · Shift+Enter for a new line · / for shortcuts · @ asks a specialist · /run starts a workflow · + to add files or a folder · Ctrl+K opens Jizza anywhere
           </p>
         )}
       </form>
@@ -422,7 +524,7 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onTryAgain, onReply, onEdit, sentToThread, busy }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onTryAgain, onReply, onEdit, onRate, sentToThread, busy }: {
   msg: AssistantMessage; compact: boolean; busy?: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
   /** Sends several ticked answers together. */
@@ -435,6 +537,8 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
   onEdit?: (text: string) => Promise<void>
   /** Jizza moved this message of the user's into a thread. */
   sentToThread?: boolean
+  /** A saved reply: thumbs up or down, with an optional reason. */
+  onRate?: (feedback: ReplyFeedback | null) => Promise<boolean>
 }) {
   const [editing, setEditing] = useState(false)
   // Which answer is shown when "Try again" left earlier ones: the latest unless the user paged back.
@@ -524,6 +628,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
           {msg.streaming && msg.text && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500/70" />}
           {msg.stopped && <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">Stopped</span>}
         </div>
+        {current && !msg.streaming && msg.sources && msg.sources.length > 0 && <Sources sources={msg.sources} />}
         {(versionCount > 1 || (!msg.streaming && msg.text && !msg.error) || onTryAgain) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {versionCount > 1 && !msg.streaming && (
@@ -531,6 +636,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
                 onPick={i => setShown(i >= versionCount - 1 ? null : i)} />
             )}
             {!msg.streaming && msg.text && !msg.error && <MessageActions text={shownText} onReply={onReply} align="start" />}
+            {!msg.streaming && msg.text && !msg.error && onRate && <FeedbackButtons feedback={msg.feedback} onRate={onRate} />}
             {onTryAgain && msg.error && (
               <button type="button" onClick={() => onTryAgain(false)}
                 className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
@@ -811,6 +917,28 @@ function EarlierNote({ summary }: { summary: string }) {
   )
 }
 
+/** A drag that carries files rather than text or a link. */
+function hasFiles(data: DataTransfer | null) {
+  return !!data && Array.from(data.types ?? []).includes('Files')
+}
+
+/** The web pages a reply drew on, as chips that open them. */
+function Sources({ sources }: { sources: WebSource[] }) {
+  return (
+    <ul className="flex flex-wrap gap-1.5" aria-label="Sources">
+      {sources.map(source => (
+        <li key={source.url} className="max-w-full">
+          <a href={source.url} target="_blank" rel="noopener noreferrer nofollow" title={source.url}
+            className="inline-flex max-w-[16rem] items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-brand-700 dark:hover:text-brand-300">
+            <Globe className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">{source.title}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /** "‹ 2 / 3 ›": pages between a reply's answers when "Try again" left earlier ones. */
 function VersionPager({ index, count, deep, onPick }: { index: number; count: number; deep?: boolean; onPick: (i: number) => void }) {
   return (
@@ -863,6 +991,65 @@ function MessageActions({ text, onReply, onEdit, align = 'end' }: { text: string
       {onEdit && <ActionButton label="Edit" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /></ActionButton>}
       <ActionButton label={copied ? 'Copied' : 'Copy'} onClick={copy}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</ActionButton>
     </div>
+  )
+}
+
+/**
+ * Thumbs up and down under a reply. A thumb saves at once and opens a line for why, which is
+ * optional; tapping the same thumb again takes it back. A reason in a thread is noted in its guide.
+ */
+function FeedbackButtons({ feedback, onRate }: { feedback?: ReplyFeedback; onRate: (f: ReplyFeedback | null) => Promise<boolean> }) {
+  const [asking, setAsking] = useState<'up' | 'down' | null>(null)
+  const [reason, setReason] = useState('')
+  const [failed, setFailed] = useState(false)
+  const pick = async (rating: 'up' | 'down') => {
+    setFailed(false)
+    if (feedback?.rating === rating) {
+      setAsking(null)
+      if (!(await onRate(null))) setFailed(true)
+      return
+    }
+    setReason('')
+    setAsking(rating)
+    if (!(await onRate({ rating }))) { setFailed(true); setAsking(null) }
+  }
+  const saveReason = async () => {
+    const why = reason.trim()
+    if (!asking) return
+    const rating = asking
+    setAsking(null)
+    if (why && !(await onRate({ rating, reason: why }))) setFailed(true)
+  }
+  const thumb = (rating: 'up' | 'down') => {
+    const on = feedback?.rating === rating
+    const Icon = rating === 'up' ? ThumbsUp : ThumbsDown
+    const label = rating === 'up' ? (on ? 'Remove "good reply"' : 'Good reply') : (on ? 'Remove "bad reply"' : 'Bad reply')
+    return (
+      <button type="button" onClick={() => void pick(rating)} aria-label={label} title={on && feedback?.reason ? `${label}: ${feedback.reason}` : label} aria-pressed={on}
+        className={`grid h-7 w-7 place-items-center rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${
+          on ? 'text-brand-600 dark:text-brand-300' : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+        <Icon className={`h-3.5 w-3.5 ${on ? 'fill-current' : ''}`} />
+      </button>
+    )
+  }
+  return (
+    <>
+      <div className={`flex items-center gap-0.5 transition-opacity ${feedback || asking ? '' : 'opacity-0 focus-within:opacity-100 group-hover/msg:opacity-100 [@media(hover:none)]:opacity-100'}`}>
+        {thumb('up')}
+        {thumb('down')}
+        {failed && <span className="text-xs text-red-600 dark:text-red-400">That did not save. Try again.</span>}
+      </div>
+      {asking && (
+        <form className="flex w-full items-center gap-1.5 animate-fade-in" onSubmit={e => { e.preventDefault(); void saveReason() }}>
+          <input autoFocus value={reason} onChange={e => setReason(e.target.value)} maxLength={500}
+            aria-label={asking === 'down' ? 'What was wrong with this reply' : 'What was good about this reply'}
+            placeholder={asking === 'down' ? 'What was wrong? (optional)' : 'What was good? (optional)'}
+            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setAsking(null) } }}
+            className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-900 focus:border-brand-400 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+          <button type="submit" aria-label={reason.trim() ? 'Send feedback' : 'Done'} className="rounded-lg bg-brand-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-600">{reason.trim() ? 'Send' : 'Done'}</button>
+        </form>
+      )}
+    </>
   )
 }
 

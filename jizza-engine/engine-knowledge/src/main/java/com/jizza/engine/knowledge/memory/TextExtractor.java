@@ -14,8 +14,9 @@ import org.apache.pdfbox.text.PDFTextStripper;
 /**
  * Pulls the readable text out of an uploaded file so its agent can search it.
  *
- * <p>Plain-text formats are decoded as UTF-8 and PDFs go through PDFBox. Anything else (images,
- * office files) yields nothing: the agent keeps the file, it just cannot read inside it yet.
+ * <p>Plain-text formats are decoded as UTF-8, PDFs go through PDFBox, and Word, Excel and
+ * PowerPoint files (.docx, .xlsx, .pptx) are read from their XML. Anything else (images, the older
+ * .doc and .xls formats) yields nothing: the agent keeps the file, it just cannot read inside it.
  * Extraction never fails an upload; an unreadable file is stored without text.
  */
 final class TextExtractor {
@@ -28,6 +29,10 @@ final class TextExtractor {
   private static final Set<String> TEXT_EXTENSIONS = Set.of(
       "txt", "md", "markdown", "csv", "tsv", "json", "xml", "yaml", "yml", "log");
 
+  static final String DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  static final String PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
   private TextExtractor() {}
 
   static String extract(String filename, String contentType, byte[] bytes) {
@@ -36,6 +41,12 @@ final class TextExtractor {
     String text = null;
     if (type.equals("application/pdf") || extension.equals("pdf")) {
       text = pdf(bytes);
+    } else if (extension.equals("docx") || type.equals(DOCX)) {
+      text = OfficeText.docx(bytes);
+    } else if (extension.equals("xlsx") || type.equals(XLSX)) {
+      text = OfficeText.xlsx(bytes);
+    } else if (extension.equals("pptx") || type.equals(PPTX)) {
+      text = OfficeText.pptx(bytes);
     } else if (type.startsWith("text/") || TEXT_TYPES.contains(type)
         || TEXT_EXTENSIONS.contains(extension)) {
       text = utf8(bytes);

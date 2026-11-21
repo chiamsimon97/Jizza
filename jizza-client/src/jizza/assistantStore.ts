@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyVersion, StartRunCard, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
+import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyFeedback, ReplyVersion, StartRunCard, WebSource, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -62,6 +62,10 @@ export interface AssistantMessage {
   versions?: ReplyVersion[]
   /** This answer came from the deeper model. */
   deep?: boolean
+  /** Web pages the reply searched, read or cited. */
+  sources?: WebSource[]
+  /** The user's thumbs up or down on this reply. */
+  feedback?: ReplyFeedback
   /** When the server stored it; messages sent this session have none. */
   createdAt?: string
 }
@@ -70,6 +74,8 @@ export interface AssistantMessage {
 export interface TurnExtras {
   depth?: 'deep'
   versions?: ReplyVersion[]
+  /** The specialist an "@Name" picked to answer this message itself. */
+  mention?: string
 }
 
 /** How many earlier answers a reply keeps, as the server does. */
@@ -144,6 +150,8 @@ interface AssistantState {
    * removed (on the server too), then the new text is sent in its place.
    */
   edit: (id: number, text: string) => Promise<void>
+  /** Thumbs up or down on a reply, with an optional reason; null takes it back. False when it did not save. */
+  rate: (id: number, feedback: ReplyFeedback | null) => Promise<boolean>
   stop: () => Promise<void>
   applyEvent: (event: ChatSocketEvent) => void
   /** {@code threads} starts it with threads on; a plain chat otherwise. */
@@ -430,6 +438,10 @@ export const useAssistantStore = create<AssistantState>()(
             if (e.payload.userMessageId) {
               set(s => ({ messages: s.messages.map(m => (m.role === 'user' && m.jobId === e.jobId && !m.serverId ? { ...m, serverId: e.payload.userMessageId } : m)) }))
             }
+            // And the reply's, so it can be rated.
+            if (e.payload.assistantMessageId) {
+              set(s => ({ messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId && !m.serverId ? { ...m, serverId: e.payload.assistantMessageId } : m)) }))
+            }
             break
           case 'delta':
             updateMessage(e.jobId, m => ({ ...m, text: m.streaming ? m.text + (e.payload.text ?? '') : m.text }))
@@ -448,7 +460,7 @@ export const useAssistantStore = create<AssistantState>()(
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors), ...(e.payload.sources?.length ? { sources: e.payload.sources as WebSource[] } : {}) }
                 : m)),
               lastReplyId: id,
               // A new thread belongs in the list straight away.
@@ -554,6 +566,7 @@ export const useAssistantStore = create<AssistantState>()(
                 ...(ctx.data ? (ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data) : {}), timeZone: viewerZone(),
                 ...(extras?.depth ? { depth: extras.depth } : {}),
                 ...(extras?.versions?.length ? { versions: extras.versions } : {}),
+                ...(extras?.mention ? { mention: extras.mention } : {}),
               },
               ...(incognito ? { incognito: true } : { conversationId }),
             })
@@ -587,6 +600,26 @@ export const useAssistantStore = create<AssistantState>()(
               }],
               lastReplyId: id,
             }))
+          }
+        },
+
+        rate: async (id, feedback) => {
+          const { messages, conversationId, incognito } = get()
+          const reply = messages.find(m => m.id === id && m.role === 'assistant')
+          if (!reply || !conversationId || incognito) return false
+          const before = reply.feedback
+          const put = (f: ReplyFeedback | undefined) =>
+            set(s => ({ messages: s.messages.map(m => (m.id === id ? { ...m, feedback: f } : m)) }))
+          put(feedback ?? undefined)
+          try {
+            const serverId = reply.serverId ?? (reply.jobId ? (await conversationsApi.messages(conversationId))
+              .find(m => m.role === 'assistant' && (m.jobId ?? m.metadata?.jobId) === reply.jobId)?.id : undefined)
+            if (!serverId) throw new Error('This reply is not saved yet')
+            await conversationsApi.feedback(conversationId, serverId, feedback?.rating ?? 'none', feedback?.reason)
+            return true
+          } catch {
+            put(before)
+            return false
           }
         },
 
@@ -718,7 +751,8 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
     text: m.content,
-    ...(m.role === 'user' ? { serverId: m.id } : {}),
+    serverId: m.id,
+    ...(m.metadata?.feedback ? { feedback: m.metadata.feedback } : {}),
     jobId: m.jobId ?? m.metadata?.jobId,
     streaming: m.status === 'streaming',
     error: m.status === 'failed',
@@ -736,6 +770,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
     ...(m.metadata?.versions?.length ? { versions: m.metadata.versions } : {}),
     ...(m.metadata?.deep ? { deep: true } : {}),
+    ...(m.metadata?.sources?.length ? { sources: m.metadata.sources } : {}),
     createdAt: m.createdAt,
   }
 }

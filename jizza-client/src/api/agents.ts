@@ -12,6 +12,12 @@ export const agentsApi = {
 
   get: (id: string) => api.get<AgentDto>(`/api/agents/${id}`),
 
+  /** Whether the agent may search the web and read pages; {@code available} is false when the server has web tools off. */
+  web: (id: string) => api.get<{ enabled: boolean; available: boolean }>(`/api/agents/${id}/web`),
+
+  setWeb: (id: string, enabled: boolean) =>
+    api.put<{ enabled: boolean; available: boolean }>(`/api/agents/${id}/web`, { enabled }),
+
   create: (body: AgentCreate) => api.post<AgentDto>('/api/agents', body),
 
   /** A gallery team or one Jizza proposed, under a manager (Jizza when left out). */

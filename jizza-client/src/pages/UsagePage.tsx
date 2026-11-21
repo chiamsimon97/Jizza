@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
-import { AlertTriangle, BarChart2, ChevronRight } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, BarChart2, ChevronRight, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { conversationsApi } from '@/api/conversations'
+import { AgentLogo } from '@/components/brand/AgentLogo'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -171,7 +173,69 @@ export function UsagePage() {
           </section>
         </div>
       )}
+
+      <ReplyQualitySection />
     </div>
+  )
+}
+
+/**
+ * How the user rated replies over the last 30 days: each agent's thumbs, most thumbs down first,
+ * and the latest rated replies with the reason given, each one tap from its chat.
+ */
+function ReplyQualitySection() {
+  const { data, isLoading } = useQuery({ queryKey: ['reply-quality'], queryFn: () => conversationsApi.quality(30), staleTime: 60_000 })
+  if (isLoading) return null
+  return (
+    <section className="mt-6" aria-labelledby="reply-quality">
+      <h2 id="reply-quality" className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Reply quality · last 30 days</h2>
+      {!data || data.agents.length === 0 ? (
+        <Card padding="md">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No rated replies yet. Use the thumbs under a reply in chat to say what worked and what didn't; the agents' scores show here.
+          </p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <Card padding="none" className="overflow-hidden">
+            <ul className="divide-y divide-gray-100 dark:divide-gray-800/70">
+              {data.agents.map(a => (
+                <li key={a.agentId ?? 'removed'} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  {a.key ? <AgentLogo agentKey={a.key} size={22} /> : <span className="h-[22px] w-[22px]" />}
+                  <span className="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-200">{a.name}</span>
+                  <span className="inline-flex items-center gap-1 tabular-nums text-emerald-600 dark:text-emerald-400" title="Good replies">
+                    <ThumbsUp className="h-3.5 w-3.5" />{a.up}
+                  </span>
+                  <span className="inline-flex w-12 items-center justify-end gap-1 tabular-nums text-red-600 dark:text-red-400" title="Bad replies">
+                    <ThumbsDown className="h-3.5 w-3.5" />{a.down}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Card padding="none" className="overflow-hidden">
+            <ul className="max-h-[28rem] divide-y divide-gray-100 overflow-y-auto dark:divide-gray-800/70">
+              {data.recent.map(r => (
+                <li key={r.messageId} className="flex items-start gap-2.5 px-3 py-2 text-xs">
+                  {r.rating === 'up'
+                    ? <ThumbsUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Good reply" />
+                    : <ThumbsDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600 dark:text-red-400" aria-label="Bad reply" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-gray-800 dark:text-gray-200">{r.reason ?? <span className="italic text-gray-500 dark:text-gray-400">No reason given</span>}</span>
+                    <span className="block truncate text-gray-400" title={r.excerpt}>{r.agentName}: “{r.excerpt}”</span>
+                  </span>
+                  <Link to={`/chat?conversationId=${r.conversationId}`} className="max-w-[10rem] shrink-0 truncate text-brand-600 hover:underline dark:text-brand-300"
+                    title={r.conversationTitle ?? 'Open the chat'}>
+                    {r.conversationTitle ?? 'Open chat'}
+                  </Link>
+                  {r.at && <span className="w-16 shrink-0 text-right text-gray-400" title={new Date(r.at).toLocaleString()}>{relativeTime(r.at)}</span>}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      )}
+    </section>
   )
 }
 

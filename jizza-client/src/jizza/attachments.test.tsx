@@ -11,7 +11,8 @@ vi.mock('@/api/chat', () => ({
     job: vi.fn(),
     uploadFile: vi.fn(async (file: File) => ({
       id: '11111111-2222-3333-4444-555555555555', name: file.name, contentType: file.type, sizeBytes: file.size,
-      text: file.type === 'application/pdf' ? 'Right eye 6/9, left eye 6/12' : '',
+      text: file.type === 'application/pdf' ? 'Right eye 6/9, left eye 6/12'
+        : file.name.endsWith('.xlsx') ? '## Sheet: Budget\nRent\t1200' : '',
     })),
   },
 }))
@@ -45,7 +46,7 @@ describe('Attachments', () => {
       fileAttachment(new File(['# Plan\nShip on Friday'], 'plan.md', { type: 'text/markdown' })),
       fileAttachment(new File([new Uint8Array([1, 2, 3])], 'eye test.pdf', { type: 'application/pdf' })),
       fileAttachment(new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })),
-      fileAttachment(new File([new Uint8Array([1, 2, 3])], 'deck.pptx', { type: 'application/vnd.ms-powerpoint' })),
+      fileAttachment(new File([new Uint8Array([1, 2, 3])], 'logo.sketch', { type: 'application/octet-stream' })),
     ])
     expect(chatApi.uploadFile).toHaveBeenCalledTimes(2)
     expect(message).toContain('<attachment kind="file" name="plan.md">\n# Plan\nShip on Friday\n</attachment>')
@@ -54,8 +55,32 @@ describe('Attachments', () => {
     expect(message).toContain("can't open this kind of file yet")
     expect(splitAttachments(message)).toMatchObject({
       text: 'Summarise these',
-      attachments: [{ kind: 'file', name: 'plan.md' }, { kind: 'file', name: 'eye test.pdf' }, { kind: 'image', name: 'photo.png' }, { kind: 'file', name: 'deck.pptx' }],
+      attachments: [{ kind: 'file', name: 'plan.md' }, { kind: 'file', name: 'eye test.pdf' }, { kind: 'image', name: 'photo.png' }, { kind: 'file', name: 'logo.sketch' }],
     })
+  })
+
+  it('read Word, Excel and PowerPoint files on the server and put their text in the message', async () => {
+    const sheet = new File(['PK'], 'budget.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const message = await withAttachments('Check my budget', [fileAttachment(sheet)])
+    expect(chatApi.uploadFile).toHaveBeenCalledWith(sheet)
+    expect(message).toContain('<attachment kind="file" name="budget.xlsx">\n## Sheet: Budget\nRent\t1200\n</attachment>')
+    // Its text is all the model needs: no reference to the stored file.
+    expect(message).not.toContain('ref="')
+  })
+
+  it('attach files dropped on the message box', async () => {
+    wrap(<Conversation onOpenJob={() => {}} />)
+    const note = new File(['Buy milk'], 'list.txt', { type: 'text/plain' })
+    const target = screen.getByPlaceholderText(/Ask Jizza/).closest('div')!
+    fireEvent.drop(target, { dataTransfer: { files: [note], types: ['Files'] } })
+    expect(await screen.findByText('list.txt')).toBeInTheDocument()
+  })
+
+  it('attach files pasted into the message box', async () => {
+    wrap(<Conversation onOpenJob={() => {}} />)
+    const shot = new File(['img'], 'screenshot.png', { type: 'image/png' })
+    fireEvent.paste(screen.getByPlaceholderText(/Ask Jizza/), { clipboardData: { files: [shot] } })
+    expect(await screen.findByText('screenshot.png')).toBeInTheDocument()
   })
 
   it('send a PDF by name when its upload fails', async () => {

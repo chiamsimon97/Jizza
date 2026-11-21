@@ -41,6 +41,19 @@ class JobSummariesTest {
   }
 
   @Test
+  void countsTheWebPagesLookedAtOnceEach() {
+    var first = Json.obj();
+    first.putArray("sources").addObject().put("url", "https://a.example").put("title", "A");
+    var second = Json.obj();
+    var list = second.putArray("sources");
+    list.addObject().put("url", "https://a.example").put("title", "A");
+    list.addObject().put("url", "https://b.example").put("title", "B");
+    add(ActivityTypes.WEB_SOURCES, "Jizza", first);
+    add(ActivityTypes.WEB_SOURCES, "Jizza", second);
+    assertThat(JobSummaries.summarize(events)).isEqualTo("Looked at 2 web pages.");
+  }
+
+  @Test
   void endsWithWhyItStoppedAndWhatIsWaitingOnTheUser() {
     add(ActivityTypes.APPROVAL_REQUIRED, "Cato", Json.obj().put("label", "Send email"));
     add(ActivityTypes.JOB_CANCELLED, null, Json.obj());

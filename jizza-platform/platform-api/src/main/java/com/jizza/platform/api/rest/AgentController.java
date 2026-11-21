@@ -264,6 +264,20 @@ public class AgentController {
     return custom.tryOut(CurrentUser.userId(), id, body.message());
   }
 
+  /** Whether the agent may search the web and read pages. */
+  @GetMapping("/{id}/web")
+  public AgentAdminUseCase.WebAccess webAccess(@PathVariable UUID id) {
+    return admin.webAccess(CurrentUser.userId(), id);
+  }
+
+  @PutMapping("/{id}/web")
+  @RequiresPermission(Permissions.AGENT_MODIFY)
+  public AgentAdminUseCase.WebAccess setWebAccess(@PathVariable UUID id, @RequestBody WebAccessBody body) {
+    return admin.setWebAccess(CurrentUser.userId(), id, body.enabled());
+  }
+
+  public record WebAccessBody(boolean enabled) {}
+
   @GetMapping("/{id}/modes")
   public List<CustomAgentUseCase.ModeLine> modes(@PathVariable UUID id) {
     return custom.modes(CurrentUser.userId(), id);

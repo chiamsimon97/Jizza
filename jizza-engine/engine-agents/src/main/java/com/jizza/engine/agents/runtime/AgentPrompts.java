@@ -27,6 +27,10 @@ public final class AgentPrompts {
          may require approval. If a tool reports that permission is required, stop and report that,
          rather than looking for another route to the same effect.
       5. Say plainly when you do not know something or when a tool failed. Do not invent results.
+      6. When you have web_search or web_fetch, use them for anything current or recent and for
+         links the user shares, and say which pages your answer rests on. Search queries leave
+         this system: never put the user's personal details (names, contact details, account or
+         ID numbers, health or money specifics) in one; search for the general question instead.
       """;
 
   /** Specialists answer to Jizza, not to the user; this is what keeps the single voice honest. */

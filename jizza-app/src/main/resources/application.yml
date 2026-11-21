@@ -176,6 +176,15 @@ jizza:
       inline-context:
         enabled: ${JIZZA_LLM_INLINE_CONTEXT:true}
         models: [claude-opus-4-8, claude-opus-5, claude-sonnet-5-5, claude-haiku-5, claude-fable, claude-mythos]
+      # Searching the web and reading pages, with the provider's own tools. Each agent can have it
+      # turned off on its page. Sites in blocked-domains are never searched or read (plain host
+      # names, comma separated, subdomains included). Each search is billed by the provider.
+      web:
+        enabled: ${JIZZA_WEB_TOOLS:true}
+        max-searches: ${JIZZA_WEB_MAX_SEARCHES:5}
+        max-fetches: ${JIZZA_WEB_MAX_FETCHES:5}
+        max-page-tokens: 20000
+        blocked-domains: ${JIZZA_WEB_BLOCKED_DOMAINS:}
       # How hard each tier thinks (low, medium, high, xhigh, max; blank = the model's default).
       # Quick turns stay quick; Jizza's usual turns call several tools, which medium suits.
       effort:

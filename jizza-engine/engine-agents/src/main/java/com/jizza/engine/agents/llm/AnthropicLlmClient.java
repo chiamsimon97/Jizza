@@ -392,7 +392,16 @@ public class AnthropicLlmClient implements LlmClient {
             case "signature_delta" -> {
               if (block != null) block.put("signature", delta.path("signature").asText());
             }
-            default -> { /* citations and anything newer are not used here */ }
+            // Where a sentence came from (a page the model searched or read), kept on its text
+            // block so the reply's sources can be shown and the block goes back as it came.
+            case "citations_delta" -> {
+              if (block != null && delta.has("citation")) {
+                ArrayNode citations = block.has("citations") && block.get("citations").isArray()
+                    ? (ArrayNode) block.get("citations") : block.putArray("citations");
+                citations.add(delta.get("citation").deepCopy());
+              }
+            }
+            default -> { /* anything newer is not used here */ }
           }
         }
         case "message_delta" -> {
@@ -438,8 +447,8 @@ public class AnthropicLlmClient implements LlmClient {
         }
         content.add(block);
       });
-      return new LlmResponse(text.toString(), calls, stopReason, inputTokens, outputTokens, model,
-          cacheReadTokens, cacheWriteTokens, content);
+      return new LlmResponse(answerText(content, text.toString()), calls, stopReason, inputTokens,
+          outputTokens, model, cacheReadTokens, cacheWriteTokens, content);
     }
   }
 
@@ -502,6 +511,11 @@ public class AnthropicLlmClient implements LlmClient {
       ordered.sort(Comparator.comparing(ToolSpec::name));
       boolean defer = shouldDefer(ordered);
       for (ToolSpec spec : ordered) {
+        if (spec.serverTool()) {
+          ObjectNode server = serverTool(spec.name(), model);
+          if (server != null) apiTools.add(server);
+          continue;
+        }
         ObjectNode tool = apiTools.addObject();
         tool.put("name", spec.name());
         tool.put("description", spec.description() == null ? "" : spec.description());
@@ -541,6 +555,60 @@ public class AnthropicLlmClient implements LlmClient {
     // too; a one-off question is not, since nothing would ever read it back.
     if (inToolLoop) body.set("cache_control", ephemeral());
     return body;
+  }
+
+  /**
+   * The reply's words. When the model searched or read the web inside the reply, what it wrote
+   * before that ("Let me look that up") was narration: the answer is what came after the last page.
+   */
+  static String answerText(List<JsonNode> content, String all) {
+    int lastWeb = -1;
+    for (int i = 0; i < content.size(); i++) {
+      String type = content.get(i).path("type").asText();
+      if ("web_search_tool_result".equals(type) || "web_fetch_tool_result".equals(type)) lastWeb = i;
+    }
+    if (lastWeb < 0) return all;
+    StringBuilder after = new StringBuilder();
+    for (int i = lastWeb + 1; i < content.size(); i++) {
+      JsonNode block = content.get(i);
+      if ("text".equals(block.path("type").asText())) after.append(block.path("text").asText());
+    }
+    return after.toString().isBlank() ? all : after.toString();
+  }
+
+  static final String WEB_SEARCH_TYPE = "web_search_20260209";
+  static final String WEB_FETCH_TYPE = "web_fetch_20260209";
+  static final String WEB_SEARCH_BASIC_TYPE = "web_search_20250305";
+  static final String WEB_FETCH_BASIC_TYPE = "web_fetch_20250910";
+
+  /**
+   * The provider's own web search or page reader, as the provider names it for this model: newer
+   * models take the variant that filters what it reads first. Null when web tools are switched off.
+   */
+  ObjectNode serverTool(String name, String model) {
+    AgentProperties.Web web = props.getAnthropic().getWeb();
+    if (!web.isEnabled()) return null;
+    boolean filtering = AgentProperties.matches(model, web.getFilteringModels());
+    ObjectNode tool = Json.obj();
+    if (ToolSpec.WEB_SEARCH.equals(name)) {
+      tool.put("type", filtering ? WEB_SEARCH_TYPE : WEB_SEARCH_BASIC_TYPE).put("name", name)
+          .put("max_uses", web.getMaxSearches());
+    } else if (ToolSpec.WEB_FETCH.equals(name)) {
+      tool.put("type", filtering ? WEB_FETCH_TYPE : WEB_FETCH_BASIC_TYPE).put("name", name)
+          .put("max_uses", web.getMaxFetches())
+          .put("max_content_tokens", web.getMaxPageTokens());
+      tool.putObject("citations").put("enabled", true);
+    } else {
+      return null;
+    }
+    List<String> blocked = web.getBlockedDomains().stream()
+        .map(d -> d == null ? "" : d.trim().toLowerCase(java.util.Locale.ROOT))
+        .filter(d -> !d.isEmpty()).distinct().toList();
+    if (!blocked.isEmpty()) {
+      ArrayNode list = tool.putArray("blocked_domains");
+      blocked.forEach(list::add);
+    }
+    return tool;
   }
 
   /** The effort level set for the tier this model serves, when the model accepts one. */
@@ -762,7 +830,7 @@ public class AnthropicLlmClient implements LlmClient {
     JsonNode usage = response.path("usage");
     int cacheRead = usage.path("cache_read_input_tokens").asInt();
     int cacheWrite = usage.path("cache_creation_input_tokens").asInt();
-    return new LlmResponse(text.toString(), calls,
+    return new LlmResponse(answerText(content, text.toString()), calls,
         response.path("stop_reason").asText(null),
         usage.path("input_tokens").asInt() + cacheRead + cacheWrite,
         usage.path("output_tokens").asInt(),

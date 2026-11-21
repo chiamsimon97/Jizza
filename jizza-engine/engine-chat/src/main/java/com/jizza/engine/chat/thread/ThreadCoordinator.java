@@ -68,6 +68,8 @@ public class ThreadCoordinator {
         the lead's key, a title of two to six words naming the purpose (with the person's name when
         it is not the user), and a topic: one or two sentences on whose matter it is and what they
         want.
+      - A message that asks for a new thread ("start a thread about …") is "new" unless a listed
+        thread already has that exact purpose; then it is "thread".
       - "main": small talk, thanks, questions about the Jizza app itself, a request that spans
         several specialists' areas, or anything you are unsure of.
 

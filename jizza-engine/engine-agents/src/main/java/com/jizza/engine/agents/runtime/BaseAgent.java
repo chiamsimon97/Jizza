@@ -213,6 +213,7 @@ public class BaseAgent implements Agent {
         Activity.checkCancelled();
 
         if (response.text() != null && !response.text().isBlank()) lastText = response.text();
+        webSources(response, agent);
         if (response.paused() && !response.wantsTools()) {
           // The provider paused its own work part-way; sending its reply back lets it carry on.
           messages.add(Msg.assistantTurn(response));
@@ -255,6 +256,17 @@ public class BaseAgent implements Agent {
       return new AgentResult(agent.getId(), agent.getName(), text, callsMade, true,
           inputTokens, outputTokens, null);
     }
+  }
+
+  /** The pages a reply searched, read or cited, for the chat to show under it. */
+  private static void webSources(LlmResponse response, AgentEntity agent) {
+    List<com.jizza.engine.api.llm.WebSources.Source> sources =
+        com.jizza.engine.api.llm.WebSources.from(response.providerContent());
+    if (sources.isEmpty()) return;
+    Activity.emit(ActivityTypes.WEB_SOURCES, agent.getId(), agent.getName(), p -> {
+      var list = p.putArray("sources");
+      sources.forEach(source -> list.addObject().put("url", source.url()).put("title", source.title()));
+    });
   }
 
   /** One model call, observed: which model, which round, and what it cost in tokens. */

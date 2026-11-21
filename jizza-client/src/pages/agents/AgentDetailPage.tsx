@@ -328,6 +328,7 @@ function Tools({ agent }: { agent: AgentDto }) {
         </ul>
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Section>
+      <WebAccess agent={agent} />
       <McpServersFor agent={agent} />
       <Section title="Add a tool">
         <ul className="flex max-h-96 flex-col gap-1 overflow-y-auto">
@@ -341,6 +342,29 @@ function Tools({ agent }: { agent: AgentDto }) {
         </ul>
       </Section>
     </div>
+  )
+}
+
+/** Searching the web and reading pages, on unless the user turns it off for this agent. */
+function WebAccess({ agent }: { agent: AgentDto }) {
+  const qc = useQueryClient()
+  const canModify = usePermission(PERMISSIONS.AGENT_MODIFY)
+  const { data } = useQuery({ queryKey: ['agent-web', agent.id], queryFn: () => agentsApi.web(agent.id) })
+  const save = useMutation({
+    mutationFn: (on: boolean) => agentsApi.setWeb(agent.id, on),
+    onSuccess: result => qc.setQueryData(['agent-web', agent.id], result),
+  })
+  if (!data) return null
+  return (
+    <Section title="The web" hint="Searches and pages are read by the model provider. Searches never include your personal details.">
+      <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+        <input type="checkbox" checked={data.enabled} disabled={!canModify || save.isPending || !data.available}
+          onChange={e => save.mutate(e.target.checked)} />
+        Search the web and read pages, and show the sources under each reply
+      </label>
+      {!data.available && <p className="mt-2 text-xs text-gray-500">Web search is switched off on this server.</p>}
+      {save.error && <p className="mt-2 text-sm text-red-600">{errorText(save.error, 'Could not change it')}</p>}
+    </Section>
   )
 }
 

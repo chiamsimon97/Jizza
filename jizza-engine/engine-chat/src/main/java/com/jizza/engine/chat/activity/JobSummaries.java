@@ -22,6 +22,7 @@ public final class JobSummaries {
     Set<String> approvals = new LinkedHashSet<>();
     int memories = 0;
     int otherTools = 0;
+    Set<String> pages = new LinkedHashSet<>();
     String lastToolAgent = null;
     String outcome = null;
 
@@ -46,6 +47,8 @@ public final class JobSummaries {
           otherTools--;
         }
         case ActivityTypes.MEMORY_USED -> memories += e.payload().path("count").asInt();
+        case ActivityTypes.WEB_SOURCES -> e.payload().path("sources")
+            .forEach(source -> pages.add(source.path("url").asText()));
         case ActivityTypes.APPROVAL_REQUIRED -> approvals.add(e.payload().path("label").asText());
         case ActivityTypes.JOB_FAILED -> outcome = "Stopped: " + e.payload().path("detail").asText();
         case ActivityTypes.JOB_CANCELLED -> outcome = "Stopped by you.";
@@ -57,6 +60,9 @@ public final class JobSummaries {
     if (!asked.isEmpty()) parts.add("Asked " + join(new ArrayList<>(asked)) + ".");
     if (!calls.isEmpty()) parts.add(capitalize(join(new ArrayList<>(calls))) + ".");
     if (otherTools > 0) parts.add("Used " + otherTools + (otherTools == 1 ? " tool." : " tools."));
+    if (!pages.isEmpty()) {
+      parts.add("Looked at " + pages.size() + (pages.size() == 1 ? " web page." : " web pages."));
+    }
     if (memories > 0) parts.add("Used " + memories + (memories == 1 ? " memory." : " memories."));
     if (!approvals.isEmpty()) parts.add("Waiting for your approval: " + join(new ArrayList<>(approvals)) + ".");
     if (outcome != null) parts.add(outcome);

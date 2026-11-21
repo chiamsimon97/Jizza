@@ -122,6 +122,22 @@ public class ConversationController {
     return org.springframework.http.ResponseEntity.noContent().build();
   }
 
+  /** The user's thumbs up or down on a reply, with an optional reason; rating "none" takes it back. */
+  @org.springframework.web.bind.annotation.PutMapping("/{id}/messages/{messageId}/feedback")
+  public org.springframework.http.ResponseEntity<Void> feedback(@PathVariable UUID id, @PathVariable UUID messageId,
+                                                                @RequestBody FeedbackBody body) {
+    conversations.feedback(CurrentUser.userId(), id, messageId, body.rating(), body.reason());
+    return org.springframework.http.ResponseEntity.noContent().build();
+  }
+
+  public record FeedbackBody(String rating, String reason) {}
+
+  /** How the user rated replies over the last {@code days} days: per agent, and the latest ones. */
+  @GetMapping("/feedback")
+  public com.jizza.engine.api.dto.ReplyQualityDto quality(@RequestParam(defaultValue = "30") int days) {
+    return conversations.quality(CurrentUser.userId(), days);
+  }
+
   /** A thread's learning file. */
   @GetMapping("/{id}/guide")
   public com.jizza.engine.api.dto.ThreadGuideDto guide(@PathVariable UUID id) {
