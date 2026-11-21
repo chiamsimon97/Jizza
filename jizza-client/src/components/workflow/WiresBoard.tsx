@@ -112,6 +112,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const grab = useRef<{ key: string; bases: Map<string, Box>; sx: number; sy: number; moved: boolean } | null>(null)
   /** Steps Shift+clicked to group them. */
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  /** A box being dragged on empty space to pick the steps it touches, in board coordinates. */
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; add: boolean } | null>(null)
+  const marqueeDone = useRef(false)
   /** On a read-only board folding a group is only for the viewer. */
   const [viewFolds, setViewFolds] = useState<Map<string, boolean>>(() => new Map())
   const justMoved = useRef(false)
@@ -239,7 +242,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   // ---- Hover --------------------------------------------------------------------------------
 
-  const quiet = !readOnly && !dragging && !moving && preview === null && !pending && !labelFor && !picker
+  const quiet = !readOnly && !dragging && !moving && !marquee && preview === null && !pending && !labelFor && !picker
   const wireOn = (k: string) => { window.clearTimeout(wireTimer.current); setHoverWire(k) }
   const wireOff = () => { window.clearTimeout(wireTimer.current); wireTimer.current = window.setTimeout(() => setHoverWire(null), 200) }
   const stepOn = (id: string) => { window.clearTimeout(stepTimer.current); setHoverStep(id) }
@@ -422,7 +425,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   // ---- Status -------------------------------------------------------------------------------
 
   const ranCount = view ? [...view.nodes.values()].filter(s => s === 'done').length : 0
-  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, or drop a new one onto a step or a wire. Hover for options.')
+  let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, drag on empty space to pick steps, or drop a new one onto a step or a wire.')
+  if (marquee) status = 'Let go to pick the steps inside the box. Hold Shift to add to the steps already picked.'
   if (!toast && picked.size) status = `${picked.size} ${picked.size === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`
   if (moving) status = moving.size > 1 ? 'Let go to put the group here.' : 'Let go to put the step here. Auto align lines everything up again.'
   if (pending) status = `Click the step that comes after “${byId.get(pending.from)?.label}”${pending.branch ? ` (${exitLabel(pending.branch, byId.get(pending.from))})` : ''}. Esc cancels.`
@@ -550,8 +554,45 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
           style={{ backgroundImage: 'radial-gradient(rgb(var(--gray-300)) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
           onDragOver={onDragOver} onDrop={onDrop}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setSuggest(null) }}
-          onClick={e => { if (e.target === e.currentTarget || e.target === content.current) { setSelected(null); setPending(null) } }}>
-          <div ref={content} className="relative mx-auto select-none" style={{ width: layout.width, height: layout.height }}>
+          onClick={e => {
+            if (marqueeDone.current) { marqueeDone.current = false; return }
+            if (e.target === e.currentTarget || e.target === content.current) { setSelected(null); setPending(null); setPicked(new Set()) }
+          }}>
+          <div ref={content} className="relative mx-auto select-none" style={{ width: layout.width, height: layout.height, touchAction: marquee ? 'none' : undefined }}
+            onPointerDown={e => {
+              // Dragging on empty space draws a box; the steps it touches are picked (Shift adds to them).
+              if (readOnly || pending || preview !== null || e.button !== 0 || e.target !== content.current) return
+              const p = boardPoint(e)
+              if (!p) return
+              setMarquee({ x1: p.x, y1: p.y, x2: p.x, y2: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey })
+              e.currentTarget.setPointerCapture?.(e.pointerId)
+            }}
+            onPointerMove={e => {
+              if (!marquee) return
+              const p = boardPoint(e)
+              if (p) setMarquee({ ...marquee, x2: p.x, y2: p.y })
+            }}
+            onPointerUp={() => {
+              if (!marquee) return
+              const m = marquee
+              setMarquee(null)
+              const [l, r] = [Math.min(m.x1, m.x2), Math.max(m.x1, m.x2)]
+              const [t, b] = [Math.min(m.y1, m.y2), Math.max(m.y1, m.y2)]
+              if (r - l < 4 && b - t < 4) return
+              marqueeDone.current = true
+              const hit = graph.nodes.filter(n => {
+                const box = layout.at.get(n.id)
+                return box && n.type !== 'TRIGGER' && box.x < r && box.x + CARD_W > l && box.y < b && box.y + CARD_H > t
+              }).map(n => n.id)
+              setPicked(prev => new Set([...(m.add ? prev : []), ...hit]))
+              setSelected(null)
+              if (hit.length) flash(`${hit.length} ${hit.length === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`)
+            }}
+            onPointerCancel={() => setMarquee(null)}>
+            {marquee && (
+              <div aria-hidden className="pointer-events-none absolute z-40 rounded-md border border-brand-500 bg-brand-500/10"
+                style={{ left: Math.min(marquee.x1, marquee.x2), top: Math.min(marquee.y1, marquee.y2), width: Math.abs(marquee.x2 - marquee.x1), height: Math.abs(marquee.y2 - marquee.y1) }} />
+            )}
 
             <svg width={layout.width} height={layout.height} className="pointer-events-none absolute inset-0 overflow-visible">
               {[...routes.entries()].map(([k, r]) => {

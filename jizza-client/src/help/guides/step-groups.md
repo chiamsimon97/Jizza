@@ -52,7 +52,7 @@ Right-click a step in an unlocked group and choose **Remove from group** to take
 
 Groups show in the **Wires** view too, with the same title bar. They are the same groups as on the Canvas, so a group made, locked or folded in one view looks the same in the other.
 
-- **Make a group:** Shift+click each step, then press **Ctrl+G** (**⌘+G** on a Mac) or click **Group** at the top.
+- **Make a group:** pick the steps by dragging a box around them on empty space (hold Shift to add more), or Shift+click each step. Then press **Ctrl+G** (**⌘+G** on a Mac) or click **Group** at the top.
 - **Rename:** double-click the title bar.
 - **Lock, fold, ungroup:** use the padlock, the arrow, and the ungroup button on the title bar.
 - **Move:** drag the title bar to move the whole group. In a locked group, dragging any of its steps moves the whole group too.

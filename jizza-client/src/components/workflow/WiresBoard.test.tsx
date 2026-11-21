@@ -175,6 +175,20 @@ describe('WiresBoard', () => {
       expect((onChange.mock.calls.at(-1)![0] as CanvasGraph).groups![0].locked).toBe(false)
     })
 
+    it('picks the steps inside a box dragged on empty space, then groups them', () => {
+      const { view, last } = show()
+      const board = view.container.querySelector('[role="region"] > div') as HTMLElement
+      board.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000, width: 2000, height: 2000, x: 0, y: 0, toJSON: () => ({}) })
+      const layout = wiresLayout(booking())
+      const open = layout.at.get('open')!
+      const ok = layout.at.get('ok')!
+      pointer('pointerDown', board, open.x - 10, open.y - 10)
+      pointer('pointerMove', board, ok.x + 20, ok.y + 20)
+      pointer('pointerUp', board, ok.x + 20, ok.y + 20)
+      fireEvent.click(screen.getByRole('button', { name: /^Group 2$/ }))
+      expect(last().groups![0].nodes.sort()).toEqual(['ok', 'open'])
+    })
+
     it('folds a group into one card that its wires meet', () => {
       const { last } = show(grouped(false, true))
       expect(screen.queryByRole('button', { name: 'Notify me: Open the site' })).not.toBeInTheDocument()
