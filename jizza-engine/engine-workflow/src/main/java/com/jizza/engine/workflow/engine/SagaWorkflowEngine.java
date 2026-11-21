@@ -1312,7 +1312,7 @@ public class SagaWorkflowEngine implements WorkflowEngine,
       ArrayNode back = backChoices(run, context, nodeId);
       if (back != null) detail.set(GoBack.ANSWER, back);
       bus.raise(kind, owningAgentOf(run), NotificationContext.forRun(run.getUserId(),
-          prompt == null ? "This run needs your input to continue." : prompt,
+          prompt == null ? "This run needs your input to continue." : named(run, nodeId, prompt),
           detail, run.getId()));
     } else {
       log.warn("Run {} paused at {} but the notification bus is unavailable, so nobody was told",
@@ -1320,6 +1320,15 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     }
     audit.record(run.getUserId(), ActorType.SYSTEM, owningAgentOf(run), "run.paused",
         run.getId().toString(), Json.obj().put("node", nodeId).put("reason", reason));
+  }
+
+  /** "This step needs…" says which step of which workflow, so the card reads on its own. */
+  private String named(WorkflowRunEntity run, String nodeId, String prompt) {
+    if (!prompt.startsWith("This step ")) return prompt;
+    String workflow = workflows.findById(run.getWorkflowId()).map(WorkflowEntity::getName).orElse(null);
+    String step = labelOf(run, nodeId);
+    String who = "Step \"" + step + "\"" + (workflow == null ? "" : " of workflow \"" + workflow + "\"");
+    return who + " " + prompt.substring("This step ".length());
   }
 
   /** The earlier steps a question offers to go back to (Allow going back); null for none. */
@@ -1338,6 +1347,10 @@ public class SagaWorkflowEngine implements WorkflowEngine,
     ObjectNode detail = Json.obj();
     if (extra != null && extra.isObject()) detail.setAll((ObjectNode) extra.deepCopy());
     detail.put("node", nodeId).put("workflowId", run.getWorkflowId().toString());
+    // So the card can say which workflow and which step in words, not by id.
+    workflows.findById(run.getWorkflowId()).ifPresent(w -> detail.put("workflowName", w.getName()));
+    String label = labelOf(run, nodeId);
+    if (label != null && !label.equals(nodeId)) detail.put("nodeLabel", label);
     if (ifNoAnswer != null) {
       detail.put("failedStep", true);
       ArrayNode choices = detail.putArray("choices");

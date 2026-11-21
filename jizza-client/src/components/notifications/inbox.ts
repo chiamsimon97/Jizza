@@ -257,7 +257,9 @@ export function detailsOf(n: NotificationDto): { label: string; value: string }[
   add('Asked for', c.what)
   add('Why', c.why ?? c.reason)
   add('Guardrail', c.guardrail)
-  add('Workflow step', c.node)
+  add('Workflow', c.workflowName)
+  // The step by its name when the workflow gave it one; older cards only know its id.
+  add('Step', c.nodeLabel ?? c.node)
   add('Version', c.version)
   if (typeof c.deadline === 'string') rows.push({ label: 'Deadline', value: new Date(c.deadline).toLocaleString() })
   return rows

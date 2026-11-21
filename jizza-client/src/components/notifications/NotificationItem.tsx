@@ -219,6 +219,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
               {n.workflowId && n.kind === 'WORKFLOW_REVIEW' && <Link to="/procedures" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><GitBranch className="h-3.5 w-3.5" />See it in Procedures</Link>}
               {fixLink && <Link to={fixLink} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><Wrench className="h-3.5 w-3.5" />Review fix</Link>}
               {n.workflowId && n.kind !== 'WORKFLOW_REVIEW' && !fixLink && <Link to={`/workflows?open=${n.workflowId}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><GitBranch className="h-3.5 w-3.5" />Open the workflow</Link>}
+              {n.workflowId && n.kind !== 'WORKFLOW_REVIEW' && !fixLink && typeof n.context?.node === 'string' && <Link to={`/workflows?open=${n.workflowId}&node=${encodeURIComponent(n.context.node)}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><Wrench className="h-3.5 w-3.5" />Open this step</Link>}
               {n.taskId && <Link to="/tasks" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><ListTodo className="h-3.5 w-3.5" />Open tasks</Link>}
             </div>
           )}
