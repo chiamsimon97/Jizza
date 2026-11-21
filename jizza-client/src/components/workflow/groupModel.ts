@@ -211,3 +211,38 @@ export function groupBounds(
   if (group.collapsed) return { x, y, width: GROUP_FOLDED_W, height: GROUP_FOLDED_H }
   return { x, y, width: maxX - minX + GROUP_PAD * 2, height: maxY - minY + GROUP_PAD * 2 + GROUP_HEADER }
 }
+
+/**
+ * The graph as it looks with some groups folded: each folded group becomes one stand-in step under
+ * the group's id, wires inside it go, and wires into and out of its steps meet the stand-in. Used to
+ * lay out the Wires view; {@code into} says which group each hidden step went into.
+ */
+export function foldedGraph(graph: CanvasGraph, folded: (groupId: string) => boolean): { graph: CanvasGraph; into: Map<string, string> } {
+  const into = new Map<string, string>()
+  const standIns: CanvasNode[] = []
+  for (const g of groupsOf(graph)) {
+    if (!folded(g.id)) continue
+    const members = graph.nodes.filter(n => g.nodes.includes(n.id))
+    if (!members.length) continue
+    members.forEach(n => into.set(n.id, g.id))
+    const first = members[0]
+    standIns.push({
+      id: g.id, type: 'TRANSFORM', label: g.title, x: first.x, y: first.y,
+      config: first.config.wiresAt ? { wiresAt: first.config.wiresAt } : {},
+    })
+  }
+  if (!into.size) return { graph, into }
+  const seen = new Set<string>()
+  const edges: CanvasEdge[] = []
+  for (const e of graph.edges) {
+    const from = into.get(e.from) ?? e.from
+    const to = into.get(e.to) ?? e.to
+    if (from === to) continue
+    const branch = into.has(e.from) ? null : e.branch
+    const key = `${from}>${branch ?? ''}>${to}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    edges.push({ from, to, branch })
+  }
+  return { graph: { ...graph, nodes: [...graph.nodes.filter(n => !into.has(n.id)), ...standIns], edges }, into }
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, Check, ChevronDown, Copy, Globe, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, X } from 'lucide-react'
+import { AlertCircle, ArrowDown, Check, ChevronDown, ChevronRight, Copy, Globe, Group, Lock, LockOpen, Pencil, Play, Plus, Scissors, Search, Sparkles, Tag, Trash2, Ungroup, X } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
 import { mcpApi } from '@/api/mcp'
 import { functionsApi, type ScriptFunction } from '@/api/functions'
@@ -13,10 +13,10 @@ import {
 import { NODE_ICON, StepPicker, exitLabel, summarise, type StepRun } from './canvasParts'
 import { CanvasInspector, type WorkflowOption } from './CanvasInspector'
 import { RUN_LABEL, loadTools, runState } from './WorkflowCanvas'
-import { lockedChange, lockedGroupOf, updateGroup } from './groupModel'
+import { createGroup, foldedGraph, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, ungroup, updateGroup, type StepGroup } from './groupModel'
 import {
   CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, route, setWireLabel, stepNumbers,
-  wireKey, wireLabel, wiresLayout, type Route,
+  wireKey, wireLabel, wiresLayout, type Box, type Route,
 } from './wiresModel'
 
 interface Props {
@@ -107,9 +107,13 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   const dragged = useRef<NodeType | PaletteEntry | null>(null)
   const [suggest, setSuggest] = useState<Suggestion | null>(null)
   const [dragging, setDragging] = useState(false)
-  /** A step being moved by hand: where it is under the pointer. */
-  const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null)
-  const grab = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
+  /** Steps being moved by hand (one, or a group's): where each is under the pointer. */
+  const [moving, setMoving] = useState<Map<string, Box> | null>(null)
+  const grab = useRef<{ key: string; bases: Map<string, Box>; sx: number; sy: number; moved: boolean } | null>(null)
+  /** Steps Shift+clicked to group them. */
+  const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  /** On a read-only board folding a group is only for the viewer. */
+  const [viewFolds, setViewFolds] = useState<Map<string, boolean>>(() => new Map())
   const justMoved = useRef(false)
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number>()
@@ -156,23 +160,37 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
   // ---- Layout and wires -------------------------------------------------------------------
 
   // While a step is being moved, everything (its wires too) is laid out with it where the pointer is.
-  const shown = useMemo(() => (moving ? placeStep(graph, moving.id, moving) : graph), [graph, moving])
-  const layout = useMemo(() => wiresLayout(shown), [shown])
+  const shown = useMemo(() => (moving ? [...moving].reduce((g, [id, at]) => placeStep(g, id, at), graph) : graph), [graph, moving])
+  const groups = groupsOf(graph)
+  const isFolded = useCallback((id: string) => {
+    if (readOnly && viewFolds.has(id)) return viewFolds.get(id)!
+    return !!groupsOf(graph).find(g => g.id === id)?.collapsed
+  }, [graph, readOnly, viewFolds])
+  // A folded group is laid out as one step standing in for its steps.
+  const foldView = useMemo(() => foldedGraph(shown, isFolded), [shown, isFolded])
+  const into = foldView.into
+  const layout = useMemo(() => wiresLayout(foldView.graph), [foldView])
   const arranged = useMemo(() => isArranged(graph), [graph])
   const byId = useMemo(() => new Map(graph.nodes.map(n => [n.id, n])), [graph])
   const routes = useMemo(() => {
-    const map = new Map<string, Route & { edge: CanvasEdge; end: [number, number] }>()
+    const map = new Map<string, Route & { edge: CanvasEdge; end: [number, number]; fixed: boolean }>()
     for (const e of graph.edges) {
       const from = byId.get(e.from)
-      const a = layout.at.get(e.from)
-      const b = layout.at.get(e.to)
+      const f = into.get(e.from) ?? e.from
+      const t = into.get(e.to) ?? e.to
+      if (f === t) continue
+      const a = layout.at.get(f)
+      const b = layout.at.get(t)
       if (!from || !a || !b) continue
       const end = inPoint(b)
-      const nextRow = (layout.depth.get(e.to) ?? 0) === (layout.depth.get(e.from) ?? 0) + 1
-      map.set(wireKey(e), { ...route(exitPoint(exitsOf(from), a, e.branch), end, nextRow), edge: e, end })
+      const nextRow = (layout.depth.get(t) ?? 0) === (layout.depth.get(f) ?? 0) + 1
+      const start: [number, number] = into.has(e.from) ? [a.x + CARD_W / 2, a.y + CARD_H] : exitPoint(exitsOf(from), a, e.branch)
+      // Wires inside a locked group, and wires meeting a folded one, can't be changed from here.
+      const fixed = isLockedEdge(graph, e) || into.has(e.from) || into.has(e.to)
+      map.set(wireKey(e), { ...route(start, end, nextRow), edge: e, end, fixed })
     }
     return map
-  }, [graph, byId, layout])
+  }, [graph, byId, layout, into])
 
   const numbers = useMemo(() => stepNumbers(graph), [graph])
   const issueList = useMemo(() => findIssues(graph), [graph])
@@ -340,6 +358,62 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
     setHoverStep(null)
     flash(r.joined ? 'Deleted. The steps either side are still joined.' : 'Deleted.')
   }
+  // ---- Step groups -------------------------------------------------------------------------
+
+  const groupSteps = (ids: string[]) => {
+    const made = createGroup(graph, ids)
+    if (!made) { flash('Shift+click the steps to group first (not Start, and not steps in a locked group).'); return }
+    commit(made.graph)
+    setPicked(new Set())
+    flash('Grouped. Double-click the title to rename it, or click the padlock to lock it.')
+  }
+  const toggleFold = (id: string) => {
+    if (readOnly) { setViewFolds(prev => new Map(prev).set(id, !isFolded(id))); return }
+    commit(updateGroup(graph, id, { collapsed: !isFolded(id) }))
+  }
+  const toGroup = picked.size ? [...picked] : selected ? [selected] : []
+  const canGroup = !readOnly && toGroup.some(id => byId.get(id)?.type !== 'TRIGGER' && !lockedGroupOf(graph, id))
+
+  useEffect(() => {
+    if (readOnly) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'g' && toGroup.length) { e.preventDefault(); groupSteps(toGroup) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  /** Starts moving steps by hand: one step, or every step of its group when it is locked. */
+  const startMove = (key: string, ids: string[], e: React.PointerEvent) => {
+    const bases = new Map<string, Box>()
+    for (const id of ids) { const b = layout.at.get(id); if (b) bases.set(id, b) }
+    if (!bases.size) return
+    grab.current = { key, bases, sx: e.clientX, sy: e.clientY, moved: false }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+  const dragMove = (key: string, e: React.PointerEvent) => {
+    const g = grab.current
+    if (!g || g.key !== key) return
+    const dx = e.clientX - g.sx
+    const dy = e.clientY - g.sy
+    if (!g.moved && Math.hypot(dx, dy) < 4) return
+    g.moved = true
+    setMoving(new Map([...g.bases].map(([id, b]) => [id, { x: b.x + dx, y: b.y + dy }])))
+  }
+  const endMove = (key: string, e: React.PointerEvent): boolean => {
+    const g = grab.current
+    if (!g || g.key !== key) return false
+    grab.current = null
+    if (!g.moved) return false
+    setMoving(null)
+    const dx = e.clientX - g.sx
+    const dy = e.clientY - g.sy
+    commit([...g.bases].reduce((acc, [id, b]) => placeStep(acc, id, { x: b.x + dx, y: b.y + dy }), graph))
+    return true
+  }
+
   const saveLabel = () => {
     if (labelFor) commit(setWireLabel(graph, labelFor, labelDraft))
     setLabelFor(null)
@@ -349,7 +423,8 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
 
   const ranCount = view ? [...view.nodes.values()].filter(s => s === 'done').length : 0
   let status = toast || (readOnly ? 'Read-only. Click a step to see its settings.' : 'Drag a step to move it, or drop a new one onto a step or a wire. Hover for options.')
-  if (moving) status = 'Let go to put the step here. Auto align lines everything up again.'
+  if (!toast && picked.size) status = `${picked.size} ${picked.size === 1 ? 'step' : 'steps'} picked. Press ${MOD}+G or Group to group them.`
+  if (moving) status = moving.size > 1 ? 'Let go to put the group here.' : 'Let go to put the step here. Auto align lines everything up again.'
   if (pending) status = `Click the step that comes after “${byId.get(pending.from)?.label}”${pending.branch ? ` (${exitLabel(pending.branch, byId.get(pending.from))})` : ''}. Esc cancels.`
   if (dragging) status = suggest?.kind === 'step' ? `Drop to wire it in after “${byId.get(suggest.id)?.label}”.`
     : suggest?.kind === 'wire' ? 'Drop to put it on this wire. Steps below move down.' : 'Hover a step or a wire to wire it in.'
@@ -446,6 +521,12 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
             <span className="truncate text-xs text-gray-600 dark:text-gray-400" aria-live="polite">{status}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+          {canGroup && (
+            <button type="button" onClick={() => groupSteps(toGroup)} title={`Put the picked steps in a group (${MOD}+G). Shift+click steps to pick more.`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              <Group className="h-3.5 w-3.5" />Group{toGroup.length > 1 ? ` ${toGroup.length}` : ''}
+            </button>
+          )}
           {!readOnly && (
             <button type="button" disabled={!arranged} onClick={() => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') }}
               title={arranged ? 'Put every step back in a neat top-to-bottom layout' : 'Every step is already lined up'}
@@ -490,7 +571,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                       <path d={r.d} fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" className="jw-current" />
                       <polygon points={ARROW_HEAD(r.end)} fill={hotColor} />
                     </>}
-                    {!readOnly && (
+                    {!readOnly && !r.fixed && (
                       <path d={r.d} fill="none" stroke="transparent" strokeWidth={18} strokeLinecap="round" className="cursor-pointer"
                         style={{ pointerEvents: quiet ? 'stroke' : 'none' }}
                         onMouseEnter={() => wireOn(k)} onMouseLeave={wireOff} />
@@ -507,6 +588,35 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               ))}
             </svg>
 
+            {groups.map(g => {
+              if (into.has(g.nodes[0])) {
+                const box = layout.at.get(g.id)
+                if (!box) return null
+                const issues = g.nodes.filter(id => issuesByNode.has(id)).length
+                return (
+                  <FoldedGroup key={g.id} group={g} box={box} issues={issues} readOnly={readOnly}
+                    onFold={() => toggleFold(g.id)} onLock={() => commit(updateGroup(graph, g.id, { locked: !g.locked }))} />
+                )
+              }
+              const boxes = g.nodes.map(id => layout.at.get(id)).filter((b): b is Box => !!b)
+              if (!boxes.length) return null
+              const x = Math.min(...boxes.map(b => b.x)) - GROUP_PAD
+              const y = Math.min(...boxes.map(b => b.y)) - GROUP_PAD - GROUP_HEAD
+              const w = Math.max(...boxes.map(b => b.x)) + CARD_W + GROUP_PAD - x
+              const h = Math.max(...boxes.map(b => b.y)) + CARD_H + GROUP_PAD + 14 - y
+              return (
+                <GroupFrame key={g.id} group={g} box={{ x, y, w, h }} readOnly={readOnly}
+                  onFold={() => toggleFold(g.id)}
+                  onLock={() => commit(updateGroup(graph, g.id, { locked: !g.locked }))}
+                  onRename={title => commit(updateGroup(graph, g.id, { title }))}
+                  onUngroup={() => { commit(ungroup(graph, g.id)); flash('Ungrouped. The steps stay where they are.') }}
+                  onPointerDown={e => { if (!readOnly && e.button === 0 && preview === null && !pending) startMove(`group:${g.id}`, g.nodes, e) }}
+                  onPointerMove={e => dragMove(`group:${g.id}`, e)}
+                  onPointerUp={e => { endMove(`group:${g.id}`, e) }}
+                  onPointerCancel={() => { grab.current = null; setMoving(null) }} />
+              )
+            })}
+
             {graph.nodes.map(n => {
               const box = layout.at.get(n.id)
               if (!box) return null
@@ -516,40 +626,37 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               const state = view?.nodes.get(n.id)
               const waiting = !!view && !state
               const target = suggest?.kind === 'step' && suggest.id === n.id
-              const isSel = selected === n.id || editing === n.id
+              const isSel = selected === n.id || editing === n.id || picked.has(n.id)
               const problems = issuesByNode.get(n.id)
               const canTarget = !!validTargets?.has(n.id)
               const num = numbers.get(n.id)
               const note = typeof n.config.note === 'string' && n.config.note.trim()
               return (
                 <button key={n.id} type="button" aria-label={`${meta.label}: ${n.label}`}
-                  onClick={() => {
+                  onClick={e => {
                     if (justMoved.current) { justMoved.current = false; return }
-                    if (pending) connectTo(n.id); else setSelected(s => (s === n.id ? null : n.id))
+                    if (pending) { connectTo(n.id); return }
+                    // Shift (or Ctrl/⌘) + click picks steps to group.
+                    if (!readOnly && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+                      setPicked(prev => {
+                        const next = new Set(prev.size ? prev : selected ? [selected] : [])
+                        if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
+                        return next
+                      })
+                      setSelected(null)
+                      return
+                    }
+                    setPicked(new Set())
+                    setSelected(s => (s === n.id ? null : n.id))
                   }}
                   onPointerDown={e => {
                     justMoved.current = false
                     if (readOnly || pending || preview !== null || e.button !== 0) return
-                    grab.current = { id: n.id, sx: e.clientX, sy: e.clientY, ox: box.x, oy: box.y, moved: false }
-                    e.currentTarget.setPointerCapture?.(e.pointerId)
+                    // A step of a locked group moves the whole group, so its arrangement stays.
+                    startMove(`step:${n.id}`, lockedGroupOf(graph, n.id)?.nodes ?? [n.id], e)
                   }}
-                  onPointerMove={e => {
-                    const g = grab.current
-                    if (!g || g.id !== n.id) return
-                    const dx = e.clientX - g.sx
-                    const dy = e.clientY - g.sy
-                    if (!g.moved && Math.hypot(dx, dy) < 4) return
-                    g.moved = true
-                    setMoving({ id: n.id, x: g.ox + dx, y: g.oy + dy })
-                  }}
-                  onPointerUp={e => {
-                    const g = grab.current
-                    grab.current = null
-                    if (!g?.moved) return
-                    justMoved.current = true
-                    setMoving(null)
-                    commit(placeStep(graph, g.id, { x: g.ox + e.clientX - g.sx, y: g.oy + e.clientY - g.sy }))
-                  }}
+                  onPointerMove={e => dragMove(`step:${n.id}`, e)}
+                  onPointerUp={e => { if (endMove(`step:${n.id}`, e)) justMoved.current = true }}
                   onPointerCancel={() => { grab.current = null; setMoving(null) }}
                   onDoubleClick={() => openSettings(n.id)}
                   onMouseEnter={() => stepOn(n.id)} onMouseLeave={stepOff}
@@ -564,9 +671,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                   style={{
                     left: box.x, top: box.y, width: CARD_W, height: CARD_H,
                     opacity: (focusIds && !focusIds.has(n.id)) ? 0.35 : waiting ? 0.45 : pending && !canTarget && pending.from !== n.id ? 0.45 : 1,
-                    cursor: pending ? (canTarget ? 'pointer' : 'not-allowed') : moving?.id === n.id ? 'grabbing' : readOnly ? 'pointer' : 'grab',
-                    zIndex: moving?.id === n.id ? 20 : undefined,
-                    boxShadow: moving?.id === n.id ? '0 18px 40px rgb(0 0 0 / 0.18)' : undefined,
+                    cursor: pending ? (canTarget ? 'pointer' : 'not-allowed') : moving?.has(n.id) ? 'grabbing' : readOnly ? 'pointer' : 'grab',
+                    zIndex: moving?.has(n.id) ? 20 : undefined,
+                    boxShadow: moving?.has(n.id) ? '0 18px 40px rgb(0 0 0 / 0.18)' : undefined,
                     touchAction: 'none',
                   }}>
                   <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${meta.tone}`}><Icon className="h-[18px] w-[18px]" /></span>
@@ -597,13 +704,15 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
               if (!box) return []
               const exits = exitsOf(n)
               return exits.map(b => {
+                const wired = graph.edges.find(e => e.from === n.id && e.branch === b)
+                const fixedExit = !!wired && isLockedEdge(graph, wired)
                 const [x, y] = exitPoint(exits, box, b)
                 const tone = WIRE_TONE(b)
                 const picking = pending?.from === n.id && pending.branch === b
                 const name = exitLabel(b, n)
                 return (
                   <div key={`${n.id}:${b ?? 'out'}`} className="absolute z-[5]" style={{ left: x, top: y }}>
-                    <button type="button" disabled={readOnly} aria-label={`${name ? `"${name}" exit` : 'Exit'} of ${n.label}. Click, then click the step that comes next.`}
+                    <button type="button" disabled={readOnly || fixedExit} title={fixedExit ? 'Locked: this wire is inside a locked group' : undefined} aria-label={`${name ? `"${name}" exit` : 'Exit'} of ${n.label}. Click, then click the step that comes next.`}
                       onClick={() => { setPending(picking ? null : { from: n.id, branch: b }); setSelected(null) }}
                       className={`absolute -left-1.5 -top-1.5 h-3 w-3 rounded-full border-[1.5px] bg-white transition-transform hover:scale-150 disabled:hover:scale-100 dark:bg-gray-900 ${picking ? 'jw-pulse border-brand-500 bg-brand-500' : ''}`}
                       style={picking ? undefined : { borderColor: tone.head }} />
@@ -665,8 +774,9 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode }
                 {hoveredStep.type !== 'TRIGGER' && <>
                   <Divider />
                   <BarButton label="Clone" onClick={() => cloneStep(hoveredStep.id)}><Copy className="h-4 w-4" /></BarButton>
-                  <Divider />
-                  <BarButton label="Delete" tone="red" onClick={() => removeStep(hoveredStep.id)}><Trash2 className="h-4 w-4" /></BarButton>
+                  {lockedGroupOf(graph, hoveredStep.id)
+                    ? <><Divider /><span className="grid h-8 w-8 place-items-center text-amber-600" title="In a locked group: unlock it to delete this step"><Lock className="h-4 w-4" aria-label="Locked" /></span></>
+                    : <><Divider /><BarButton label="Delete" tone="red" onClick={() => removeStep(hoveredStep.id)}><Trash2 className="h-4 w-4" /></BarButton></>}
                 </>}
               </div>
             )}
@@ -732,6 +842,91 @@ function BarButton({ label, onClick, tone, active, children }: {
 }
 
 const Divider = () => <span className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const MOD = isMac ? '⌘' : 'Ctrl'
+const GROUP_PAD = 16
+const GROUP_HEAD = 30
+
+/** A step group's box: a title bar to drag, rename, lock, fold or ungroup it, around its steps. */
+function GroupFrame({ group, box, readOnly, onFold, onLock, onRename, onUngroup, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
+  group: StepGroup; box: { x: number; y: number; w: number; h: number }; readOnly: boolean
+  onFold: () => void; onLock: () => void; onRename: (title: string) => void; onUngroup: () => void
+  onPointerDown: (e: React.PointerEvent) => void; onPointerMove: (e: React.PointerEvent) => void
+  onPointerUp: (e: React.PointerEvent) => void; onPointerCancel: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(group.title)
+  useEffect(() => { if (!editing) setTitle(group.title) }, [group.title, editing])
+  const finish = (keep: boolean) => {
+    setEditing(false)
+    if (keep && title.trim() !== group.title) onRename(title.trim())
+  }
+  const name = group.title || 'Untitled group'
+  return (
+    <div data-testid={`wires-group-${group.id}`} className={`pointer-events-none absolute rounded-2xl border-2 ${group.locked
+      ? 'border-amber-500/70 bg-amber-500/[0.05]' : 'border-dashed border-brand-500/60 bg-brand-500/[0.05]'}`}
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}>
+      <div className={`pointer-events-auto flex h-[30px] items-center gap-1 rounded-t-[14px] px-1.5 text-xs font-semibold ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'} ${group.locked
+        ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100' : 'bg-brand-50 text-brand-900 dark:bg-brand-500/15 dark:text-brand-100'}`}
+        style={{ touchAction: 'none' }}
+        onPointerDown={e => { if (!(e.target as HTMLElement).closest('button, input')) onPointerDown(e) }}
+        onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
+        onDoubleClick={() => { if (!readOnly) setEditing(true) }}>
+        <button type="button" onClick={onFold} aria-label={`Fold ${name}`} title="Fold into one card"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10"><ChevronDown className="h-4 w-4" /></button>
+        {editing
+          ? <input autoFocus value={title} aria-label="Group title" maxLength={80} onFocus={e => e.currentTarget.select()}
+              onChange={e => setTitle(e.target.value)} onBlur={() => finish(true)}
+              onKeyDown={e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false) }}
+              className="min-w-0 flex-1 rounded bg-white px-1.5 py-0.5 text-xs font-semibold text-gray-900 outline-none ring-1 ring-brand-500 dark:bg-gray-900 dark:text-gray-100" />
+          : <span className="min-w-0 flex-1 truncate" title={readOnly ? name : `${name} (double-click to rename)`}>{name}</span>}
+        <span className="shrink-0 font-normal opacity-70">{group.nodes.length} {group.nodes.length === 1 ? 'step' : 'steps'}</span>
+        {readOnly
+          ? group.locked && <Lock className="mx-1 h-3.5 w-3.5 shrink-0" aria-label="Locked" />
+          : <>
+              <button type="button" onClick={onLock} aria-label={group.locked ? 'Unlock group' : 'Lock group'} aria-pressed={group.locked}
+                title={group.locked ? 'Locked: its steps, settings and wiring can’t be changed. Click to unlock.' : 'Lock, so its steps and wiring can’t be changed by mistake'}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10">
+                {group.locked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5 opacity-70" />}
+              </button>
+              {!group.locked && (
+                <button type="button" onClick={onUngroup} aria-label={`Ungroup ${name}`} title="Ungroup: remove the box, keep the steps"
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10"><Ungroup className="h-3.5 w-3.5" /></button>
+              )}
+            </>}
+      </div>
+    </div>
+  )
+}
+
+/** A folded group: one card standing in for its steps. */
+function FoldedGroup({ group, box, issues, readOnly, onFold, onLock }: {
+  group: StepGroup; box: Box; issues: number; readOnly: boolean; onFold: () => void; onLock: () => void
+}) {
+  const name = group.title || 'Untitled group'
+  return (
+    <div data-testid={`wires-group-${group.id}`} className={`absolute flex flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm dark:bg-gray-900 ${group.locked ? 'border-amber-500/70' : 'border-dashed border-brand-500/60'}`}
+      style={{ left: box.x, top: box.y, width: CARD_W, height: CARD_H }}>
+      <div className={`flex h-[30px] items-center gap-1 px-1.5 text-xs font-semibold ${group.locked
+        ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100' : 'bg-brand-50 text-brand-900 dark:bg-brand-500/15 dark:text-brand-100'}`}>
+        <button type="button" onClick={onFold} aria-label={`Unfold ${name}`} title="Show its steps"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10"><ChevronRight className="h-4 w-4" /></button>
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {issues > 0 && <span title={`${issues} ${issues === 1 ? 'step has' : 'steps have'} something to fix`} className="grid h-5 w-5 place-items-center rounded-full bg-red-500 text-white"><AlertCircle className="h-3.5 w-3.5" /></span>}
+        {readOnly
+          ? group.locked && <Lock className="mx-1 h-3.5 w-3.5 shrink-0" aria-label="Locked" />
+          : <button type="button" onClick={onLock} aria-label={group.locked ? 'Unlock group' : 'Lock group'} aria-pressed={group.locked}
+              className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-black/10">
+              {group.locked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5 opacity-70" />}
+            </button>}
+      </div>
+      <p className="px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+        {group.nodes.length} {group.nodes.length === 1 ? 'step' : 'steps'}{group.locked && <span className="text-amber-700 dark:text-amber-300"> · locked</span>}
+      </p>
+    </div>
+  )
+}
 
 const WIRES_CSS = `
 .jizza-wires .jw-current{stroke-dasharray:1 9;animation:jw-flow 0.42s linear infinite}
