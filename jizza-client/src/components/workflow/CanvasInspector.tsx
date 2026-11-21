@@ -1532,6 +1532,8 @@ export function WebStepFields({ node, catalog, setConfig, isMissing, mapping, br
     {(choosesAtRunTime || action === 'browser.listItems') && (
       <ListChoiceOptions inputs={inputs} browsers={browsers} deviceId={concrete?.id} mapping={mapping}
         list={listNames} setInput={setInput} setInputs={setInputs} withItem={choosesAtRunTime}
+        earlierLists={earlierLists(mapping.graph, node.id)}
+        onFollows={dependsOn => setConfig({ list: { ...asInputs(node.config.list), dependsOn } })}
         itemRequired={required.has('item')} itemMissing={isMissing('inputs.item')}
         pictures={choosesAtRunTime ? node.config.screenshots : undefined}
         onPictures={choosesAtRunTime ? screenshots => setConfig({ screenshots }) : undefined} />
@@ -1725,7 +1727,26 @@ interface RecordedListNames {
  * a dropdown of the names it showed when recorded (or loaded from the page now), which can also be
  * mapped from earlier steps. The items follow the card chosen.
  */
-function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput, setInputs, withItem, itemRequired, itemMissing, pictures, onPictures }: {
+/** The names of the other steps' lists in the workflow (Trains, Coaches), with the input each is
+ *  mapped from, which a list can load after. */
+function earlierLists(graph: CanvasGraph, nodeId: string): { title: string; inputName?: string }[] {
+  const out = new Map<string, { title: string; inputName?: string }>()
+  for (const n of graph.nodes) {
+    if (n.id === nodeId) continue
+    const list = asInputs(n.config.list)
+    const inputs = asInputs(n.config.inputs)
+    const add = (title: unknown, value: unknown) => {
+      if (typeof title !== 'string' || !title.trim() || out.has(title.trim())) return
+      const input = typeof value === 'string' ? /^\s*\{\{\s*input\.([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(value)?.[1] : undefined
+      out.set(title.trim(), { title: title.trim(), ...(input ? { inputName: input } : {}) })
+    }
+    add(list.withinTitle, asInputs(inputs.within).item)
+    add(list.title, inputs.item)
+  }
+  return [...out.values()]
+}
+
+function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, setInput, setInputs, withItem, itemRequired, itemMissing, pictures, onPictures, earlierLists = [], onFollows }: {
   inputs: Record<string, unknown>; browsers?: BrowserAgent[]; deviceId?: string; mapping: MappingContext
   list?: RecordedListNames
   setInput: (key: string, value: unknown) => void
@@ -1736,6 +1757,9 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
   /** `config.screenshots` and how to change it: a picture of each item with the question, set per field. */
   pictures?: unknown
   onPictures?: (value: Pictures | undefined) => void
+  /** The other lists of the workflow this one can load after, and how to set it. */
+  earlierLists?: { title: string; inputName?: string }[]
+  onFollows?: (dependsOn: RecordedListNames['dependsOn'] | undefined) => void
 }) {
   const within = asInputs(inputs.within)
   const loadMore = asInputs(inputs.loadMore)
@@ -1795,6 +1819,21 @@ function ListChoiceOptions({ inputs, browsers, deviceId, mapping, list = {}, set
     {follows && list.dependsOn?.relation !== 'inside' && <p className="rounded-lg border border-gray-200 p-2 text-[11px] text-gray-500 dark:border-gray-700" data-testid="list-follows">
       Follows {follows}{list.dependsOn?.inputName ? ` (input ${list.dependsOn.inputName})` : ''}: the page loads these choices again when {follows} changes. After changing {follows}, load them from the page.
     </p>}
+    {onFollows && (earlierLists.length > 0 || (follows && list.dependsOn?.relation !== 'inside')) && <label className="block space-y-1 text-xs text-gray-700 dark:text-gray-300">
+      <span>Loads after (depends on)</span>
+      <select className={fieldClass} aria-label="Loads after" data-testid="list-loads-after"
+        value={follows && list.dependsOn?.relation !== 'inside' ? follows : ''}
+        onChange={e => {
+          const picked = earlierLists.find(l => l.title === e.target.value)
+          onFollows(picked ? { title: picked.title, ...(picked.inputName ? { inputName: picked.inputName } : {}), relation: 'after' } : undefined)
+        }}>
+        <option value="">Nothing: its choices show on their own</option>
+        {[...earlierLists, ...(follows && list.dependsOn?.relation !== 'inside' && !earlierLists.some(l => l.title === follows) ? [{ title: follows }] : [])]
+          .filter(l => l.title !== (list.named ? list.title : undefined))
+          .map(l => <option key={l.title} value={l.title}>{l.title}</option>)}
+      </select>
+      <span className="block text-[11px] text-gray-500">Such as Dates that show once a Coach is chosen. When an earlier step of the run chose it (and the card it is in), the approval shows those choices as fixed instead of asking again.</span>
+    </label>}
     {inCard && <div className="space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
       <ListValueField label={cardName ?? 'Which card'} choices={cardChoices} value={within.item} mapping={mapping} required
         hint={cardChoices.length > 0 ? `Chosen first, such as a theatre. Its ${(itemName ?? 'item').toLowerCase()}s follow it.` : 'Its name, such as a theatre. Map it from earlier steps.'}

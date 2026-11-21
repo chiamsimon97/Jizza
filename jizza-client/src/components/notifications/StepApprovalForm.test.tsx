@@ -223,3 +223,28 @@ describe('pictures under each field of a list choice', () => {
   })
 })
 
+
+describe('choices carried from earlier steps', () => {
+  it('shows the train and coach chosen earlier as they are, and asks only for the date', () => {
+    const form = stepFormOf({
+      ...SHOWTIME,
+      context: {
+        node: 'date',
+        form: {
+          action: 'browser.clickItem', title: 'Choose from a list',
+          fields: [{ key: 'item', label: 'Dates', type: 'select', required: true, missing: true, options: ['Fri, 27 Nov', 'Sat, 28 Nov'] }],
+          missing: ['item'],
+          carried: [{ label: 'Trains', value: 'MS NCJ VB EXP (20627)' }, { label: 'Coaches', value: 'Exec. Chair Car (EC)' }],
+        },
+      },
+    } as unknown as NotificationDto)!
+    expect(form.carried).toEqual([{ label: 'Trains', value: 'MS NCJ VB EXP (20627)' }, { label: 'Coaches', value: 'Exec. Chair Car (EC)' }])
+    render(<StepApprovalForm form={form} values={initialValues(form)} onChange={() => {}} />)
+    const panel = screen.getByTestId('chosen-earlier')
+    expect(panel.textContent).toContain('Chosen in earlier steps')
+    expect(panel.textContent).toContain('MS NCJ VB EXP (20627)')
+    expect(panel.textContent).toContain('Exec. Chair Car (EC)')
+    expect(screen.queryByLabelText('Trains')).toBeNull()
+    expect(options('Dates')).toEqual(['Choose one…', 'Fri, 27 Nov', 'Sat, 28 Nov'])
+  })
+})

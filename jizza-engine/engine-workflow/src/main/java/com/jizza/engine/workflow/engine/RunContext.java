@@ -44,6 +44,8 @@ import java.util.Map;
  *                                                 // browser affinity; inherited sessions are not owned
  *   "depth":    0,                                // how deep in sub-workflows this run is
  *   "stepOverrides": { "nodeId": [...] },         // settings replaced for this run (a form)
+ *   "picks":    { "nodeId": [ { "list": "Trains", "source": "{{ input.trains }}", "value": "..." } ] },
+ *                                                 // what each list step chose, for later steps
  *   "legacy":   true                              // started before parallel paths existed
  * }
  * </pre>
@@ -380,7 +382,7 @@ public final class RunContext {
    */
   public void forgetStep(String nodeId) {
     for (String key : List.of("nodes", "instructions", "branch", "approvals", "approvedInputs",
-        "state", "parked", "joinDeadlines", "abandoned")) {
+        "state", "parked", "joinDeadlines", "abandoned", "picks")) {
       if (root.path(key).isObject()) ((ObjectNode) root.get(key)).remove(nodeId);
     }
     if (root.path("ready").isArray()) removeFrom((ArrayNode) root.get("ready"), nodeId);
@@ -447,6 +449,36 @@ public final class RunContext {
   }
 
   public JsonNode vars() { return root.path("vars"); }
+
+  /** One choice a list step made in this run: the list's name, the value mapped to it, the pick. */
+  public record Pick(String nodeId, String list, String source, String value) {}
+
+  /**
+   * Keeps what a list step chose (the card it chose inside, the item it chose), so a later step
+   * that chooses inside the same list, or follows it, carries the choice on instead of asking
+   * again. A step that runs again replaces its own picks, which then count as the latest.
+   */
+  public void recordPicks(String nodeId, List<Pick> picks) {
+    ObjectNode all = root.withObject("/picks");
+    all.remove(nodeId);
+    if (picks.isEmpty()) return;
+    ArrayNode out = all.putArray(nodeId);
+    for (Pick pick : picks) {
+      if (pick.value() == null || pick.value().isBlank()) continue;
+      ObjectNode one = out.addObject().put("value", pick.value());
+      if (pick.list() != null && !pick.list().isBlank()) one.put("list", pick.list());
+      if (pick.source() != null && !pick.source().isBlank()) one.put("source", pick.source());
+    }
+  }
+
+  /** Every pick of this run, the earliest first; a step that ran again counts from its last run. */
+  public List<Pick> picks() {
+    List<Pick> out = new ArrayList<>();
+    root.path("picks").fields().forEachRemaining(e -> e.getValue().forEach(p -> out.add(new Pick(
+        e.getKey(), p.path("list").asText(null), p.path("source").asText(null),
+        p.path("value").asText("")))));
+    return out;
+  }
 
   public Browser browser() {
     JsonNode value = root.path("browser");

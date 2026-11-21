@@ -269,6 +269,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     // A choice made at run time: the page's list as it is now, read before anyone decides.
     String pickKey = WebStepForm.pickKey(spec.action());
     boolean dropdown = WebStepForm.SELECT_OPTION.equals(spec.action());
+    // The card chosen inside, when an earlier step of this run already chose it (the train chosen
+    // with its coach), is carried on rather than asked for again; the card shows it as fixed.
+    boolean carriedCard = pickKey != null
+        && CarriedPicks.carry(execution.context(), nodeId, config, (ObjectNode) inputs, state);
     // A dropdown marked dynamic is read from the page each run; a static one chooses from the
     // items read while recording.
     boolean listed = WebStepForm.CLICK_ITEMS.contains(spec.action())
@@ -444,10 +448,13 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       List<String> cards = labels(ItemMatch.items(state.get("parents")));
       com.fasterxml.jackson.databind.node.TextNode chosenCard =
           Json.mapper().getNodeFactory().textNode(state.get("parentDisplay").asText());
-      form = form.stream().map(f -> "within.item".equals(f.key())
-          ? new WebStepForm.Field(f.key(), f.label(), "select", chosenCard, true, f.source(),
-              cards, f.error())
-          : f).toList();
+      form = carriedCard
+          // Chosen in an earlier step: listed as chosen earlier, not asked again.
+          ? form.stream().filter(f -> !"within.item".equals(f.key())).toList()
+          : form.stream().map(f -> "within.item".equals(f.key())
+              ? new WebStepForm.Field(f.key(), f.label(), "select", chosenCard, true, f.source(),
+                  cards, f.error())
+              : f).toList();
     }
     if (pick && !picked.found() && !form.isEmpty()) {
       // An item the page does not list cannot be clicked: it counts as not filled in.
@@ -567,7 +574,16 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
       return Outcome.permanentFailure(e.getMessage());
     }
     state.put("sends", state.path("sends").asInt(0) + 1);
-    state.remove(List.of("parent", "parents", "parentDisplay", "groups"));
+    if (pickKey != null) {
+      // What this step chose, so later steps choosing inside the same card carry it on.
+      String card = state.hasNonNull("parentDisplay") ? state.get("parentDisplay").asText()
+          : inputs.path("within").path("item").asText(null);
+      String item = state.hasNonNull("chosenDisplay") ? state.get("chosenDisplay").asText()
+          : inputs.path(pickKey).isValueNode() ? inputs.path(pickKey).asText(null) : null;
+      execution.context().recordPicks(nodeId,
+          CarriedPicks.picksOf(nodeId, config, inputs, card, item));
+    }
+    state.remove(List.of("parent", "parents", "parentDisplay", "groups", CarriedPicks.STATE));
     state.put("commandId", command.id().toString());
     state.put("device", command.deviceName());
     state.put("browserAction", browserAction);
@@ -631,6 +647,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     ArrayNode keys = state.putArray("offered");
     form.forEach(f -> keys.add(f.key()));
     ObjectNode detail = approvalDetail(spec, form, choices, execution.context().variables());
+    com.fasterxml.jackson.databind.node.ArrayNode earlier = CarriedPicks.shown(state, form);
+    if (earlier != null && detail.path("form").isObject()) {
+      ((ObjectNode) detail.get("form")).set("carried", earlier);
+    }
     JsonNode fixed = state.remove("layerFixed");
     if (fixed != null && fixed.isArray() && !fixed.isEmpty() && detail.path("form").isObject()) {
       ((ObjectNode) detail.get("form")).set("fixed", fixed);

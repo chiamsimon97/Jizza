@@ -52,6 +52,9 @@ export interface StepForm {
   shots?: StepShots
   /** A device layer's fixed values: filled every run as they are, listed but not asked. */
   fixed?: { label: string; value: string }[]
+  /** Choices made in earlier steps of the run that this step follows (the train and coach the
+   *  dates are in): shown as they are, not asked again. */
+  carried?: { label: string; value: string }[]
   /** Refresh: how to read each value's choices again from the page the run is on. */
   live?: StepLive
 }
@@ -114,6 +117,10 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
     ...(Array.isArray(raw.fixed) && raw.fixed.length > 0
       ? { fixed: (raw.fixed as Record<string, unknown>[]).filter(x => typeof x?.label === 'string')
         .map(x => ({ label: String(x.label), value: x.value == null ? '' : String(x.value) })) }
+      : {}),
+    ...(Array.isArray(raw.carried) && raw.carried.length > 0
+      ? { carried: (raw.carried as Record<string, unknown>[]).filter(x => typeof x?.label === 'string' && x.value != null)
+        .map(x => ({ label: String(x.label), value: String(x.value) })) }
       : {}),
     ...(liveOf(raw.live) ? { live: liveOf(raw.live)! } : {}),
   }
