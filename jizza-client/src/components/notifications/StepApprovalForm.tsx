@@ -84,6 +84,7 @@ export function StepApprovalForm({ form, values, onChange, readOnly }: {
       <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
         {form.title}: {readOnly ? 'what it sent' : 'check or change what it will send'}
       </p>
+      {form.carried && form.carried.length > 0 && <ChosenEarlier values={form.carried} />}
       {form.fixed && form.fixed.length > 0 && <FixedValues fixed={form.fixed} />}
       {form.fields.map((field, index) => {
         const heading = field.group && field.group !== form.fields[index - 1]?.group
@@ -281,6 +282,18 @@ function FieldRow({ field, value, data, shots, missing, choicesAt, waitsOn, read
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Choices made in earlier steps of the run that this step follows: read, never asked again. */
+function ChosenEarlier({ values }: { values: { label: string; value: string }[] }) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-900" data-testid="chosen-earlier">
+      <p className="mb-1 font-medium text-gray-700 dark:text-gray-200">Chosen in earlier steps</p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+        {values.map((v, i) => <div key={i} className="contents"><dt className="text-gray-500">{v.label}</dt><dd className="text-gray-900 dark:text-gray-100">{v.value}</dd></div>)}
+      </dl>
     </div>
   )
 }

@@ -697,6 +697,44 @@ describe('CanvasInspector', () => {
     vi.unstubAllGlobals()
   })
 
+  it('lets a list load after another list of the workflow, such as Dates after Coaches', async () => {
+    queryClient.clear()
+    const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/api/devices/catalog') ? [
+        { action: 'browser.clickItem', version: 1, capability: 'browser', actionType: 'UPDATE', title: 'Choose from a list', defaultTimeoutSec: 15,
+          conditions: [], platforms: [], input: { type: 'object', required: ['element', 'item'], properties: {
+            element: locator, item: { type: 'string' }, within: { type: 'object' } } }, output: { type: 'object' } },
+      ] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const palette = WEB_PALETTE.find(p => p.config?.action === 'browser.clickItem')!
+    const coach = addAfter(emptyGraph(), 'start', null, palette)
+    const date = addAfter(coach.graph, coach.id, null, palette)
+    const card = { strategies: [{ by: 'css', value: 'div.train' }] }
+    const configs: Record<string, Record<string, unknown>> = {
+      [coach.id]: { inputs: { element: card, item: '{{ input.coaches }}', within: { element: card, item: '{{ input.trains }}' } },
+        list: { named: true, title: 'Coaches', withinTitle: 'Trains' } },
+      [date.id]: { inputs: { element: card, item: '{{ input.dates }}', within: { element: card, item: '{{ input.trains }}' } },
+        list: { named: true, title: 'Dates', withinTitle: 'Trains', dependsOn: { title: 'Trains', inputName: 'trains', relation: 'inside' } } },
+    }
+    const graph = { ...date.graph, nodes: date.graph.nodes.map(n => configs[n.id] ? { ...n, config: { ...n.config, ...configs[n.id] } } : n) }
+    const { onSave } = open(graph, date.id)
+    const after = await screen.findByTestId('list-loads-after')
+    expect(after).toHaveValue('')
+    expect(Array.from((after as HTMLSelectElement).options).map(o => o.value)).toEqual(['', 'Trains', 'Coaches'])
+    // Coaches is chosen inside a train: the option names both, in order.
+    expect(Array.from((after as HTMLSelectElement).options).map(o => o.textContent)).toContain('Trains › Coaches')
+    fireEvent.change(after, { target: { value: 'Coaches' } })
+    expect(screen.getByTestId('list-chain')).toHaveTextContent('Chosen in order: Trains › Coaches › Dates')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = (onSave.mock.calls[0][0] as CanvasGraph).nodes.find(n => n.id === date.id)!
+    expect(saved.config.list).toMatchObject({ title: 'Dates', withinTitle: 'Trains',
+      dependsOn: { title: 'Coaches', inputName: 'coaches', relation: 'after' } })
+    vi.unstubAllGlobals()
+  })
+
   describe('Advanced web options', () => {
     const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     const locator = { $ref: 'device-actions.json#/schemas/locatorBundle' }
