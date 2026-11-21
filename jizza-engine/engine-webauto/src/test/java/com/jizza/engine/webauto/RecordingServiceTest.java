@@ -1133,6 +1133,29 @@ class RecordingServiceTest {
   }
 
   @Test
+  void anEditKeepsTheStepGroupsDrawnInTheBuilderForStepsStillThere() {
+    JsonNode before = Json.read("{\"nodes\":[],\"edges\":[],\"groups\":["
+        + "{\"id\":\"grp_a\",\"title\":\"Coach and date\",\"nodes\":[\"step_2\",\"step_3\",\"step_9\"],"
+        + "\"locked\":true,\"collapsed\":true},"
+        + "{\"id\":\"grp_b\",\"title\":\"Gone\",\"nodes\":[\"step_9\"]}]}");
+    com.fasterxml.jackson.databind.node.ObjectNode after = (com.fasterxml.jackson.databind.node.ObjectNode)
+        Json.read("{\"nodes\":[{\"id\":\"trigger\",\"type\":\"TRIGGER\"},{\"id\":\"step_2\"},"
+            + "{\"id\":\"step_3\"},{\"id\":\"step_4\"}],\"edges\":[]}");
+    RecordingGraph.keepGroups(after, before);
+    assertThat(after.path("groups")).hasSize(1);
+    JsonNode g = after.path("groups").get(0);
+    assertThat(g.path("title").asText()).isEqualTo("Coach and date");
+    assertThat(g.path("locked").asBoolean()).isTrue();
+    assertThat(g.path("collapsed").asBoolean()).isTrue();
+    assertThat(g.path("nodes").toString()).isEqualTo("[\"step_2\",\"step_3\"]");
+    // A graph with no groups stays without them.
+    com.fasterxml.jackson.databind.node.ObjectNode plain = (com.fasterxml.jackson.databind.node.ObjectNode)
+        Json.read("{\"nodes\":[{\"id\":\"step_2\"}],\"edges\":[]}");
+    RecordingGraph.keepGroups(plain, Json.read("{\"nodes\":[]}"));
+    assertThat(plain.has("groups")).isFalse();
+  }
+
+  @Test
   void anEditedRecordingPastDraftCanOnlyBeSavedAsANewOne() {
     WorkflowDto draft = savedRecording();
     WorkflowDto approved = new WorkflowDto(draft.id(), draft.userId(), draft.name(), null,

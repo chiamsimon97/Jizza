@@ -422,6 +422,29 @@ final class RecordingGraph {
     }
   }
 
+  /**
+   * The step groups the person drew in the builder, for the steps that are still there (an edit
+   * keeps each step's node id). A group left with no steps goes.
+   */
+  static void keepGroups(ObjectNode graph, JsonNode before) {
+    if (!before.path("groups").isArray() || graph.has("groups")) return;
+    Set<String> ids = new HashSet<>();
+    for (JsonNode node : graph.path("nodes")) {
+      if (!"TRIGGER".equals(node.path("type").asText())) ids.add(node.path("id").asText());
+    }
+    ArrayNode groups = graph.arrayNode();
+    for (JsonNode group : before.path("groups")) {
+      if (!(group instanceof ObjectNode g)) continue;
+      ArrayNode members = graph.arrayNode();
+      for (JsonNode id : g.path("nodes")) if (ids.contains(id.asText())) members.add(id.asText());
+      if (members.isEmpty()) continue;
+      ObjectNode copy = g.deepCopy();
+      copy.set("nodes", members);
+      groups.add(copy);
+    }
+    if (!groups.isEmpty()) graph.set("groups", groups);
+  }
+
   /** Descriptions and other details the person gave inputs that are still there. */
   static void keepInputDetails(ObjectNode graph, ArrayNode before) {
     Map<String, JsonNode> old = new HashMap<>();

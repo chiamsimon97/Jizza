@@ -423,6 +423,7 @@ public class RecordingService implements Recordings, RecordingIntake {
       RecordingGraph.keepOutputs(graph, before.outputs());
       RecordingGraph.keepInputDetails(graph, before.inputs());
       RecordingGraph.keepResultMessage(graph, source.graph());
+      RecordingGraph.keepGroups(graph, source.graph());
     } catch (ValidationException e) {
       // Changed in the builder since it was opened: what the edit made is what is saved.
     }
