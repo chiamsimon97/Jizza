@@ -20,6 +20,22 @@ public interface ServiceRunner {
   /** Calls a trigger's API once and reports what it found, without marking anything as seen. */
   TriggerSample testTrigger(UUID serviceId, UUID triggerId);
 
-  /** Polls one trigger now, records new items in history and marks them as seen. */
+  /**
+   * Polls one trigger now, records new items in history, marks them as seen and starts the
+   * workflows listening to it.
+   */
   TriggerSample pollTrigger(UUID serviceId, UUID triggerId);
+
+  /**
+   * One delivery to a webhook trigger's address: checked, recorded in history, and handed to the
+   * workflows listening to it. The token in the address, and the signature when the trigger has a
+   * secret, are what authenticate it; there is no session.
+   *
+   * @param rawBody the body exactly as received, since a signature is over the bytes
+   * @param headers request headers with lower-case names
+   */
+  default ServiceModel.WebhookDelivery receiveWebhook(String token, String rawBody,
+                                                      java.util.Map<String, String> headers) {
+    return new ServiceModel.WebhookDelivery(false, "Instant triggers are not available", 0, 0);
+  }
 }

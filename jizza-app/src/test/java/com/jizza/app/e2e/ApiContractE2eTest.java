@@ -42,6 +42,7 @@ class ApiContractE2eTest extends E2eSupport {
       "/api/auth/csrf", "/api/auth/login", "/api/auth/register", "/api/auth/recover",
       "/api/auth/recover/complete", "/api/auth/mfa/verify", "/api/auth/invitations/{token}",
       "/api/oauth/callback", "/api/mcp/oauth/callback", "/api/webhooks/{token}",
+      "/api/webhooks/services/{token}",
       "/api/auth/logout",
       // A published form's link: anyone can read the form and send an answer.
       "/api/public/forms/{token}", "/api/public/forms/{token}/submit",

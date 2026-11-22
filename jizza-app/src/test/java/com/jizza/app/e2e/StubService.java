@@ -36,6 +36,10 @@ public final class StubService implements AutoCloseable {
   public volatile boolean revoked;
   /** The provider has revoked the grant: every token request is refused. */
   public volatile boolean refuseTokens;
+  /** What GET /v1/open/pets lists, without any sign-in: for polling triggers. */
+  private volatile String openPets = "[]";
+
+  public void setPets(String json) { this.openPets = json; }
 
   public record Recorded(String method, String path, String body, Map<String, String> headers) {}
 
@@ -141,6 +145,10 @@ public final class StubService implements AutoCloseable {
     String body = read(exchange);
     record(exchange, body);
 
+    if (exchange.getRequestURI().getPath().equals("/v1/open/pets")) {
+      respond(exchange, 200, openPets);
+      return;
+    }
     String auth = exchange.getRequestHeaders().getFirst("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
       respond(exchange, 401, "{\"error\":\"missing token\"}");

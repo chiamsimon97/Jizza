@@ -182,6 +182,20 @@ public class WorkflowUseCase {
     return workflows.setFormTrigger(workflowId, formId);
   }
 
+  /**
+   * Makes a service trigger start the workflow whenever it fires; null for none. The caller checks
+   * the trigger is one of theirs.
+   */
+  @Transactional
+  public WorkflowDto setServiceTrigger(UUID userId, UUID workflowId, UUID triggerId) {
+    WorkflowDto workflow = ownedBy(userId, workflowId);
+    WorkflowDto saved = workflows.setServiceTrigger(workflowId, triggerId);
+    audit.record(userId, ActorType.USER, null, "workflow.service_trigger", workflow.name(),
+        Json.obj().put("workflowId", workflowId.toString())
+            .put("triggerId", triggerId == null ? null : triggerId.toString()));
+    return saved;
+  }
+
   /** What the library keeps for reusing a workflow, as the user set it; null takes it out. */
   @Transactional
   public WorkflowLibrary.Match describe(UUID userId, UUID workflowId, ReuseProfile reuse) {

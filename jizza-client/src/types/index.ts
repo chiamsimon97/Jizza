@@ -861,14 +861,37 @@ export interface ServiceTrigger {
   name: string
   label: string
   description?: string
-  apiId: string
+  /** The list API a polling trigger calls; an instant trigger has none. */
+  apiId?: string | null
   resourceId?: string
+  /** polling: Jizza checks a list API; webhook: the service calls Jizza (instant). */
   kind: 'polling' | 'webhook'
   pollIntervalMinutes: number
   itemsPath?: string
   idField: string
   enabled: boolean
   lastPolledAt?: string
+  /** The address the service calls, for an instant trigger. */
+  webhookUrl?: string | null
+  /** A signing secret is set, so unsigned calls are refused. */
+  signed?: boolean
+  signatureHeader?: string | null
+  signaturePrefix?: string | null
+  lastReceivedAt?: string | null
+  /** The workflows this trigger starts. */
+  workflowIds?: string[]
+}
+
+/** A service trigger a workflow can start from. */
+export interface ServiceTriggerChoice {
+  serviceId: string
+  serviceName: string
+  triggerId: string
+  label: string
+  kind: 'polling' | 'webhook'
+  enabled: boolean
+  live: boolean
+  workflowIds: string[]
 }
 
 export interface ServiceVariable {

@@ -14,7 +14,10 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** An event in a service, detected by polling an API for items not seen before. */
+/**
+ * An event in a service: found by polling an API for items not seen before, or sent by the service
+ * itself to the trigger's own address (a webhook).
+ */
 @Entity
 @Table(name = "service_triggers")
 public class ServiceTriggerEntity {
@@ -35,7 +38,7 @@ public class ServiceTriggerEntity {
   @Column(columnDefinition = "text")
   private String description;
 
-  @Column(nullable = false)
+  /** The API polled for items; a webhook trigger may have none. */
   private UUID apiId;
 
   private UUID resourceId;
@@ -57,6 +60,19 @@ public class ServiceTriggerEntity {
   private JsonNode seenIds;
 
   private Instant lastPolledAt;
+
+  /** The unguessable last part of a webhook trigger's address. */
+  @Column(unique = true)
+  private String endpointToken;
+
+  /** Encrypted; when set, each delivery must be signed with it. */
+  private byte[] signingSecret;
+
+  private String signatureHeader;
+
+  private String signaturePrefix;
+
+  private Instant lastReceivedAt;
 
   private Instant createdAt;
 
@@ -119,4 +135,19 @@ public class ServiceTriggerEntity {
 
   @PreUpdate
   void onUpdate() { updatedAt = Instant.now(); }
+
+  public String getEndpointToken() { return endpointToken; }
+  public void setEndpointToken(String endpointToken) { this.endpointToken = endpointToken; }
+
+  public byte[] getSigningSecret() { return signingSecret; }
+  public void setSigningSecret(byte[] signingSecret) { this.signingSecret = signingSecret; }
+
+  public String getSignatureHeader() { return signatureHeader; }
+  public void setSignatureHeader(String signatureHeader) { this.signatureHeader = signatureHeader; }
+
+  public String getSignaturePrefix() { return signaturePrefix; }
+  public void setSignaturePrefix(String signaturePrefix) { this.signaturePrefix = signaturePrefix; }
+
+  public Instant getLastReceivedAt() { return lastReceivedAt; }
+  public void setLastReceivedAt(Instant lastReceivedAt) { this.lastReceivedAt = lastReceivedAt; }
 }

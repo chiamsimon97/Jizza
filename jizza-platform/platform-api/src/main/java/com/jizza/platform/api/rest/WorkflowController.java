@@ -13,6 +13,8 @@ import com.jizza.engine.api.workflow.WorkflowEngine;
 import com.jizza.engine.api.workflow.library.ReuseProfile;
 import com.jizza.engine.api.workflow.library.WorkflowLibrary;
 import com.jizza.engine.security.session.CurrentUser;
+import com.jizza.engine.security.session.CurrentWorkspace;
+import com.jizza.platform.usecase.connector.ConnectorServiceUseCase;
 import com.jizza.platform.usecase.skill.SkillUseCase;
 import com.jizza.platform.usecase.workflow.WorkflowUseCase;
 import com.jizza.platform.api.rest.dto.Requests;
@@ -41,6 +43,7 @@ public class WorkflowController {
   private final com.jizza.engine.api.orchestrator.AgentDirectory agents;
   private final FormulaPreview formulas;
   private final com.jizza.engine.api.form.Forms forms;
+  private final ConnectorServiceUseCase serviceTriggers;
 
   /** Turns a workflow on or off. */
   public record SetEnabled(@jakarta.validation.constraints.NotNull Boolean enabled) {}
@@ -50,13 +53,15 @@ public class WorkflowController {
 
   public WorkflowController(WorkflowEngine engine, WorkflowUseCase workflows, SkillUseCase skills,
                             com.jizza.engine.api.orchestrator.AgentDirectory agents,
-                            FormulaPreview formulas, com.jizza.engine.api.form.Forms forms) {
+                            FormulaPreview formulas, com.jizza.engine.api.form.Forms forms,
+                            ConnectorServiceUseCase serviceTriggers) {
     this.engine = engine;
     this.workflows = workflows;
     this.skills = skills;
     this.agents = agents;
     this.formulas = formulas;
     this.forms = forms;
+    this.serviceTriggers = serviceTriggers;
   }
 
   /**
@@ -81,6 +86,24 @@ public class WorkflowController {
     UUID userId = CurrentUser.userId();
     if (request.formId() != null) forms.get(userId, request.formId());
     return workflows.setFormTrigger(userId, id, request.formId());
+  }
+
+  /** Starts the workflow whenever the service trigger fires (only while the workflow is on). */
+  @PutMapping("/workflows/{id}/service-trigger")
+  public WorkflowDto setServiceTrigger(@PathVariable UUID id, @RequestBody SetServiceTrigger request) {
+    if (request.triggerId() != null && serviceTriggers.triggerChoices(CurrentWorkspace.access())
+        .stream().noneMatch(t -> t.triggerId().equals(request.triggerId()))) {
+      throw new com.jizza.engine.api.error.NotFoundException("Trigger", request.triggerId());
+    }
+    return workflows.setServiceTrigger(CurrentUser.userId(), id, request.triggerId());
+  }
+
+  public record SetServiceTrigger(UUID triggerId) {}
+
+  /** Every trigger of the person's services, for the workflow's "Starts when" choice. */
+  @GetMapping("/service-triggers")
+  public java.util.List<com.jizza.platform.usecase.connector.ConnectorServiceUseCase.TriggerChoice> serviceTriggers() {
+    return serviceTriggers.triggerChoices(CurrentWorkspace.access());
   }
 
   /**

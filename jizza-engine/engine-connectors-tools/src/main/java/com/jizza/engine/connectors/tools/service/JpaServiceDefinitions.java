@@ -5,6 +5,7 @@ import com.jizza.engine.api.crypto.EncryptionService;
 import com.jizza.engine.api.enums.CapabilityType;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.service.ServiceDefinitions;
+import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.service.ServiceModel;
 import com.jizza.engine.api.service.ServiceModel.Action;
 import com.jizza.engine.api.service.ServiceModel.ActionInput;
@@ -77,6 +78,25 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
     this.runs = runs;
     this.capabilities = capabilities;
     this.encryption = encryption;
+  }
+
+  private com.jizza.engine.connectors.config.ConnectorProperties connectorProperties;
+  private com.jizza.engine.persistence.repository.WorkflowRepository workflows;
+
+  /** Where webhook triggers are reached, and which workflows each trigger starts. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setTriggerSupport(com.jizza.engine.connectors.config.ConnectorProperties properties,
+                                com.jizza.engine.persistence.repository.WorkflowRepository workflows) {
+    this.connectorProperties = properties;
+    this.workflows = workflows;
+  }
+
+  /** The public address of a webhook trigger, or null while it has none. */
+  public String webhookUrl(String token) {
+    if (token == null) return null;
+    String base = connectorProperties == null || connectorProperties.getCallbackBaseUrl() == null
+        ? "" : connectorProperties.getCallbackBaseUrl().replaceAll("/+$", "");
+    return base + "/api/webhooks/services/" + token;
   }
 
   // ── Service ───────────────────────────────────────────────────────────────
@@ -237,7 +257,7 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
   @Transactional(readOnly = true)
   public List<Trigger> triggers(UUID serviceId) {
     return triggers.findByConnectionIdOrderByLabelAsc(serviceId).stream()
-        .map(JpaServiceDefinitions::trigger).toList();
+        .map(this::trigger).toList();
   }
 
   @Override
@@ -246,7 +266,12 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
     ServiceTriggerEntity e = triggerId == null ? new ServiceTriggerEntity()
         : scoped(triggers.findById(triggerId), serviceId, ServiceTriggerEntity::getConnectionId,
             "Trigger", triggerId);
-    apiEntity(serviceId, in.apiId());
+    String kind = in.kind() == null ? (e.getKind() == null ? ServiceModel.POLLING : e.getKind())
+        : in.kind();
+    if (!ServiceModel.POLLING.equals(kind) && !ServiceModel.WEBHOOK.equals(kind)) {
+      throw new ValidationException("A trigger polls or receives a webhook");
+    }
+    if (in.apiId() != null) apiEntity(serviceId, in.apiId());
     if (in.resourceId() != null) {
       scoped(resources.findById(in.resourceId()), serviceId, ServiceResourceEntity::getConnectionId,
           "Resource", in.resourceId());
@@ -257,7 +282,7 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
     e.setLabel(in.label());
     e.setDescription(in.description());
     // Pointing a trigger at a different API or list makes what it has already seen meaningless.
-    if (triggerId != null && (!in.apiId().equals(e.getApiId())
+    if (triggerId != null && (!java.util.Objects.equals(in.apiId(), e.getApiId())
         || !java.util.Objects.equals(in.itemsPath(), e.getItemsPath()))) {
       e.setSeenIds(Json.mapper().createArrayNode());
       e.setLastPolledAt(null);
@@ -268,6 +293,22 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
     e.setItemsPath(in.itemsPath());
     e.setIdField(in.idField() == null || in.idField().isBlank() ? "id" : in.idField());
     if (in.enabled() != null) e.setEnabled(in.enabled());
+    e.setKind(kind);
+    if (ServiceModel.WEBHOOK.equals(kind) && e.getEndpointToken() == null) {
+      byte[] bytes = new byte[32];
+      new java.security.SecureRandom().nextBytes(bytes);
+      e.setEndpointToken(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+    }
+    if (in.signingSecret() != null) {
+      e.setSigningSecret(in.signingSecret().isBlank() ? null
+          : encryption.encryptString(in.signingSecret()));
+    }
+    if (in.signatureHeader() != null) {
+      e.setSignatureHeader(in.signatureHeader().isBlank() ? null : in.signatureHeader().strip());
+    }
+    if (in.signaturePrefix() != null) {
+      e.setSignaturePrefix(in.signaturePrefix().isEmpty() ? null : in.signaturePrefix());
+    }
     return trigger(triggers.save(e));
   }
 
@@ -380,11 +421,17 @@ public class JpaServiceDefinitions implements ServiceDefinitions {
     return name.length() <= 64 ? name : name.substring(0, 64);
   }
 
-  static Trigger trigger(ServiceTriggerEntity e) {
+  Trigger trigger(ServiceTriggerEntity e) {
+    List<UUID> listening = workflows == null || e.getId() == null ? List.of()
+        : workflows.findByServiceTriggerIdAndDeletedAtIsNull(e.getId()).stream()
+            .map(com.jizza.engine.persistence.entity.WorkflowEntity::getId).toList();
+    boolean webhook = ServiceModel.WEBHOOK.equals(e.getKind());
     return new Trigger(e.getId(), e.getConnectionId(), e.getName(), e.getLabel(),
         e.getDescription(), e.getApiId(), e.getResourceId(), e.getKind(),
         e.getPollIntervalMinutes(), e.getItemsPath(), e.getIdField(), e.isEnabled(),
-        e.getLastPolledAt());
+        e.getLastPolledAt(), webhook ? webhookUrl(e.getEndpointToken()) : null,
+        e.getSigningSecret() != null, e.getSignatureHeader(), e.getSignaturePrefix(),
+        e.getLastReceivedAt(), listening);
   }
 
   static Variable variable(ServiceVariableEntity e) {
