@@ -55,6 +55,22 @@ describe('LocatorFixPanel', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(fix, 3))
   })
 
+  it('offers to put the way that worked first when a step found its element by a backup way', async () => {
+    const backup: LocatorFix = { ...fix, id: 'fix2', candidates: [
+      { element: { strategies: [{ by: 'css', value: '#submit' }, { by: 'role', role: 'button', name: 'Submit order' }] },
+        score: 1, backup: true, text: 'Found by its id "submit" (way 2 of 2), not by its first way' },
+    ] }
+    vi.mocked(webApi.fixes).mockResolvedValue([backup])
+    const onApplied = vi.fn()
+    wrap(<LocatorFixPanel workflowId="wf1" onApplied={onApplied} />)
+    expect(await screen.findByText(/still works, but it found its element by a backup way/)).toBeInTheDocument()
+    expect(screen.getByText(/way 2 of 2/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pick on page' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Make it first' }))
+    await waitFor(() => expect(webApi.applyFix).toHaveBeenCalledWith('fix2', 0))
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(backup, 2))
+  })
+
   it('applies only the suggestion the person chose', async () => {
     vi.mocked(webApi.fixes).mockResolvedValue([fix, { ...fix, id: 'other', workflowId: 'wf2' }])
     const onApplied = vi.fn()

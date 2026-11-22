@@ -110,6 +110,109 @@ public class LocatorFixService implements LocatorFixes {
     notify(fix, workflow, node);
   }
 
+  /**
+   * Runs in its own transaction, like {@link #propose}: a step that worked must never fail
+   * because its fix could not be kept.
+   */
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void backupUsed(UsedBackup used) {
+    if (used == null || used.workflowId() == null || used.nodeId() == null
+        || used.located() == null || !used.located().isArray()) {
+      return;
+    }
+    WorkflowDto workflow = workflows.find(used.workflowId())
+        .filter(w -> w.userId().equals(used.userId())).orElse(null);
+    if (workflow == null) return;
+    JsonNode node = nodeOf(workflow.graph(), used.nodeId()).orElse(null);
+    if (node == null) return;
+    JsonNode element = node.path("config").path("inputs").path("element");
+    JsonNode strategies = element.path("strategies");
+    if (!strategies.isArray() || strategies.isEmpty()) return;
+    // Only the step's own element: the way that found it must be one it already has.
+    int at = -1;
+    boolean byFingerprint = false;
+    for (JsonNode way : used.located()) {
+      int index = indexOf(strategies, way.path("strategy"));
+      if (index > 0 || (index == 0 && way.path("byFingerprint").asBoolean(false))) {
+        at = index;
+        byFingerprint = way.path("byFingerprint").asBoolean(false);
+        break;
+      }
+    }
+    if (at < 0) return;
+    if (fixes.findByWorkflowIdAndNodeIdAndStatus(used.workflowId(), used.nodeId(), OPEN)
+        .isPresent()) {
+      return; // One open fix per step: the person has not answered the last one yet.
+    }
+    ObjectNode reordered = element.deepCopy();
+    ArrayNode ordered = reordered.putArray("strategies");
+    ordered.add(strategies.get(at).deepCopy());
+    for (int i = 0; i < strategies.size(); i++) {
+      if (i != at) ordered.add(strategies.get(i).deepCopy());
+    }
+    String text = byFingerprint
+        ? "Several things on the page matched its " + wayName(strategies.get(at))
+            + "; it was picked by how it looked when recorded"
+        : "Found by its " + wayName(strategies.get(at)) + " (way " + (at + 1) + " of "
+            + strategies.size() + "), not by its first way, "
+            + wayName(strategies.get(0));
+    ArrayNode candidates = Json.mapper().createArrayNode();
+    // `backup` tells the review panel this step worked: it offers to reorder, not to replace.
+    candidates.addObject().put("score", 1.0).put("text", clip(text)).put("backup", true)
+        .set("element", reordered);
+
+    WebLocatorFixEntity fix = new WebLocatorFixEntity();
+    fix.setId(UUID.randomUUID());
+    fix.setOwnerId(used.userId());
+    fix.setWorkflowId(used.workflowId());
+    fix.setNodeId(used.nodeId());
+    fix.setRunId(used.runId());
+    fix.setCandidates(candidates);
+    fix.setStatus(OPEN);
+    fix.setCreatedAt(Instant.now());
+    fixes.saveAndFlush(fix);
+    NotificationBus bus = notifications.getIfAvailable();
+    if (bus == null) return;
+    String body = "Step " + stepNumber(workflow.graph(), fix.getNodeId()) + " of "
+        + workflow.name() + " found " + elementName(node)
+        + " by a backup way. Make that way the first one";
+    ObjectNode detail = Json.obj().put("source", "webauto").put("kind", "locator_fix")
+        .put("fixId", fix.getId().toString()).put("nodeId", fix.getNodeId())
+        .put("link", reviewLink(workflow.id(), fix.getNodeId()));
+    bus.raise(NotificationKind.INFO, null, new NotificationContext(fix.getOwnerId(), body, detail,
+        null, workflow.id(), fix.getRunId(), null));
+  }
+
+  /** Where {@code strategy} is in {@code strategies}, or -1. */
+  static int indexOf(JsonNode strategies, JsonNode strategy) {
+    if (strategy == null || !strategy.isObject()) return -1;
+    for (int i = 0; i < strategies.size(); i++) {
+      if (strategies.get(i).equals(strategy)) return i;
+    }
+    return -1;
+  }
+
+  /** A strategy in words a person knows: "label \"From\"", "test id", "position on the page". */
+  static String wayName(JsonNode strategy) {
+    String value = strategy.path("value").asText("");
+    String shown = value.length() > 40 ? value.substring(0, 40) + "…" : value;
+    return switch (strategy.path("by").asText("")) {
+      case "testid" -> "test id \"" + shown + "\"";
+      case "role" -> strategy.path("role").asText("role") + " named \""
+          + strategy.path("name").asText("") + "\"";
+      case "label" -> "label \"" + shown + "\"";
+      case "placeholder" -> "placeholder \"" + shown + "\"";
+      case "name" -> "name \"" + shown + "\"";
+      case "near" -> "words beside it, \"" + shown + "\"";
+      case "text" -> "text \"" + shown + "\"";
+      case "css" -> value.startsWith("#") ? "id \"" + shown.substring(1) + "\""
+          : "CSS " + shown;
+      case "xpath" -> "position on the page";
+      default -> "way";
+    };
+  }
+
   private void notify(WebLocatorFixEntity fix, WorkflowDto workflow, JsonNode node) {
     NotificationBus bus = notifications.getIfAvailable();
     if (bus == null) return;

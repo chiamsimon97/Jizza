@@ -177,9 +177,21 @@ keep only those that match exactly this element right now: `testid` (`data-testi
 UUID-like, or common framework prefixes like `ember`, `react-select-`, `mui-`),
 `role`+accessible name (compute the accessible name per WAI-ARIA accname: `aria-labelledby`,
 `aria-label`, `<label>`, `alt`, `title`, text content), `label` (form fields by their label text),
-`placeholder`, `name` attribute, a short unique CSS path (prefer stable attributes, avoid
-`:nth-child` unless needed, max 5 levels), `text` (only for elements with short visible text),
-XPath last. `frames` is the chain of iframes from the top document (each with its own strategies);
+`placeholder`, `name` attribute, `near` (a form field by the words just before it, such as
+"From" beside its box, when no label is tied to it), a short unique CSS path (prefer stable
+attributes, avoid `:nth-child` unless needed, max 5 levels), `text` (only for elements with short
+visible text), XPath last. Attribute ways are sent as `css`: steady `data-*` attributes and
+Angular `formcontrolname` right after the id, then `title`, `alt` and a link's `href` after
+`name`. At most 12 strategies.
+
+**Patterns** for lists, rows and cards (`itemCss`, `titleCss`, `rowCss`, `within.itemCss`) may
+carry backups: CSS selectors joined by ` || `, best first, each of which found the same elements
+when recorded. The first one that finds anything on the page is used.
+
+**Reporting the way** (since browser agent 0.28): a successful step whose element was found by a
+strategy other than its first, or picked by the fingerprint among several matches, adds
+`output._located: [{at, strategy, byFingerprint?}]`. The server then offers the person a fix that
+moves that strategy first. `frames` is the chain of iframes from the top document (each with its own strategies);
 `shadow` the chain of open shadow hosts. `label` is a short human description for the builder.
 
 **Resolving** a bundle: switch into each frame (cross-origin frames: run the content script in that

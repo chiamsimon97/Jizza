@@ -20,6 +20,13 @@ public interface LocatorFixes {
    */
   void propose(FailedStep failed);
 
+  /**
+   * A web step worked, but found its element by a backup way (not its first strategy), or several
+   * elements matched and the recorded fingerprint chose one. Offers a fix that makes the way that
+   * worked the first one, before the others stop working too. Never applies anything.
+   */
+  default void backupUsed(UsedBackup used) {}
+
   /** The person's fixes, newest first; {@code status} may be null for all. */
   List<Fix> list(Access access, String status);
 
@@ -43,6 +50,12 @@ public interface LocatorFixes {
    */
   record FailedStep(UUID userId, UUID workflowId, int workflowVersion, UUID runId, String nodeId,
                     JsonNode error) {}
+
+  /**
+   * @param located the step output's {@code _located}: {@code [{at, strategy, byFingerprint}]},
+   *                one entry per element found by a way other than its first
+   */
+  record UsedBackup(UUID userId, UUID workflowId, UUID runId, String nodeId, JsonNode located) {}
 
   /** {@code candidates} are {@code [{element, score, text}]}, best first. */
   record Fix(UUID id, UUID workflowId, String workflowName, String nodeId, String nodeLabel,

@@ -48,6 +48,31 @@ function FixCard({ fix, onApplied }: { fix: LocatorFix; onApplied: (fix: Locator
     onError: (e: unknown) => setError(e instanceof Error ? e.message : 'The fix could not be dismissed'),
   })
 
+  // The step worked, but by a backup way: offer to make that way the first one.
+  const backup = fix.candidates.length === 1 && fix.candidates[0]?.backup === true
+  if (backup) {
+    return (
+      <section aria-label={`Fix for ${fix.nodeLabel}`}
+        className="rounded-xl border border-sky-300 bg-sky-50 p-3 text-sm dark:border-sky-700 dark:bg-sky-500/10">
+        <p className="flex items-start gap-2 font-medium text-sky-900 dark:text-sky-200">
+          <Wrench className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{fix.nodeLabel} still works, but it found its element by a backup way. Make that way the first one?</span>
+        </p>
+        <p className="mt-1 text-xs text-sky-800 dark:text-sky-300">{fix.candidates[0]?.text}</p>
+        <p className="mt-2 text-xs text-sky-800 dark:text-sky-300">
+          Its first way may have stopped working after a change on the site. Applying saves a new version of this workflow with the way that worked tried first; the other ways stay as backups.
+        </p>
+        {error && <p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
+        <div className="mt-2 flex gap-2">
+          <Button type="button" size="sm" loading={apply.isPending}
+            onClick={() => { setError(''); apply.mutate(0) }}>Make it first</Button>
+          <Button type="button" size="sm" variant="ghost" loading={dismiss.isPending}
+            onClick={() => { setError(''); dismiss.mutate() }}>Keep as it is</Button>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section aria-label={`Fix for ${fix.nodeLabel}`}
       className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-500/10">

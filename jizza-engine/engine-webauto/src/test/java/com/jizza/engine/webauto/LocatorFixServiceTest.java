@@ -174,6 +174,57 @@ class LocatorFixServiceTest {
     assertThat(told.getValue().detail().path("fixId").asText()).isEqualTo(open.get(0).id().toString());
   }
 
+  private void usedBackup(String locatedJson) {
+    service.backupUsed(new LocatorFixes.UsedBackup(userId, workflowId, UUID.randomUUID(),
+        "submit", Json.read(locatedJson)));
+  }
+
+  @Test
+  void aStepFoundByABackupWayOffersToPutThatWayFirst() {
+    usedBackup("""
+        [{"at":1,"strategy":{"by":"css","value":"#submit"}}]""");
+
+    List<LocatorFixes.Fix> open = service.list(access, "open");
+    assertThat(open).hasSize(1);
+    JsonNode candidate = open.get(0).candidates().get(0);
+    assertThat(candidate.path("backup").asBoolean()).isTrue();
+    assertThat(candidate.path("text").asText())
+        .isEqualTo("Found by its id \"submit\" (way 2 of 2), not by its first way, "
+            + "button named \"Submit order\"");
+    assertThat(candidate.path("element").path("strategies").get(0).path("value").asText())
+        .isEqualTo("#submit");
+    assertThat(candidate.path("element").path("strategies")).hasSize(2);
+    ArgumentCaptor<NotificationContext> told = ArgumentCaptor.forClass(NotificationContext.class);
+    verify(bus).raise(eq(NotificationKind.INFO), any(), told.capture());
+    assertThat(told.getValue().body()).isEqualTo(
+        "Step 2 of Supplier invoices found Submit order by a backup way. Make that way the first one");
+    assertThat(told.getValue().detail().path("kind").asText()).isEqualTo("locator_fix");
+
+    // Applying it saves a version where the way that worked is first and the other stays after.
+    service.apply(access, open.get(0).id(), 0);
+    JsonNode strategies = LocatorFixService.nodeOf(workflow.graph(), "submit").orElseThrow().path("config").path("inputs")
+        .path("element").path("strategies");
+    assertThat(strategies.get(0).path("value").asText()).isEqualTo("#submit");
+    assertThat(strategies.get(1).path("role").asText()).isEqualTo("button");
+    assertThat(strategies).hasSize(2);
+  }
+
+  @Test
+  void aBackupWayIsNotedOnlyForTheStepsOwnStrategiesAndOnce() {
+    usedBackup("""
+        [{"at":0,"strategy":{"by":"role","role":"button","name":"Submit order"}}]""");
+    usedBackup("""
+        [{"at":3,"strategy":{"by":"css","value":"#somewhere-else"}}]""");
+    assertThat(rows).isEmpty();
+
+    usedBackup("""
+        [{"at":1,"strategy":{"by":"css","value":"#submit"}}]""");
+    usedBackup("""
+        [{"at":1,"strategy":{"by":"css","value":"#submit"}}]""");
+    assertThat(rows).hasSize(1);
+    verify(bus, times(1)).raise(any(), any(), any());
+  }
+
   @Test
   void theSameStepFailingAgainKeepsOneOpenFixAndDoesNotNotifyTwice() {
     fail(error("Place order"));
