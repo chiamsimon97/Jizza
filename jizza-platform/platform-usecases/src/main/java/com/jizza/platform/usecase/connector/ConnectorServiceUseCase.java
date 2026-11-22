@@ -298,16 +298,50 @@ public class ConnectorServiceUseCase {
     owned(access, serviceId);
     machineName(in.name(), "trigger");
     label(in.label());
-    if (in.apiId() == null) throw new ValidationException("A trigger must poll an API");
+    boolean webhook = ServiceModel.WEBHOOK.equals(in.kind());
+    if (in.kind() != null && !webhook && !ServiceModel.POLLING.equals(in.kind())) {
+      throw new ValidationException("A trigger either polls an API or receives a webhook");
+    }
+    if (!webhook && in.apiId() == null) throw new ValidationException("A trigger must poll an API");
     if (in.pollIntervalMinutes() != null
         && (in.pollIntervalMinutes() < 1 || in.pollIntervalMinutes() > 1440)) {
       throw new ValidationException("The polling interval must be between 1 and 1440 minutes");
     }
-    return definitions.saveTrigger(serviceId, triggerId, new TriggerInput(in.name(),
+    if (in.signingSecret() != null && !in.signingSecret().isBlank()
+        && in.signingSecret().length() < 8) {
+      throw new ValidationException("A signing secret needs at least 8 characters");
+    }
+    if (in.signatureHeader() != null && !in.signatureHeader().isBlank()
+        && !in.signatureHeader().strip().matches("[A-Za-z0-9-]{1,64}")) {
+      throw new ValidationException("The signature header must be a header name, such as X-Signature");
+    }
+    Trigger saved = definitions.saveTrigger(serviceId, triggerId, new TriggerInput(in.name(),
         in.label().trim(), in.description(), in.apiId(), in.resourceId(),
         in.pollIntervalMinutes(), blankToNull(in.itemsPath()), blankToNull(in.idField()),
-        in.enabled()));
+        in.enabled(), in.kind(), in.signingSecret(), in.signatureHeader(), in.signaturePrefix()));
+    if (webhook) {
+      audit.record(access.userId(), ActorType.USER, null, "service.trigger_webhook", saved.label(),
+          Json.obj().put("serviceId", serviceId.toString()).put("triggerId", saved.id().toString())
+              .put("signed", saved.signed()));
+    }
+    return saved;
   }
+
+  /** Every trigger of the person's services, for choosing what starts a workflow. */
+  public List<TriggerChoice> triggerChoices(Access access) {
+    List<TriggerChoice> out = new ArrayList<>();
+    for (Info service : list(access)) {
+      for (Trigger t : definitions.triggers(service.id())) {
+        out.add(new TriggerChoice(service.id(), service.name(), t.id(), t.label(), t.kind(),
+            t.enabled(), ServiceModel.LIVE.equals(service.versionStatus()), t.workflowIds()));
+      }
+    }
+    return out;
+  }
+
+  /** A trigger as the workflow's "Starts when" list shows it. */
+  public record TriggerChoice(UUID serviceId, String serviceName, UUID triggerId, String label,
+                              String kind, boolean enabled, boolean live, List<UUID> workflowIds) {}
 
   @Transactional
   public void deleteTrigger(Access access, UUID serviceId, UUID triggerId) {

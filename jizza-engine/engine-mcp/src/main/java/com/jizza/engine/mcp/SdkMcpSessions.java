@@ -3,6 +3,7 @@ package com.jizza.engine.mcp;
 import com.jizza.engine.api.util.Json;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
@@ -79,6 +80,30 @@ public class SdkMcpSessions implements McpSession.Factory {
             .connectTimeout(server.getRequestTimeout())
             .build();
       }
+      case SSE -> {
+        // The older HTTP+SSE transport (protocol 2024-11-05): an event stream to listen on, and an
+        // address it names to post messages to, which must be on the same server.
+        if (server.getUrl() == null || server.getUrl().isBlank()) {
+          throw new IllegalStateException("MCP server '" + name + "' has no url");
+        }
+        java.net.URI uri = java.net.URI.create(server.getUrl());
+        String base = uri.getScheme() + "://" + uri.getRawAuthority();
+        String endpoint = uri.getRawPath() == null || uri.getRawPath().isEmpty()
+            ? "/sse" : uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+        java.net.http.HttpRequest.Builder request = java.net.http.HttpRequest.newBuilder();
+        server.getHeaders().forEach(request::header);
+        yield HttpClientSseClientTransport.builder(base)
+            .sseEndpoint(endpoint)
+            .jsonMapper(mapper)
+            .requestBuilder(request)
+            .httpRequestCustomizer((builder, method, endpointUri, body, context) -> {
+              if ("POST".equals(method)) builder.setHeader("Content-Type", "application/json");
+            })
+            .connectTimeout(server.getRequestTimeout())
+            .build();
+      }
+      case DEVICE -> throw new IllegalStateException("MCP server '" + name
+          + "' runs on a paired app, which this session factory cannot reach");
     };
   }
 

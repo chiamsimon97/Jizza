@@ -26,8 +26,11 @@ public class McpConfig {
 
   @Bean
   public McpToolProvider mcpToolProvider(McpProperties props, AgentRepository agents,
-                                         ObjectProvider<EgressGuard> egress) {
-    return new McpToolProvider(props, new GuardedMcpSessions(new SdkMcpSessions(), egress), agents);
+                                         ObjectProvider<EgressGuard> egress,
+                                         ObjectProvider<com.jizza.engine.api.device.DeviceCommands> devices,
+                                         ObjectProvider<org.springframework.transaction.PlatformTransactionManager> transactions) {
+    return new McpToolProvider(props, new GuardedMcpSessions(
+        new DeviceMcpSessions(new SdkMcpSessions(), devices, transactions), egress), agents);
   }
 
   @Bean

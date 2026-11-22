@@ -9,4 +9,6 @@ public interface ServiceTriggerRepository extends JpaRepository<ServiceTriggerEn
   List<ServiceTriggerEntity> findByConnectionIdOrderByLabelAsc(UUID connectionId);
 
   List<ServiceTriggerEntity> findByEnabledTrue();
+
+  java.util.Optional<ServiceTriggerEntity> findByEndpointToken(String endpointToken);
 }

@@ -57,13 +57,37 @@ public final class ServiceModel {
   public record ActionInput(String name, String label, String description, UUID apiId,
                             UUID resourceId, Boolean enabled) {}
 
+  /**
+   * @param kind           {@code polling}, or {@code webhook}: the service calls {@code webhookUrl}
+   * @param webhookUrl     where the service sends its events; null for a polling trigger
+   * @param signed         whether each delivery must carry a signature made with a shared secret
+   * @param workflowIds    the workflows that start whenever it fires
+   */
   public record Trigger(UUID id, UUID serviceId, String name, String label, String description,
                         UUID apiId, UUID resourceId, String kind, int pollIntervalMinutes,
-                        String itemsPath, String idField, boolean enabled, Instant lastPolledAt) {}
+                        String itemsPath, String idField, boolean enabled, Instant lastPolledAt,
+                        String webhookUrl, boolean signed, String signatureHeader,
+                        String signaturePrefix, Instant lastReceivedAt,
+                        java.util.List<UUID> workflowIds) {}
 
+  /**
+   * @param kind          {@code polling} (the default) or {@code webhook}
+   * @param signingSecret null keeps the current one; blank removes it
+   */
   public record TriggerInput(String name, String label, String description, UUID apiId,
                              UUID resourceId, Integer pollIntervalMinutes, String itemsPath,
-                             String idField, Boolean enabled) {}
+                             String idField, Boolean enabled, String kind, String signingSecret,
+                             String signatureHeader, String signaturePrefix) {
+    public TriggerInput(String name, String label, String description, UUID apiId,
+                        UUID resourceId, Integer pollIntervalMinutes, String itemsPath,
+                        String idField, Boolean enabled) {
+      this(name, label, description, apiId, resourceId, pollIntervalMinutes, itemsPath, idField,
+          enabled, null, null, null, null);
+    }
+  }
+
+  /** What became of one delivery to a webhook trigger. */
+  public record WebhookDelivery(boolean accepted, String reason, int items, int runs) {}
 
   /** {@code value} is never returned for a secret variable; {@code valueSet} says one exists. */
   public record Variable(UUID id, UUID serviceId, String name, String description, String value,
@@ -78,4 +102,7 @@ public final class ServiceModel {
   /** Items a trigger found; {@code newItems} are those it had not seen before. */
   public record TriggerSample(boolean ok, String error, int totalItems, int newItems,
                               JsonNode items) {}
+
+  public static final String POLLING = "polling";
+  public static final String WEBHOOK = "webhook";
 }

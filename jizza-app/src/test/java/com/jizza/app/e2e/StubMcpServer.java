@@ -35,12 +35,44 @@ public final class StubMcpServer implements AutoCloseable {
       throw new IllegalStateException("Could not start the stub MCP server", e);
     }
     server.createContext("/mcp", this::handle);
+    // The older HTTP+SSE transport: an event stream, and an address to post messages to.
+    server.createContext("/sse", this::openStream);
+    server.createContext("/messages", this::postMessage);
     server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
     server.start();
   }
 
   public String url() {
     return "http://127.0.0.1:" + server.getAddress().getPort() + "/mcp";
+  }
+
+  /** The same server, reached over the older SSE transport. */
+  public String sseUrl() {
+    return "http://127.0.0.1:" + server.getAddress().getPort() + "/sse";
+  }
+
+  private volatile java.io.OutputStream stream;
+
+  private void openStream(HttpExchange exchange) throws IOException {
+    String auth = exchange.getRequestHeaders().getFirst("Authorization");
+    authorizations.add(auth == null ? "" : auth);
+    exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+    exchange.sendResponseHeaders(200, 0);
+    stream = exchange.getResponseBody();
+    event("endpoint", "/messages?sessionId=s1");
+  }
+
+  private synchronized void event(String name, String data) throws IOException {
+    stream.write(("event: " + name + "\ndata: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
+    stream.flush();
+  }
+
+  private void postMessage(HttpExchange exchange) throws IOException {
+    JsonNode request = Json.read(new String(exchange.getRequestBody().readAllBytes(),
+        StandardCharsets.UTF_8));
+    send(exchange, 202, null);
+    if (!request.has("id")) return;
+    event("message", reply(request, null).toString());
   }
 
   private void handle(HttpExchange exchange) throws IOException {
@@ -61,15 +93,23 @@ public final class StubMcpServer implements AutoCloseable {
       send(exchange, 202, null);
       return;
     }
+    ObjectNode reply = reply(request, exchange);
+    exchange.getResponseHeaders().add("Content-Type", "application/json");
+    send(exchange, 200, reply.toString());
+  }
+
+  private ObjectNode reply(JsonNode request, HttpExchange exchange) {
     ObjectNode reply = Json.obj().put("jsonrpc", "2.0");
     reply.set("id", request.get("id"));
     ObjectNode result = reply.putObject("result");
     switch (request.path("method").asText()) {
       case "initialize" -> {
-        result.put("protocolVersion", "2025-03-26");
+        // Over SSE it agrees to the client's version, as servers of that era did.
+        result.put("protocolVersion", exchange == null
+            ? request.path("params").path("protocolVersion").asText("2024-11-05") : "2025-03-26");
         result.putObject("capabilities").putObject("tools");
         result.putObject("serverInfo").put("name", "stub-kite").put("version", "1.0");
-        exchange.getResponseHeaders().add("Mcp-Session-Id", "session-1");
+        if (exchange != null) exchange.getResponseHeaders().add("Mcp-Session-Id", "session-1");
       }
       case "tools/list" -> {
         var tools = result.putArray("tools");
@@ -92,8 +132,7 @@ public final class StubMcpServer implements AutoCloseable {
         reply.putObject("error").put("code", -32601).put("message", "Method not found");
       }
     }
-    exchange.getResponseHeaders().add("Content-Type", "application/json");
-    send(exchange, 200, reply.toString());
+    return reply;
   }
 
   private static ObjectNode tool(String name, String description, ObjectNode properties) {

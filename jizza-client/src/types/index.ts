@@ -861,14 +861,37 @@ export interface ServiceTrigger {
   name: string
   label: string
   description?: string
-  apiId: string
+  /** The list API a polling trigger calls; an instant trigger has none. */
+  apiId?: string | null
   resourceId?: string
+  /** polling: Jizza checks a list API; webhook: the service calls Jizza (instant). */
   kind: 'polling' | 'webhook'
   pollIntervalMinutes: number
   itemsPath?: string
   idField: string
   enabled: boolean
   lastPolledAt?: string
+  /** The address the service calls, for an instant trigger. */
+  webhookUrl?: string | null
+  /** A signing secret is set, so unsigned calls are refused. */
+  signed?: boolean
+  signatureHeader?: string | null
+  signaturePrefix?: string | null
+  lastReceivedAt?: string | null
+  /** The workflows this trigger starts. */
+  workflowIds?: string[]
+}
+
+/** A service trigger a workflow can start from. */
+export interface ServiceTriggerChoice {
+  serviceId: string
+  serviceName: string
+  triggerId: string
+  label: string
+  kind: 'polling' | 'webhook'
+  enabled: boolean
+  live: boolean
+  workflowIds: string[]
 }
 
 export interface ServiceVariable {
@@ -1431,7 +1454,14 @@ export interface McpServer {
   signInTool?: string | null
   /** When that tool last answered since the session opened; null after every restart of Jizza. */
   sessionSignInAt?: string | null
+  /** How Jizza reaches it: streamable HTTP, the older SSE, or through the desktop app on a computer. */
+  transport?: McpTransport
+  /** For a server on a computer: the paired app it runs on, and its name there. */
+  deviceId?: string | null
+  deviceServer?: string | null
 }
+
+export type McpTransport = 'streamable_http' | 'sse' | 'device'
 
 /** ready, needs_sign_in, failing, not_set_up, off or offline. */
 export type ConnectorHealth = 'ready' | 'needs_sign_in' | 'failing' | 'not_set_up' | 'off' | 'offline'
@@ -1467,6 +1497,9 @@ export interface McpServerInput {
   oauthClientId?: string
   oauthClientSecret?: string
   oauthScopes?: string
+  transport?: McpTransport
+  deviceId?: string
+  deviceServer?: string
 }
 
 export type McpCatalogCategory = 'personal' | 'professional' | 'finance' | 'health'

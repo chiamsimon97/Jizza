@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { LibraryEntry, ReuseProfile, RunDto, RunHistoryPage, SkillDto, WorkflowDto } from '@/types'
+import type { LibraryEntry, ReuseProfile, RunDto, RunHistoryPage, ServiceTriggerChoice, SkillDto, WorkflowDto } from '@/types'
 
 export const workflowsApi = {
   list: () =>
@@ -52,6 +52,13 @@ export const workflowsApi = {
   /** Starts the workflow when this form is submitted; null for no form. */
   setFormTrigger: (id: string, formId: string | null) =>
     api.put<WorkflowDto>(`/api/workflows/${id}/form-trigger`, { formId }),
+
+  /** Starts the workflow when a service trigger fires; null for none. */
+  setServiceTrigger: (id: string, triggerId: string | null) =>
+    api.put<WorkflowDto>(`/api/workflows/${id}/service-trigger`, { triggerId }),
+
+  /** Every trigger of the person's services, with the workflows each starts. */
+  serviceTriggers: () => api.get<ServiceTriggerChoice[]>('/api/service-triggers'),
 
   /**
    * Deletes the workflow (a saved recording is a workflow too). Its unfinished runs are cancelled;

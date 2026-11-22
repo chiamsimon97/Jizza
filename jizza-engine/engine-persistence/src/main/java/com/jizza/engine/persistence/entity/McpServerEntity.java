@@ -104,6 +104,14 @@ public class McpServerEntity {
 
   private Instant oauthStateExpiresAt;
 
+  /** streamable_http (default), sse for older servers, or device: runs on a paired desktop app. */
+  @Column(nullable = false)
+  private String transport = "streamable_http";
+
+  /** For a device server: the paired app it runs on, and its name there. */
+  private UUID deviceId;
+  private String deviceServer;
+
   private Instant createdAt;
 
   private Instant updatedAt;
@@ -186,4 +194,11 @@ public class McpServerEntity {
 
   @PreUpdate
   void onUpdate() { updatedAt = Instant.now(); }
+
+  public String getTransport() { return transport; }
+  public void setTransport(String transport) { this.transport = transport; }
+  public UUID getDeviceId() { return deviceId; }
+  public void setDeviceId(UUID deviceId) { this.deviceId = deviceId; }
+  public String getDeviceServer() { return deviceServer; }
+  public void setDeviceServer(String deviceServer) { this.deviceServer = deviceServer; }
 }

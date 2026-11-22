@@ -82,6 +82,9 @@ public class WorkflowEntity {
   /** The form whose submissions start this workflow, or null. Not part of the graph. */
   private UUID formId;
 
+  /** The service trigger that starts it whenever it fires, or null. */
+  private UUID serviceTriggerId;
+
   /** When the person deleted it; such a row is never loaded (see the class restriction). */
   private Instant deletedAt;
 
@@ -159,6 +162,9 @@ public class WorkflowEntity {
 
   public UUID getFormId() { return formId; }
   public void setFormId(UUID formId) { this.formId = formId; }
+
+  public UUID getServiceTriggerId() { return serviceTriggerId; }
+  public void setServiceTriggerId(UUID serviceTriggerId) { this.serviceTriggerId = serviceTriggerId; }
   public Instant getDeletedAt() { return deletedAt; }
   public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
 

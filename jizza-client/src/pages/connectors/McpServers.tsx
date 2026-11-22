@@ -11,7 +11,8 @@ import { SlideOver, Field, fieldClass } from '@/components/ui/SlideOver'
 import { ACTION_LABELS, ACTION_TYPES, MODE_BADGE, MODE_LABELS } from '@/components/guardrails/labels'
 import { mcpApi } from '@/api/mcp'
 import { agentsApi } from '@/api/agents'
-import type { ActionType, AgentDto, McpAuthType, McpCatalogEntry, McpServer, McpServerInput, McpTool, ModeLine, ToolRunResult } from '@/types'
+import { devicesApi } from '@/api/devices'
+import type { ActionType, AgentDto, McpAuthType, McpCatalogEntry, McpServer, McpServerInput, McpTool, McpTransport, ModeLine, ToolRunResult } from '@/types'
 import { Empty, SectionHeader, Table, errorText } from './shared'
 import { ResultView, schemaFields } from '@/components/connectors/ResultView'
 import { SchemaForm, inputFields } from '@/components/connectors/SchemaForm'
@@ -185,9 +186,18 @@ function NewMcpServerForm({ open, onClose, onCreated, preset, redirectUri }: {
         {preset?.docsUrl && <a href={preset.docsUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline dark:text-brand-300">{preset.publisher}'s setup guide</a>}
         <Input label="Name" required value={value.name ?? ''} onChange={e => setValue({ ...value, name: e.target.value })} placeholder="Zerodha Kite"
           hint="Its tools reach agents as mcp_<name>__<tool>." />
-        <Input label="Server URL" required value={value.url ?? ''} onChange={e => setValue({ ...value, url: e.target.value })} placeholder="https://mcp.example.com/mcp"
-          hint="The server's streamable HTTP endpoint. It must be https." />
-        <AuthFields value={value} onChange={setValue} secretLabel={preset?.secretLabel} ownClient={preset?.ownClient} />
+        {!preset && <TransportFields value={value} onChange={setValue} />}
+        {value.transport !== 'device' && (
+          <Input label="Server URL" required value={value.url ?? ''} placeholder="https://mcp.example.com/mcp"
+            onChange={e => {
+              const url = e.target.value
+              // An address ending in /sse is an older server; pick its transport for the person.
+              const older = /\/sse\/?(\?.*)?$/.test(url)
+              setValue({ ...value, url, ...(!preset && older && value.transport !== 'sse' ? { transport: 'sse' } : {}) })
+            }}
+            hint={value.transport === 'sse' ? "The server's SSE endpoint, usually ending in /sse. It must be https." : "The server's streamable HTTP endpoint. It must be https."} />
+        )}
+        {value.transport !== 'device' && <AuthFields value={value} onChange={setValue} secretLabel={preset?.secretLabel} ownClient={preset?.ownClient} />}
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Who can use it</span>
           <AgentChips agents={agents} keys={keys}
@@ -199,6 +209,55 @@ function NewMcpServerForm({ open, onClose, onCreated, preset, redirectUri }: {
         {create.error && <p className="text-sm text-red-500">{errorText(create.error)}</p>}
       </form>
     </SlideOver>
+  )
+}
+
+const DESKTOPS = ['windows', 'macos', 'linux']
+
+/**
+ * How Jizza reaches the server: over the web (streamable HTTP, or SSE for older servers), or
+ * through the Jizza app on one of the person's computers, for a local server set up there.
+ */
+export function TransportFields({ value, onChange }: { value: McpServerInput; onChange: (v: McpServerInput) => void }) {
+  const transport = value.transport ?? 'streamable_http'
+  const { data: devices } = useQuery({ queryKey: ['devices'], queryFn: () => devicesApi.list(), enabled: transport === 'device' })
+  const computers = (devices ?? []).filter(d => DESKTOPS.includes(String(d.platform).toLowerCase()) && d.status !== 'REVOKED')
+  const chosen = computers.find(d => d.id === value.deviceId)
+  const local = chosen?.items?.mcp_servers ?? []
+  return (
+    <>
+      <Field label="How Jizza reaches it">
+        <select className={fieldClass} value={transport}
+          onChange={e => onChange({ ...value, transport: e.target.value as McpTransport, ...(e.target.value === 'device' ? { authType: 'NONE', url: undefined } : {}) })}>
+          <option value="streamable_http">Over the web (streamable HTTP)</option>
+          <option value="sse">Over the web, older server (SSE)</option>
+          <option value="device">On my computer, through the Jizza app</option>
+        </select>
+      </Field>
+      {transport === 'device' && (
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+          <p className="text-xs text-gray-500 dark:text-gray-400">For a local server you set up in the Jizza app on that computer (it starts the server there). Jizza only names the server; the app runs it under its own limits.</p>
+          <Field label="Computer">
+            <select className={fieldClass} required value={value.deviceId ?? ''} onChange={e => onChange({ ...value, deviceId: e.target.value || undefined })}>
+              <option value="">{computers.length ? 'Choose a computer' : 'No computer with the Jizza app yet'}</option>
+              {computers.map(d => <option key={d.id} value={d.id}>{d.name}{d.online ? '' : ' (offline)'}</option>)}
+            </select>
+          </Field>
+          {local.length > 0
+            ? (
+              <Field label="Server on that computer">
+                <select className={fieldClass} required value={value.deviceServer ?? ''} onChange={e => onChange({ ...value, deviceServer: e.target.value || undefined })}>
+                  <option value="">Choose a server</option>
+                  {local.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+            )
+            : <Input label="Server's name in the app" required value={value.deviceServer ?? ''} placeholder="files" className="font-mono"
+                onChange={e => onChange({ ...value, deviceServer: e.target.value })}
+                hint={chosen ? "The app hasn't listed any servers yet. Add one there (jizza-agent mcp add), then type its name." : undefined} />}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -259,7 +318,10 @@ export function McpServerPage() {
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200"><Server className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold text-gray-900 dark:text-gray-100">{server.name}<McpStatusBadge server={server} /></h1>
-          <p className="break-all text-sm text-gray-500 dark:text-gray-400">{server.url}</p>
+          <p className="break-all text-sm text-gray-500 dark:text-gray-400">
+            {server.transport === 'device' ? `On your computer, through the Jizza app · ${server.deviceServer}` : server.url}
+            {server.transport === 'sse' && ' · SSE'}
+          </p>
           {server.serverName && <p className="text-xs text-gray-400">Reports itself as {server.serverName}{server.serverVersion ? ` ${server.serverVersion}` : ''}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -418,8 +480,8 @@ function SettingsForm({ server, open, onClose, onSaved }: { server: McpServer; o
       <form id="mcp-settings" onSubmit={e => { e.preventDefault(); save.mutate() }} className="flex flex-col gap-4">
         <Input label="Name" value={current.name ?? ''} onChange={e => setValue({ ...value, name: e.target.value })}
           hint={`Its tools keep the name mcp_${server.slug}__…, so workflows keep working.`} />
-        <Input label="Server URL" value={current.url ?? ''} onChange={e => setValue({ ...value, url: e.target.value })} />
-        <AuthFields value={current} onChange={v => setValue({ ...value, ...diff(current, v) })} editing={server} />
+        {server.transport !== 'device' && <Input label="Server URL" value={current.url ?? ''} onChange={e => setValue({ ...value, url: e.target.value })} />}
+        {server.transport !== 'device' && <AuthFields value={current} onChange={v => setValue({ ...value, ...diff(current, v) })} editing={server} />}
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input type="checkbox" checked={value.redactArguments ?? server.redactArguments} onChange={e => setValue({ ...value, redactArguments: e.target.checked })} />
           Keep what is sent to it out of the activity log

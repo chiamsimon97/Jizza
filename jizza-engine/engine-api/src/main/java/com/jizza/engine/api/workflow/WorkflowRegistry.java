@@ -54,6 +54,11 @@ public interface WorkflowRegistry {
     throw new UnsupportedOperationException("Form triggers are not supported here");
   }
 
+  /** Makes the service trigger start the workflow whenever it fires; null stops any starting it. */
+  default WorkflowDto setServiceTrigger(UUID workflowId, UUID triggerId) {
+    throw new UnsupportedOperationException("Service triggers are not supported here");
+  }
+
   /** The workflow's runs that have not ended (running, waiting, or waiting for someone). */
   default List<UUID> unfinishedRuns(UUID workflowId) {
     return List.of();

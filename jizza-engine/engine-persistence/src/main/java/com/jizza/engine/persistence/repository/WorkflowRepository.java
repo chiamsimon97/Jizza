@@ -11,4 +11,7 @@ public interface WorkflowRepository extends JpaRepository<WorkflowEntity, UUID> 
   List<WorkflowEntity> findByUserIdAndStatus(UUID userId, WorkflowStatus status);
   List<WorkflowEntity> findBySourceTaskId(UUID sourceTaskId);
   List<WorkflowEntity> findByFormId(UUID formId);
+
+  /** The workflows a service trigger starts, deleted ones left out. */
+  List<WorkflowEntity> findByServiceTriggerIdAndDeletedAtIsNull(UUID serviceTriggerId);
 }

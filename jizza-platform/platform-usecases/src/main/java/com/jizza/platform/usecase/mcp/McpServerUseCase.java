@@ -39,9 +39,22 @@ public class McpServerUseCase {
       "content-type", "accept", "connection", "mcp-session-id", "mcp-protocol-version",
       "transfer-encoding", "upgrade", "expect");
 
+  /** A server's name in the desktop app it runs on. */
+  private static final Pattern DEVICE_SERVER = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+  private static final Set<String> TRANSPORTS = Set.of(McpServerSettings.STREAMABLE_HTTP,
+      McpServerSettings.SSE, McpServerSettings.DEVICE);
+
   private final McpServers servers;
   private final AgentDirectory agents;
   private final AuditLog audit;
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.platform.usecase.device.DeviceUseCase> deviceUseCase;
+
+  /** Where a server that runs on a paired desktop app is checked to be the person's own. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setDeviceUseCase(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.platform.usecase.device.DeviceUseCase> devices) {
+    this.deviceUseCase = devices;
+  }
 
   public McpServerUseCase(McpServers servers, AgentDirectory agents, AuditLog audit) {
     this.servers = servers;
@@ -60,13 +73,17 @@ public class McpServerUseCase {
   /** Saves the server, then reaches it once so the person sees its tools straight away. */
   public McpServerDto create(Access access, McpServerSettings in) {
     if (isBlank(in.name())) throw new ValidationException("Give the MCP server a name");
-    if (isBlank(in.url())) throw new ValidationException("Give the MCP server's URL");
+    String transport = in.transport() == null ? McpServerSettings.STREAMABLE_HTTP : in.transport();
+    boolean onDevice = McpServerSettings.DEVICE.equals(transport);
+    if (!onDevice && isBlank(in.url())) throw new ValidationException("Give the MCP server's URL");
     McpAuthType auth = in.authType() == null ? McpAuthType.NONE : in.authType();
     validate(access, in, auth, true);
+    checkTransport(access, transport, in.deviceId(), in.deviceServer(), auth);
     McpServerDto created = servers.create(access.userId(), access.workspaceId(),
-        new McpServerSettings(in.name(), in.url(), auth, in.headerName(), in.secret(), in.enabled(),
-            in.agentKeys(), in.redactArguments(), in.oauthClientId(), in.oauthClientSecret(),
-            in.oauthScopes()));
+        new McpServerSettings(in.name(), onDevice ? null : in.url(), auth, in.headerName(),
+            in.secret(), in.enabled(), in.agentKeys(), in.redactArguments(), in.oauthClientId(),
+            in.oauthClientSecret(), in.oauthScopes(), transport, onDevice ? in.deviceId() : null,
+            onDevice ? in.deviceServer().strip() : null));
     audit.record(access.userId(), ActorType.USER, null, "mcp_server.created", created.name(),
         Json.obj().put("serverId", created.id().toString()).put("url", created.url())
             .put("auth", auth.name().toLowerCase(Locale.ROOT)));
@@ -77,6 +94,17 @@ public class McpServerUseCase {
     McpServerDto existing = owned(access, serverId);
     McpAuthType auth = in.authType() == null ? existing.authType() : in.authType();
     validate(access, in, auth, false);
+    String transport = in.transport() == null ? existing.transport() : in.transport();
+    if (in.transport() != null || in.deviceId() != null || in.deviceServer() != null
+        || in.authType() != null) {
+      boolean onDevice = McpServerSettings.DEVICE.equals(transport);
+      checkTransport(access, transport,
+          onDevice && in.deviceId() == null ? existing.deviceId() : in.deviceId(),
+          onDevice && in.deviceServer() == null ? existing.deviceServer() : in.deviceServer(), auth);
+      if (onDevice && in.url() != null) {
+        throw new ValidationException("A server on your computer has no URL");
+      }
+    }
     if (auth == McpAuthType.HEADER && isBlank(in.headerName()) && isBlank(existing.headerName())) {
       throw new ValidationException("Name the header the secret is sent in");
     }
@@ -215,6 +243,37 @@ public class McpServerUseCase {
       }
     }
   }
+
+  /**
+   * SSE and streamable HTTP are web addresses; a server on a paired desktop app names the app and
+   * the server as set up there, signs in on its own, and must be on one of the person's own
+   * computers.
+   */
+  private void checkTransport(Access access, String transport, UUID deviceId, String deviceServer,
+                              McpAuthType auth) {
+    if (!TRANSPORTS.contains(transport)) {
+      throw new ValidationException("Choose how Jizza reaches the server: streamable_http, sse or "
+          + "device");
+    }
+    if (!McpServerSettings.DEVICE.equals(transport)) return;
+    if (deviceId == null) throw new ValidationException("Choose the computer the server runs on");
+    if (deviceServer == null || !DEVICE_SERVER.matcher(deviceServer.strip()).matches()) {
+      throw new ValidationException("Give the server's name as it is set up in the Jizza app on "
+          + "that computer");
+    }
+    if (auth != McpAuthType.NONE) {
+      throw new ValidationException("A server on your computer signs in there, not in Jizza");
+    }
+    var devices = deviceUseCase == null ? null : deviceUseCase.getIfAvailable();
+    if (devices == null) throw new ValidationException("Paired computers aren't available here");
+    var device = devices.get(access, deviceId);
+    if (device.platform() == null || !DESKTOPS.contains(device.platform().name())) {
+      throw new ValidationException(device.name() + " can't run MCP servers; choose a computer "
+          + "with the Jizza desktop app");
+    }
+  }
+
+  private static final Set<String> DESKTOPS = Set.of("WINDOWS", "MACOS", "LINUX");
 
   private static void validateUrl(String url) {
     URI uri;

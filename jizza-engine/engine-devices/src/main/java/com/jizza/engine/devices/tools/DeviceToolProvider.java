@@ -160,6 +160,8 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
         if (blocked.contains(action)) continue;
         // A replay batch only exists for workflow runs, which judge each of its steps.
         if (CommandBroker.RUN_STEPS.equals(action)) continue;
+        // A local MCP server on the app is used through its own MCP server card, tool by tool.
+        if (action.startsWith("mcp.")) continue;
         Optional<DeviceActionSpec> spec = action.startsWith(DeviceActionSpec.EXTENSION_PREFIX)
             ? DeviceExtras.spec(device, action).or(() -> catalog.resolve(action, 0))
             : catalog.resolve(action, 0);

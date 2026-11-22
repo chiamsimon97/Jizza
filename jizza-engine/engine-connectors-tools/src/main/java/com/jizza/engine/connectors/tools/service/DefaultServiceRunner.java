@@ -6,8 +6,12 @@ import com.jizza.engine.api.connector.IdempotencyKey;
 import com.jizza.engine.api.connector.ToolExecutor;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.error.ValidationException;
+import com.jizza.engine.api.crypto.EncryptionService;
+import com.jizza.engine.api.service.ServiceModel;
 import com.jizza.engine.api.service.ServiceModel.TriggerSample;
+import com.jizza.engine.api.service.ServiceModel.WebhookDelivery;
 import com.jizza.engine.api.service.ServiceRunner;
+import com.jizza.engine.api.service.ServiceTriggerListeners;
 import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.api.util.Redaction;
@@ -16,11 +20,23 @@ import com.jizza.engine.persistence.entity.GeneratedToolEntity;
 import com.jizza.engine.persistence.entity.ServiceActionEntity;
 import com.jizza.engine.persistence.entity.ServiceRunEntity;
 import com.jizza.engine.persistence.entity.ServiceTriggerEntity;
+import com.jizza.engine.persistence.entity.ConnectionEntity;
+import com.jizza.engine.persistence.repository.ConnectionRepository;
 import com.jizza.engine.persistence.repository.GeneratedToolRepository;
 import com.jizza.engine.persistence.repository.ServiceActionRepository;
 import com.jizza.engine.persistence.repository.ServiceRunRepository;
 import com.jizza.engine.persistence.repository.ServiceTriggerRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.HexFormat;
+import java.util.Map;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,6 +52,10 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class DefaultServiceRunner implements ServiceRunner {
+
+  private static final Logger log = LoggerFactory.getLogger(DefaultServiceRunner.class);
+  /** A webhook body larger than this is refused rather than stored. */
+  static final int MAX_WEBHOOK_BYTES = 512 * 1024;
 
   /** How many seen ids a trigger remembers; older ones fall off as new ones arrive. */
   static final int MAX_SEEN = 1000;
@@ -57,6 +77,19 @@ public class DefaultServiceRunner implements ServiceRunner {
     this.apis = apis;
     this.runs = runs;
     this.executor = executor;
+  }
+
+  private ConnectionRepository services;
+  private EncryptionService encryption;
+  private ObjectProvider<ServiceTriggerListeners> listeners;
+
+  /** What instant triggers and starting workflows need; absent in narrow unit tests. */
+  @Autowired(required = false)
+  public void setTriggerSupport(ConnectionRepository services, EncryptionService encryption,
+                                ObjectProvider<ServiceTriggerListeners> listeners) {
+    this.services = services;
+    this.encryption = encryption;
+    this.listeners = listeners;
   }
 
   @Override
@@ -82,6 +115,12 @@ public class DefaultServiceRunner implements ServiceRunner {
   @Override
   public TriggerSample testTrigger(UUID serviceId, UUID triggerId) {
     ServiceTriggerEntity trigger = trigger(serviceId, triggerId);
+    if (ServiceModel.WEBHOOK.equals(trigger.getKind())) {
+      return trigger.getLastReceivedAt() == null
+          ? new TriggerSample(false, "Nothing has arrived yet. Send a test event from the service to"
+              + " this trigger's address.", 0, 0, Json.mapper().createArrayNode())
+          : new TriggerSample(true, null, 0, 0, Json.mapper().createArrayNode());
+    }
     long started = System.nanoTime();
     Fetched fetched = fetch(serviceId, trigger);
     TriggerSample sample = fetched.error != null
@@ -97,6 +136,10 @@ public class DefaultServiceRunner implements ServiceRunner {
   @Override
   public TriggerSample pollTrigger(UUID serviceId, UUID triggerId) {
     ServiceTriggerEntity trigger = trigger(serviceId, triggerId);
+    if (ServiceModel.WEBHOOK.equals(trigger.getKind())) {
+      return new TriggerSample(false, "This trigger waits for the service to call it; it isn't"
+          + " polled.", 0, 0, Json.mapper().createArrayNode());
+    }
     long started = System.nanoTime();
     Fetched fetched = fetch(serviceId, trigger);
     if (fetched.error != null) {
@@ -119,6 +162,7 @@ public class DefaultServiceRunner implements ServiceRunner {
 
     TriggerSample sample = new TriggerSample(true, null, fetched.items.size(), fresh.size(),
         sample(fresh));
+    if (!fresh.isEmpty()) startWorkflows(trigger, fresh, "poll");
     // Quiet polls are not history; a baseline or a poll that found something is.
     if (baseline || !fresh.isEmpty()) {
       record(serviceId, "trigger", trigger.getId(), trigger.getLabel(),
@@ -126,6 +170,117 @@ public class DefaultServiceRunner implements ServiceRunner {
           started);
     }
     return sample;
+  }
+
+  @Override
+  public WebhookDelivery receiveWebhook(String token, String rawBody, Map<String, String> headers) {
+    long started = System.nanoTime();
+    ServiceTriggerEntity trigger = token == null ? null
+        : triggers.findByEndpointToken(token).orElse(null);
+    if (trigger == null || !ServiceModel.WEBHOOK.equals(trigger.getKind())) {
+      throw new NotFoundException("Trigger address", "");
+    }
+    UUID serviceId = trigger.getConnectionId();
+    ConnectionEntity service = services == null ? null : services.findById(serviceId).orElse(null);
+    if (service == null) throw new NotFoundException("Trigger address", "");
+    if (!trigger.isEnabled()) return new WebhookDelivery(false, "This trigger is off", 0, 0);
+    if (!ServiceModel.LIVE.equals(service.getVersionStatus())) {
+      return new WebhookDelivery(false, "The service isn't published yet", 0, 0);
+    }
+    String body = rawBody == null ? "" : rawBody;
+    if (body.getBytes(StandardCharsets.UTF_8).length > MAX_WEBHOOK_BYTES) {
+      return refuse(trigger, "The event is too large", started);
+    }
+    if (!signatureMatches(trigger, body, headers)) {
+      return refuse(trigger, "The signature didn't match", started);
+    }
+
+    JsonNode payload = parse(body);
+    List<JsonNode> items;
+    if (trigger.getItemsPath() != null && !trigger.getItemsPath().isBlank()) {
+      try {
+        items = items(payload, trigger.getItemsPath());
+      } catch (ValidationException e) {
+        return refuse(trigger, e.getMessage(), started);
+      }
+    } else {
+      items = payload.isArray() ? items(payload, null) : List.of(payload);
+    }
+    // A service that sends an event twice starts nothing twice, when its items carry an id.
+    Set<String> seen = new java.util.HashSet<>();
+    if (trigger.getSeenIds() != null) trigger.getSeenIds().forEach(id -> seen.add(id.asText()));
+    List<JsonNode> fresh = items.stream().filter(i -> {
+      String id = idOf(i, trigger.getIdField());
+      return id == null || !seen.contains(id);
+    }).toList();
+    trigger.setSeenIds(remember(trigger, items));
+    trigger.setLastReceivedAt(Instant.now());
+    triggers.save(trigger);
+
+    int runs = fresh.isEmpty() ? 0 : startWorkflows(trigger, fresh, "webhook");
+    TriggerSample sample = new TriggerSample(true, null, items.size(), fresh.size(), sample(fresh));
+    record(serviceId, "trigger", trigger.getId(), trigger.getLabel(), "webhook",
+        ToolResult.ok(Json.obj()), null, Json.toNode(sample), started);
+    return new WebhookDelivery(true, "Received", fresh.size(), runs);
+  }
+
+  private WebhookDelivery refuse(ServiceTriggerEntity trigger, String reason, long started) {
+    log.warn("Refused a delivery to webhook trigger {}: {}", trigger.getId(), reason);
+    record(trigger.getConnectionId(), "trigger", trigger.getId(), trigger.getLabel(), "webhook",
+        ToolResult.error(reason), null, null, started);
+    return new WebhookDelivery(false, reason, 0, 0);
+  }
+
+  private boolean signatureMatches(ServiceTriggerEntity trigger, String body,
+                                   Map<String, String> headers) {
+    if (trigger.getSigningSecret() == null) return true;
+    if (encryption == null) return false;
+    String header = trigger.getSignatureHeader() == null || trigger.getSignatureHeader().isBlank()
+        ? "x-signature" : trigger.getSignatureHeader().toLowerCase(java.util.Locale.ROOT);
+    String provided = headers == null ? null : headers.get(header);
+    if (provided == null) return false;
+    String secret = encryption.decryptString(trigger.getSigningSecret());
+    String expected = (trigger.getSignaturePrefix() == null ? "" : trigger.getSignaturePrefix())
+        + hmacHex(secret, body);
+    return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
+        provided.trim().getBytes(StandardCharsets.UTF_8));
+  }
+
+  static String hmacHex(String secret, String body) {
+    try {
+      Mac mac = Mac.getInstance("HmacSHA256");
+      mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+      return HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.GeneralSecurityException e) {
+      throw new IllegalStateException("HMAC-SHA256 is unavailable", e);
+    }
+  }
+
+  /** A body that isn't JSON (a form post, plain text) is kept as text. */
+  private static JsonNode parse(String body) {
+    if (body.isBlank()) return Json.obj();
+    try {
+      return Json.read(body);
+    } catch (RuntimeException e) {
+      return Json.obj().put("text", body);
+    }
+  }
+
+  private int startWorkflows(ServiceTriggerEntity trigger, List<JsonNode> items, String source) {
+    ServiceTriggerListeners starter = listeners == null ? null : listeners.getIfAvailable();
+    ConnectionEntity service = services == null ? null
+        : services.findById(trigger.getConnectionId()).orElse(null);
+    if (starter == null || service == null) return 0;
+    var about = Json.obj().put("serviceId", service.getId().toString())
+        .put("service", service.getServiceName()).put("trigger", trigger.getName())
+        .put("label", trigger.getLabel()).put("source", source)
+        .put("at", Instant.now().toString());
+    try {
+      return starter.start(trigger.getId(), service.getUserId(), items, about);
+    } catch (RuntimeException e) {
+      log.warn("Trigger {} could not start its workflows", trigger.getId(), e);
+      return 0;
+    }
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────

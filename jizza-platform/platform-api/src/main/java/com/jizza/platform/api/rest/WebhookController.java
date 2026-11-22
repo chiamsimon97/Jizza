@@ -33,9 +33,35 @@ import org.springframework.web.bind.annotation.RestController;
 public class WebhookController {
 
   private final WebhookRegistry webhooks;
+  private final com.jizza.engine.api.service.ServiceRunner services;
 
-  public WebhookController(WebhookRegistry webhooks) {
+  public WebhookController(WebhookRegistry webhooks,
+                           com.jizza.engine.api.service.ServiceRunner services) {
     this.webhooks = webhooks;
+    this.services = services;
+  }
+
+  /**
+   * An instant trigger of a service (K6): the service calls this address when something happens.
+   * The token picks the trigger; the trigger's own signing secret, when set, checks the body.
+   */
+  @PublicEndpoint
+  @PostMapping("/api/webhooks/services/{token}")
+  public ResponseEntity<Responses.Message> receiveForService(@PathVariable String token,
+      @RequestBody(required = false) String rawBody, HttpServletRequest request) {
+    var delivery = services.receiveWebhook(token, rawBody, headers(request));
+    return ResponseEntity.status(delivery.accepted() ? HttpStatus.ACCEPTED : HttpStatus.FORBIDDEN)
+        .body(new Responses.Message(delivery.reason()));
+  }
+
+  private static Map<String, String> headers(HttpServletRequest request) {
+    Map<String, String> headers = new HashMap<>();
+    var names = request.getHeaderNames();
+    while (names.hasMoreElements()) {
+      String name = names.nextElement();
+      headers.put(name.toLowerCase(Locale.ROOT), request.getHeader(name));
+    }
+    return headers;
   }
 
   @PublicEndpoint
@@ -43,14 +69,7 @@ public class WebhookController {
   public ResponseEntity<Responses.Message> receive(@PathVariable String token,
                                                    @RequestBody(required = false) String rawBody,
                                                    HttpServletRequest request) {
-    Map<String, String> headers = new HashMap<>();
-    var names = request.getHeaderNames();
-    while (names.hasMoreElements()) {
-      String name = names.nextElement();
-      headers.put(name.toLowerCase(Locale.ROOT), request.getHeader(name));
-    }
-
-    var delivery = webhooks.receive(token, rawBody, headers);
+    var delivery = webhooks.receive(token, rawBody, headers(request));
     return ResponseEntity.status(delivery.accepted() ? HttpStatus.ACCEPTED : HttpStatus.FORBIDDEN)
         .body(new Responses.Message(delivery.reason()));
   }

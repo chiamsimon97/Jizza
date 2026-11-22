@@ -144,6 +144,7 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
     w.setDisabled(true);
     w.setTriggersOnFingerprint(null);
     w.setFormId(null);
+    w.setServiceTriggerId(null);
     w.setDeletedAt(java.time.Instant.now());
     workflows.save(w);
   }
@@ -153,6 +154,15 @@ public class DefaultWorkflowRegistry implements WorkflowRegistry {
   public WorkflowDto setFormTrigger(UUID workflowId, UUID formId) {
     WorkflowEntity w = require(workflowId);
     w.setFormId(formId);
+    workflows.save(w);
+    return toDto(w);
+  }
+
+  @Override
+  @Transactional
+  public WorkflowDto setServiceTrigger(UUID workflowId, UUID triggerId) {
+    WorkflowEntity w = require(workflowId);
+    w.setServiceTriggerId(triggerId);
     workflows.save(w);
     return toDto(w);
   }
