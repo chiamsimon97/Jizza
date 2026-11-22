@@ -153,7 +153,7 @@ public class WorkflowValidator {
   static final int MAX_SWITCH_CASES = 10;
   private static final java.util.Set<String> WEB_ELEMENT_ACTIONS = java.util.Set.of(
       "browser.click", "browser.hover", "browser.setText", "browser.getText",
-      "browser.setCheckbox", "browser.getCheckbox", "browser.selectItem",
+      "browser.setCheckbox", "browser.getCheckbox", "browser.ensureState", "browser.selectItem",
       "browser.extractTable", "browser.typeInto", "browser.exists", "browser.setDate",
       "browser.checkItems", "browser.listItems", "browser.clickItem", "browser.pickDate",
       "browser.chooseOption");

@@ -107,6 +107,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Read text', 'browser.getText'),
   web('Set checkbox', 'browser.setCheckbox'),
   web('Get checkbox state', 'browser.getCheckbox'),
+  web('Make sure it is on, off or open', 'browser.ensureState'),
   web('Select item', 'browser.selectItem'),
   web('Read a table', 'browser.extractTable'),
   web('Select radio button', 'browser.selectRadio'),
@@ -148,7 +149,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
 /** Browser actions whose contract requires a concrete element locator. */
 export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.click', 'browser.hover', 'browser.setText', 'browser.getText', 'browser.setCheckbox',
-  'browser.getCheckbox', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
+  'browser.getCheckbox', 'browser.ensureState', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
   'browser.dragDrop', 'browser.setDate', 'browser.checkItems', 'browser.clickItem', 'browser.listItems',
   'browser.pickDate', 'browser.chooseOption', 'browser.selectOption', 'browser.listOptions',
 ])

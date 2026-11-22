@@ -55,6 +55,7 @@ public final class FakeBrowser {
     handle("browser.setText@1", this::setText);
     handle("browser.getText@1", this::getText);
     handle("browser.setCheckbox@1", this::setCheckbox);
+    handle("browser.ensureState@1", this::ensureState);
     handle("browser.getCheckbox@1", in -> object().put("checked", find(in).checked));
     handle("browser.selectItem@1", this::selectItem);
     handle("browser.extractTable@1", this::extractTable);
@@ -173,6 +174,15 @@ public final class FakeBrowser {
       default -> !element.checked;
     };
     return object().put("checked", element.checked).put("changed", before != element.checked);
+  }
+
+  private JsonNode ensureState(JsonNode in) {
+    Element element = find(in);
+    String want = in.path("want").asText();
+    boolean on = "on".equals(want) || "open".equals(want);
+    boolean changed = element.checked != on;
+    element.checked = on;
+    return object().put("on", on).put("changed", changed).put("kind", "pressed");
   }
 
   private JsonNode selectItem(JsonNode in) {

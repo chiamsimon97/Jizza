@@ -120,6 +120,7 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
 | Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
 | Tick or untick a box | Set checkbox |
+| Press a button that stays on (Follow, Add to wishlist), or open a section, a tab or "More options" | Make sure it is on, off or open: a run presses it only when it is not that way already |
 | Choose from a drop-down or a custom list | Select item |
 | Choose a radio button | Select radio |
 | Scroll more than a screen and pause | Scroll |
@@ -127,6 +128,12 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | A popup opens, or you move to another tab | Switch to |
 | Close the last tab | Close browser |
 | Check or read the page, Read a table, Point at it to open a menu (side panel) | Check it is on the page or Read text, Read a table, Point at it |
+
+### Buttons that stay on, and sections that open
+
+Some buttons switch between two states: Follow and Following, Add to wishlist, Show more. Some sections open and close: an accordion, "More options", a tab. Pressing one again turns it back. So a click on one is recorded as **Make sure it is on** (or **open**), with the state your click left it in (browser agent 0.31.0 or later). On a run, Jizza looks first and presses it only when it is not that way already, so a run never turns off what was already on.
+
+With **Fill or click one thing** on such a button, **When the run gets here** lets you choose: make sure it is on (or open), make sure it is off (or closed), or press it every time. In the builder, the step is **Make sure it is on, off or open**, with **want** set to on, off, open or closed.
 
 Each step stores several ways to find its element, plus a small picture of it, so you can tell steps apart in review.
 
