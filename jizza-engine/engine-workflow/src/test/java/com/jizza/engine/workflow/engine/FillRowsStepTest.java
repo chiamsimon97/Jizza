@@ -17,6 +17,10 @@ import org.junit.jupiter.api.Test;
 class FillRowsStepTest {
 
   private static EngineHarness harness() {
+    return harness(false);
+  }
+
+  private static EngineHarness harness(boolean optional) {
     EngineHarness harness = new EngineHarness(new WorkflowGraph(List.of(
         new WorkflowNode("start", NodeType.TRIGGER, "start", null, null),
         new WorkflowNode("step", NodeType.DEVICE_ACTION, "step", Json.read("""
@@ -25,8 +29,8 @@ class FillRowsStepTest {
                        "rowCss":"app-passenger",
                        "columns":[{"key":"name","label":"Name","css":"input","kind":"text"},
                                   {"key":"age","label":"Age","css":"input.age","kind":"text"}],
-                       "rows":"{{ input.passengers }}"}}
-            """), new WorkflowNode.RetryPolicy(1, 1, 1, 10)),
+                       "rows":"{{ input.passengers }}"%s}}
+            """.formatted(optional ? ",\"optional\":true" : "")), new WorkflowNode.RetryPolicy(1, 1, 1, 10)),
         new WorkflowNode("finish", NodeType.END, "finish", null, null)),
         List.of(new WorkflowEdge("start", "step", null), new WorkflowEdge("step", "finish", null))));
     harness.deviceInputSchemas.put("browser.fillRows", Json.read("{\"type\":\"object\","
@@ -79,5 +83,17 @@ class FillRowsStepTest {
     assertThat(harness.deviceRequests).hasSize(1);
     assertThat(harness.deviceRequests.get(0).input().path("rows").toString())
         .isEqualTo("[{\"name\":\"Asha\",\"age\":\"34\"}]");
+  }
+
+  @Test
+  void aKindOfRowThatMayBeNoneRunsWithoutAskingWhenThereAreNone() {
+    EngineHarness harness = harness(true);
+
+    var run = harness.engine.start(harness.workflow.getId(), 1,
+        Json.obj().set("passengers", Json.mapper().createArrayNode()), "manual");
+
+    assertThat(run.status()).isEqualTo(RunStatus.DONE);
+    assertThat(harness.deviceRequests).hasSize(1);
+    assertThat(harness.deviceRequests.get(0).input().path("rows").toString()).isEqualTo("[]");
   }
 }

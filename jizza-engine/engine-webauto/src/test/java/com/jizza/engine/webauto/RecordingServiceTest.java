@@ -572,6 +572,24 @@ class RecordingServiceTest {
   }
 
   @Test
+  void aKindOfRowThatMayBeNoneStartsEachRunWithNone() {
+    var id = started().id();
+    service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
+        step(1, "browser.fillRows", "Fill a row for each Infant",
+            "{\"rowCss\":\"app-infant\",\"columns\":[{\"key\":\"name\",\"css\":\"input\","
+                + "\"kind\":\"text\"}],\"rows\":[{\"name\":\"Baby\"}],\"optional\":true}", false)));
+    var map = Json.obj().put("recordingId", id.toString()).put("op", "map").put("seq", 1)
+        .put("field", "rows");
+    map.putObject("input").put("name", "infants").put("type", "list")
+        .set("default", Json.mapper().createArrayNode());
+    service.accept(browser.id(), access.userId(), "browser.recording.edit", map);
+
+    var step = service.get(access, id).steps().get(0).step();
+    assertThat(step.path("mappings").path("rows").path("default").toString()).isEqualTo("[]");
+    assertThat(step.path("input").path("optional").asBoolean()).isTrue();
+  }
+
+  @Test
   void aManualFieldsDropdownChoiceDateAndCheckboxBecomeInputs() {
     var id = started().id();
     service.accept(browser.id(), access.userId(), "browser.recording.step", event(id,
