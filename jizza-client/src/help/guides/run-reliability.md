@@ -6,14 +6,14 @@ order: 19
 updated: 2026-11-16
 ---
 
-## Wait for what happens
+## Wait until the page answers
 
-After a step like **Search**, **Next** or **Apply coupon**, a page can go more than one way: a list of results, "No trains found", "Seats not available", an error. A **Wait for what happens** step waits until the page shows one of them and notes which one it was.
+After a step like **Search**, **Next** or **Apply coupon**, a page can go more than one way: a list of results, "No trains found", "Seats not available", an error. A **Wait until the page answers** step waits until the page shows one of them and notes which one it was.
 
 While recording:
 
 1. Do the step that loads something (for example, click **Search**).
-2. In the Jizza side panel, choose **Wait for what happens…**, type a name for what you expect (for example `Results`) and press **Point at it**.
+2. In the Jizza side panel, choose **Wait until the page answers…**, type a name for what you expect (for example `Results`) and press **Point at it**.
 3. Click the thing on the page that shows it is ready, such as the first result.
 
 In the recording's review you can then:

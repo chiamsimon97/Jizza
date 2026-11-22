@@ -238,7 +238,7 @@ final class RecordingGraph {
       unmap(input, "", mappings);
       if (!mappings.isEmpty()) step.set("mappings", mappings);
       restoreRecorded(input, mappings, config, node.path("label").asText(""));
-      // "Wait for what happens": each outcome's rule goes back beside it, as it was recorded.
+      // "Wait until the page answers": each outcome's rule goes back beside it, as it was recorded.
       if (StepCompiler.WAIT_FOR.equals(action) && input.path("outcomes").isArray()) {
         for (JsonNode outcome : input.get("outcomes")) {
           JsonNode rule = config.path("onOutcome").path(outcome.path("name").asText(""));

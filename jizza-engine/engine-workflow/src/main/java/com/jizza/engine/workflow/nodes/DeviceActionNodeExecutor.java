@@ -306,7 +306,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           }
           ObjectNode parentInput = listInput(inputs, false);
           parentInput.set("element", within.get("element"));
-          // The cards' own pattern (Mark a list), never the items'.
+          // The cards' own pattern (Choose from a list of cards), never the items'.
           parentInput.remove("itemCss");
           parentInput.remove("titleCss");
           if (within.hasNonNull("itemCss")) parentInput.set("itemCss", within.get("itemCss"));
@@ -1220,7 +1220,7 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
   }
 
   /**
-   * "Wait for what happens": the outcome the page showed, when the step says the run stops there
+   * "Wait until the page answers": the outcome the page showed, when the step says the run stops there
    * ("No trains found", "Seats not available"); the message the run stops with, else null.
    */
   static String stopsOn(JsonNode config, JsonNode output) {

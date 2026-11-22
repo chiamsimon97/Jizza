@@ -12,7 +12,7 @@ export function pollOf(on: boolean, every: string, minutes: string): PollRule | 
 }
 
 /**
- * What "Wait for what happens" does when nothing it waits for shows: give up, or keep looking on
+ * What "Wait until the page answers" does when nothing it waits for shows: give up, or keep looking on
  * a freshly loaded page every so often (a slot that opens, a price that drops). Sites are never
  * asked more than once every 15 seconds.
  */

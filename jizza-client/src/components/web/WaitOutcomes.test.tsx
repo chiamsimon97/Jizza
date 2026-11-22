@@ -17,7 +17,7 @@ const recording: Recording = {
   ],
 }
 
-describe('Wait for what happens and steps that cannot be undone', () => {
+describe('Wait until the page answers and steps that cannot be undone', () => {
   it('shows each outcome and what the run does with it', () => {
     render(<RecordingReview recording={recording} onEdit={vi.fn()} />)
     expect(screen.getByText('(First train)')).toBeInTheDocument()

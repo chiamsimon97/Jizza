@@ -14,7 +14,7 @@ import java.util.Locale;
 
 /**
  * Runs that keep time (plan 09): "Wait until" holds the run until an exact moment, such as when a
- * booking window opens; "Wait for what happens" with {@code poll} looks again every so often until
+ * booking window opens; "Wait until the page answers" with {@code poll} looks again every so often until
  * what it waits for shows (a slot, a price), the time runs out, or it has tried enough.
  */
 final class TimedRuns {

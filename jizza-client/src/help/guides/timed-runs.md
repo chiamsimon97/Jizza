@@ -23,10 +23,10 @@ If the time has already passed, the run stops and tells you. Your browser has to
 
 ## Keep looking until something shows
 
-A **Wait for what happens** step normally looks once and waits up to its time limit. For things that appear at no fixed time, such as an appointment slot, stock coming back, or a price dropping, you can make it keep looking:
+A **Wait until the page answers** step normally looks once and waits up to its time limit. For things that appear at no fixed time, such as an appointment slot, stock coming back, or a price dropping, you can make it keep looking:
 
 1. Open the recording's review.
-2. On the **Wait for what happens** step, tick **If none shows, keep looking**.
+2. On the **Wait until the page answers** step, tick **If none shows, keep looking**.
 3. Set how many seconds to wait between looks and how many minutes to keep going.
 
 Each time it looks again, it loads the page fresh first. Jizza never checks a site more often than every 15 seconds. When one of the outcomes shows, the run carries on. If none shows before the time runs out, the run stops and tells you how many times it looked.

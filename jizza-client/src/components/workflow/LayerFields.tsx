@@ -273,7 +273,7 @@ export function LayerFields({ node, graph, browsers, deviceId, mapping, isMissin
               )}
             </div>
             {inGroup.map(row)}
-            <Button type="button" size="sm" variant="secondary" onClick={() => addField('config', g.id)}><Plus className="h-3.5 w-3.5" /> Add field</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => addField('config', g.id)}><Plus className="h-3.5 w-3.5" /> Fill or click one thing</Button>
           </div>
         )
       })}

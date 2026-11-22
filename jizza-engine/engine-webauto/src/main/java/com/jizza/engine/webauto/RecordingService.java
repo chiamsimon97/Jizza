@@ -782,7 +782,7 @@ public class RecordingService implements Recordings, RecordingIntake {
         }
         case "poll" -> {
           if (!StepCompiler.WAIT_FOR.equals(action)) {
-            throw new ValidationException("Only 'Wait for what happens' can keep looking");
+            throw new ValidationException("Only 'Wait until the page answers' can keep looking");
           }
           ObjectNode meta = target.node.path("meta").isObject() ? (ObjectNode) target.node.get("meta")
               : target.node.putObject("meta");
@@ -845,7 +845,7 @@ public class RecordingService implements Recordings, RecordingIntake {
         }
         case "outcomes" -> {
           if (!StepCompiler.WAIT_FOR.equals(action)) {
-            throw new ValidationException("Only 'Wait for what happens' has outcomes");
+            throw new ValidationException("Only 'Wait until the page answers' has outcomes");
           }
           if (!value.isArray() || value.isEmpty() || value.size() > 8
               || Json.write(value).length() > MAX_STEP_CHARS / 2) {
