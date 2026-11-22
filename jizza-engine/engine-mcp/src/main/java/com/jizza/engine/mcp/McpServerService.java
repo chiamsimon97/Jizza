@@ -142,6 +142,16 @@ public class McpServerService implements McpServers, StoredMcpServers {
     if (s.oauthScopes() != null) {
       entity.setOauthScopes(s.oauthScopes().isBlank() ? null : s.oauthScopes().strip());
     }
+    if (s.transport() != null) entity.setTransport(s.transport());
+    if (McpServerSettings.DEVICE.equals(entity.getTransport())) {
+      if (s.deviceId() != null) entity.setDeviceId(s.deviceId());
+      if (s.deviceServer() != null) entity.setDeviceServer(s.deviceServer().strip());
+      // Shown where a web server's address would be; never dialled.
+      entity.setUrl("device://" + entity.getDeviceId() + "/" + entity.getDeviceServer());
+    } else if (s.transport() != null) {
+      entity.setDeviceId(null);
+      entity.setDeviceServer(null);
+    }
   }
 
   private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.connector.ConnectorSignIn> signIn;
@@ -393,8 +403,15 @@ public class McpServerService implements McpServers, StoredMcpServers {
     McpProperties.Server server = new McpProperties.Server();
     server.setId(entity.getId());
     server.setWorkspaceId(entity.getWorkspaceId());
-    server.setTransport(McpProperties.Transport.HTTP);
+    server.setTransport(switch (entity.getTransport() == null ? "" : entity.getTransport()) {
+      case McpServerSettings.SSE -> McpProperties.Transport.SSE;
+      case McpServerSettings.DEVICE -> McpProperties.Transport.DEVICE;
+      default -> McpProperties.Transport.HTTP;
+    });
     server.setUrl(entity.getUrl());
+    server.setDeviceId(entity.getDeviceId());
+    server.setDeviceServer(entity.getDeviceServer());
+    server.setOwnerId(entity.getUserId());
     server.setEnabled(entity.isEnabled());
     server.setRedactArguments(entity.isRedactArguments());
     List<String> agents = new ArrayList<>();
@@ -525,7 +542,8 @@ public class McpServerService implements McpServers, StoredMcpServers {
         e.getUrl(), authType(e), e.getHeaderName(), e.getSecret() != null,
         e.getAccessToken() != null, e.isEnabled(), agents, e.isRedactArguments(), e.getStatus(),
         e.getLastError(), e.getServerName(), e.getServerVersion(), tools, e.getToolsRefreshedAt(),
-        e.getCreatedAt(), signIn, signIn == null ? null : provider.sessionSignInAt(e.getId()));
+        e.getCreatedAt(), signIn, signIn == null ? null : provider.sessionSignInAt(e.getId()),
+        e.getTransport(), e.getDeviceId(), e.getDeviceServer());
   }
 
   private static Optional<ActionType> actionType(JsonNode toolSettings) {

@@ -42,10 +42,12 @@ public class McpServerController {
   public record ServerInput(String name, String url, McpAuthType authType, String headerName,
                             String secret, Boolean enabled, List<String> agentKeys,
                             Boolean redactArguments, String oauthClientId,
-                            String oauthClientSecret, String oauthScopes) {
+                            String oauthClientSecret, String oauthScopes, String transport,
+                            UUID deviceId, String deviceServer) {
     McpServerSettings settings() {
       return new McpServerSettings(name, url, authType, headerName, secret, enabled, agentKeys,
-          redactArguments, oauthClientId, oauthClientSecret, oauthScopes);
+          redactArguments, oauthClientId, oauthClientSecret, oauthScopes, transport, deviceId,
+          deviceServer);
     }
   }
 

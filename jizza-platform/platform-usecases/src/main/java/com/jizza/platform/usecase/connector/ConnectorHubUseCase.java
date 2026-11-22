@@ -228,7 +228,9 @@ public class ConnectorHubUseCase {
     } catch (RuntimeException e) {
       log.warn("Could not read when MCP server {} was last used", server.id(), e);
     }
-    return new Card(MCP, server.id(), server.name(), server.url(), status, problem, tools.size(),
+    String detail = com.jizza.engine.api.mcp.McpServerSettings.DEVICE.equals(server.transport())
+        ? "On your computer · " + server.deviceServer() : server.url();
+    return new Card(MCP, server.id(), server.name(), detail, status, problem, tools.size(),
         Types.of(tools.stream().map(McpToolDto::actionType).toList()),
         server.agentKeys() == null ? List.of() : server.agentKeys(), false, lastUsed,
         "/connectors/mcp/" + server.id());

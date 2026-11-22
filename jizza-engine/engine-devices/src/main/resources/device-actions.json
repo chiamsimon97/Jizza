@@ -1580,6 +1580,95 @@
         "linux"
       ],
       "defaultTimeoutSec": 600
+    },
+    {
+      "action": "mcp.listTools",
+      "version": 1,
+      "capability": "mcp",
+      "actionType": "READ",
+      "title": "List a local MCP server's tools",
+      "description": "Starts the MCP server set up under this name in the app, if it is not running, and lists its tools. Used by the server's card in Connectors, never offered to agents as a device tool.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "description": "The MCP server's name as it is set up in the app on this computer"
+          }
+        },
+        "required": [
+          "server"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "serverInfo": {
+            "type": "object"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 60
+    },
+    {
+      "action": "mcp.callTool",
+      "version": 1,
+      "capability": "mcp",
+      "actionType": "UPDATE",
+      "title": "Call a local MCP server's tool",
+      "description": "Calls one tool of the MCP server set up under this name in the app. The guardrails judge each tool as its owner typed it on the server's card; the app may still ask before it runs.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "description": "The MCP server's name as it is set up in the app on this computer"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "server",
+          "tool"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array"
+          },
+          "structuredContent": {
+            "type": "object"
+          },
+          "isError": {
+            "type": "boolean"
+          }
+        }
+      },
+      "conditions": [],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "defaultTimeoutSec": 120
     }
   ]
 }

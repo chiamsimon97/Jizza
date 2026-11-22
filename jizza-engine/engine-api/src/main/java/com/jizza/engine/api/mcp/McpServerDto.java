@@ -20,4 +20,18 @@ public record McpServerDto(UUID id, UUID userId, UUID workspaceId, String name, 
                            List<String> agentKeys, boolean redactArguments, String status,
                            String lastError, String serverName, String serverVersion,
                            List<McpToolDto> tools, Instant toolsRefreshedAt, Instant createdAt,
-                           String signInTool, Instant sessionSignInAt) {}
+                           String signInTool, Instant sessionSignInAt, String transport,
+                           UUID deviceId, String deviceServer) {
+
+  public McpServerDto(UUID id, UUID userId, UUID workspaceId, String name, String slug,
+                      String url, McpAuthType authType, String headerName,
+                      boolean secretPresent, boolean signedIn, boolean enabled,
+                      List<String> agentKeys, boolean redactArguments, String status,
+                      String lastError, String serverName, String serverVersion,
+                      List<McpToolDto> tools, Instant toolsRefreshedAt, Instant createdAt,
+                      String signInTool, Instant sessionSignInAt) {
+    this(id, userId, workspaceId, name, slug, url, authType, headerName, secretPresent, signedIn,
+        enabled, agentKeys, redactArguments, status, lastError, serverName, serverVersion, tools,
+        toolsRefreshedAt, createdAt, signInTool, sessionSignInAt, "streamable_http", null, null);
+  }
+}

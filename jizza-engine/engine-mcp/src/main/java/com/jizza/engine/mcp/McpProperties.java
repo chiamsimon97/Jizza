@@ -42,7 +42,11 @@ public class McpProperties {
   /** By name; the name becomes part of every tool name the model sees. */
   private Map<String, Server> servers = new LinkedHashMap<>();
 
-  public enum Transport { STDIO, HTTP }
+  /**
+   * STDIO starts a program here; HTTP is streamable HTTP; SSE is the older HTTP+SSE transport;
+   * DEVICE is a server that runs on a paired desktop app and is reached through device commands.
+   */
+  public enum Transport { STDIO, HTTP, SSE, DEVICE }
 
   public static class Server {
     private boolean enabled = true;
@@ -84,9 +88,20 @@ public class McpProperties {
 
     // Set only for a server added from the app, never from configuration.
     private java.util.UUID id;
+    /** DEVICE: the paired app the server runs on, its name there, and whose device it is. */
+    private java.util.UUID deviceId;
+    private String deviceServer;
+    private java.util.UUID ownerId;
     private java.util.UUID workspaceId;
     /** The tools the user reviewed and left on; offered without asking the server each turn. */
     private List<io.modelcontextprotocol.spec.McpSchema.Tool> knownTools;
+
+    public java.util.UUID getDeviceId() { return deviceId; }
+    public void setDeviceId(java.util.UUID v) { this.deviceId = v; }
+    public String getDeviceServer() { return deviceServer; }
+    public void setDeviceServer(String v) { this.deviceServer = v; }
+    public java.util.UUID getOwnerId() { return ownerId; }
+    public void setOwnerId(java.util.UUID v) { this.ownerId = v; }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }

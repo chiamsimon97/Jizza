@@ -22,7 +22,10 @@ public class GuardedMcpSessions implements McpSession.Factory {
   @Override
   public McpSession open(String name, McpProperties.Server server) {
     if (server.getId() != null) {
-      if (server.getTransport() != McpProperties.Transport.HTTP) {
+      // A server on a paired app is reached through that app's own commands and limits.
+      if (server.getTransport() == McpProperties.Transport.DEVICE) return delegate.open(name, server);
+      if (server.getTransport() != McpProperties.Transport.HTTP
+          && server.getTransport() != McpProperties.Transport.SSE) {
         throw new IllegalStateException("A server added in the app can only be reached over HTTP");
       }
       EgressGuard guard = egress.getIfAvailable();

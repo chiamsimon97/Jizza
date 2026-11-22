@@ -1454,7 +1454,14 @@ export interface McpServer {
   signInTool?: string | null
   /** When that tool last answered since the session opened; null after every restart of Jizza. */
   sessionSignInAt?: string | null
+  /** How Jizza reaches it: streamable HTTP, the older SSE, or through the desktop app on a computer. */
+  transport?: McpTransport
+  /** For a server on a computer: the paired app it runs on, and its name there. */
+  deviceId?: string | null
+  deviceServer?: string | null
 }
+
+export type McpTransport = 'streamable_http' | 'sse' | 'device'
 
 /** ready, needs_sign_in, failing, not_set_up, off or offline. */
 export type ConnectorHealth = 'ready' | 'needs_sign_in' | 'failing' | 'not_set_up' | 'off' | 'offline'
@@ -1490,6 +1497,9 @@ export interface McpServerInput {
   oauthClientId?: string
   oauthClientSecret?: string
   oauthScopes?: string
+  transport?: McpTransport
+  deviceId?: string
+  deviceServer?: string
 }
 
 export type McpCatalogCategory = 'personal' | 'professional' | 'finance' | 'health'
