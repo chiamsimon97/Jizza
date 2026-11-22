@@ -153,6 +153,76 @@ class McpServersE2eTest extends E2eSupport {
     assertThat(api.get("/api/mcp-servers/" + serverId).status()).isEqualTo(404);
   }
 
+  @Test
+  void theConnectorsHubShowsItAndHandsItToAgents() {
+    var card = hubCard("mcp", serverId);
+    assertThat(card.path("status").asText()).as(card.toString()).isEqualTo("ready");
+    assertThat(card.path("toolCount").asInt()).isEqualTo(3);
+    assertThat(card.path("types").path("read").asInt()).isEqualTo(2);
+    assertThat(card.path("types").path("money").asInt()).isEqualTo(1);
+    assertThat(card.path("lastUsedAt").isNull()).isTrue();
+
+    var given = api.put("/api/connector-hub/mcp/" + serverId + "/agents",
+        Map.of("agentKeys", List.of("finance", "jizza", "finance")));
+    assertThat(given.ok()).as(given.body()).isTrue();
+    assertThat(given.json().path("agentKeys").toString()).isEqualTo("[\"jizza\",\"finance\"]");
+    assertThat(api.get("/api/mcp-servers/" + serverId).json().path("agentKeys").toString())
+        .isEqualTo("[\"jizza\",\"finance\"]");
+    assertThat(api.put("/api/connector-hub/mcp/" + serverId + "/agents",
+        Map.of("agentKeys", List.of("nobody"))).status()).isEqualTo(404);
+    assertThat(api.put("/api/connector-hub/nothing/" + serverId + "/agents",
+        Map.of("agentKeys", List.of("jizza"))).status()).isEqualTo(400);
+
+    // Chat use is what "last used" counts.
+    model.scriptFor("Jizza",
+        new LlmResponse("", List.of(new ToolCall("m1", "mcp_kite__get_holdings", Json.obj())),
+            "tool_use", 5, 5, "m"),
+        LlmResponse.text("You hold 10 INFY."));
+    assertThat(api.post("/api/chat", Map.of("message", "what do I hold?")).ok()).isTrue();
+    assertThat(hubCard("mcp", serverId).path("lastUsedAt").isNull()).isFalse();
+  }
+
+  @Test
+  void theReviewSetsSeveralToolTypesAtOnce() {
+    var reviewed = api.put("/api/mcp-servers/" + serverId + "/tool-types",
+        Map.of("types", Map.of("login", "READ", "place_order", "MONEY")));
+    assertThat(reviewed.ok()).as(reviewed.body()).isTrue();
+    var tools = reviewed.json().path("tools");
+    assertThat(tools.get(0).path("suggested").asBoolean()).isFalse();
+    assertThat(tools.get(1).path("suggested").asBoolean()).isTrue();
+    assertThat(tools.get(2).path("actionType").asText()).isEqualTo("MONEY");
+    assertThat(tools.get(2).path("suggested").asBoolean()).isFalse();
+    assertThat(api.put("/api/mcp-servers/" + serverId + "/tool-types",
+        Map.of("types", Map.of("no_such_tool", "READ"))).status()).isEqualTo(404);
+  }
+
+  @Test
+  void aServerThatSignsInInsideItsSessionAsksAgainUntilItsLoginRuns() {
+    Map<String, Object> body = new HashMap<>();
+    body.put("name", "Kite session");
+    body.put("url", kite.url());
+    body.put("authType", "NONE");
+    var created = api.post("/api/mcp-servers", body);
+    assertThat(created.ok()).as(created.body()).isTrue();
+    String id = created.json().path("id").asText();
+    assertThat(created.json().path("signInTool").asText()).isEqualTo("login");
+    assertThat(created.json().path("sessionSignInAt").isNull()).isTrue();
+    assertThat(hubCard("mcp", id).path("status").asText()).isEqualTo("needs_sign_in");
+
+    assertThat(api.post("/api/mcp-servers/" + id + "/tools/login/test", Json.obj()).ok()).isTrue();
+    assertThat(api.get("/api/mcp-servers/" + id).json().path("sessionSignInAt").isNull()).isFalse();
+    assertThat(hubCard("mcp", id).path("status").asText()).isEqualTo("ready");
+  }
+
+  private com.fasterxml.jackson.databind.JsonNode hubCard(String kind, String id) {
+    var cards = api.get("/api/connector-hub");
+    assertThat(cards.ok()).as(cards.body()).isTrue();
+    for (var c : cards.json()) {
+      if (c.path("kind").asText().equals(kind) && c.path("id").asText().equals(id)) return c;
+    }
+    throw new AssertionError("No " + kind + " card " + id + " in " + cards.body());
+  }
+
   private UUID approvedWorkflow(com.fasterxml.jackson.databind.JsonNode config) {
     WorkflowGraph graph = new WorkflowGraph(
         List.of(new WorkflowNode("start", NodeType.TRIGGER, "start", null, null),

@@ -217,6 +217,30 @@ class ConnectorsE2eTest extends E2eSupport {
   }
 
   @Test
+  void aSignInThatCannotBeRenewedAsksThePersonOnceInTheInbox() {
+    connect();
+    var stored = connections.findById(connectionId).orElseThrow();
+    stored.setTokenExpiresAt(Instant.now().minusSeconds(60));
+    connections.save(stored);
+    service.refuseTokens = true;
+
+    api.post("/api/connections/" + connectionId + "/test", null);
+    api.post("/api/connections/" + connectionId + "/test", null);
+
+    assertThat(connections.findById(connectionId).orElseThrow().getStatus())
+        .isEqualTo(ConnectionStatus.NEEDS_REAUTH);
+    var inbox = api.get("/api/notifications");
+    var asks = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+    inbox.json().findParents("context").forEach(n -> {
+      if ("connector".equals(n.path("context").path("source").asText())) asks.add(n);
+    });
+    assertThat(asks).as(inbox.body()).hasSize(1);
+    assertThat(asks.get(0).path("context").path("link").asText())
+        .isEqualTo("/connectors/" + connectionId + "/authentication");
+    assertThat(inbox.body()).contains("needs you to sign in again");
+  }
+
+  @Test
   void disconnectingRevokesAtTheProviderAndClearsEveryToken() {
     connect();
 

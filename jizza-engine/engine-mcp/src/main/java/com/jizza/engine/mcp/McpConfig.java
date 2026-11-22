@@ -38,8 +38,12 @@ public class McpConfig {
 
   @Bean
   public McpServerService mcpServerService(McpServerRepository servers, McpToolProvider provider,
-                                           EncryptionService encryption, McpOAuth oauth) {
-    return new McpServerService(servers, provider, encryption, oauth);
+                                           EncryptionService encryption, McpOAuth oauth,
+                                           org.springframework.beans.factory.ObjectProvider<
+                                               com.jizza.engine.persistence.repository.AuditLogRepository> audit) {
+    McpServerService service = new McpServerService(servers, provider, encryption, oauth);
+    service.setAuditLog(audit.getIfAvailable());
+    return service;
   }
 
   /** Corrects what an older classifier suggested a tool does, once the app is up. */

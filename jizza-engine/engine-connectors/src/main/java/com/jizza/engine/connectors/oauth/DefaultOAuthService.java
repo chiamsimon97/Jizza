@@ -157,8 +157,9 @@ public class DefaultOAuthService implements OAuthService {
     return ConnectionService.toDto(connection);
   }
 
+  /** A refused refresh still leaves the connection marked as needing a new sign-in. */
   @Override
-  @Transactional
+  @Transactional(noRollbackFor = RuntimeException.class)
   public ConnectionDto refreshIfNeeded(UUID connectionId) {
     ConnectionEntity connection = connectionService.require(connectionId);
     if (!needsRefresh(connection)) return ConnectionService.toDto(connection);
@@ -172,6 +173,7 @@ public class DefaultOAuthService implements OAuthService {
     if (refreshToken == null) {
       connection.setStatus(ConnectionStatus.NEEDS_REAUTH);
       connections.save(connection);
+      signInLost(connection);
       throw new AuthException("connection-expired", connection.getServiceName()
           + " needs to be reconnected: there is no refresh token to renew it with.");
     }
@@ -198,8 +200,24 @@ public class DefaultOAuthService implements OAuthService {
       connections.save(connection);
       audit.record(connection.getUserId(), ActorType.SYSTEM, null, "connection.refresh_failed",
           connection.getServiceName(), Json.obj().put("error", e.getMessage()));
+      signInLost(connection);
       throw e;
     }
+  }
+
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.connector.ConnectorSignIn> signIn;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setSignIn(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.connector.ConnectorSignIn> signIn) {
+    this.signIn = signIn;
+  }
+
+  /** The person hears that the service needs signing in again, on the reply and in the inbox. */
+  private void signInLost(ConnectionEntity connection) {
+    if (signIn == null) return;
+    signIn.ifAvailable(s -> s.lost(connection.getUserId(), com.jizza.engine.api.connector.ConnectorSignIn.SERVICE,
+        connection.getId(), connection.getServiceName()));
   }
 
   public boolean needsRefresh(ConnectionEntity connection) {
@@ -242,7 +260,15 @@ public class DefaultOAuthService implements OAuthService {
     if (testApi == null || !testApi.hasNonNull("url")) {
       return new TestResult(false, 0, "No test endpoint is configured for this connection");
     }
-    if (needsRefresh(connection)) refresh(connection);
+    if (needsRefresh(connection)) {
+      try {
+        refresh(connection);
+      } catch (RuntimeException e) {
+        // Kept, not rolled back: the connection now says it needs a new sign-in.
+        return new TestResult(false, 0, connection.getServiceName()
+            + " needs you to sign in again: Jizza couldn't renew the sign-in.");
+      }
+    }
 
     try {
       GuardedHttpClient.Response response = callConfiguredEndpoint(connection, testApi);

@@ -142,10 +142,11 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
   private Map<String, Exposed> exposed(UUID agentId) {
     Map<String, Exposed> out = new LinkedHashMap<>();
     AgentEntity agent = agentId == null ? null : agents.findById(agentId).orElse(null);
-    if (agent == null || !agent.isOrchestrator()) return out;
+    if (agent == null) return out;
     Set<String> slugs = new HashSet<>();
     for (DeviceEntity device : devices.findByOwnerUserIdAndStatusOrderByCreatedAtAsc(
         agent.getUserId(), "active")) {
+      if (!givenTo(device, agent)) continue;
       String slug = slug(device.getName());
       if (!slugs.add(slug)) {
         slug = slug + device.getId().toString().substring(0, 4);
@@ -168,6 +169,17 @@ public class DeviceToolProvider implements ToolProvider, ActionTypeSource {
       }
     }
     return out;
+  }
+
+  /**
+   * Whether the person gave the device to this agent: by its key, or to every agent with
+   * {@code *}. A device nobody chose agents for is Jizza's only, as before agents could be chosen.
+   */
+  static boolean givenTo(DeviceEntity device, AgentEntity agent) {
+    List<String> keys = com.jizza.engine.devices.registry.DeviceRegistryService.grantedKeys(device);
+    if (device.getAgentKeys() == null) return agent.isOrchestrator();
+    return keys.contains("*") || keys.contains(agent.getKey())
+        || (agent.isOrchestrator() && keys.contains(com.jizza.engine.api.device.Devices.DEFAULT_AGENT));
   }
 
   static String name(String slug, String action) {

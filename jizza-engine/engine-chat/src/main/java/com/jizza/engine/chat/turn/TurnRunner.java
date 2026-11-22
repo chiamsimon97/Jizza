@@ -639,9 +639,22 @@ public class TurnRunner implements ChatService {
       if (url.isEmpty() || shown.contains(url)) continue;
       links.putIfAbsent(url, new UserSteps.SignInLink(url, e.payload().path("service").asText("the service")));
     }
-    if (links.isEmpty()) return turn;
+    // Connectors that lost their sign-in on the way: each opens its page in the app.
+    java.util.Map<String, UserSteps.Reconnect> reconnect = new java.util.LinkedHashMap<>();
+    for (JobEventDto e : events) {
+      if (!ActivityTypes.CONNECTOR_SIGN_IN.equals(e.type())) continue;
+      String path = e.payload().path("path").asText("");
+      if (!path.startsWith("/connectors/")) continue;
+      reconnect.putIfAbsent(path, new UserSteps.Reconnect(e.payload().path("name").asText("A connector"), path));
+    }
+    if (links.isEmpty() && reconnect.isEmpty()) return turn;
     List<UiAction> all = new java.util.ArrayList<>(turn.actions());
-    all.add(UserSteps.signInCard(List.copyOf(links.values()).subList(0, Math.min(links.size(), 3))));
+    if (!links.isEmpty()) {
+      all.add(UserSteps.signInCard(List.copyOf(links.values()).subList(0, Math.min(links.size(), 3))));
+    }
+    if (!reconnect.isEmpty()) {
+      all.add(UserSteps.reconnectCard(List.copyOf(reconnect.values()).subList(0, Math.min(reconnect.size(), 3))));
+    }
     return new Orchestrator.Turn(turn.text(), turn.delegations(), all, turn.inputTokens(),
         turn.outputTokens());
   }

@@ -142,7 +142,7 @@ public final class EngineHarness {
           new com.jizza.engine.api.mcp.McpToolDto("get_quote", "mcp_kite__get_quote", null, null,
               Json.obj(), true, com.jizza.engine.api.enums.ActionType.READ, false, null, null, null),
           new com.jizza.engine.api.mcp.McpToolDto("place_order", "mcp_kite__place_order", null,
-              null, Json.obj(), false, null, false, null, null, null)), null, null);
+              null, Json.obj(), false, null, false, null, null, null)), null, null, null, null);
 
   /** Failed web steps handed over for a suggested fix. */
   public final List<com.jizza.engine.api.webauto.LocatorFixes.FailedStep> proposedFixes =

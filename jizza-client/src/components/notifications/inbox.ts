@@ -283,6 +283,17 @@ export function fixLinkOf(n: NotificationDto): string | null {
   return typeof link === 'string' && /^\/workflows\?open=[0-9a-f-]+(&node=[^&#]+)?$/i.test(link) ? link : null
 }
 
+/**
+ * Where to sign in to a connector again, from the notification raised when its sign-in was lost.
+ * Only a link to a connector's own page is followed.
+ */
+export function signInLinkOf(n: NotificationDto): string | null {
+  const ctx = n.context
+  if (ctx?.source !== 'connector' || ctx?.kind !== 'sign_in') return null
+  const link = ctx.link
+  return typeof link === 'string' && /^\/connectors\/(mcp\/)?[0-9a-f-]+(\/authentication)?$/i.test(link) ? link : null
+}
+
 /** What became of a request, in words. */
 export function outcomeOf(n: NotificationDto): { text: string; tone: 'success' | 'warning' | 'danger' | 'default' } | null {
   const fromDevice = !!n.context?.deviceHelp

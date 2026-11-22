@@ -115,7 +115,8 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
       Map<String, Object> arguments = call.args() == null || call.args().isNull()
           ? Map.of() : Json.mapper().convertValue(call.args(),
               new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
-      return toResult(connection.session().callTool(exposed.get().tool().name(), arguments));
+      return connection.signedInBy(exposed.get().tool().name(),
+          toResult(connection.session().callTool(exposed.get().tool().name(), arguments)));
     } catch (RuntimeException e) {
       log.warn("MCP tool {} failed", call.name(), e);
       // A broken session is opened afresh on the next turn rather than reused.
@@ -181,12 +182,31 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
                              Map<String, Object> arguments) {
     Connection connection = connection(name, server);
     try {
-      return toResult(connection.session().callTool(tool, arguments));
+      return connection.signedInBy(tool, toResult(connection.session().callTool(tool, arguments)));
     } catch (RuntimeException e) {
       log.warn("MCP tool {} on '{}' failed", tool, name, e);
       connection.drop();
       return ToolResult.error("The MCP server could not run that: " + Redaction.scrub(e.getMessage()));
     }
+  }
+
+  /** A tool by which a server signs the person in inside its own session (Zerodha Kite's login). */
+  static final java.util.regex.Pattern SIGN_IN_TOOL =
+      java.util.regex.Pattern.compile("(log_?in|sign_?in|authenticate|authori[sz]e)", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+  /** Whether {@code tool} is one by which the server signs the person in inside its session. */
+  public static boolean signInTool(String tool) {
+    return tool != null && SIGN_IN_TOOL.matcher(tool).matches();
+  }
+
+  /**
+   * When the server's sign-in tool last answered in the session open now: null when it has not
+   * since the session opened. A server that signs in inside its session (Kite) forgets the sign-in
+   * when the session goes, after a restart of Jizza included, so this says whether to sign in again.
+   */
+  public Instant sessionSignInAt(UUID serverId) {
+    Connection connection = connections.get(keyOf(serverId, null));
+    return connection == null ? null : connection.signInAt();
   }
 
   /** Closes an added server's session, after an edit, a sign-out or a delete. */
@@ -335,6 +355,8 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
     private List<McpSchema.Tool> tools = List.of();
     private Instant listedAt;
     private Instant unreachableUntil;
+    /** When the server's sign-in tool answered in this session; null since the session opened. */
+    private Instant signInAt;
 
     Connection(String name, McpProperties.Server server, String fingerprint) {
       this.name = name;
@@ -357,6 +379,14 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
     }
 
     synchronized McpSchema.Implementation info() { return info; }
+
+    synchronized Instant signInAt() { return session == null ? null : signInAt; }
+
+    /** Notes a sign-in tool that answered without an error, and hands its result on. */
+    synchronized ToolResult signedInBy(String tool, ToolResult result) {
+      if (result.ok() && signInTool(tool)) signInAt = clock.instant();
+      return result;
+    }
 
     synchronized List<McpSchema.Tool> tools() {
       Instant now = clock.instant();
@@ -381,6 +411,7 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
       if (session == null) {
         session = sessions.open(name, server);
         info = session.serverInfo();
+        signInAt = null;
       }
       return session;
     }

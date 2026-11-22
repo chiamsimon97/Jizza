@@ -86,6 +86,30 @@ public final class UserSteps {
     return new UiAction(UiAction.SHOW_STEPS, payload);
   }
 
+  /** A connector to sign in to again, on a page of the app. */
+  public record Reconnect(String name, String path) {}
+
+  /**
+   * A card for connectors that lost their sign-in while the reply ran: each one opens its page in
+   * the app, where the person signs in again, then they ask Jizza to carry on.
+   */
+  public static UiAction reconnectCard(List<Reconnect> connectors) {
+    String name = connectors.size() == 1 ? connectors.get(0).name() : "your connectors";
+    ObjectNode payload = Json.obj().put("title", "Sign in to " + name + " again").put("source", "auto");
+    payload.put("intro", "The sign-in expired or was refused, so Jizza couldn't use it. Only you can sign in.");
+    ArrayNode steps = payload.putArray("steps");
+    for (Reconnect c : connectors) {
+      ObjectNode step = steps.addObject().put("label", "Sign in to " + c.name() + " again")
+          .put("detail", "Open its page in Connectors and sign in.");
+      step.putObject("button").put("kind", "page").put("label", "Open " + c.name())
+          .put("path", c.path());
+    }
+    ObjectNode last = steps.addObject().put("label", "Come back here and continue");
+    last.putObject("button").put("kind", "reply").put("label", "Done, continue")
+        .put("text", "I've signed in to " + name + " again. Please continue.");
+    return new UiAction(UiAction.SHOW_STEPS, payload);
+  }
+
   /** The links already on a card, so a link is never shown on two cards. */
   public static Set<String> urls(UiAction action) {
     Set<String> urls = new LinkedHashSet<>();

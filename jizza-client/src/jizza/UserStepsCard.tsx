@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Check, ExternalLink, ListChecks, Send } from 'lucide-react'
+import { useInRouterContext, useNavigate } from 'react-router-dom'
+import { ArrowRight, Check, ExternalLink, ListChecks, Send } from 'lucide-react'
 import type { UserStep, UserSteps } from '@/types'
 
 /** Only absolute web links go on a button; anything else is shown as text. */
@@ -10,6 +11,20 @@ export function safeLink(url: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Only the app's own connector and device pages can be opened by a page button. */
+export function safePage(path: string): boolean {
+  return /^\/(connectors\/|settings\/devices)[^\s]*$/.test(path) && !path.includes('//')
+}
+
+/** Opens a page of the app: in place when inside the app's router, else by a normal load. */
+function usePageOpener(): (path: string) => void {
+  const inRouter = useInRouterContext()
+  // Same branch on every render of a card, so the hook order never changes.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const navigate = inRouter ? useNavigate() : null
+  return path => (navigate ? navigate(path) : window.location.assign(path))
 }
 
 /** The links on a reply's cards, so the reply's text need not show them a second time. */
@@ -41,6 +56,7 @@ export function UserStepsCard({ card, onSend, storageKey, disabled }: {
   disabled?: boolean
 }) {
   const [done, setDone] = useState<number[]>(() => saved(storageKey))
+  const openPage = usePageOpener()
   const mark = (i: number) => setDone(d => {
     if (d.includes(i)) return d
     const next = [...d, i]
@@ -65,6 +81,9 @@ export function UserStepsCard({ card, onSend, storageKey, disabled }: {
                 window.open(step.button.url, '_blank', 'noopener,noreferrer')
               } else if (step.button?.kind === 'reply') {
                 onSend(step.button.text)
+              } else if (step.button?.kind === 'page') {
+                if (!safePage(step.button.path)) return
+                openPage(step.button.path)
               }
               mark(i)
             }} onTick={() => mark(i)} />
@@ -80,6 +99,7 @@ function StepRow({ n, step, done, next, disabled, onUse, onTick }: {
   const button = step.button
   const link = button?.kind === 'link' && safeLink(button.url)
   const reply = button?.kind === 'reply'
+  const page = button?.kind === 'page' && safePage(button.path)
   return (
     <li className={`flex items-start gap-2.5 rounded-xl px-2 py-1.5 transition-colors ${next ? 'bg-white shadow-sm ring-1 ring-brand-200 dark:bg-gray-900 dark:ring-brand-800' : ''}`}>
       <span aria-hidden className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${done
@@ -110,7 +130,16 @@ function StepRow({ n, step, done, next, disabled, onUse, onTick }: {
             {done ? 'Sent' : button.label}
           </button>
         )}
-        {!link && !reply && !done && (
+        {page && (
+          <button type="button" onClick={onUse}
+            className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-all active:scale-95 ${done
+              ? 'border border-brand-300 bg-white text-brand-700 hover:border-brand-500 dark:border-brand-700 dark:bg-gray-900 dark:text-brand-300'
+              : 'bg-brand-500 text-white shadow-sm hover:-translate-y-0.5 hover:bg-brand-600'}`}>
+            {button.label}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {!link && !reply && !page && !done && (
           <button type="button" onClick={onTick}
             className="inline-flex w-fit items-center gap-1 text-xs font-medium text-gray-500 hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
             <Check className="h-3 w-3" /> Mark as done

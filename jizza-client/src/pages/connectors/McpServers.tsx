@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Bot, FlaskConical, KeyRound, LogIn, LogOut, Play, Plus, Power, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
+import { ArrowLeft, FlaskConical, KeyRound, ListChecks, LogIn, LogOut, Play, Plus, Power, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -52,15 +52,14 @@ function AgentChips({ agents, keys, disabled, onChange }: { agents: AgentDto[]; 
   )
 }
 
-/** The names of the agents a server is given to, for a card or a list. */
-export function agentNames(server: McpServer, agents: AgentDto[]): string {
-  if (server.agentKeys.includes('*')) return 'Every agent'
-  const names = server.agentKeys.map(k => agents.find(a => a.key === k)?.name).filter(Boolean)
-  return names.length ? names.join(', ') : 'No agent yet'
+/** A server that signs you in inside its own session (Kite) forgets it whenever Jizza restarts. */
+export function needsSessionSignIn(server: McpServer): boolean {
+  return server.enabled && !!server.signInTool && !server.sessionSignInAt && server.status !== 'needs_auth' && server.status !== 'error'
 }
 
 export function McpStatusBadge({ server }: { server: McpServer }) {
   if (!server.enabled) return <Badge>Off</Badge>
+  if (needsSessionSignIn(server)) return <Badge variant="warning">Sign in again</Badge>
   switch (server.status) {
     case 'connected': return <Badge variant="success">Connected</Badge>
     case 'needs_auth': return <Badge variant="warning">Sign in needed</Badge>
@@ -69,56 +68,40 @@ export function McpStatusBadge({ server }: { server: McpServer }) {
   }
 }
 
-/** The MCP servers on the Connectors page, with a way to add one. */
-export function McpServersSection() {
+/**
+ * Adding an MCP server from the Connectors hub: the ready-made catalog, or any server by its URL.
+ * A new server opens on its page with its tool types up for review.
+ */
+export function McpServersSection({ view = 'catalog' }: { view?: 'catalog' | 'url' }) {
   const navigate = useNavigate()
   const [adding, setAdding] = useState<{ preset: McpCatalogEntry | null; redirectUri: string | null } | null>(null)
-  const { data, isLoading } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list() })
+  const { data } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list() })
   const canCreate = usePermission(PERMISSIONS.CONNECTOR_CREATE)
-  const agents = useLiveAgents()
+  const form = adding && <NewMcpServerForm key={adding.preset?.id ?? 'custom'} open preset={adding.preset} redirectUri={adding.redirectUri}
+    onClose={() => setAdding(null)} onCreated={s => navigate(`/connectors/mcp/${s.id}?review=1`)} />
 
+  if (view === 'url') {
+    return (
+      <Card padding="lg" className="flex flex-col">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200"><Server className="h-5 w-5" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-gray-900 dark:text-gray-100">An MCP server by its URL</p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Any remote server that speaks the Model Context Protocol, the same kind Claude connects to. Its tools reach the agents you choose, under your guardrails.</p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" onClick={() => setAdding({ preset: null, redirectUri: null })}><Plus className="h-4 w-4" />Add by URL</Button></Can>
+        </div>
+        {form}
+      </Card>
+    )
+  }
   return (
     <>
-    <section className="mt-10">
-      <SectionHeader title="MCP servers"
-        description="Remote MCP servers, such as Zerodha Kite or Gmail. Their tools become available to the agents you choose, in chat and as workflow steps, under your guardrails."
-        action={<Can permission={PERMISSIONS.CONNECTOR_CREATE}><Button size="sm" variant="secondary" onClick={() => setAdding({ preset: null, redirectUri: null })}><Plus className="h-4 w-4" />Add by URL</Button></Can>} />
-
-      {isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
-      {!isLoading && (!data || data.length === 0) && (
-        <Empty>
-          No MCP servers yet.{canCreate && <> Install a ready-made one below, or <button type="button" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => setAdding({ preset: null, redirectUri: null })}>add any server by its URL</button>.</>}
-        </Empty>
-      )}
-      {data && data.length > 0 && (
-        <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {data.map(server => (
-            <Card key={server.id} interactive padding="lg" className="cursor-pointer" onClick={() => navigate(`/connectors/mcp/${server.id}`)}>
-              <div className="flex items-start gap-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
-                  <Server className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-gray-900 dark:text-gray-100">{server.name}</p>
-                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">{server.url}</p>
-                </div>
-                <McpStatusBadge server={server} />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
-                <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{server.tools.filter(t => t.enabled).length} of {server.tools.length} tools on</span>
-                <span className="inline-flex items-center gap-1"><KeyRound className="h-3.5 w-3.5" />{server.authType === 'NONE' ? 'No sign-in' : server.authType === 'OAUTH' ? 'OAuth' : 'Token'}</span>
-                <span className="inline-flex items-center gap-1"><Bot className="h-3.5 w-3.5" />{agentNames(server, agents)}</span>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {adding && <NewMcpServerForm key={adding.preset?.id ?? 'custom'} open preset={adding.preset} redirectUri={adding.redirectUri}
-        onClose={() => setAdding(null)} onCreated={s => navigate(`/connectors/mcp/${s.id}`)} />}
-    </section>
-    <McpCatalogSection installed={data ?? []} canInstall={canCreate}
-      onInstall={(preset, redirectUri) => setAdding({ preset, redirectUri })} />
+      <McpCatalogSection installed={data ?? []} canInstall={canCreate}
+        onInstall={(preset, redirectUri) => setAdding({ preset, redirectUri })} />
+      {form}
     </>
   )
 }
@@ -229,6 +212,16 @@ export function McpServerPage() {
   const [editing, setEditing] = useState(false)
   const [testing, setTesting] = useState<McpTool | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const [reviewing, setReviewing] = useState(false)
+  const toReview = server ? reviewable(server).length : 0
+  const askedToReview = params.get('review') === '1'
+  // A server just added opens with its tool types up for review, once they are known.
+  useEffect(() => {
+    if (!askedToReview || toReview === 0) return
+    setReviewing(true)
+    setParams(p => { p.delete('review'); return p }, { replace: true })
+  }, [askedToReview, toReview, setParams])
 
   const put = (s: McpServer) => {
     qc.setQueryData(queryKey, s)
@@ -272,6 +265,12 @@ export function McpServerPage() {
         <div className="flex flex-wrap gap-2">
           <Can permission={PERMISSIONS.CONNECTOR_MODIFY}>
             <Button size="sm" variant="secondary" loading={refresh.isPending} onClick={() => refresh.mutate()}><RefreshCw className="h-4 w-4" />Check tools</Button>
+            {server.signInTool && server.authType === 'NONE' && (
+              <Button size="sm" variant={needsSessionSignIn(server) ? 'primary' : 'secondary'}
+                onClick={() => setTesting(server.tools.find(t => t.name === server.signInTool) ?? null)}>
+                <LogIn className="h-4 w-4" />Sign in
+              </Button>
+            )}
             {server.authType === 'OAUTH' && (server.signedIn
               ? <Button size="sm" variant="secondary" loading={signOut.isPending} onClick={() => signOut.mutate()}><LogOut className="h-4 w-4" />Sign out</Button>
               : <Button size="sm" onClick={signIn}><LogIn className="h-4 w-4" />Sign in</Button>)}
@@ -286,14 +285,16 @@ export function McpServerPage() {
 
       {server.lastError && <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">{server.lastError}</p>}
       {server.status === 'needs_auth' && <p className="mb-4 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800 dark:bg-yellow-500/10 dark:text-yellow-200">Sign in to {server.name} so Jizza can use it. After signing in in the new tab, come back here; the tools appear on their own.</p>}
+      {needsSessionSignIn(server) && <p className="mb-4 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800 dark:bg-yellow-500/10 dark:text-yellow-200">{server.name} signs you in inside its own session, and that session ended when Jizza last restarted. Press Sign in, then open the link it gives you.</p>}
       {authError && <p className="mb-4 text-sm text-red-500">{authError}</p>}
       {[refresh.error, toggle.error, signOut.error, remove.error].filter(Boolean).map((e, i) => <p key={i} className="mb-4 text-sm text-red-500">{errorText(e)}</p>)}
 
       <AgentsCard server={server} onSaved={put} />
-      <ToolsCard server={server} onSaved={put} onTest={setTesting} />
+      <ToolsCard server={server} onSaved={put} onTest={setTesting} onReview={() => setReviewing(true)} />
 
       <SettingsForm server={server} open={editing} onClose={() => setEditing(false)} onSaved={put} />
       <TestTool server={server} tool={testing} onClose={() => setTesting(null)} />
+      <ToolTypesReview server={server} open={reviewing} onClose={() => setReviewing(false)} onSaved={put} />
     </div>
   )
 }
@@ -321,7 +322,7 @@ function AgentsCard({ server, onSaved }: { server: McpServer; onSaved: (s: McpSe
   )
 }
 
-function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s: McpServer) => void; onTest: (t: McpTool) => void }) {
+function ToolsCard({ server, onSaved, onTest, onReview }: { server: McpServer; onSaved: (s: McpServer) => void; onTest: (t: McpTool) => void; onReview: () => void }) {
   const update = useMutation({
     mutationFn: ({ tool, body }: { tool: string; body: { enabled?: boolean; actionType?: ActionType } }) => mcpApi.updateTool(server.id, tool, body),
     onSuccess: onSaved,
@@ -338,6 +339,12 @@ function ToolsCard({ server, onSaved, onTest }: { server: McpServer; onSaved: (s
     <Card padding="lg">
       <SectionHeader title="Tools"
         description="Turn off what you don't want used, and check what each tool does: each agent's guardrails go by that. Jizza suggests it from the tool's name; change any that are wrong." />
+      {reviewable(server).length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+          <span className="min-w-0 flex-1">{reviewable(server).length} tools have a type Jizza guessed or none at all. Check them in one go.</span>
+          {canModify && <Button size="sm" variant="secondary" onClick={onReview}><ListChecks className="h-4 w-4" />Review tool types</Button>}
+        </div>
+      )}
       {server.tools.some(t => t.enabled && !t.actionType) && (
         <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
           {server.tools.filter(t => t.enabled && !t.actionType).length} tools don't say what they do yet. Until you choose, each is treated as moving money, so by default Jizza won't use it.
@@ -534,6 +541,84 @@ function TestTool({ server, tool: picked, onClose }: { server: McpServer; tool: 
             </ul>
           )}
         </section>
+      </div>
+    </SlideOver>
+  )
+}
+
+/** The tools whose type is only Jizza's guess, or missing: the ones a review is for. */
+export function reviewable(server: McpServer): McpTool[] {
+  return server.tools.filter(t => t.enabled && (t.suggested || !t.actionType))
+}
+
+type Group = 'read' | 'change' | 'money' | 'unset'
+
+export function groupOf(type: ActionType | null | undefined): Group {
+  if (!type) return 'unset'
+  if (type === 'MONEY') return 'money'
+  return type === 'READ' || type === 'DRAFT' ? 'read' : 'change'
+}
+
+const GROUPS: { id: Group; title: (n: number) => string }[] = [
+  { id: 'read', title: n => `${n === 1 ? 'This one looks' : `These ${n} look`} like ${n === 1 ? 'a read' : 'reads'}` },
+  { id: 'change', title: n => `${n === 1 ? 'This one changes' : `These ${n} change`} things` },
+  { id: 'money', title: n => `${n === 1 ? 'This one moves' : `These ${n} move`} money` },
+  { id: 'unset', title: n => `Jizza couldn't tell what ${n === 1 ? 'this one does' : `these ${n} do`}` },
+]
+
+/**
+ * The review after a server is added: its tools grouped by what Jizza thinks they do, to accept in
+ * one press or change any first. Each agent's guardrails go by these types.
+ */
+export function ToolTypesReview({ server, open, onClose, onSaved }: { server: McpServer; open: boolean; onClose: () => void; onSaved: (s: McpServer) => void }) {
+  const tools = reviewable(server)
+  const [chosen, setChosen] = useState<Record<string, ActionType | ''>>({})
+  const typeOf = (t: McpTool): ActionType | '' => chosen[t.name] ?? t.actionType ?? ''
+  const save = useMutation({
+    mutationFn: () => {
+      const types: Record<string, ActionType> = {}
+      for (const t of tools) { const v = typeOf(t); if (v) types[t.name] = v }
+      return mcpApi.updateToolTypes(server.id, types)
+    },
+    onSuccess: s => { onSaved(s); setChosen({}); onClose() },
+  })
+  const unset = tools.filter(t => !typeOf(t)).length
+  return (
+    <SlideOver open={open} wide title={`What ${server.name}'s tools do`}
+      description="Jizza guessed from each tool's name and description. Each agent's guardrails go by these, so a read runs under its rule for looking things up and a payment under its rule for money."
+      onClose={onClose}
+      footer={<>
+        {unset > 0 && <span className="mr-auto text-xs text-gray-500">{unset} left without a type {unset === 1 ? 'is' : 'are'} treated as moving money.</span>}
+        <Button variant="ghost" onClick={onClose}>Later</Button>
+        <Button loading={save.isPending} onClick={() => save.mutate()}>{Object.keys(chosen).length ? 'Save these types' : 'Accept all'}</Button>
+      </>}>
+      <div className="flex flex-col gap-5">
+        {GROUPS.map(g => {
+          // Grouped by the first guess, so a tool doesn't jump between groups while you change it.
+          const inGroup = tools.filter(t => groupOf(t.actionType) === g.id)
+          if (inGroup.length === 0) return null
+          return (
+            <section key={g.id} aria-label={g.title(inGroup.length)}>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">{g.title(inGroup.length)}</h3>
+              <ul className="flex flex-col divide-y divide-gray-100 rounded-xl border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                {inGroup.map(t => (
+                  <li key={t.name} className="flex flex-wrap items-center gap-3 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{t.title || t.name}</p>
+                      {t.description && <p className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">{t.description}</p>}
+                    </div>
+                    <select className={`${fieldClass} w-48`} aria-label={`What ${t.name} does`} value={typeOf(t)}
+                      onChange={e => setChosen(c => ({ ...c, [t.name]: e.target.value as ActionType | '' }))}>
+                      {!typeOf(t) && <option value="">Choose…</option>}
+                      {ACTION_TYPES.map(a => <option key={a} value={a}>{ACTION_LABELS[a].label}</option>)}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        })}
+        {save.error && <p className="text-sm text-red-500">{errorText(save.error)}</p>}
       </div>
     </SlideOver>
   )

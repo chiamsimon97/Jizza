@@ -403,6 +403,34 @@ class DevicesE2eTest extends E2eSupport {
     return client;
   }
 
+  @Test
+  void theConnectorsHubShowsTheDeviceAndGivesItToAnotherAgent() {
+    pairAndSignIn();
+    String id = api.get("/api/devices").json().get(0).path("id").asText();
+    JsonNode card = deviceCard(id);
+    assertThat(card.path("name").asText()).isEqualTo("Sim laptop");
+    assertThat(card.path("toolCount").asInt()).as(card.toString()).isGreaterThanOrEqualTo(2);
+    // Devices are Jizza's until given to someone else.
+    assertThat(card.path("agentKeys").toString()).isEqualTo("[\"jizza\"]");
+    assertThat(card.path("path").asText()).isEqualTo("/settings/devices?device=" + id);
+
+    var given = api.put("/api/connector-hub/device/" + id + "/agents",
+        Map.of("agentKeys", List.of("finance", "jizza")));
+    assertThat(given.ok()).as(given.body()).isTrue();
+    assertThat(deviceCard(id).path("agentKeys").toString()).isEqualTo("[\"jizza\",\"finance\"]");
+    assertThat(api.put("/api/connector-hub/device/" + id + "/agents",
+        Map.of("agentKeys", List.of("*"))).json().path("agentKeys").toString()).isEqualTo("[\"*\"]");
+  }
+
+  private JsonNode deviceCard(String id) {
+    var cards = api.get("/api/connector-hub");
+    assertThat(cards.ok()).as(cards.body()).isTrue();
+    for (JsonNode c : cards.json()) {
+      if (c.path("kind").asText().equals("device") && c.path("id").asText().equals(id)) return c;
+    }
+    throw new AssertionError("No device card in " + cards.body());
+  }
+
   private String pairingCode() {
     var pairing = api.post("/api/devices/pairings", Map.of());
     assertThat(pairing.ok()).as(pairing.body()).isTrue();

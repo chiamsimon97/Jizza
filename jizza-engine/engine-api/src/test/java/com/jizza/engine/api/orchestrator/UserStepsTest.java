@@ -54,4 +54,24 @@ class UserStepsTest {
     assertThat(steps.get(1).path("button").path("kind").asText()).isEqualTo("reply");
     assertThat(UserSteps.urls(card)).containsExactly(KITE);
   }
+
+  @Test
+  void aLostSignInOpensTheConnectorsOwnPage() {
+    var id = java.util.UUID.randomUUID();
+    String path = com.jizza.engine.api.connector.ConnectorSignIn.path("mcp", id);
+    assertThat(path).isEqualTo("/connectors/mcp/" + id);
+    assertThat(com.jizza.engine.api.connector.ConnectorSignIn.path("service", id))
+        .isEqualTo("/connectors/" + id + "/authentication");
+
+    UiAction card = UserSteps.reconnectCard(List.of(new UserSteps.Reconnect("Kite", path)));
+
+    assertThat(card.payload().path("title").asText()).isEqualTo("Sign in to Kite again");
+    var first = card.payload().path("steps").get(0).path("button");
+    assertThat(first.path("kind").asText()).isEqualTo("page");
+    assertThat(first.path("path").asText()).isEqualTo(path);
+    assertThat(card.payload().path("steps").get(1).path("button").path("kind").asText())
+        .isEqualTo("reply");
+    // A page is not a link, so it is not taken for one already shown.
+    assertThat(UserSteps.urls(card)).isEmpty();
+  }
 }

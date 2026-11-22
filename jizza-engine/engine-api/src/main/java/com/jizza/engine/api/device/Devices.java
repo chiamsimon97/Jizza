@@ -85,6 +85,22 @@ public interface Devices {
 
   DeviceDto setEnabled(UUID deviceId, boolean enabled);
 
+  /** The key of the agent a device is given to when nobody chose: Jizza, the chat agent. */
+  String DEFAULT_AGENT = "jizza";
+
+  /**
+   * The keys of the agents that may use the device's actions ({@code *} for every agent). A device
+   * nobody set this for is Jizza's only.
+   */
+  default List<String> agentKeys(UUID deviceId) {
+    return List.of(DEFAULT_AGENT);
+  }
+
+  /** Sets exactly which agents may use the device's actions; returns the keys as stored. */
+  default List<String> setAgentKeys(UUID deviceId, List<String> agentKeys) {
+    throw new UnsupportedOperationException("Device grants are not kept here");
+  }
+
   /** Final: its keys stop working, its socket is closed and its queued commands are cancelled. */
   DeviceDto revoke(UUID deviceId, String reason);
 

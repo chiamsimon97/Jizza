@@ -35,6 +35,8 @@ public final class ActivityTypes {
   public static final String GUARDRAIL_DECIDED = "guardrail.decided";
   /** A tool handed back a link the user must open to sign in; the reply shows it as a button. */
   public static final String SIGN_IN_LINK = "sign_in.link";
+  /** A connector lost its sign-in during this job: {@code name} and the app {@code path} to fix it. */
+  public static final String CONNECTOR_SIGN_IN = "connector.sign_in";
   /** Something Jizza asked the user's screen to do. */
   public static final String UI_ACTION = "ui.action";
   /** Web pages an agent searched, read or cited for its reply: {@code sources} of url and title. */
