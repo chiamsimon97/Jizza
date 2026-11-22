@@ -194,8 +194,9 @@ public final class StubService implements AutoCloseable {
     Map<String, String> headers = new HashMap<>();
     exchange.getRequestHeaders().forEach((name, values) ->
         headers.put(name.toLowerCase(java.util.Locale.ROOT), String.join(",", values)));
-    received.add(new Recorded(exchange.getRequestMethod(), exchange.getRequestURI().getPath(),
-        body, headers));
+    String query = exchange.getRequestURI().getRawQuery();
+    received.add(new Recorded(exchange.getRequestMethod(),
+        exchange.getRequestURI().getPath() + (query == null ? "" : "?" + query), body, headers));
   }
 
   private String read(HttpExchange exchange) throws IOException {

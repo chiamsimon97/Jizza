@@ -110,6 +110,25 @@ public final class UserSteps {
     return new UiAction(UiAction.SHOW_STEPS, payload);
   }
 
+  /**
+   * A card that sends the person to a service's Authentication tab to add its key or sign in, so a
+   * credential never passes through the chat (K5).
+   */
+  public static UiAction credentialsCard(String service, String path, String what) {
+    ObjectNode payload = Json.obj().put("title", "Connect " + service).put("source", "agent");
+    payload.put("intro", "Only you can do this part. Keys stay on the Authentication tab and "
+        + "never go into the chat.");
+    ArrayNode steps = payload.putArray("steps");
+    ObjectNode open = steps.addObject().put("label", "Add the sign-in for " + service);
+    if (what != null && !what.isBlank()) open.put("detail", what.strip());
+    open.putObject("button").put("kind", "page").put("label", "Open Authentication")
+        .put("path", path);
+    ObjectNode last = steps.addObject().put("label", "Come back here and continue");
+    last.putObject("button").put("kind", "reply").put("label", "Done, continue")
+        .put("text", "I've added the sign-in for " + service + ". Please continue.");
+    return new UiAction(UiAction.SHOW_STEPS, payload);
+  }
+
   /** The links already on a card, so a link is never shown on two cards. */
   public static Set<String> urls(UiAction action) {
     Set<String> urls = new LinkedHashSet<>();
