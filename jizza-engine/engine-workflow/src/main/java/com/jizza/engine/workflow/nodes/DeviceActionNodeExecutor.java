@@ -1035,6 +1035,10 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
           state.put("errorRounds", state.path("errorRounds").asInt(0) + 1);
           yield execute(execution);
         }
+        if (state.path("browserAction").asBoolean(false) && command.output() != null
+            && command.output().path("_located").isArray()) {
+          noteBackup(execution, command.output().get("_located"));
+        }
         JsonNode output = outputOf(command,
             state.path("browserAction").asBoolean(false),
             state.path("browserOpened").asBoolean(true),
@@ -1288,6 +1292,23 @@ public class DeviceActionNodeExecutor implements NodeExecutor {
     } catch (RuntimeException e) {
       org.slf4j.LoggerFactory.getLogger(DeviceActionNodeExecutor.class)
           .warn("Could not keep a fix for step {} of run {}", execution.node().id(),
+              execution.runId(), e);
+    }
+  }
+
+  /**
+   * The browser found the step's element by a backup way: the person is offered to make that way
+   * the first one. A fix that cannot be kept never changes how this step ends.
+   */
+  private void noteBackup(Execution execution, JsonNode located) {
+    LocatorFixes service = fixes.getIfAvailable();
+    if (service == null || execution.workflowId() == null || located.isEmpty()) return;
+    try {
+      service.backupUsed(new LocatorFixes.UsedBackup(execution.userId(), execution.workflowId(),
+          execution.runId(), execution.node().id(), located));
+    } catch (RuntimeException e) {
+      org.slf4j.LoggerFactory.getLogger(DeviceActionNodeExecutor.class)
+          .warn("Could not note a backup way for step {} of run {}", execution.node().id(),
               execution.runId(), e);
     }
   }

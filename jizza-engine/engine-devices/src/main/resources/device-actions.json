@@ -11,6 +11,7 @@
             "label",
             "placeholder",
             "name",
+            "near",
             "css",
             "text",
             "xpath"

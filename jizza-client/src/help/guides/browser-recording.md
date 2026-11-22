@@ -128,7 +128,31 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | Close the last tab | Close browser |
 | Add check, Add table, Mark hover (side panel) | Check if element exists or Get text, Extract table data, Hover |
 
-Each step stores several ways to find its element (its label, text, role and position), plus a small picture of it, so you can tell steps apart in review.
+Each step stores several ways to find its element, plus a small picture of it, so you can tell steps apart in review.
+
+### How a run finds each element
+
+When you click or fill something, the recorder saves every way that finds exactly that one thing on the page, best first, up to 12:
+
+1. Test id (`data-testid` and similar, put there by the site's developers)
+2. Its own id (never one that looks generated, such as `input-48213`)
+3. The site's own naming attributes (`data-field="origin"`, Angular `formcontrolname`)
+4. Role and name ("Search button")
+5. Label
+6. Placeholder
+7. Name attribute
+8. Tooltip (`title`) or a picture's description (`alt`)
+9. A link's address
+10. The words just before a field ("From" beside its box, when no label is tied to it)
+11. A short CSS path
+12. Its visible text
+13. Its position on the page (XPath), always last
+
+A run tries them in that order and uses the first that finds exactly one thing. When a way finds several, the one that looks most like what you recorded (its text, attributes, position and the words near it) is used. Lists, repeating rows and cards keep up to three backup patterns the same way, so a site renaming one class does not break them.
+
+**See and change the ways.** While recording, press **⌕** on a step; while editing a recording, open the step and press **Ways to find it**. Move a way sooner or later, remove one, or press **Test on this page**: each way should say "finds it". "Finds nothing now" or "finds 3" shows a way that will not help on this page.
+
+**When a backup way was used.** If a run finds the element by a way other than its first, the step still works, and Jizza tells you: open the step in the builder and choose **Make it first**, so the way that works is tried first next time. **Keep as it is** leaves the order unchanged.
 
 ### Lists made of cards
 

@@ -155,6 +155,8 @@ export interface EditOp {
 }
 
 export interface FixCandidate {
+  /** The step worked by a backup way: this candidate only puts that way first. */
+  backup?: boolean
   element: Record<string, unknown> & { label?: string; strategies?: Array<Record<string, unknown>> }
   score?: number
   text?: string

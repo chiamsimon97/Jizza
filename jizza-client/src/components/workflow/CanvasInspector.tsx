@@ -2467,7 +2467,7 @@ function SelectorDialog({ bundle, mapping, onClose, onSave }: {
       {rows.map((row, i) => <div key={i} className="rounded-lg border border-gray-200 p-2 dark:border-gray-700">
         <div className="flex gap-1">
           <select aria-label={`Selector strategy ${i + 1}`} className={fieldClass} value={row.by} onChange={e => update(i, { by: e.target.value })}>
-            {['testid', 'role', 'label', 'placeholder', 'name', 'css', 'text', 'xpath'].map(by => <option key={by}>{by}</option>)}
+            {['testid', 'role', 'label', 'placeholder', 'name', 'near', 'css', 'text', 'xpath'].map(by => <option key={by}>{by}</option>)}
           </select>
           <button aria-label={`Move selector ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp className="h-4 w-4" /></button>
           <button aria-label={`Move selector ${i + 1} down`} disabled={i === rows.length - 1} onClick={() => move(i, 1)}><ChevronDown className="h-4 w-4" /></button>
@@ -2478,7 +2478,7 @@ function SelectorDialog({ bundle, mapping, onClose, onSave }: {
           <MappedField aria-label={`Role name ${i + 1}`} mode="template" context={mapping} value={row.name ?? ''} onChange={name => update(i, { name })} />
         </div> : <div className="mt-2"><MappedField aria-label={`Selector value ${i + 1}`} mode="template" context={mapping} mono
           value={row.value ?? ''} onChange={v => update(i, { value: v })} /></div>}
-        {['role', 'label', 'text'].includes(row.by) && <label className="mt-2 flex items-center gap-2 text-xs">
+        {['role', 'label', 'text', 'near'].includes(row.by) && <label className="mt-2 flex items-center gap-2 text-xs">
           <input type="checkbox" checked={row.exact === true} onChange={e => update(i, { exact: e.target.checked || undefined })} /> Exact match
         </label>}
       </div>)}
