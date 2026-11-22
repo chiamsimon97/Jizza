@@ -222,6 +222,18 @@ The rows become one step, **Fill a row for each Passenger**, with one column per
 
 When the workflow runs, the run form shows `passengers` as a table: a row per passenger, and **Add passenger** for another. The step presses the add button on the site until there is a row for each one, then fills each row. When a run has no passengers, the step stops and asks for them on its card with the same table. A column's value can also be mapped from earlier steps as a list, such as `[{"name": "Asha Rao", "age": "34"}]`.
 
+#### Passengers and infants (two add buttons)
+
+Some forms have a second kind of row with its own button, such as **+ Add Infant Without Berth**, and that row is shorter (name, age and gender only). Each kind becomes its own step (browser agent 0.27.0 or later):
+
+1. Repeat the passengers as above, and fill the first passenger.
+2. Still in the same form step, press **+ Add Infant Without Berth** on the page. Clicks are not recorded while a form step is open, so this only shows an infant row.
+3. In **Each row is a**, type "Infant" and press **Repeat for each row** again. Point at the infant row and press Up until the whole row is outlined, then click. Then click **+ Add Infant Without Berth**.
+4. Tick **None is fine** under the infant line, so runs without infants don't stop to ask for one.
+5. Fill the infant row, then press **Finish form step**.
+
+You get two steps, **Fill a row for each Passenger** (input `passengers`) and **Fill a row for each Infant** (input `infants`, empty unless a run gives some). Each presses its own button as many times as it needs. The passengers step never counts infant rows, even though they sit in the same box.
+
 ### Mandatory inputs
 
 A value that is **Different each run** can also be ticked **Mandatory** (browser agent 0.16.0 or later), in the scan's field list or in **Add field**. A mandatory input keeps no recorded value. When a run is not given it, the step stops and asks you on its approval card, and the card shows **Submit** (or **Approve**) only once every mandatory field is filled in. Until then it says which ones are left.

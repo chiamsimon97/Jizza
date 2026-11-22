@@ -666,8 +666,12 @@ public class RecordingService implements Recordings, RecordingIntake {
         return;
       }
       if (in.isObject()) {
+        // The browser names no default, but for a kind of row a run may leave out (no
+        // infants): an empty list, so runs start with none instead of the ones recorded.
+        JsonNode none = in.path("default").isArray() && in.path("default").isEmpty()
+            ? in.get("default") : null;
         input = new Recordings.Input(in.path("name").asText(null), in.path("type").asText(null),
-            null, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null,
+            none, in.path("format").asText(null), in.path("required").asBoolean(false) ? true : null,
             in.path("label").asText(null), in.path("group").asText(null), in.path("ask").asText(null),
             in.get("options"), in.get("synonyms"),
             in.path("min").isNumber() ? in.get("min").asDouble() : null,

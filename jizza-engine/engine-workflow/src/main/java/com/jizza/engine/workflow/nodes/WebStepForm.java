@@ -297,7 +297,9 @@ final class WebStepForm {
       String source = template(configured.get("rows"));
       Matcher named = source == null ? null : INPUT_REF.matcher(source.strip());
       String label = named != null && named.matches() ? label(named.group(1), FILL_ROWS) : "Rows";
-      out.add(new Field("rows", label, "rows", inputs.get("rows"), true, source, columns));
+      // A kind of row a run may leave out (no infants) is not asked for when there are none.
+      boolean required = !inputs.path("optional").asBoolean(false);
+      out.add(new Field("rows", label, "rows", inputs.get("rows"), required, source, columns));
       return out;
     }
     JsonNode schema = spec.input() == null ? Json.obj() : spec.input();
