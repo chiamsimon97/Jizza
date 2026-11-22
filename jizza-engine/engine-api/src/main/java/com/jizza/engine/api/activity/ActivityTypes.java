@@ -37,6 +37,9 @@ public final class ActivityTypes {
   public static final String SIGN_IN_LINK = "sign_in.link";
   /** Something Jizza asked the user's screen to do. */
   public static final String UI_ACTION = "ui.action";
+  /** Web pages an agent searched, read or cited for its reply: {@code sources} of url and title. */
+  public static final String WEB_SOURCES = "web.sources";
+
   /** The conversation was given a title after its first exchange. */
   public static final String CONVERSATION_TITLED = "conversation.titled";
 }

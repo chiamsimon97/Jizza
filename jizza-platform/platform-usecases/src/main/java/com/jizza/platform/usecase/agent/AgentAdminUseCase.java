@@ -79,6 +79,29 @@ public class AgentAdminUseCase {
     return updated;
   }
 
+  /**
+   * Whether the agent may search the web and read pages, and whether web tools are switched on for
+   * this server at all (when they are not, the setting is kept but has no effect).
+   */
+  public record WebAccess(boolean enabled, boolean available) {}
+
+  @org.springframework.beans.factory.annotation.Value("${jizza.agents.anthropic.web.enabled:true}")
+  private boolean webAvailable = true;
+
+  @Transactional(readOnly = true)
+  public WebAccess webAccess(UUID userId, UUID agentId) {
+    ownedBy(userId, agentId);
+    return new WebAccess(agents.webAccess(agentId), webAvailable);
+  }
+
+  @Transactional
+  public WebAccess setWebAccess(UUID userId, UUID agentId, boolean on) {
+    AgentDto agent = ownedBy(userId, agentId);
+    agents.setWebAccess(agentId, on);
+    audit.record(userId, ActorType.USER, null, on ? "agent.web.on" : "agent.web.off", agent.key(), null);
+    return new WebAccess(on, webAvailable);
+  }
+
   public AgentDto ownedBy(UUID userId, UUID agentId) {
     return directory.byId(agentId)
         .filter(agent -> agent.userId().equals(userId))

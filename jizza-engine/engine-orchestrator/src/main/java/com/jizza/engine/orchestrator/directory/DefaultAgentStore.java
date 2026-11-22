@@ -79,6 +79,20 @@ public class DefaultAgentStore implements AgentStore {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean webAccess(UUID agentId) {
+    return require(agentId).isWebAccess();
+  }
+
+  @Override
+  @Transactional
+  public void setWebAccess(UUID agentId, boolean on) {
+    AgentEntity agent = require(agentId);
+    agent.setWebAccess(on);
+    save(agent);
+  }
+
+  @Override
   @Transactional
   public AgentDto createCustom(UUID userId, String key, CustomAgentDraft draft) {
     AgentEntity agent = new AgentEntity();

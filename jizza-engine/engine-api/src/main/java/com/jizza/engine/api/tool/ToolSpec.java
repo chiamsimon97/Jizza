@@ -24,6 +24,20 @@ public record ToolSpec(String name, String description, JsonNode inputSchema, bo
     this(name, description, inputSchema, false, false);
   }
 
+  /** The provider's own web search: it runs on the provider's side and never reaches a provider here. */
+  public static final String WEB_SEARCH = "web_search";
+  /** The provider's own page reader, for links already in the conversation. */
+  public static final String WEB_FETCH = "web_fetch";
+
+  /**
+   * A tool the model provider runs itself (searching the web, reading a page). The client sends it
+   * as the provider's own tool type, and its calls and results come back inside the reply, so no
+   * tool provider here is ever asked to run one.
+   */
+  public boolean serverTool() {
+    return WEB_SEARCH.equals(name) || WEB_FETCH.equals(name);
+  }
+
   /** The same tool, allowed to be found by search instead of shown up front. */
   public ToolSpec asDeferrable() {
     return deferrable ? this : new ToolSpec(name, description, inputSchema, sideEffecting, true);

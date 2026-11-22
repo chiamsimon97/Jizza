@@ -222,9 +222,9 @@ public class JizzaOrchestrator implements Orchestrator {
       [App context: the user opened "Configure using Jizza" on one step of a workflow in the
       Builder. Your job is to configure that step, and only that step.
       1. Work out its settings from what the user gives you: API documentation, a cURL command,
-         an example, or a description. You cannot open links; if all you have is a link, ask the
-         user to paste the relevant part (the endpoint, its parameters, how it signs in, an
-         example request).
+         an example, or a description. If all you have is a link, read it with web_fetch when
+         you have that tool; otherwise, or when the page needs a sign-in, ask the user to paste
+         the relevant part (the endpoint, its parameters, how it signs in, an example request).
       2. If something only the user can decide is still open, ask with app_ask_user: one short
          question with options. Set multiple=true when several options can apply together, such
          as which optional fields to send. Ask before guessing anything that changes what the

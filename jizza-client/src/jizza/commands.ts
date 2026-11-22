@@ -58,7 +58,7 @@ const DESCRIBE: Starter = { label: 'Describe it in words', reply: 'Tell me what 
 
 export const STEP_STARTERS: Record<string, Starter[]> = {
   HTTP_REQUEST: [
-    { label: 'From API documentation', reply: 'Paste the API documentation for the call: the endpoint, its parameters, how it signs in, and an example request if there is one. Tell me what the call should do and I\'ll set up the method, URL, headers and payload. I can\'t open links, so paste the text itself.' },
+    { label: 'From API documentation', reply: 'Paste the API documentation for the call: the endpoint, its parameters, how it signs in, and an example request if there is one. Tell me what the call should do and I\'ll set up the method, URL, headers and payload. A link to the documentation works too.' },
     { label: 'From a cURL command', reply: 'Paste the cURL command and I\'ll turn it into this step\'s settings.' },
     DESCRIBE,
   ],
@@ -104,11 +104,14 @@ export interface SlashCommand {
   description: string
   prompt?: string
   insert?: string
-  run?: 'new' | 'help' | 'leave'
+  run?: 'new' | 'help' | 'leave' | 'thread' | 'model'
 }
 
 const GENERAL: SlashCommand[] = [
   { name: 'run', description: 'Run a saved workflow now (no AI, uses no tokens)', insert: '/run ' },
+  { name: 'thread', description: 'Start a thread on a topic, led by the specialist for it', run: 'thread' },
+  { name: 'remember', description: 'Tell me something to keep in memory', insert: 'Remember that ' },
+  { name: 'model', description: 'Use the deeper model for the next message (or switch back)', run: 'model' },
   { name: 'new', description: 'Start a new conversation', run: 'new' },
   { name: 'help', description: 'What I can do here', run: 'help' },
 ]
@@ -200,5 +203,5 @@ export function runTemplate(w: { name: string; profile?: { inputs?: { name: stri
 export function helpText(ctx: JizzaContext): string {
   const where = ctx.detail ? `${ctx.label} (${ctx.detail})` : ctx.label
   return `I'm working with you on the ${where}. Type / for these shortcuts:\n\n${commandsFor(ctx)
-    .map(c => `- **/${c.name}**: ${c.description}`).join('\n')}`
+    .map(c => `- **/${c.name}**: ${c.description}`).join('\n')}\n\nStart a message with **@** and a specialist's name to have them answer it themselves.`
 }

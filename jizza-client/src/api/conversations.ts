@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { ConversationSummary, EarlierSummary, JobDto, LearnedFact, MessageDto, ThreadGuide } from '@/types'
+import type { ConversationSummary, EarlierSummary, JobDto, LearnedFact, MessageDto, ReplyQuality, ThreadGuide } from '@/types'
 
 /** A file name made of a title, the way the server names its exports. */
 function slug(title: string | undefined, fallback: string) {
@@ -51,6 +51,13 @@ export const conversationsApi = {
   /** Removes the user's message and everything after it, so its edit can be sent in its place. */
   rewind: (id: string, messageId: string) =>
     api.post<void>(`/api/conversations/${id}/messages/${messageId}/rewind`, {}),
+
+  /** Thumbs up or down on a reply, with an optional reason; 'none' takes it back. */
+  feedback: (id: string, messageId: string, rating: 'up' | 'down' | 'none', reason?: string) =>
+    api.put<void>(`/api/conversations/${id}/messages/${messageId}/feedback`, { rating, ...(reason ? { reason } : {}) }),
+
+  /** How replies were rated over the last {@code days} days: per agent, and the latest ones. */
+  quality: (days = 30) => api.get<ReplyQuality>(`/api/conversations/feedback?days=${days}`),
 
   guide: (id: string) => api.get<ThreadGuide>(`/api/conversations/${id}/guide`),
 

@@ -232,6 +232,24 @@ function Step({ e }: { e: JobEvent }) {
           </p>
         </li>
       )
+    case 'web.sources': {
+      const sources = (p.sources ?? []) as { url: string; title: string }[]
+      return (
+        <li className="relative flex gap-2">
+          <Dot tone="gray"><Globe className="h-2.5 w-2.5" /></Dot>
+          <div className="min-w-0 flex-1 text-xs text-gray-700 dark:text-gray-300">
+            <span className="font-medium">{e.agentName ?? 'Agent'}</span> looked at {sources.length} web {sources.length === 1 ? 'page' : 'pages'}
+            <ul className="mt-0.5 flex flex-col gap-0.5">
+              {sources.map(s => (
+                <li key={s.url} className="truncate">
+                  <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="text-gray-500 underline decoration-gray-300 underline-offset-2 hover:text-brand-600 dark:text-gray-400">{s.title}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </li>
+      )
+    }
     case 'memory.saved':
       return (
         <li className="relative flex gap-2">

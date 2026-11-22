@@ -76,6 +76,9 @@ public class AgentEntity {
 
   private boolean memoryFromManager = true;
 
+  /** May search the web and read pages with the model provider's own tools. */
+  private boolean webAccess = true;
+
   private UUID originTemplateId;
 
   private Integer originTemplateVersion;
@@ -145,6 +148,9 @@ public class AgentEntity {
 
   public String getHandsOffTo() { return handsOffTo; }
   public void setHandsOffTo(String handsOffTo) { this.handsOffTo = handsOffTo; }
+
+  public boolean isWebAccess() { return webAccess; }
+  public void setWebAccess(boolean webAccess) { this.webAccess = webAccess; }
 
   public boolean isMemoryFromManager() { return memoryFromManager; }
   public void setMemoryFromManager(boolean memoryFromManager) { this.memoryFromManager = memoryFromManager; }

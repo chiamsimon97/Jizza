@@ -608,7 +608,33 @@ export interface MessageDto {
     versions?: ReplyVersion[]
     /** The deeper model wrote this answer. */
     deep?: boolean
+    /** Web pages the reply searched, read or cited. */
+    sources?: WebSource[]
+    /** The user's thumbs up or down on this reply. */
+    feedback?: ReplyFeedback
   }
+}
+
+/** A thumbs up or down on a reply, and why if the user said. */
+export interface ReplyFeedback {
+  rating: 'up' | 'down'
+  reason?: string
+}
+
+/** How replies were rated: each agent's thumbs, and the latest rated replies, newest first. */
+export interface ReplyQuality {
+  days: number
+  agents: { agentId: string | null; key: string | null; name: string; up: number; down: number }[]
+  recent: {
+    conversationId: string; messageId: string; conversationTitle: string | null; agentKey: string | null
+    agentName: string; rating: 'up' | 'down'; reason: string | null; excerpt: string; at: string | null
+  }[]
+}
+
+/** A web page a reply drew on, shown as a chip under it. */
+export interface WebSource {
+  url: string
+  title: string
 }
 
 /** An earlier answer to the same message, kept when the user asked Jizza to try again. */
@@ -633,7 +659,7 @@ export type JobEventType =
   | 'delta' | 'segment.preamble'
   | 'agent.started' | 'agent.message'
   | 'tool.call' | 'tool.api'
-  | 'memory.used' | 'memory.saved' | 'output'
+  | 'memory.used' | 'memory.saved' | 'output' | 'web.sources'
   | 'approval.required' | 'ui.action' | 'conversation.titled' | 'sign_in.link'
 
 export interface JobEvent {

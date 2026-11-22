@@ -128,6 +128,21 @@ public class ConversationUseCase {
     store.rewind(userId, conversationId, messageId);
   }
 
+  /** A thumbs up ({@code up}), down ({@code down}) or none ({@code none} or null) on a reply. */
+  public void feedback(UUID userId, UUID conversationId, UUID messageId, String rating, String reason) {
+    String r = rating == null ? "none" : rating.strip().toLowerCase(java.util.Locale.ROOT);
+    if (!r.equals("up") && !r.equals("down") && !r.equals("none")) {
+      throw new ValidationException("Rate a reply with up or down");
+    }
+    if (reason != null && reason.length() > 2_000) throw new ValidationException("Keep the reason under 2,000 characters");
+    store.feedback(userId, conversationId, messageId, r.equals("none") ? null : r, r.equals("none") ? null : reason);
+  }
+
+  /** How replies were rated over the last {@code days} days (1 to 365). */
+  public com.jizza.engine.api.dto.ReplyQualityDto quality(UUID userId, int days) {
+    return store.quality(userId, Math.max(1, Math.min(365, days)));
+  }
+
   public List<ConversationSummaryDto> threads(UUID userId, UUID conversationId) {
     return store.threads(userId, conversationId);
   }

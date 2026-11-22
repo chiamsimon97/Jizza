@@ -274,6 +274,51 @@ class ThreadsE2eTest extends E2eSupport {
     assertThat(toolsOfferedTo("Jizza")).contains("start_thread");
   }
 
+  @Test
+  void aSpecialistNamedWithAnAtAnswersTheMessageInTheMainChat() {
+    model.scriptFor("Vita", LlmResponse.text("At 19.8, your vitamin D is low."));
+    var reply = api.post("/api/chat", Map.of("message", "@Vita is my vitamin D low?"));
+    assertThat(reply.ok()).as(reply.body()).isTrue();
+    JsonNode messages = awaitReply(reply.json().path("conversationId").asText(), 1);
+    JsonNode answer = last(messages, "assistant");
+    assertThat(answer.path("content").asText()).contains("vitamin D is low");
+    assertThat(answer.path("metadata").path("lead").path("name").asText()).isEqualTo("Vita");
+    assertThat(toolsOfferedTo("Jizza")).isEmpty();
+  }
+
+  @Test
+  void aRatedReplyTeachesItsThreadAndShowsOnTheQualityList() {
+    String ask = "Let's plan my sleep routine";
+    model.scriptFor("Jizza", startThread("health", "Sleep routine", "A better sleep routine", ask),
+        LlmResponse.text("Vita has this."));
+    model.scriptFor("Vita", LlmResponse.text("Sleep more."));
+    var reply = api.post("/api/chat", Map.of("message", ask, "conversationId", threadedChat()));
+    UUID mainId = UUID.fromString(reply.json().path("conversationId").asText());
+    String threadId = api.get("/api/conversations/" + mainId + "/threads").json().get(0).path("id").asText();
+    String replyId = last(awaitReply(threadId, 1), "assistant").path("id").asText();
+
+    var rated = api.put("/api/conversations/" + threadId + "/messages/" + replyId + "/feedback",
+        Map.of("rating", "down", "reason", "Too vague, give me times"));
+    assertThat(rated.status()).as(rated.body()).isEqualTo(204);
+    assertThat(last(api.get("/api/conversations/" + threadId + "/messages").json(), "assistant")
+        .path("metadata").path("feedback").path("rating").asText()).isEqualTo("down");
+    assertThat(api.get("/api/conversations/" + threadId + "/guide").json().path("markdown").asText())
+        .contains("Too vague, give me times");
+
+    JsonNode quality = api.get("/api/conversations/feedback?days=30").json();
+    assertThat(quality.path("agents").get(0).path("name").asText()).isEqualTo("Vita");
+    assertThat(quality.path("agents").get(0).path("down").asInt()).isEqualTo(1);
+    assertThat(quality.path("recent").get(0).path("reason").asText()).isEqualTo("Too vague, give me times");
+
+    assertThat(api.put("/api/conversations/" + threadId + "/messages/" + replyId + "/feedback",
+        Map.of("rating", "sideways")).status()).isEqualTo(400);
+    assertThat(api.put("/api/conversations/" + threadId + "/messages/" + replyId + "/feedback",
+        Map.of("rating", "none")).status()).isEqualTo(204);
+    assertThat(last(api.get("/api/conversations/" + threadId + "/messages").json(), "assistant")
+        .path("metadata").has("feedback")).isFalse();
+    assertThat(api.get("/api/conversations/feedback").json().path("agents")).isEmpty();
+  }
+
   private List<String> toolsOfferedTo(String agentName) {
     List<String> names = new ArrayList<>();
     synchronized (model.requests) {

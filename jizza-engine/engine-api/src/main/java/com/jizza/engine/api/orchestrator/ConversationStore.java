@@ -56,6 +56,21 @@ public interface ConversationStore {
     return null;
   }
 
+  /**
+   * The user's thumbs up or down on a reply, with an optional reason; a null {@code rating} takes
+   * it back. In a thread, a rating with something to learn from is noted in the thread's guide.
+   *
+   * @param rating {@code up}, {@code down} or null
+   */
+  default void feedback(UUID userId, UUID conversationId, UUID messageId, String rating, String reason) {
+    throw new UnsupportedOperationException("Feedback is not kept here");
+  }
+
+  /** How the user rated replies over the last {@code days} days. */
+  default com.jizza.engine.api.dto.ReplyQualityDto quality(UUID userId, int days) {
+    return new com.jizza.engine.api.dto.ReplyQualityDto(days, List.of(), List.of());
+  }
+
   /** A thread's learning file. */
   ThreadGuideDto guide(UUID userId, UUID threadId);
 

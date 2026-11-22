@@ -20,6 +20,15 @@ public interface AgentStore {
 
   AgentDto setEnabled(UUID agentId, boolean enabled);
 
+  /** Whether the agent may search the web and read pages. */
+  default boolean webAccess(UUID agentId) {
+    return false;
+  }
+
+  default void setWebAccess(UUID agentId, boolean on) {
+    throw new UnsupportedOperationException("Web access is not supported");
+  }
+
   /**
    * Creates a custom agent under {@code key}, with its own memory domain equal to the key. Draft
    * and archived agents are stored disabled whatever else is asked.

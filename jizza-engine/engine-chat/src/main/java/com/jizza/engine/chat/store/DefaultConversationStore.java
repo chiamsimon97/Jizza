@@ -1,10 +1,12 @@
 package com.jizza.engine.chat.store;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jizza.engine.api.audit.AuditLog;
 import com.jizza.engine.api.dto.ConversationDto;
 import com.jizza.engine.api.dto.ConversationSummaryDto;
 import com.jizza.engine.api.dto.LearnedFactDto;
+import com.jizza.engine.api.dto.ReplyQualityDto;
 import com.jizza.engine.api.dto.ThreadGuideDto;
 import com.jizza.engine.api.enums.ActorType;
 import com.jizza.engine.api.enums.MessageRole;
@@ -12,6 +14,9 @@ import com.jizza.engine.api.error.ConflictException;
 import com.jizza.engine.api.error.NotFoundException;
 import com.jizza.engine.api.orchestrator.ConversationStore;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.chat.config.ChatProperties;
+import com.jizza.engine.chat.thread.ThreadGuides;
+import com.jizza.engine.persistence.entity.AgentEntity;
 import com.jizza.engine.persistence.entity.ConversationEntity;
 import com.jizza.engine.persistence.entity.MessageEntity;
 import com.jizza.engine.persistence.repository.AgentRepository;
@@ -20,10 +25,17 @@ import com.jizza.engine.persistence.repository.MessageRepository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -64,14 +76,17 @@ class DefaultConversationStore implements ConversationStore {
   private final JdbcTemplate jdbc;
   private final AuditLog audit;
   private final AgentRepository agents;
+  private final ChatProperties props;
 
   DefaultConversationStore(ConversationRepository conversations, MessageRepository messages,
-                           JdbcTemplate jdbc, AuditLog audit, AgentRepository agents) {
+                           JdbcTemplate jdbc, AuditLog audit, AgentRepository agents,
+                           ChatProperties props) {
     this.conversations = conversations;
     this.messages = messages;
     this.jdbc = jdbc;
     this.audit = audit;
     this.agents = agents;
+    this.props = props;
   }
 
   @Override
@@ -195,6 +210,148 @@ class DefaultConversationStore implements ConversationStore {
     audit.record(userId, ActorType.USER, userId, "chat.thread.guide.edit", threadId.toString(),
         Json.obj().put("chars", entity.getGuide().length()));
     return guideOf(entity);
+  }
+
+  /** How many rated replies the quality list reads, and how many it shows. */
+  static final int MAX_RATED = 1_000;
+  static final int RECENT_RATED = 20;
+  static final int MAX_REASON = 500;
+  static final String FEEDBACK = "feedback";
+  private static final String REMOVED_AGENT = "An agent since removed";
+
+  @Override
+  @Transactional
+  public void feedback(UUID userId, UUID conversationId, UUID messageId, String rating, String reason) {
+    ConversationEntity conversation = owned(userId, conversationId);
+    MessageEntity reply = messages.findById(messageId)
+        .filter(m -> m.getConversationId().equals(conversationId) && m.getRole() == MessageRole.ASSISTANT)
+        .orElseThrow(() -> new NotFoundException("Message", messageId));
+    String why = reason == null ? "" : reason.strip().replaceAll("\\s+", " ");
+    if (why.length() > MAX_REASON) why = why.substring(0, MAX_REASON);
+    ObjectNode meta = reply.getMetadata() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    JsonNode before = meta.get(FEEDBACK);
+    if (rating == null) {
+      meta.remove(FEEDBACK);
+    } else {
+      ObjectNode feedback = Json.obj().put("rating", rating).put("at", Instant.now().toString());
+      if (!why.isEmpty()) feedback.put("reason", why);
+      meta.set(FEEDBACK, feedback);
+    }
+    reply.setMetadata(meta);
+    messages.save(reply);
+    boolean changed = rating != null && (before == null || !rating.equals(before.path("rating").asText())
+        || !why.equals(before.path("reason").asText("")));
+    if (changed && conversation.isThread()) noteInGuide(conversation, rating, why, reply.getContent());
+    audit.record(userId, ActorType.USER, userId, "chat.feedback", messageId.toString(),
+        Json.obj().put("rating", rating == null ? "none" : rating).put("reason", !why.isEmpty()));
+  }
+
+  /**
+   * What a rating teaches the thread's lead, under "How to work here": a thumbs down always (with
+   * the reason, or the reply's opening words), a thumbs up only with a reason. A full guide is left
+   * as it is; the next update condenses it.
+   */
+  private void noteInGuide(ConversationEntity thread, String rating, String reason, String reply) {
+    String note;
+    if ("down".equals(rating)) {
+      note = reason.isEmpty()
+          ? "The user marked a reply as unhelpful: \"" + excerpt(reply, 120) + "\""
+          : "The user marked a reply as unhelpful: " + reason;
+    } else if (!reason.isEmpty()) {
+      note = "The user liked a reply: " + reason;
+    } else {
+      return;
+    }
+    String updated = ThreadGuides.append(thread.getGuide(), ThreadGuides.HOW, note);
+    if (updated.length() > props.getThreads().getMaxGuideChars() * 2) return;
+    thread.setGuide(updated);
+    thread.setGuideUpdatedAt(Instant.now());
+  }
+
+  static String excerpt(String text, int max) {
+    String flat = text == null ? "" : text.strip().replaceAll("\\s+", " ");
+    return flat.length() <= max ? flat : flat.substring(0, max - 1).stripTrailing() + "…";
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ReplyQualityDto quality(UUID userId, int days) {
+    Instant since = Instant.now().minus(Duration.ofDays(days));
+    List<RatedRow> rows = jdbc.query("""
+        select m.id, m.conversation_id, c.title, m.content,
+               m.metadata->'feedback'->>'rating' as rating, m.metadata->'feedback'->>'reason' as reason,
+               m.metadata->'feedback'->>'at' as at, m.metadata->'lead'->>'agentId' as lead_id
+        from messages m join conversations c on c.id = m.conversation_id
+        where c.user_id = ? and m.role = 'assistant' and m.metadata->'feedback' is not null
+          and m.created_at >= ?
+        order by m.metadata->'feedback'->>'at' desc
+        limit ?""",
+        (rs, i) -> new RatedRow(rs.getObject("id", UUID.class), rs.getObject("conversation_id", UUID.class),
+            rs.getString("title"), rs.getString("content"), rs.getString("rating"), rs.getString("reason"),
+            parseInstant(rs.getString("at")), parseUuid(rs.getString("lead_id"))),
+        userId, Timestamp.from(since), MAX_RATED);
+    return rated(days, rows, agents.findByUserIdAndIsOrchestratorTrue(userId).orElse(null),
+        ownedAgents(userId, rows));
+  }
+
+  private Map<UUID, AgentEntity> ownedAgents(UUID userId, List<RatedRow> rows) {
+    Map<UUID, AgentEntity> byId = new HashMap<>();
+    agents.findAllById(rows.stream().map(RatedRow::leadId).filter(Objects::nonNull).collect(Collectors.toSet()))
+        .forEach(a -> {
+          if (a.getUserId().equals(userId)) byId.put(a.getId(), a);
+        });
+    return byId;
+  }
+
+  /**
+   * Counts each agent's thumbs up and down, those with most thumbs down first, and keeps the
+   * latest rated replies. A reply with no lead was Jizza's own.
+   */
+  static ReplyQualityDto rated(int days, List<RatedRow> rows, AgentEntity jizza, Map<UUID, AgentEntity> byId) {
+    Map<UUID, int[]> counts = new LinkedHashMap<>();
+    Map<UUID, AgentEntity> seen = new HashMap<>();
+    List<ReplyQualityDto.Rated> recent = new ArrayList<>();
+    for (RatedRow row : rows) {
+      AgentEntity agent = row.leadId() == null ? jizza : byId.get(row.leadId());
+      UUID id = agent == null ? null : agent.getId();
+      if (agent != null) seen.put(id, agent);
+      int[] c = counts.computeIfAbsent(id, k -> new int[2]);
+      if ("up".equals(row.rating())) c[0]++;
+      else if ("down".equals(row.rating())) c[1]++;
+      if (recent.size() < RECENT_RATED) {
+        recent.add(new ReplyQualityDto.Rated(row.conversationId(), row.messageId(), row.title(),
+            agent == null ? null : agent.getKey(), agent == null ? REMOVED_AGENT : agent.getName(),
+            row.rating(), row.reason(), excerpt(row.content(), 160), row.at()));
+      }
+    }
+    List<ReplyQualityDto.AgentQuality> perAgent = new ArrayList<>();
+    counts.forEach((id, c) -> {
+      AgentEntity agent = id == null ? null : seen.get(id);
+      perAgent.add(new ReplyQualityDto.AgentQuality(id, agent == null ? null : agent.getKey(),
+          agent == null ? REMOVED_AGENT : agent.getName(), c[0], c[1]));
+    });
+    perAgent.sort(Comparator.comparingInt(ReplyQualityDto.AgentQuality::down).reversed()
+        .thenComparing(ReplyQualityDto.AgentQuality::name));
+    return new ReplyQualityDto(days, perAgent, recent);
+  }
+
+  record RatedRow(UUID messageId, UUID conversationId, String title, String content,
+                  String rating, String reason, Instant at, UUID leadId) {}
+
+  private static Instant parseInstant(String s) {
+    try {
+      return s == null ? null : Instant.parse(s);
+    } catch (java.time.format.DateTimeParseException e) {
+      return null;
+    }
+  }
+
+  private static UUID parseUuid(String s) {
+    try {
+      return s == null || s.isBlank() ? null : UUID.fromString(s);
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
   }
 
   @Override

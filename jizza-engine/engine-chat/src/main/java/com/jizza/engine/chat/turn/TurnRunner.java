@@ -266,17 +266,21 @@ public class TurnRunner implements ChatService {
           : threads.getObject().frame(userId, ref.conversationId());
       List<Msg> told = framing == null || framing.preamble() == null ? history
           : prepend(Msg.system(framing.preamble()), history);
+      // "@Kai …": the agent the user named answers this message itself, wherever it was typed.
+      com.jizza.engine.persistence.entity.AgentEntity mentioned = continuation == null && direct.isEmpty()
+          ? mentioned(userId, s.text(), s.context()) : null;
       Orchestrator.TurnInput turnInput =
           new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), screenContext(s.context()));
       // The reply may read the PDFs and photos the user attached; routing it does not.
       Supplier<Orchestrator.Turn> respond = () -> ChatFileAccess.run(userId, () ->
-          framing != null && framing.lead() != null
+          mentioned != null ? orchestrator.respondAs(userId, mentioned.getId(), turnInput)
+          : framing != null && framing.lead() != null
               ? orchestrator.respondAs(userId, framing.lead().getId(), turnInput)
               : orchestrator.respond(userId, turnInput));
       // Jizza coordinates the conversation's threads: a message the user typed goes first to
       // where it belongs, and is answered there instead of here.
       Optional<Orchestrator.Turn> routed = direct.isPresent() ? direct
-          : continuation == null && framing != null
+          : continuation == null && framing != null && mentioned == null
           ? coordinator.getIfAvailable() == null ? Optional.empty()
               : Activity.run(recorder, () -> coordinator.getObject().coordinate(framing.scope(), s.text(), history))
           : Optional.empty();
@@ -286,11 +290,15 @@ public class TurnRunner implements ChatService {
       AssistantReply answer = new AssistantReply(ref.conversationId(), ref.assistantMessageId(),
           done.text(), contributors(done), done.actions());
       // A message Jizza moved on is answered by Jizza saying where it went, not by the lead.
-      ObjectNode lead = framing == null || framing.lead() == null || routed.isPresent() ? null : Json.obj()
-          .put("agentId", framing.lead().getId().toString())
-          .put("key", framing.lead().getKey())
-          .put("name", framing.lead().getName());
+      com.jizza.engine.persistence.entity.AgentEntity answeredBy = routed.isPresent() ? null
+          : mentioned != null ? mentioned : framing == null ? null : framing.lead();
+      ObjectNode lead = answeredBy == null ? null : Json.obj()
+          .put("agentId", answeredBy.getId().toString())
+          .put("key", answeredBy.getKey())
+          .put("name", answeredBy.getName());
       String summary = JobSummaries.summarize(recorder.all());
+      // The web pages this reply drew on, shown as chips under it.
+      com.fasterxml.jackson.databind.node.ArrayNode sources = webSources(recorder.all());
       // A reply that left a call waiting for the user's approval is done talking, not done working.
       String status = recorder.all().stream()
           .anyMatch(e -> ActivityTypes.APPROVAL_REQUIRED.equals(e.type()))
@@ -306,6 +314,7 @@ public class TurnRunner implements ChatService {
         p.put("inputTokens", done.inputTokens()).put("outputTokens", done.outputTokens());
         p.put("status", status);
         if (lead != null) p.set("lead", lead);
+        if (!sources.isEmpty()) p.set("sources", sources);
       }));
       if (persist) {
         ObjectNode meta = metadata(ref, answer);
@@ -313,6 +322,7 @@ public class TurnRunner implements ChatService {
         // "Try again" keeps the answers this one replaced, so the user can page back to them.
         com.fasterxml.jackson.databind.node.ArrayNode versions = earlierVersions(s.context());
         if (versions != null) meta.set(VERSIONS, versions);
+        if (!sources.isEmpty()) meta.set("sources", sources);
         if (s.context() != null && "deep".equalsIgnoreCase(s.context().path("depth").asText())) {
           meta.put("deep", true);
         }
@@ -392,13 +402,91 @@ public class TurnRunner implements ChatService {
    * for reading dates such as "tomorrow", not something on screen); null when nothing is left.
    */
   static com.fasterxml.jackson.databind.JsonNode screenContext(com.fasterxml.jackson.databind.JsonNode context) {
-    if (!(context instanceof ObjectNode object) || !(object.has("timeZone") || object.has(VERSIONS))) {
+    if (!(context instanceof ObjectNode object)
+        || !(object.has("timeZone") || object.has(VERSIONS) || object.has(MENTION))) {
       return context;
     }
     ObjectNode rest = object.deepCopy();
     rest.remove("timeZone");
     rest.remove(VERSIONS);
+    rest.remove(MENTION);
     return rest.isEmpty() ? null : rest;
+  }
+
+  /**
+   * Every page the job's agents searched, read or cited, first mention first, each address once,
+   * at most {@link com.jizza.engine.api.llm.WebSources#MAX}.
+   */
+  static com.fasterxml.jackson.databind.node.ArrayNode webSources(List<JobEventDto> events) {
+    com.fasterxml.jackson.databind.node.ArrayNode out = Json.mapper().createArrayNode();
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    for (JobEventDto e : events) {
+      if (!ActivityTypes.WEB_SOURCES.equals(e.type()) || e.payload() == null) continue;
+      for (com.fasterxml.jackson.databind.JsonNode source : e.payload().path("sources")) {
+        String url = source.path("url").asText("");
+        if (url.isBlank() || !seen.add(url)) continue;
+        if (out.size() >= com.jizza.engine.api.llm.WebSources.MAX) return out;
+        out.add(source.deepCopy());
+      }
+    }
+    return out;
+  }
+
+  /** The agent an "@Name" in the message picked to answer it: its id, in the turn's context. */
+  static final String MENTION = "mention";
+
+  /** The id the client sent as the mentioned agent, or null when there is none or it is not an id. */
+  static UUID mentionOf(com.fasterxml.jackson.databind.JsonNode context) {
+    String id = context == null ? "" : context.path(MENTION).asText("");
+    if (id.isBlank()) return null;
+    try {
+      return UUID.fromString(id);
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  /**
+   * The user's own enabled specialist the message is for, or null: Jizza itself, another user's
+   * agent or a switched-off one is answered the usual way. The client says which one it picked; a
+   * message that starts with "@Name" says so too, so an edit or "Try again" keeps its addressee.
+   */
+  private com.jizza.engine.persistence.entity.AgentEntity mentioned(UUID userId, String text,
+                                                                   com.fasterxml.jackson.databind.JsonNode context) {
+    ThreadService service = threads.getIfAvailable();
+    if (service == null) return null;
+    UUID id = mentionOf(context);
+    if (id != null) {
+      return service.agent(id)
+          .filter(a -> userId.equals(a.getUserId()) && !a.isOrchestrator() && a.isEnabled())
+          .orElse(null);
+    }
+    if (text == null || !text.startsWith("@")) return null;
+    return addressee(text, service.leads(userId));
+  }
+
+  /**
+   * The agent whose "@name" or "@key" starts the message, followed by a space, punctuation or the
+   * end; the longest that fits wins, so "@Kai Tax" is not taken for "@Kai".
+   */
+  static com.jizza.engine.persistence.entity.AgentEntity addressee(
+      String text, List<com.jizza.engine.persistence.entity.AgentEntity> agents) {
+    if (text == null || !text.startsWith("@")) return null;
+    String rest = text.substring(1).toLowerCase(java.util.Locale.ROOT);
+    com.jizza.engine.persistence.entity.AgentEntity best = null;
+    int bestLength = 0;
+    for (com.jizza.engine.persistence.entity.AgentEntity a : agents) {
+      for (String label : new String[] {a.getName(), a.getKey()}) {
+        if (label == null || label.isBlank() || label.length() <= bestLength) continue;
+        String l = label.toLowerCase(java.util.Locale.ROOT);
+        if (!rest.startsWith(l)) continue;
+        if (rest.length() == l.length() || ",.:;!? \t\n".indexOf(rest.charAt(l.length())) >= 0) {
+          best = a;
+          bestLength = label.length();
+        }
+      }
+    }
+    return best;
   }
 
   /** The answers a "Try again" replaced, oldest first, kept with the new reply. Never sent to the model. */

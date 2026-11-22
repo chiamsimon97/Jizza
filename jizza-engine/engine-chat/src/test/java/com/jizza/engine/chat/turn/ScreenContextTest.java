@@ -42,4 +42,24 @@ class ScreenContextTest {
     assertThat(TurnRunner.earlierVersions(Json.obj().put("stepId", "n1"))).isNull();
     assertThat(TurnRunner.earlierVersions(null)).isNull();
   }
+
+  @Test
+  void aRepliesSourcesAreEveryPageItsAgentsUsedOnceEach() {
+    var first = Json.obj();
+    first.putArray("sources").addObject().put("url", "https://a.example").put("title", "A");
+    var second = Json.obj();
+    var list = second.putArray("sources");
+    list.addObject().put("url", "https://a.example").put("title", "A again");
+    list.addObject().put("url", "https://b.example").put("title", "B");
+    var events = java.util.List.of(
+        new com.jizza.engine.api.chat.JobEventDto(1, com.jizza.engine.api.activity.ActivityTypes.WEB_SOURCES,
+            null, "Jizza", first, java.time.Instant.now()),
+        new com.jizza.engine.api.chat.JobEventDto(2, com.jizza.engine.api.activity.ActivityTypes.TOOL_CALL,
+            null, "Jizza", Json.obj(), java.time.Instant.now()),
+        new com.jizza.engine.api.chat.JobEventDto(3, com.jizza.engine.api.activity.ActivityTypes.WEB_SOURCES,
+            null, "Kai", second, java.time.Instant.now()));
+
+    assertThat(TurnRunner.webSources(events).toString())
+        .isEqualTo("[{\"url\":\"https://a.example\",\"title\":\"A\"},{\"url\":\"https://b.example\",\"title\":\"B\"}]");
+  }
 }

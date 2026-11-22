@@ -36,6 +36,7 @@ public class AgentProperties {
     private final Caching caching = new Caching();
     private final ToolSearch toolSearch = new ToolSearch();
     private final InlineContext inlineContext = new InlineContext();
+    private final Web web = new Web();
     /**
      * How hard each tier thinks: low, medium, high, xhigh or max. Blank leaves the model's own
      * default. Sent only to models in {@link #effortModels}, since older ones reject it.
@@ -50,6 +51,7 @@ public class AgentProperties {
     public Caching getCaching() { return caching; }
     public ToolSearch getToolSearch() { return toolSearch; }
     public InlineContext getInlineContext() { return inlineContext; }
+    public Web getWeb() { return web; }
     public Map<ModelTier, String> getEffort() { return effort; }
     public void setEffort(Map<ModelTier, String> v) { this.effort = v; }
     public java.util.List<String> getEffortModels() { return effortModels; }
@@ -117,6 +119,38 @@ public class AgentProperties {
     public void setEnabled(boolean v) { this.enabled = v; }
     public int getMinChars() { return minChars; }
     public void setMinChars(int v) { this.minChars = v; }
+  }
+
+  /**
+   * The provider's own web search and page reader. Agents use them unless the user turned web
+   * access off for one; the sites listed here are never searched or read.
+   */
+  public static class Web {
+    private boolean enabled = true;
+    /** Searches one reply may run, and pages it may read. */
+    private int maxSearches = 5;
+    private int maxFetches = 5;
+    /** How much of a page the model reads, in tokens, so one long page cannot fill a turn. */
+    private int maxPageTokens = 20_000;
+    /** Sites never searched or read, as plain host names (subdomains included). */
+    private java.util.List<String> blockedDomains = new java.util.ArrayList<>();
+    /** Model name prefixes that take the newer tools, which filter what they read before reading it. */
+    private java.util.List<String> filteringModels = new java.util.ArrayList<>(java.util.List.of(
+        "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5",
+        "claude-sonnet-4-6", "claude-sonnet-5", "claude-fable", "claude-mythos"));
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public int getMaxSearches() { return maxSearches; }
+    public void setMaxSearches(int v) { this.maxSearches = v; }
+    public int getMaxFetches() { return maxFetches; }
+    public void setMaxFetches(int v) { this.maxFetches = v; }
+    public int getMaxPageTokens() { return maxPageTokens; }
+    public void setMaxPageTokens(int v) { this.maxPageTokens = v; }
+    public java.util.List<String> getBlockedDomains() { return blockedDomains; }
+    public void setBlockedDomains(java.util.List<String> v) { this.blockedDomains = v; }
+    public java.util.List<String> getFilteringModels() { return filteringModels; }
+    public void setFilteringModels(java.util.List<String> v) { this.filteringModels = v; }
   }
 
   /**
