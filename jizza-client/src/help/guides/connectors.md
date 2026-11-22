@@ -1,6 +1,6 @@
 ---
 title: Connect your apps, servers and devices
-summary: See every connector in one place, choose which agents may use each, check what its tools do, and sign in again when a connection drops.
+summary: See every connector in one place, build one by chatting, start workflows the moment a service calls, add older and local MCP servers, and sign in again when a connection drops.
 section: Connectors
 order: 10
 updated: 2026-11-22
@@ -33,6 +33,39 @@ The same list is on each agent's page: open the agent in [Agents](/agents), then
 When you add an MCP server, Jizza guesses what each tool does from its name and shows them grouped: the ones that look like reads, the ones that change things and the ones that move money. Press **Accept all**, or change any first. Each agent's guardrails go by these types, so a lookup runs under its rule for looking things up and a payment under its rule for money.
 
 A tool with no type is treated as moving money until you choose. You can come back to the review any time with **Review tool types** on the server's page.
+
+## Building a connector by chatting
+
+In [Chat](/chat), tell Jizza which app you want to connect and paste a link to its API docs, or the docs themselves. For example: *"Make a connector for our booking system. The docs are at …"*. Jizza then:
+
+1. drafts the service and its sign-in type,
+2. adds the requests it needs from the docs (an OpenAPI file brings them all at once),
+3. asks you to add the API key or sign-in on the service's **Authentication** tab, with a button that opens it,
+4. tries each action with you. Reads run straight away; anything that changes something asks you first,
+5. publishes it when you say so, after asking you once more.
+
+You can open the draft in [Connectors](/connectors) at any point and change it yourself.
+
+## Starting workflows the moment something happens
+
+A service's **Triggers** tab offers two kinds:
+
+- **Checks a list every few minutes**: Jizza asks the service for new items on a schedule.
+- **Instant (a webhook)**: the service calls Jizza when something happens. Copy the **webhook address** into the app's webhook settings. If the app signs its calls, add its **signing secret**, the **signature header** it uses and any **prefix** (such as `sha256=`), and Jizza refuses calls that aren't signed with it.
+
+To start a workflow from either kind, open the workflow and pick the service event in the **or when** list next to its trigger. The trigger's card then says how many workflows it starts.
+
+## Older and local MCP servers
+
+When you add an MCP server, **How Jizza reaches it** has three choices:
+
+| Choice | Use it for |
+| --- | --- |
+| Over the web (streamable HTTP) | Most servers today |
+| Over the web, older server (SSE) | Servers whose address ends in `/sse`. Jizza picks this for you |
+| On my computer, through the Jizza app | A server that runs on your own computer (a "stdio" server) |
+
+For a server on your computer, first set it up in the Jizza app on that computer: **Settings › MCP servers › Add…** gives it a name and the command from the server's instructions, such as `npx -y @modelcontextprotocol/server-filesystem C:\Notes`. Then add it in Jizza, choose the computer and pick the server by that name. Jizza only ever sends the name, so what runs on your computer is decided there and nowhere else. The server signs in on the computer too: keep any key in the app's **Secrets** and write `secret:NAME` in its environment. The computer has to be on, with the app running, when an agent uses the server.
 
 ## Testing a connection
 
