@@ -1,6 +1,6 @@
 import type { NotificationDto } from '@/types'
 import { kindOf, pickerValue } from '@/lib/dateFormat'
-import { rowsEmpty, type RowsColumn } from '@/components/ui/RowsInput'
+import { rowsColumnOf, rowsEmpty, type RowsColumn } from '@/components/ui/RowsInput'
 
 /**
  * The values a web step stopped to have approved, as its approval card shows them: what each
@@ -93,7 +93,7 @@ export function stepFormOf(n: NotificationDto): StepForm | null {
       ...(typeof f.group === 'string' && f.group ? { group: f.group } : {}),
       ...(Array.isArray(f.columns)
         ? { columns: (f.columns as Record<string, unknown>[]).filter(c => typeof c?.key === 'string')
-          .map(c => ({ key: String(c.key), label: typeof c.label === 'string' ? c.label : String(c.key) })) }
+          .map(c => rowsColumnOf(c)).filter((c): c is RowsColumn => c !== null) }
         : {}),
       ...(typeof f.dependsOn === 'string' && f.optionsBy && typeof f.optionsBy === 'object'
         ? { dependsOn: f.dependsOn, optionsBy: optionsByOf(f.optionsBy as Record<string, unknown>) }

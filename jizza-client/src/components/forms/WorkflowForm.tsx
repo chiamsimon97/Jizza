@@ -21,7 +21,7 @@ import { matchAgent, str } from './agentMatch'
 import { inputSections, moduleInputs, ruleProblem } from '@/components/workflow/moduleContract'
 import { DateValueInput } from '@/components/ui/DateValueInput'
 import { FileValueInput } from '@/components/ui/FileValueInput'
-import { RowsInput, rowsEmpty } from '@/components/ui/RowsInput'
+import { RowsInput, rowsColumnOf, rowsEmpty, type RowsColumn } from '@/components/ui/RowsInput'
 
 /** A step as Jizza drafts it: an agent doing something, or a question for the user. */
 interface DraftStep {
@@ -243,7 +243,7 @@ export function WorkflowForm() {
                     return (
                       <Field key={f.name} label={`${label}${f.required && f.default === undefined ? ' *' : ''}`} hint={problem ?? f.description}>
                         {f.columns?.length ? (
-                          <RowsInput label={label} columns={f.columns}
+                          <RowsInput label={label} columns={f.columns.map(c => rowsColumnOf(c)).filter((c): c is RowsColumn => c !== null)}
                             value={runInput[f.name] ?? (f.default !== undefined ? JSON.stringify(f.default) : '[]')}
                             onChange={v => setRunInput(r => ({ ...r, [f.name]: rowsEmpty(v) ? '' : v }))} />
                         ) : f.type === 'file' ? (

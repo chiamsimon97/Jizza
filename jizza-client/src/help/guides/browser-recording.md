@@ -222,6 +222,10 @@ The rows become one step, **Fill a row for each Passenger**, with one column per
 
 When the workflow runs, the run form shows `passengers` as a table: a row per passenger, and **Add passenger** for another. The step presses the add button on the site until there is a row for each one, then fills each row. When a run has no passengers, the step stops and asks for them on its card with the same table. A column's value can also be mapped from earlier steps as a list, such as `[{"name": "Asha Rao", "age": "34"}]`.
 
+**Scan the row** (browser agent 0.28.0 or later): after step 4, press **Scan the Passenger row** under the row's line in the side panel. Every field of the first row goes into the form at once, each with its kind as the page shows it: dropdowns come in as **Dropdown** with their choices, so you don't have to fill them by hand. Each field in the form step has a kind box next to it; if a kind is wrong (a dropdown read as a text box), choose the right one there. Filling the same field on the page afterwards only changes its value.
+
+On the run form and on the step's card, a dropdown column of the table offers the choices the page showed.
+
 #### Passengers and infants (two add buttons)
 
 Some forms have a second kind of row with its own button, such as **+ Add Infant Without Berth**, and that row is shorter (name, age and gender only). Each kind becomes its own step (browser agent 0.27.0 or later):
