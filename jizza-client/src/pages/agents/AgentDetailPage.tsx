@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowLeft, Brain, History, Lock, Play, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
-import { mcpApi } from '@/api/mcp'
+import { connectorHubApi } from '@/api/connectorHub'
+import { HUB_KEY, HealthBadge, toolSummary } from '@/pages/connectors/ConnectorHub'
 import { usePermission } from '@/auth/usePermission'
 import { PERMISSIONS } from '@/lib/permissions'
 import { Button } from '@/components/ui/Button'
@@ -15,7 +16,7 @@ import { Input } from '@/components/ui/Input'
 import { ACTION_LABELS, MODE_BADGE, MODE_LABELS } from '@/components/guardrails/labels'
 import { AgentAvatar, AgentBadges, COLOURS, SHARED_DOMAINS, Section, TeamTrailList, errorText } from '@/components/agents/agentParts'
 import { ManagerSelect } from './NewAgentPage'
-import type { AgentDto, AgentTrial, McpServer } from '@/types'
+import type { AgentDto, AgentTrial, ConnectorCard } from '@/types'
 
 const TABS = ['Overview', 'Instructions', 'Tools', 'Guardrails', 'Try it', 'Team'] as const
 type Tab = (typeof TABS)[number]
@@ -329,7 +330,7 @@ function Tools({ agent }: { agent: AgentDto }) {
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Section>
       <WebAccess agent={agent} />
-      <McpServersFor agent={agent} />
+      <ConnectorsFor agent={agent} />
       <Section title="Add a tool">
         <ul className="flex max-h-96 flex-col gap-1 overflow-y-auto">
           {(options ?? []).filter(o => !held(o.type, o.ref)).map(o => (
@@ -368,32 +369,38 @@ function WebAccess({ agent }: { agent: AgentDto }) {
   )
 }
 
-/** The MCP servers this agent may use; the same choice as "Who can use it" on each server. */
-function McpServersFor({ agent }: { agent: AgentDto }) {
+/**
+ * The connectors this agent may use: services, MCP servers and devices, the same choice as "Who can
+ * use this" on each card in Connectors.
+ */
+function ConnectorsFor({ agent }: { agent: AgentDto }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const { data: servers } = useQuery({ queryKey: ['mcp-servers'], queryFn: () => mcpApi.list() })
+  const { data: cards } = useQuery({ queryKey: HUB_KEY, queryFn: () => connectorHubApi.list() })
   const canModify = usePermission(PERMISSIONS.CONNECTOR_MODIFY)
   const save = useMutation({
-    mutationFn: ({ server, on }: { server: McpServer; on: boolean }) => mcpApi.update(server.id, {
-      agentKeys: on ? [...server.agentKeys.filter(k => k !== agent.key), agent.key] : server.agentKeys.filter(k => k !== agent.key),
-    }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['mcp-servers'] }),
+    mutationFn: ({ card, on }: { card: ConnectorCard; on: boolean }) => connectorHubApi.setAgents(card.kind, card.id,
+      on ? [...card.agentKeys.filter(k => k !== agent.key), agent.key] : card.agentKeys.filter(k => k !== agent.key)),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: HUB_KEY })
+      void qc.invalidateQueries({ queryKey: ['mcp-servers'] })
+    },
   })
-  if (!servers?.length) return null
+  if (!cards?.length) return null
   return (
-    <Section title="MCP servers" hint={`Their tools reach ${agent.name} under its guardrails: a tool that looks things up runs under its rule for looking things up.`}>
+    <Section title="Connectors" hint={`Their tools reach ${agent.name} under its guardrails: a tool that looks things up runs under its rule for looking things up.`}>
       <ul className="flex flex-col gap-2">
-        {servers.map(server => {
-          const every = server.agentKeys.includes('*')
-          const on = every || server.agentKeys.includes(agent.key)
+        {cards.map(card => {
+          const every = card.agentKeys.includes('*')
+          const on = every || card.agentKeys.includes(agent.key)
           return (
-            <li key={server.id} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" aria-label={`${agent.name} uses ${server.name}`} checked={on}
-                disabled={!canModify || every || save.isPending} onChange={e => save.mutate({ server, on: e.target.checked })} />
-              <button type="button" className="flex-1 truncate text-left text-gray-800 hover:underline dark:text-gray-200" onClick={() => navigate(`/connectors/mcp/${server.id}`)}>
-                {server.name}<span className="text-xs text-gray-400"> · {server.tools.filter(t => t.enabled).length} tools{every ? ' · every agent' : ''}</span>
+            <li key={`${card.kind}-${card.id}`} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" aria-label={`${agent.name} uses ${card.name}`} checked={on}
+                disabled={!canModify || every || save.isPending} onChange={e => save.mutate({ card, on: e.target.checked })} />
+              <button type="button" className="flex-1 truncate text-left text-gray-800 hover:underline dark:text-gray-200" onClick={() => navigate(card.path)}>
+                {card.name}<span className="text-xs text-gray-400"> · {toolSummary(card)}{every ? ' · every agent' : ''}{on && card.partial ? ' · some actions only' : ''}</span>
               </button>
+              <HealthBadge status={card.status} />
             </li>
           )
         })}

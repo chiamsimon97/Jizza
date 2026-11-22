@@ -436,8 +436,12 @@ export interface UserSteps {
 export interface UserStep {
   label: string
   detail?: string
-  /** A link opens in a new tab; a reply sends its text as the user's message. */
+  /**
+   * A link opens in a new tab; a reply sends its text as the user's message; a page opens a page of
+   * the app, such as a connector's, to sign in to it again.
+   */
   button?: { kind: 'link'; label: string; url: string } | { kind: 'reply'; label: string; text: string }
+    | { kind: 'page'; label: string; path: string }
 }
 
 /** A thread as the card on Jizza's reply shows it. */
@@ -1423,6 +1427,32 @@ export interface McpServer {
   tools: McpTool[]
   toolsRefreshedAt?: string | null
   createdAt?: string | null
+  /** The tool it signs you in by, inside its own session (Zerodha Kite's login), if any. */
+  signInTool?: string | null
+  /** When that tool last answered since the session opened; null after every restart of Jizza. */
+  sessionSignInAt?: string | null
+}
+
+/** ready, needs_sign_in, failing, not_set_up, off or offline. */
+export type ConnectorHealth = 'ready' | 'needs_sign_in' | 'failing' | 'not_set_up' | 'off' | 'offline'
+
+/** A service, MCP server or device, as the Connectors hub shows each. */
+export interface ConnectorCard {
+  kind: 'service' | 'mcp' | 'device'
+  id: string
+  name: string
+  detail?: string | null
+  status: ConnectorHealth
+  problem?: string | null
+  toolCount: number
+  /** How many of its tools only read, change something, move money, or have no type yet. */
+  types: { read: number; change: number; money: number; unset: number }
+  /** Agent keys; '*' is every agent. */
+  agentKeys: string[]
+  /** A service where some of these agents have only some of its actions. */
+  partial: boolean
+  lastUsedAt?: string | null
+  path: string
 }
 
 export interface McpServerInput {

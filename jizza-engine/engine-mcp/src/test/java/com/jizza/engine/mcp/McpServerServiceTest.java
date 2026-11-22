@@ -113,6 +113,28 @@ class McpServerServiceTest {
   }
 
   @Test
+  void theReviewSettlesSeveralToolTypesAtOnce() {
+    UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
+    service.refreshTools(id);
+
+    McpServerDto reviewed = service.updateToolTypes(id,
+        java.util.Map.of("login", ActionType.READ, "place_order", ActionType.MONEY));
+
+    assertThat(reviewed.tools()).extracting(t -> t.suggested()).containsExactly(false, true, false);
+    assertThat(provider.actionTypeOf(jizzaId, "mcp_kite__place_order")).contains(ActionType.MONEY);
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() ->
+        service.updateToolTypes(id, java.util.Map.of("nope", ActionType.READ)))).isNotNull();
+  }
+
+  @Test
+  void aServerThatSignsInByItsOwnToolSaysSo() {
+    UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
+    McpServerDto server = service.refreshTools(id);
+    assertThat(server.signInTool()).isEqualTo("login");
+    assertThat(server.sessionSignInAt()).isNull();
+  }
+
+  @Test
   void aWrongEarlierSuggestionIsCorrectedButTheUsersChoiceIsKept() {
     UUID id = service.create(userId, workspaceId, settings("Kite", McpAuthType.NONE, null, null)).id();
     service.refreshTools(id);

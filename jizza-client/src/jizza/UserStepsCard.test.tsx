@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { UserSteps } from '@/types'
-import { UserStepsCard, cardLinks } from './UserStepsCard'
+import { UserStepsCard, cardLinks, safePage } from './UserStepsCard'
 import { withoutLinks } from './Markdown'
 
 const KITE = 'https://mcp.kite.trade/authorize?session_id=kitemcp-497e%7C1793.FPHS8q%3D'
@@ -41,5 +42,36 @@ describe('UserStepsCard', () => {
     expect(shown).not.toContain(KITE)
     expect(shown).toContain('then log in here and authorize')
     expect(shown).not.toContain('Login to Kite')
+  })
+
+  it('opens a connector\'s page to sign in again, inside the app', () => {
+    const reconnect: UserSteps = {
+      title: 'Sign in to Kite again',
+      steps: [
+        { label: 'Sign in to Kite again', button: { kind: 'page', label: 'Open Kite', path: '/connectors/mcp/m1' } },
+        { label: 'Come back here and continue', button: { kind: 'reply', label: 'Done, continue', text: 'Signed in.' } },
+      ],
+    }
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Routes>
+          <Route path="/chat" element={<UserStepsCard card={reconnect} onSend={vi.fn()} />} />
+          <Route path="/connectors/mcp/:id" element={<p>Kite's page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Open Kite/ }))
+    expect(screen.getByText("Kite's page")).toBeInTheDocument()
+  })
+
+  it('opens only the app\'s own connector and device pages', () => {
+    expect(safePage('/connectors/mcp/m1')).toBe(true)
+    expect(safePage('/settings/devices?device=d1')).toBe(true)
+    expect(safePage('//evil.test/connectors/')).toBe(false)
+    expect(safePage('/settings/security')).toBe(false)
+    expect(safePage('https://evil.test/connectors/x')).toBe(false)
+    const bad: UserSteps = { title: 'x', steps: [{ label: 'Open', button: { kind: 'page', label: 'Go', path: '/account/delete' } }] }
+    render(<UserStepsCard card={bad} onSend={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Go/ })).toBeNull()
   })
 })

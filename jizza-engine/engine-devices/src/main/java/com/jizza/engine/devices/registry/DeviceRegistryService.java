@@ -271,6 +271,33 @@ public class DeviceRegistryService implements Devices {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public List<String> agentKeys(UUID deviceId) {
+    return grantedKeys(require(deviceId));
+  }
+
+  @Override
+  @Transactional
+  public List<String> setAgentKeys(UUID deviceId, List<String> agentKeys) {
+    DeviceEntity device = require(deviceId);
+    List<String> keys = (agentKeys == null ? List.<String>of() : agentKeys).stream()
+        .filter(Objects::nonNull).map(String::strip).filter(k -> !k.isEmpty()).distinct().limit(100).toList();
+    device.setAgentKeys(Json.toNode(keys));
+    devices.save(device);
+    audit.record(device.getOwnerUserId(), ActorType.USER, device.getOwnerUserId(), "device.agents",
+        device.getId().toString(), Json.obj().set("agents", Json.toNode(keys)));
+    return keys;
+  }
+
+  /** The agents a device is given to; one nobody set is Jizza's only. */
+  public static List<String> grantedKeys(DeviceEntity device) {
+    if (device.getAgentKeys() == null || !device.getAgentKeys().isArray()) return List.of(DEFAULT_AGENT);
+    List<String> keys = new ArrayList<>();
+    device.getAgentKeys().forEach(k -> keys.add(k.asText()));
+    return keys;
+  }
+
+  @Override
   @Transactional
   public DeviceDto update(UUID deviceId, DeviceChanges changes) {
     DeviceEntity device = require(deviceId);

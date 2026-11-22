@@ -66,4 +66,28 @@ class DeviceToolProviderTest {
     assertThat(provider.alwaysAsks(jizzaId, "device_chrome__notify_show")).isFalse();
     assertThat(provider.alwaysAsks(jizzaId, "something_else")).isFalse();
   }
+
+  @Test
+  void aDeviceIsJizzasUntilItIsGivenToOtherAgents() {
+    AgentEntity jizza = agent("jizza", true);
+    AgentEntity kai = agent("finance", false);
+    DeviceEntity laptop = new DeviceEntity();
+    assertThat(DeviceToolProvider.givenTo(laptop, jizza)).isTrue();
+    assertThat(DeviceToolProvider.givenTo(laptop, kai)).isFalse();
+
+    laptop.setAgentKeys(Json.mapper().createArrayNode().add("finance"));
+    assertThat(DeviceToolProvider.givenTo(laptop, jizza)).isFalse();
+    assertThat(DeviceToolProvider.givenTo(laptop, kai)).isTrue();
+
+    laptop.setAgentKeys(Json.mapper().createArrayNode().add("*"));
+    assertThat(DeviceToolProvider.givenTo(laptop, jizza)).isTrue();
+    assertThat(DeviceToolProvider.givenTo(laptop, kai)).isTrue();
+  }
+
+  private static AgentEntity agent(String key, boolean orchestrator) {
+    AgentEntity a = new AgentEntity();
+    a.setKey(key);
+    a.setOrchestrator(orchestrator);
+    return a;
+  }
 }

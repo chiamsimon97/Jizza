@@ -15,6 +15,9 @@ export const mcpApi = {
   refresh: (id: string) => api.post<McpServer>(`${base(id)}/refresh`),
   updateTool: (id: string, tool: string, body: { enabled?: boolean; actionType?: ActionType }) =>
     api.patch<McpServer>(`${base(id)}/tools/${encodeURIComponent(tool)}`, body),
+  /** Asks for step-up. The review after adding a server: several tools' types at once. */
+  updateToolTypes: (id: string, types: Record<string, ActionType>) =>
+    api.put<McpServer>(`${base(id)}/tool-types`, { types }),
   testTool: (id: string, tool: string, args: unknown) =>
     api.post<ToolRunResult>(`${base(id)}/tools/${encodeURIComponent(tool)}/test`, args ?? {}),
   authorize: (id: string) => api.post<{ url: string }>(`${base(id)}/authorize`),

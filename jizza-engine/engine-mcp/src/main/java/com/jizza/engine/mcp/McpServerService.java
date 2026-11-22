@@ -144,6 +144,35 @@ public class McpServerService implements McpServers, StoredMcpServers {
     }
   }
 
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.connector.ConnectorSignIn> signIn;
+
+  private com.jizza.engine.persistence.repository.AuditLogRepository auditLog;
+
+  public void setAuditLog(com.jizza.engine.persistence.repository.AuditLogRepository auditLog) {
+    this.auditLog = auditLog;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public java.time.Instant lastUsedAt(UUID serverId) {
+    if (auditLog == null) return null;
+    return servers.findById(serverId)
+        .map(e -> auditLog.lastToolUse(e.getUserId(),
+            likePrefix("mcp_" + McpToolProvider.slug(e.getSlug()) + "__")))
+        .orElse(null);
+  }
+
+  /** A LIKE pattern for names starting with {@code prefix}, with '!' as the escape. */
+  static String likePrefix(String prefix) {
+    return prefix.replace("!", "!!").replace("_", "!_").replace("%", "!%") + "%";
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setSignIn(
+      org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.connector.ConnectorSignIn> signIn) {
+    this.signIn = signIn;
+  }
+
   // ── Tools ─────────────────────────────────────────────────────────────────────
 
   @Override
@@ -196,6 +225,27 @@ public class McpServerService implements McpServers, StoredMcpServers {
       one.remove("suggested");
     }
     settings.set(tool, one);
+    entity.setToolSettings(settings);
+    return toDto(servers.save(entity));
+  }
+
+  @Override
+  @Transactional
+  public McpServerDto updateToolTypes(UUID serverId, Map<String, ActionType> types) {
+    McpServerEntity entity = require(serverId);
+    java.util.Set<String> known = new java.util.HashSet<>();
+    knownTools(entity).forEach(t -> known.add(t.name()));
+    for (String tool : types.keySet()) {
+      if (!known.contains(tool)) throw new NotFoundException("MCP tool", tool);
+    }
+    ObjectNode settings = entity.getToolSettings() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    types.forEach((tool, type) -> {
+      if (type == null) return;
+      ObjectNode one = settings.path(tool) instanceof ObjectNode o ? o : settings.putObject(tool);
+      one.put("actionType", type.name().toLowerCase(Locale.ROOT));
+      one.remove("suggested");
+      settings.set(tool, one);
+    });
     entity.setToolSettings(settings);
     return toDto(servers.save(entity));
   }
@@ -314,6 +364,10 @@ public class McpServerService implements McpServers, StoredMcpServers {
           entity.setStatus("needs_auth");
           entity.setLastError("The sign-in expired. Sign in again.");
           servers.save(entity);
+          if (signIn != null) {
+            signIn.ifAvailable(n -> n.lost(entity.getUserId(),
+                com.jizza.engine.api.connector.ConnectorSignIn.MCP, entity.getId(), entity.getName()));
+          }
           return null;
         }
       }
@@ -464,11 +518,14 @@ public class McpServerService implements McpServers, StoredMcpServers {
             "read-only".equals(one.path("hint").asText()) ? "read-only" : null));
       }
     }
+    // A server with no sign-in of its own may sign in inside its session, through a tool.
+    String signIn = authType(e) != McpAuthType.NONE ? null : tools.stream().map(McpToolDto::name)
+        .filter(McpToolProvider::signInTool).findFirst().orElse(null);
     return new McpServerDto(e.getId(), e.getUserId(), e.getWorkspaceId(), e.getName(), e.getSlug(),
         e.getUrl(), authType(e), e.getHeaderName(), e.getSecret() != null,
         e.getAccessToken() != null, e.isEnabled(), agents, e.isRedactArguments(), e.getStatus(),
         e.getLastError(), e.getServerName(), e.getServerVersion(), tools, e.getToolsRefreshedAt(),
-        e.getCreatedAt());
+        e.getCreatedAt(), signIn, signIn == null ? null : provider.sessionSignInAt(e.getId()));
   }
 
   private static Optional<ActionType> actionType(JsonNode toolSettings) {

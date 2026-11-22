@@ -116,6 +116,31 @@ public class McpServerUseCase {
     return updated;
   }
 
+  /**
+   * The review after a server is added: says what several tools do at once. Each type given becomes
+   * the person's own, so the guardrails stop treating it as a guess.
+   */
+  public McpServerDto updateToolTypes(Access access, UUID serverId,
+                                      java.util.Map<String, ActionType> types) {
+    McpServerDto existing = owned(access, serverId);
+    if (types == null || types.isEmpty()) return existing;
+    for (var e : types.entrySet()) {
+      if (e.getValue() == null) throw new ValidationException("Choose a type for " + e.getKey());
+      if (existing.tools().stream().noneMatch(t -> t.name().equals(e.getKey()))) {
+        throw new NotFoundException("MCP tool", e.getKey());
+      }
+    }
+    McpServerDto updated = servers.updateToolTypes(serverId, types);
+    var counts = Json.obj();
+    types.values().forEach(t -> {
+      String k = t.name().toLowerCase(Locale.ROOT);
+      counts.put(k, counts.path(k).asInt() + 1);
+    });
+    audit.record(access.userId(), ActorType.USER, null, "mcp_server.tool_types", existing.name(),
+        Json.obj().put("serverId", serverId.toString()).set("types", counts));
+    return updated;
+  }
+
   public URI startAuth(Access access, UUID serverId, UUID sessionId) {
     McpServerDto existing = owned(access, serverId);
     URI url = servers.startAuth(serverId, sessionId);

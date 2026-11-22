@@ -51,6 +51,9 @@ public class McpServerController {
 
   public record ToolInput(Boolean enabled, ActionType actionType) {}
 
+  /** Tool name to the type the person settled on. */
+  public record ToolTypesInput(java.util.Map<String, ActionType> types) {}
+
   private final McpServerUseCase servers;
   private final McpCatalog catalog;
 
@@ -114,6 +117,14 @@ public class McpServerController {
                                  @RequestBody ToolInput input) {
     return servers.updateTool(CurrentWorkspace.access(), id, tool, input.enabled(),
         input.actionType());
+  }
+
+  /** The review after adding a server: the types of several tools at once. */
+  @RequiresPermission(Permissions.CONNECTOR_MODIFY)
+  @org.springframework.web.bind.annotation.PutMapping("/{id}/tool-types")
+  @StepUpRequired
+  public McpServerDto updateToolTypes(@PathVariable UUID id, @RequestBody ToolTypesInput input) {
+    return servers.updateToolTypes(CurrentWorkspace.access(), id, input.types());
   }
 
   @RequiresPermission(Permissions.CONNECTOR_MODIFY)

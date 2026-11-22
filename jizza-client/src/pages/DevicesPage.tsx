@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { KeyRound, MonitorSmartphone, Plus, Search, Terminal } from 'lucide-react'
 import { devicesApi } from '@/api/devices'
 import { useAuthStore } from '@/store/authStore'
@@ -49,7 +50,9 @@ export function DevicesPage() {
   const canManage = usePermission(PERMISSIONS.DEVICE_MANAGE)
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
-  const [viewing, setViewing] = useState<string | null>(null)
+  const [params] = useSearchParams()
+  // The Connectors hub links straight to one device.
+  const [viewing, setViewing] = useState<string | null>(() => params.get('device'))
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const { data: devices, isLoading, isError, refetch } = useQuery({
     queryKey: ['devices'], queryFn: devicesApi.list, refetchInterval: 15_000,

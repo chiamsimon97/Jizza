@@ -31,4 +31,11 @@ public interface AuditLogRepository extends JpaRepository<AuditLogEntity, UUID> 
       """)
   List<AuditLogEntity> findWindow(@Param("userId") UUID userId, @Param("from") Instant from,
                                   @Param("to") Instant to, Pageable pageable);
+
+  /** When a tool whose name starts as given last answered one of the user's agents; '!' escapes. */
+  @Query("""
+      select max(a.createdAt) from AuditLogEntity a
+       where a.userId = :userId and a.action = 'tool.result.ok' and a.target like :prefix escape '!'
+      """)
+  Instant lastToolUse(@Param("userId") UUID userId, @Param("prefix") String prefix);
 }

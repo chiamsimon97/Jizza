@@ -69,6 +69,14 @@ public class DeviceEntity {
   @Column(columnDefinition = "jsonb", nullable = false)
   private JsonNode blockedActions;
 
+  /** The keys of the agents that may use the device; null means Jizza only. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  private JsonNode agentKeys;
+
+  public JsonNode getAgentKeys() { return agentKeys; }
+  public void setAgentKeys(JsonNode agentKeys) { this.agentKeys = agentKeys; }
+
   /** Once true, every message from the device must carry a valid signature by its key. */
   @Column(nullable = false)
   private boolean signsMessages;

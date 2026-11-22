@@ -35,6 +35,16 @@ public interface McpServers {
   /** Turns one tool on or off and says what it does; a null leaves that part alone. */
   McpServerDto updateTool(UUID serverId, String tool, Boolean enabled, ActionType actionType);
 
+  /**
+   * Says what several tools do at once, for the review after a server is added: each type given
+   * is the person's own from then on, suggested or not. Tools the server does not offer are an error.
+   */
+  default McpServerDto updateToolTypes(UUID serverId, java.util.Map<String, ActionType> types) {
+    McpServerDto last = null;
+    for (var e : types.entrySet()) last = updateTool(serverId, e.getKey(), null, e.getValue());
+    return last;
+  }
+
   /** OAUTH servers: discovers the server's authorization server and returns where to sign in. */
   URI startAuth(UUID serverId, UUID sessionId);
 
@@ -55,4 +65,9 @@ public interface McpServers {
    * not declare them, so workflow steps after it can map them. Only the shape is kept.
    */
   default void learnOutput(UUID serverId, String tool, JsonNode output) { }
+
+  /** When one of the server's tools last answered an agent, for the Connectors hub; null if never. */
+  default java.time.Instant lastUsedAt(UUID serverId) {
+    return null;
+  }
 }

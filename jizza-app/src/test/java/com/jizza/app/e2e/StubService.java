@@ -34,6 +34,8 @@ public final class StubService implements AutoCloseable {
   public volatile String accessTokenToIssue = "access-token-1";
   public volatile int nextStatus = 200;
   public volatile boolean revoked;
+  /** The provider has revoked the grant: every token request is refused. */
+  public volatile boolean refuseTokens;
 
   public record Recorded(String method, String path, String body, Map<String, String> headers) {}
 
@@ -113,6 +115,10 @@ public final class StubService implements AutoCloseable {
     record(exchange, body);
 
     Map<String, String> form = parseForm(body);
+    if (refuseTokens) {
+      respond(exchange, 400, "{\"error\":\"invalid_grant\"}");
+      return;
+    }
     if (!"client-abc".equals(form.get("client_id"))) {
       respond(exchange, 401, "{\"error\":\"invalid_client\"}");
       return;
