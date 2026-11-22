@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { Button } from '@/components/ui/Button'
 import { DateValueInput } from '@/components/ui/DateValueInput'
 import { FileValueInput } from '@/components/ui/FileValueInput'
-import { RowsInput, rowsEmpty, rowsOf } from '@/components/ui/RowsInput'
+import { RowsInput, rowsColumnOf, rowsEmpty, rowsOf, type RowsColumn } from '@/components/ui/RowsInput'
 import type { StartRunCard as Card, StartRunField } from '@/types'
 import { useAssistantStore } from './assistantStore'
 import { RunInChat } from './RunInChat'
@@ -191,7 +191,7 @@ function FieldRow({ field: f, value, onChange, missing }: {
   const hint = f.problem ?? (f.ask === 'atStep' ? 'Leave empty to be asked while it runs' : f.patternHint ?? f.description)
   let control
   if (f.type === 'list' && f.columns?.length) {
-    const columns = f.columns.map(c => ({ key: c.key ?? c.name ?? '', label: c.label ?? c.key ?? c.name ?? '' })).filter(c => c.key)
+    const columns = f.columns.map(c => rowsColumnOf(c)).filter((c): c is RowsColumn => c !== null)
     control = <RowsInput label={f.label} columns={columns} value={value ?? ''} onChange={onChange} invalid={invalid} />
   } else if (f.options?.length) {
     control = (

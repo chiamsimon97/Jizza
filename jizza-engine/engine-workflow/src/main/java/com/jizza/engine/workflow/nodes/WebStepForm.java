@@ -42,6 +42,8 @@ final class WebStepForm {
   static final String FILL_ROWS = "browser.fillRows";
   /** Between a column's key and its label in a rows field's options (see {@link Field#toJson}). */
   static final String COLUMN_SEP = "\u001F";
+  /** Between a rows column's choices, after its label. */
+  static final String CHOICE_SEP = "\u001E";
   private static final Pattern INPUT_REF = Pattern.compile("\\{\\{\\s*input\\.([A-Za-z][A-Za-z0-9_]*)\\s*}}");
   static final String CHOOSE_OPTION = "browser.chooseOption";
   /** A click on one of the buttons the person grouped while recording, chosen by name. */
@@ -128,9 +130,13 @@ final class WebStepForm {
         // A rows field's options are its columns: one entry's values by key, with labels.
         ArrayNode columns = out.putArray("columns");
         for (String option : options) {
-          int at = option.indexOf(COLUMN_SEP);
-          columns.addObject().put("key", at < 0 ? option : option.substring(0, at))
-              .put("label", at < 0 ? option : option.substring(at + 1));
+          String[] parts = option.split(COLUMN_SEP, 3);
+          ObjectNode column = columns.addObject().put("key", parts[0])
+              .put("label", parts.length > 1 ? parts[1] : parts[0]);
+          if (parts.length > 2) {
+            ArrayNode choices = column.putArray("options");
+            for (String choice : parts[2].split(CHOICE_SEP)) choices.add(choice);
+          }
         }
       } else if (options != null) {
         ArrayNode list = out.putArray("options");
@@ -292,7 +298,14 @@ final class WebStepForm {
       List<String> columns = new ArrayList<>();
       for (JsonNode column : inputs.path("columns")) {
         String key = column.path("key").asText("");
-        if (!key.isEmpty()) columns.add(key + COLUMN_SEP + column.path("label").asText(key));
+        if (key.isEmpty()) continue;
+        // A dropdown's choices ride after the label, so the card's table offers them.
+        List<String> picks = new ArrayList<>();
+        for (JsonNode option : column.path("options")) {
+          if (option.isValueNode() && !option.asText().isBlank()) picks.add(option.asText());
+        }
+        columns.add(key + COLUMN_SEP + column.path("label").asText(key)
+            + (picks.isEmpty() ? "" : COLUMN_SEP + String.join(CHOICE_SEP, picks)));
       }
       String source = template(configured.get("rows"));
       Matcher named = source == null ? null : INPUT_REF.matcher(source.strip());

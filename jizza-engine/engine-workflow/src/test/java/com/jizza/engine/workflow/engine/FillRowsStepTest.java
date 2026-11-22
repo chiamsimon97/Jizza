@@ -28,7 +28,9 @@ class FillRowsStepTest {
              "inputs":{"row":{"strategies":[{"by":"css","value":"app-passenger"}]},
                        "rowCss":"app-passenger",
                        "columns":[{"key":"name","label":"Name","css":"input","kind":"text"},
-                                  {"key":"age","label":"Age","css":"input.age","kind":"text"}],
+                                  {"key":"age","label":"Age","css":"input.age","kind":"text"},
+                                  {"key":"gender","label":"Gender","css":"select","kind":"select",
+                                   "options":["Male","Female"]}],
                        "rows":"{{ input.passengers }}"%s}}
             """.formatted(optional ? ",\"optional\":true" : "")), new WorkflowNode.RetryPolicy(1, 1, 1, 10)),
         new WorkflowNode("finish", NodeType.END, "finish", null, null)),
@@ -75,7 +77,8 @@ class FillRowsStepTest {
     assertThat(rows.path("label").asText()).isEqualTo("Passengers");
     assertThat(rows.path("missing").asBoolean()).isTrue();
     assertThat(rows.path("columns").toString())
-        .isEqualTo("[{\"key\":\"name\",\"label\":\"Name\"},{\"key\":\"age\",\"label\":\"Age\"}]");
+        .isEqualTo("[{\"key\":\"name\",\"label\":\"Name\"},{\"key\":\"age\",\"label\":\"Age\"},"
+            + "{\"key\":\"gender\",\"label\":\"Gender\",\"options\":[\"Male\",\"Female\"]}]");
 
     // The card's table answers as JSON text; empty entries are dropped.
     harness.engine.resume(run.id(), Json.obj().put("approved", true).set("inputs",

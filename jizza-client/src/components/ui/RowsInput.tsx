@@ -1,7 +1,16 @@
 import { Plus, X } from 'lucide-react'
 
-/** One column of a repeated section, such as a passenger's name or age. */
-export interface RowsColumn { key: string; label: string }
+/** One column of a repeated section, such as a passenger's name or age; a dropdown on the
+ *  page (gender, berth) brings its choices, and the table offers them. */
+export interface RowsColumn { key: string; label: string; options?: string[] }
+
+/** A column as a run input or a step card gives it, read leniently. */
+export function rowsColumnOf(raw: { key?: unknown; name?: unknown; label?: unknown; options?: unknown }): RowsColumn | null {
+  const key = typeof raw.key === 'string' && raw.key ? raw.key : typeof raw.name === 'string' ? raw.name : ''
+  if (!key) return null
+  const options = Array.isArray(raw.options) ? raw.options.map(String).filter(Boolean) : []
+  return { key, label: typeof raw.label === 'string' && raw.label ? raw.label : key, ...(options.length ? { options } : {}) }
+}
 
 type Entry = Record<string, string>
 
@@ -63,8 +72,18 @@ export function RowsInput({ label, columns, value, onChange, readOnly, invalid }
               <td className="text-xs text-gray-500">{at + 1}</td>
               {columns.map(c => (
                 <td key={c.key}>
-                  <input className={cell} aria-label={`${c.label} ${at + 1}`} disabled={readOnly}
-                    value={row[c.key] ?? ''} onChange={e => set(at, c.key, e.target.value)} />
+                  {c.options?.length ? (
+                    <select className={cell} aria-label={`${c.label} ${at + 1}`} disabled={readOnly}
+                      value={row[c.key] ?? ''} onChange={e => set(at, c.key, e.target.value)}>
+                      <option value="">Choose…</option>
+                      {/* A value the page no longer lists stays visible instead of being lost. */}
+                      {row[c.key] && !c.options.includes(row[c.key]) && <option value={row[c.key]}>{row[c.key]}</option>}
+                      {c.options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input className={cell} aria-label={`${c.label} ${at + 1}`} disabled={readOnly}
+                      value={row[c.key] ?? ''} onChange={e => set(at, c.key, e.target.value)} />
+                  )}
                 </td>
               ))}
               <td>
