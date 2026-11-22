@@ -17,11 +17,11 @@ Add **Fill form** from the Web Automation steps. Add one row per field:
 - **Field**: pick it on the page. For a checkbox group or radio buttons, pick the group (or any box in it).
 - **Kind**: Text or text area, Dropdown, Checkbox, Checkbox group, Radio buttons, Date or date and time, Calendar the site draws, or Search and choose (a field that shows suggestions as you type).
 - **Value**: type it, or map it from earlier steps with a data chip. A checkbox takes yes or no; a checkbox group takes the boxes to tick, comma-separated (the others are unticked).
-- **Mandatory**: when its value comes out empty, the run stops and asks you to fill it in, instead of sending an empty field.
+- **Must be filled in**: when its value comes out empty, the run stops and asks you to fill it in, instead of sending an empty field.
 
 An optional field whose value comes out empty is left as the page has it.
 
-Each row shows its name, **Value** and **Mandatory**; **Field**, **Kind**, **Name on approvals** and **Date format** are under **More options**, which opens by itself when a field still needs picking.
+Each row shows its name, **Value** and **Must be filled in**; **Field**, **Kind**, **Name on approvals** and **Date format** are under **More options**, which opens by itself when a field still needs picking.
 
 Set **Send button** to have the step press it after filling. The step then reads what the site says is wrong (such as "Enter a 10-digit number" under the phone field). When the site refuses the form, the run stops and your approval shows each message next to its value. Fix the values and approve, and the form is filled and sent again.
 

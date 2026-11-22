@@ -384,13 +384,13 @@ final class StepCompiler {
   }
 
   /**
-   * "Wait for what happens": the browser only looks for the outcomes; what the run does with each
+   * "Wait until the page answers": the browser only looks for the outcomes; what the run does with each
    * (carry on, or stop with the site's message) is the step's own rule, kept beside it.
    */
   static void waitForRules(ObjectNode stepInputs, ObjectNode config) {
     JsonNode outcomes = stepInputs.path("outcomes");
     if (!outcomes.isArray() || outcomes.isEmpty()) {
-      throw new ValidationException("'Wait for what happens' needs at least one thing to wait for");
+      throw new ValidationException("'Wait until the page answers' needs at least one thing to wait for");
     }
     ObjectNode rules = Json.obj();
     Set<String> names = new HashSet<>();
@@ -747,7 +747,7 @@ final class StepCompiler {
   }
 
   /**
-   * How a "Wait for what happens" keeps looking when nothing shows yet: every {@code everySec}
+   * How a "Wait until the page answers" keeps looking when nothing shows yet: every {@code everySec}
    * seconds (15 or more, so sites are not hammered), for {@code forMinutes} minutes or until
    * {@code until}, at most {@code maxTries} looks.
    */

@@ -137,7 +137,7 @@ export function RecordFlow({ open, mode, recordingId, onClose, onSaved, onInsert
           {editing && (
             <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-950/40 dark:text-brand-200">
               Open the Jizza side panel in {r.deviceName ?? 'the browser'}. ▶ Next runs the next step, ● New action records new steps where the marker is,
-              and “Run these only if shown…” puts the selected steps in a condition. Press Finish editing there, or Finish editing below, when you are done.
+              and “Run these only if it pops up…” puts the selected steps in a condition. Press Finish editing there, or Finish editing below, when you are done.
             </p>
           )}
           <p className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />{editing ? `Editing in ${r.deviceName ?? 'your browser'}` : r.kind === 'desktop' ? `Recording in Windows apps on ${r.deviceName ?? 'your PC'}. Press Ctrl+Alt+R on the PC to stop.` : `Recording in Chrome on ${r.deviceName ?? 'your browser'}`}</p>

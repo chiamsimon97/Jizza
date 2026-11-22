@@ -56,7 +56,7 @@ export interface RecordedStepData {
 
 export interface ReadAsRule { as: 'text' | 'number' | 'money' | 'date' | 'pattern'; pattern?: string; format?: string }
 
-/** One thing "Wait for what happens" waits for, and what the run does when the page shows it. */
+/** One thing "Wait until the page answers" waits for, and what the run does when the page shows it. */
 export interface WaitOutcome {
   name: string
   element?: Record<string, unknown>
@@ -75,7 +75,7 @@ export interface RecordedList {
   inputName?: string
   withinTitle?: string
   withinInputName?: string
-  /** Marked by the person while recording (Mark a list): read with its saved patterns. */
+  /** Marked by the person while recording (Choose from a list of cards): read with its saved patterns. */
   marked?: boolean
   /** title and withinTitle are names the person gave the items and cards (browser agent 0.8.0+). */
   named?: boolean
@@ -235,5 +235,5 @@ export interface RecordingInput {
 /** What a site asks of an uploaded picture: at most this many KB, this size, this format. */
 export interface PictureFit { maxKb?: number; width?: number; height?: number; format?: 'jpeg' | 'png' | 'webp' }
 
-/** How a "Wait for what happens" keeps looking when nothing shows yet. */
+/** How a "Wait until the page answers" keeps looking when nothing shows yet. */
 export interface PollRule { everySec: number; forMinutes?: number; until?: string; maxTries?: number }

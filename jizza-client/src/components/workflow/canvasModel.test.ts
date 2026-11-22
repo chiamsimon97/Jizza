@@ -212,22 +212,22 @@ describe('palette groups', () => {
     expect(generic).not.toContain('TRIGGER')
     expect(PALETTE_GROUPS.every(g => g.title && g.entries.length)).toBe(true)
     expect(WEB_PALETTE.map(e => [e.label, e.config?.action, e.config?.version])).toEqual([
-      ['Open URL', 'browser.open', 2], ['Click', 'browser.click', 2], ['Hover', 'browser.hover', 1],
-      ['Set text', 'browser.setText', 1], ['Get text', 'browser.getText', 1], ['Set checkbox', 'browser.setCheckbox', 1],
+      ['Open URL', 'browser.open', 2], ['Click', 'browser.click', 2], ['Point at it', 'browser.hover', 1],
+      ['Type text', 'browser.setText', 1], ['Read text', 'browser.getText', 1], ['Set checkbox', 'browser.setCheckbox', 1],
       ['Get checkbox state', 'browser.getCheckbox', 1], ['Select item', 'browser.selectItem', 1],
-      ['Extract table data', 'browser.extractTable', 1], ['Select radio button', 'browser.selectRadio', 1],
+      ['Read a table', 'browser.extractTable', 1], ['Select radio button', 'browser.selectRadio', 1],
       ['Get radio button state', 'browser.getRadio', 1], ['Scroll', 'browser.scroll', 1],
-      ['Send hotkeys', 'browser.sendKeys', 1], ['Type into', 'browser.typeInto', 1],
-      ['Check if element exists', 'browser.exists', 1], ['Switch to', 'browser.switchTo', 1],
+      ['Send hotkeys', 'browser.sendKeys', 1], ['Type text key by key', 'browser.typeInto', 1],
+      ['Check it is on the page', 'browser.exists', 1], ['Switch to', 'browser.switchTo', 1],
       ['Refresh page', 'browser.refresh', 1], ['Get element selectors', 'browser.getSelectors', 1],
       ['Get web page details', 'browser.pageInfo', 1], ['Go forward a page', 'browser.forward', 1],
       ['Go back a page', 'browser.back', 1], ['Close browser', 'browser.close', 1],
       ['Wait', 'browser.wait', 1], ['Screenshot', 'browser.screenshot', 1],
-      ['Handle pop-up dialogs', 'browser.handleDialog', 1], ['Drag and drop', 'browser.dragDrop', 1],
-      ['Fill form', 'browser.fillForm', 1], ['Device layer', 'browser.fillLayer', 1], ['Set date', 'browser.setDate', 1],
-      ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and choose', 'browser.chooseOption', 1],
-      ['Check items', 'browser.checkItems', 1], ['Choose from a list', 'browser.clickItem', 1], ['Choose in a dropdown', 'browser.selectOption', 1],
-      ['List items', 'browser.listItems', 1], ['Ask me', 'browser.ask', 1],
+      ['Answer browser pop-ups', 'browser.handleDialog', 1], ['Drag and drop', 'browser.dragDrop', 1],
+      ['Fill several fields', 'browser.fillForm', 1], ['Fill a whole form', 'browser.fillLayer', 1], ['Type a date', 'browser.setDate', 1],
+      ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and pick a suggestion', 'browser.chooseOption', 1],
+      ['Tick several boxes', 'browser.checkItems', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],
+      ['Read a list', 'browser.listItems', 1], ['Ask me', 'browser.ask', 1],
       ['Hand over to me', 'browser.handOff', 1],
     ])
     const created = addAfter(emptyGraph(), 'start', null, WEB_PALETTE[1])

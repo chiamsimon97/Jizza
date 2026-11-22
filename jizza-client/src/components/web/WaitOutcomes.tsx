@@ -13,7 +13,7 @@ export function lookingFor(o: WaitOutcome): string {
 }
 
 /**
- * "Wait for what happens": each outcome the step waits for, and what the run does when the page
+ * "Wait until the page answers": each outcome the step waits for, and what the run does when the page
  * shows it: carry on, or stop with a message (the site's "No trains found"). A text outcome can be
  * added here; an element one is pointed at in the browser while recording.
  */

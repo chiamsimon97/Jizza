@@ -93,13 +93,13 @@ A recording runs from **Record** to **Stop**, and gives you a list of steps to r
 3. Chrome opens the start page in its own tab group, in a window placed beside Jizza, and the extension's side panel lists each step as you go. Later recordings and picks reuse that window while it stays open.
 4. Do the task the way you normally would: click, type, pick from lists, tick boxes, switch tabs.
 5. To capture something the page shows rather than something you do, use the side panel:
-   - **Add check**: pick an element to check that it is there, or to read its text.
-   - **Add table**: pick a table to extract its rows.
-   - **Mark hover**: pick an element the run should hover over, such as a menu.
-   - **Add wait**: add a step that waits a few seconds, for a page that needs time before the next step.
+   - **Check or read the page**: pick an element to check that it is on the page, or to read its text.
+   - **Read a table**: pick a table to extract its rows.
+   - **Point at it to open a menu**: pick an element the run should hover over, such as a menu.
+   - **Wait a few seconds**: add a step that waits a few seconds, for a page that needs time before the next step.
 6. If you make a stray click, delete it in the side panel (×). You can also drag steps into a different order, rename a step (✎), and turn a typed value into an input (⇄) there, without waiting for the review. A step that became an input shows "input: name". Choosing a saved login for a password still happens in Jizza's review.
 7. To do something on the page without recording it, press **Pause** at the top of the side panel, then **Resume**. Come back to the page you paused on first: a run does not follow where you went while paused.
-8. Press **Stop**, at the top of the side panel or in Jizza. Closing the last tab of the recording also stops it. **Discard recording** at the bottom of the side panel stops it and keeps nothing.
+8. Press **Stop and review**, at the top of the side panel or in Jizza. Closing the last tab of the recording also stops it. **Discard recording** at the bottom of the side panel stops it and keeps nothing.
 
 You can also start a recording in two other ways:
 
@@ -114,8 +114,8 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | --- | --- |
 | Type an address or open a bookmark | Open URL |
 | Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
-| Click one card of a list you mapped (Scan) or marked (Mark a list): a movie, a date in a date strip, a showtime | Choose from a list, with the item you clicked |
-| Click one of the buttons you grouped (Group buttons) | Click one of these buttons, with the button you clicked |
+| Click one card of a list you mapped (Scan) or marked (Choose from a list of cards): a movie, a date in a date strip, a showtime | Choose from a list, with the item you clicked |
+| Click one of the buttons you grouped (Choose one of these buttons) | Click one of these buttons, with the button you clicked |
 | Type in a field | Set text, one step per field when you leave it |
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
 | Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
@@ -126,7 +126,7 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | Back, Forward, Reload | Go back, Go forward, Refresh |
 | A popup opens, or you move to another tab | Switch to |
 | Close the last tab | Close browser |
-| Add check, Add table, Mark hover (side panel) | Check if element exists or Get text, Extract table data, Hover |
+| Check or read the page, Read a table, Point at it to open a menu (side panel) | Check it is on the page or Read text, Read a table, Point at it |
 
 Each step stores several ways to find its element, plus a small picture of it, so you can tell steps apart in review.
 
@@ -162,11 +162,11 @@ When the list sits inside a card of another list (the showtimes of one theatre),
 
 ### Record manually: add each field yourself
 
-For long forms such as a train booking (stations, date, class, passengers, payment), switch the side panel to **Manual** (browser agent 0.7.0 or later). Your clicks and typing are then not recorded; you add each step yourself, so nothing extra slips in.
+For long forms such as a train booking (stations, date, class, passengers, payment), switch the side panel to **Record only what I add** (browser agent 0.7.0 or later). Your clicks and typing are then not recorded; you add each step yourself, so nothing extra slips in.
 
-1. Open the extension's side panel (right-click the Jizza icon, **Open side panel**) and press **Manual**.
+1. Open the extension's side panel (right-click the Jizza icon, **Open side panel**) and press **Record only what I add**.
 2. Fill a field on the page as you normally would, for example type the passenger's name or choose the class.
-3. Press **Add field** and click that field. The side panel shows what kind of field it is, its name and the value it holds now:
+3. Press **Fill or click one thing** and click that field. The side panel shows what kind of field it is, its name and the value it holds now:
 
 | Kind | For | The step |
 | --- | --- | --- |
@@ -179,21 +179,21 @@ For long forms such as a train booking (stations, date, class, passengers, payme
 | Option buttons | General / Tatkal, payment method | chooses one |
 | Button or link | Search, Continue, Pay | clicks it |
 
-4. Change the kind, name or value if the guess is wrong. Tick **Different each run** to make the value an input of the module (a different passenger or date each time), then press **Add step**.
-5. For a button that opens the next page (Search trains, Continue), press **Add field** and click the button first, then click it yourself so the site moves on. The click you make while picking doesn't reach the site.
-6. For a choice in a list of cards (a train in the results), use **Mark a list**: in Manual, clicks in a marked list are still recorded.
-7. For a button that sits in every card of such a list (each train's **Book Now**), press **Add field** and click the button in the card you chose. From browser agent 0.26.0 the side panel shows **Inside a card of** with the list it sits in (for example "Train (now: the train's name)"). Keep it and press **Add step**: each run clicks the button inside the card that run chooses in that list, found by the button's own text, so no input is needed for the button itself. Choose **Nothing** to click the same button on the whole page instead. Clicking the button yourself afterwards is part of the same step.
+4. Change the kind, name or value if the guess is wrong. Tick **Ask for this each run** to make the value an input of the module (a different passenger or date each time), then press **Add step**.
+5. For a button that opens the next page (Search trains, Continue), press **Fill or click one thing** and click the button first, then click it yourself so the site moves on. The click you make while picking doesn't reach the site.
+6. For a choice in a list of cards (a train in the results), use **Choose from a list of cards**: in Record only what I add, clicks in a marked list are still recorded.
+7. For a button that sits in every card of such a list (each train's **Book Now**), press **Fill or click one thing** and click the button in the card you chose. From browser agent 0.26.0 the side panel shows **Press it inside the chosen card** with the list it sits in (for example "Train (now: the train's name)"). Keep it and press **Add step**: each run clicks the button inside the card that run chooses in that list, found by the button's own text, so no input is needed for the button itself. Choose **Nothing** to click the same button on the whole page instead. Clicking the button yourself afterwards is part of the same step.
 
-You can switch between **Auto** and **Manual** at any time while recording, and **Add field** works in Auto too. Password and card fields are never read: choose a saved login for them when you review the recording.
+You can switch between **Record what I do** and **Record only what I add** at any time while recording, and **Fill or click one thing** works in both. Password and card fields are never read: choose a saved login for them when you review the recording.
 
 ### Group fields into one form step
 
 A form such as passenger details (first name, last name, age, berth) can be one step instead of one step per field (browser agent 0.8.0 or later):
 
-1. Press **Start form step** in the side panel, give it a name such as "Passenger details", and press **Start**.
-2. Fill the fields on the page as you normally would. Each value you type or choose goes into the form step, in Auto and in Manual. Typing in a field again changes its value, not adds another.
-3. Or press **Add field to form** and click a field, to check its kind and value or tick **Different each run** for it. A button added this way (such as Continue) becomes the form's send button, pressed after the fields are filled.
-4. Press **Finish form step**. The side panel shows one **Fill form** step with every field.
+1. Press **Fill several fields together** in the side panel, give it a name such as "Passenger details", and press **Start**.
+2. Fill the fields on the page as you normally would. Each value you type or choose goes into the form step, in both recording modes. Typing in a field again changes its value, not adds another.
+3. Or press **Fill or click one thing to form** and click a field, to check its kind and value or tick **Ask for this each run** for it. A button added this way (such as Continue) becomes the form's send button, pressed after the fields are filled.
+4. Press **Done with these fields**. The side panel shows one **Fill form** step with every field.
 
 While a form step is open, clicks are not recorded, so finish it before you click a button that moves the page on. Remove a field with × in the form card. Stopping the recording finishes an open form step. Password fields are kept as their own steps.
 
@@ -203,22 +203,22 @@ In review, **Make this an input** lists each field of the form step by its name.
 
 From browser agent 0.9.0, a recording starts with **Scan and map** in the extension's side panel. Nothing you do on the page is recorded yet, so you can look around, open the right page and map its fields first.
 
-1. Press **Full page scan** to find every text box, dropdown, date, checkbox and option group on the page, and every list you choose from: cards, `ul`/`li` lists and rows of look-alike boxes such as a date strip. Menus, the header and the footer are left out.
-2. Or press **Partial page scan** to scan only parts of the page. Tick parts in the page's tree (hover a row to see it outlined on the page), type a **CSS selector** and press **Add** (for example `div[id^="2026"]` for date cells whose ids are dates, or a class every item has), or press **Pick on page** and click one. The **Selected** list shows what will be scanned. Press **Scan**.
-3. Or press **Add from page** and click one field, or one item of a list, to add just that.
-4. Each field and list gets a card. Give it a **Title**: type it, or press **Pick title on page** and click the text that names it (usually above or to the left of it). **Static** keeps the title as it is. **Dynamic** reads it from the page again each time a page loads; when the page doesn't show it, the last title read is kept and the card warns you.
+1. Press **Whole page** to find every text box, dropdown, date, checkbox and option group on the page, and every list you choose from: cards, `ul`/`li` lists and rows of look-alike boxes such as a date strip. Menus, the header and the footer are left out.
+2. Or press **Only part of the page** to scan only parts of the page. Tick parts in the page's tree (hover a row to see it outlined on the page), type a **CSS selector** and press **Add** (for example `div[id^="2026"]` for date cells whose ids are dates, or a class every item has), or press **Pick on page** and click one. The **Selected** list shows what will be scanned. Press **Scan**.
+3. Or press **Point at one thing** and click one field, or one item of a list, to add just that.
+4. Each field and list gets a card. Give it a **Title**: type it, or press **Pick title on page** and click the text that names it (usually above or to the left of it). **Fixed name** keeps the title as it is. **Name from the page** reads it from the page again each time a page loads; when the page doesn't show it, the last title read is kept and the card warns you.
 5. A list becomes one field: a dropdown whose choices are its items' names. A list with no title on the page (such as the theatres) asks you to name it. If each item is listed by all its text, press **Pick the name inside one item** and click the name, such as a theatre's name in its card. If the list found is not quite right, change its **Item pattern (CSS)** and press **Apply**: the card shows how many items the pattern finds.
-6. Lists that follow other lists: set **Depends on**. A list found inside the cards of another list (the showtimes in each theatre) is set to follow it already. Choosing a list whose cards hold this one's items (a Book Now button in each train's card) ties it to those cards: **How** shows "It sits inside each…", and each choice is made inside the card chosen in that list. For a list the page loads again when another changes (the theatres after the date), choose that list; **Suggest the order from the page** sets each list to follow the one above it. Use **Preview** to choose a date: it is clicked on the page (not recorded) and every list below it is read again.
-7. Untick **Different each run** for a field that should keep its value. The others become module inputs with the names shown.
-8. Press **Done mapping, start recording**, then do the task. A step on a mapped field or list is named by your title, and its value becomes the input you named. **Skip mapping** records as before. While recording, **Scan this page** pauses recording to map the next page.
+6. Lists that follow other lists: set **Shows after choosing**. A list found inside the cards of another list (the showtimes in each theatre) is set to follow it already. Choosing a list whose cards hold this one's items (a Book Now button in each train's card) ties it to those cards: **How** shows "It sits inside each…", and each choice is made inside the card chosen in that list. For a list the page loads again when another changes (the theatres after the date), choose that list; **Suggest the order from the page** sets each list to follow the one above it. Use **Preview** to choose a date: it is clicked on the page (not recorded) and every list below it is read again.
+7. Untick **Ask for this each run** for a field that should keep its value. The others become module inputs with the names shown.
+8. Press **Done, start recording**, then do the task. A step on a mapped field or list is named by your title, and its value becomes the input you named. **Record without this** records as before. While recording, **Find what is on this page** pauses recording to map the next page.
 
 In review, a list that follows another list shows "after Date". In the workflow builder, each list is a single dropdown of its names, with **Map from earlier steps or type…** to map it instead; the showtimes follow the theatre chosen, and a list that follows another one says so.
 
-### Mark a list yourself
+### Choose from a list of cards yourself
 
 Sometimes the recorder guesses wrong. A plain **Click** may appear where you expected **Choose from a list**, or the whole theatre may be chosen instead of its showtime. Tell it what the list is (browser agent 0.5.0 or later):
 
-1. Before you click the item, press **Mark a list** in the extension's side panel.
+1. Before you click the item, press **Choose from a list of cards** in the extension's side panel.
 2. Click one item of the list on the page, such as a showtime. The click doesn't reach the site. Use the Up and Down arrow keys to widen the highlight to the whole item or narrow it.
 3. Click the card it sits in, such as the theatre: point at the theatre's name and press Up until the whole theatre is outlined, then press Enter. Press Esc if the list is not inside a card.
 4. The page briefly outlines every item found, and the side panel says how many, for example "is one of 4 items inside Rakki RGB Laser 4K (one of 12 cards)".
@@ -229,18 +229,18 @@ The names you give become the field names in review and in the workflow builder 
 
 The step saves a pattern for the items and for the cards. Runs read the list with these patterns first, so they keep working when the recorded theatre or showtime is gone the next day. In review, such steps show **marked by you**. In the workflow builder, the patterns appear as **Item pattern (CSS)** and **Card pattern (CSS)** under the step.
 
-If **Mark a list** says no list was found, press it again and click the item itself rather than the text inside it. From browser agent 0.16.0 this is rarely needed: clicking a button's text, or choosing the box of buttons as the card, climbs to the repeated item by itself, the way **Partial page scan** finds it.
+If **Choose from a list of cards** says no list was found, press it again and click the item itself rather than the text inside it. From browser agent 0.16.0 this is rarely needed: clicking a button's text, or choosing the box of buttons as the card, climbs to the repeated item by itself, the way **Only part of the page** finds it.
 
 ### Fill a row for each passenger
 
 Some forms repeat a section, one per person, with a button such as **+ Add Passenger** to add another. Record it once and each run fills as many rows as it is given (browser agent 0.16.0 or later):
 
-1. Press **Start form step** and give it a name, such as "Passenger details".
-2. In the form step, type what each row is in **Each row is a** (such as "Passenger") and press **Repeat for each row**.
+1. Press **Fill several fields together** and give it a name, such as "Passenger details".
+2. In the form step, type what each row is in **Each row is a** (such as "Passenger") and press **Repeat for each person or item**.
 3. On the page, point at the first passenger's row and press Up until the whole row is outlined, then click or press Enter. The click doesn't reach the site.
 4. Click the button that adds a row, such as **+ Add Passenger** (or press Esc if there is none). The side panel says how many rows the page shows and which button adds one.
 5. Fill the first passenger as usual. You can also press **+ Add Passenger** on the page and fill a second one. Fields outside the rows, such as the mobile number, can be filled too.
-6. Press **Finish form step**.
+6. Press **Done with these fields**.
 
 The rows become one step, **Fill a row for each Passenger**, with one column per field of a row. Its passengers are the module input `passengers`, a list with the ones you filled as its default. Fields outside the rows stay in a form step of their own.
 
@@ -256,25 +256,25 @@ Some forms have a second kind of row with its own button, such as **+ Add Infant
 
 1. Repeat the passengers as above, and fill the first passenger.
 2. Still in the same form step, press **+ Add Infant Without Berth** on the page. Clicks are not recorded while a form step is open, so this only shows an infant row.
-3. In **Each row is a**, type "Infant" and press **Repeat for each row** again. Point at the infant row and press Up until the whole row is outlined, then click. Then click **+ Add Infant Without Berth**.
-4. Tick **None is fine** under the infant line, so runs without infants don't stop to ask for one.
-5. Fill the infant row, then press **Finish form step**.
+3. In **Each row is a**, type "Infant" and press **Repeat for each person or item** again. Point at the infant row and press Up until the whole row is outlined, then click. Then click **+ Add Infant Without Berth**.
+4. Tick **Can be left empty** under the infant line, so runs without infants don't stop to ask for one.
+5. Fill the infant row, then press **Done with these fields**.
 
 You get two steps, **Fill a row for each Passenger** (input `passengers`) and **Fill a row for each Infant** (input `infants`, empty unless a run gives some). Each presses its own button as many times as it needs. The passengers step never counts infant rows, even though they sit in the same box.
 
-### Mandatory inputs
+### Values that must be filled in
 
-A value that is **Different each run** can also be ticked **Mandatory** (browser agent 0.16.0 or later), in the scan's field list or in **Add field**. A mandatory input keeps no recorded value. When a run is not given it, the step stops and asks you on its approval card, and the card shows **Submit** (or **Approve**) only once every mandatory field is filled in. Until then it says which ones are left.
+A value that is **Ask for this each run** can also be ticked **Must be filled in** (browser agent 0.16.0 or later), in the scan's field list or in **Fill or click one thing**. A mandatory input keeps no recorded value. When a run is not given it, the step stops and asks you on its approval card, and the card shows **Submit** (or **Approve**) only once every mandatory field is filled in. Until then it says which ones are left.
 
 ### Lists are only what you define
 
-From browser agent 0.13.0, a click becomes **Choose from a list** only in a list you mapped with Scan or marked with **Mark a list**. Two buttons side by side, or cards that happen to look alike, are recorded as plain clicks. To get the old behaviour back, where any click on one of several look-alike items was guessed to be a list, tick **Guess lists** under Auto and Manual in the side panel.
+From browser agent 0.13.0, a click becomes **Choose from a list** only in a list you mapped with Scan or marked with **Choose from a list of cards**. Two buttons side by side, or cards that happen to look alike, are recorded as plain clicks. To get the old behaviour back, where any click on one of several look-alike items was guessed to be a list, tick **Spot lists by themselves** under Auto and Manual in the side panel.
 
-### Group buttons that are not a list
+### Choose one of these buttons that are not a list
 
 Some pages ask you to choose between a few different buttons that aren't a list, such as हिंदी and English on IRCTC, or Accept and Decline. Group them so either one is one step:
 
-1. Press **Group buttons** in the side panel.
+1. Press **Choose one of these buttons** in the side panel.
 2. Click each button of the group on the page. The clicks don't reach the site. Press Esc when you have clicked them all.
 3. **Name this group** opens and lists the buttons. Type what the choice is, such as "Language", and press **Save group**.
 4. Click the button you want, as usual. It is recorded as **Click one of these buttons**, named "Choose Language "English"".
@@ -294,17 +294,17 @@ The Paths step reads the button from the step's output, `nodes.<step>.clicked`, 
 
 ### Dropdowns the site built
 
-Many sites, IRCTC among them, draw their own dropdowns instead of the browser's: closed, such a dropdown is only the choice shown and a small arrow. From browser agent 0.14.0 these are found as **Dropdown** fields by **Full page scan**, **Partial page scan**, **Add from page** and **Add field**, whether they are open or closed, and choosing an option in one is recorded as **Choose in a dropdown**.
+Many sites, IRCTC among them, draw their own dropdowns instead of the browser's: closed, such a dropdown is only the choice shown and a small arrow. From browser agent 0.14.0 these are found as **Dropdown** fields by **Whole page**, **Only part of the page**, **Point at one thing** and **Fill or click one thing**, whether they are open or closed, and choosing an option in one is recorded as **Choose in a dropdown**.
 
-1. Scan the page, or press **Add field** and click the dropdown (its text or its arrow).
+1. Scan the page, or press **Fill or click one thing** and click the dropdown (its text or its arrow).
 2. If a field was found as something else, set its **Kind** to **Dropdown**.
-3. Press **Read items from page**. The dropdown opens, its items are read, and it closes again.
+3. Press **Read the choices now**. The dropdown opens, its items are read, and it closes again.
 4. Choose where the items come from:
-   - **Static** keeps the items read now with the step. Use it for lists that do not change, such as Quota or Class. Runs choose from these items, and the builder and approval card offer them.
-   - **Dynamic** reads the items from the page each time a run gets to the step. Use it for lists that depend on earlier choices. If the value given is not on the page, Jizza asks you and lists what the page shows then.
-5. Tick **Different each run** to make the choice a module input.
+   - **Same choices every time** keeps the items read now with the step. Use it for lists that do not change, such as Quota or Class. Runs choose from these items, and the builder and approval card offer them.
+   - **Fresh choices each run** reads the items from the page each time a run gets to the step. Use it for lists that depend on earlier choices. If the value given is not on the page, Jizza asks you and lists what the page shows then.
+5. Tick **Ask for this each run** to make the choice a module input.
 
-In the workflow builder, a **Choose in a dropdown** step has **Static items** and **Dynamic items**. With **Static items**, you can edit the items or press **Load items from the page**, and the item is a drop-down of them. In review the step shows "dropdown, 4 items kept" or "dropdown, items read on each run".
+In the workflow builder, a **Pick from a dropdown** step has **Static items** and **Dynamic items**. With **Static items**, you can edit the items or press **Load items from the page**, and the item is a drop-down of them. In review the step shows "dropdown, 4 items kept" or "dropdown, items read on each run".
 
 ### Dates in the site's format
 
@@ -361,7 +361,7 @@ By default, a saved recording asks before Jizza runs it on its own and does not 
 
 ### Conditions while recording
 
-While you record for the first time, **Only if shown…** in the side panel starts a condition: click what must be on the page (a pop-up's title), and the steps you record next go inside it. **Otherwise** starts the steps for when it is not there, and **End condition** goes back to steps that always run.
+While you record for the first time, **Only if it pops up…** in the side panel starts a condition: click what must be on the page (a pop-up's title), and the steps you record next go inside it. **Otherwise** starts the steps for when it is not there, and **End “only if”** goes back to steps that always run.
 
 ### Edit a recording
 
@@ -375,19 +375,19 @@ In the side panel:
 
 | Button | What it does |
 | --- | --- |
-| **▶ Next** | Runs the next step and moves the marker past it |
-| **⏩ Run to end** | Runs steps until one fails or the end; **⏸ Pause** stops after the current step |
-| **⏭ Skip** | Moves the marker past a step without running it |
-| **● New action** | Records what you do on the page as new steps where the marker is; **■ Stop adding** ends it |
-| **Run these only if shown…** | Tick the steps that only sometimes apply, press it, then click the element that tells (such as the pop-up's title). They run only when it is on the page |
-| **Add wait** | Waits a number of seconds at the marker |
-| **⋯** on a step | Run from here, Shown/Missing for a condition, Rename, Turn off, Make optional, Pick element again, change the test value, move or delete |
+| **▶ Try the next step** | Runs the next step and moves the marker past it |
+| **⏩ Try the rest** | Runs steps until one fails or the end; **⏸ Pause** stops after the current step |
+| **⏭ Skip this step** | Moves the marker past a step without running it |
+| **● Record new steps here** | Records what you do on the page as new steps where the marker is; **■ Stop adding** ends it |
+| **Run these only if it pops up…** | Tick the steps that only sometimes apply, press it, then click the element that tells (such as the pop-up's title). They run only when it is on the page |
+| **Wait a few seconds** | Waits a number of seconds at the marker |
+| **⋯** on a step | Run from here, Shown/Missing for a condition, Rename, Turn off, Skip if it is not there, Pick element again, change the test value, move or delete |
 
-The lists the saved steps choose in (trains, their classes, dates) come back as mapped lists, folded under the step they came from (browser agent 0.26.0 or later). They keep their names and inputs, so **Depends on** and **Add field › Inside a card of** can offer them again, and a click in one of them while adding steps is a choice in that list.
+The lists the saved steps choose in (trains, their classes, dates) come back as mapped lists, folded under the step they came from (browser agent 0.26.0 or later). They keep their names and inputs, so **Depends on** and **Fill or click one thing › Press it inside the chosen card** can offer them again, and a click in one of them while adding steps is a choice in that list.
 
-**Only if shown…** with no steps ticked puts the next step to run in the condition, so the steps after it run either way. That is how to skip one pop-up step: move the marker to that step, press **Only if shown…**, and click the pop-up's title (click the title text itself, not the whole pop-up). In a condition's **⋯** menu:
+**Only if it pops up…** with no steps ticked puts the next step to run in the condition, so the steps after it run either way. That is how to skip one pop-up step: move the marker to that step, press **Only if it pops up…**, and click the pop-up's title (click the title text itself, not the whole pop-up). In a condition's **⋯** menu:
 
-- **Add Otherwise** adds steps that run only when the element is not there. Press **● New action** with the marker under Otherwise to record them.
+- **Add “If it does not pop up”** adds steps that run only when the element is not there. Press **● Record new steps here** with the marker under it to record them.
 - **Take in next step** and **Leave out last step** move the condition's end, to put more steps inside it or take one out.
 
 A condition with nothing inside does nothing, so saving leaves it out. The side panel marks one in red with **Take in next step** beside it, and the review in Jizza says so too; drag the step it is for between the condition and its end there.

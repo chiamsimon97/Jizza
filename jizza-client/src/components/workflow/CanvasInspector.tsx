@@ -2173,7 +2173,7 @@ function DetailOptionsInput({ index, options, onChange }: {
   </Labelled>
 }
 
-/** The CSS pattern Mark a list saved, editable for a site whose markup changed. */
+/** The CSS pattern Choose from a list of cards saved, editable for a site whose markup changed. */
 function PatternField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: string | undefined) => void }) {
   return <Labelled label={label} hint="Saved when you marked the list while recording; the list is read with it first. Leave empty to find the list by its shape.">
     <input aria-label={label} className={fieldClass} value={typeof value === 'string' ? value : ''}
@@ -2319,7 +2319,7 @@ function FillFormFields({ value, browsers, deviceId, mapping, missing, onChange 
         )
       })}
       <Button type="button" variant="secondary" size="sm" onClick={() => onChange([...rows, { kind: 'text' }])}>
-        <Plus className="h-3.5 w-3.5" /> Add field
+        <Plus className="h-3.5 w-3.5" /> Fill or click one thing
       </Button>
     </Section>
   )

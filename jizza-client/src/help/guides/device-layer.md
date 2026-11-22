@@ -16,7 +16,7 @@ Many pages are one form you fill in and send: a **Create task** page with a Stag
 
 ## Record it
 
-While recording in the browser, press **Map as a layer** in the side panel and click the button that sends the area (such as **Submit**). Jizza finds the box around that button and records one Device layer step with:
+While recording in the browser, press **Capture a whole form** in the side panel and click the button that sends the area (such as **Submit**). Jizza finds the box around that button and records one Device layer step with:
 
 - every field in it, in page order, with the value it has now;
 - the choices of each dropdown, also a site's own dropdown that shows its list only while open (Jizza opens it, reads the list and closes it again);
@@ -25,31 +25,31 @@ While recording in the browser, press **Map as a layer** in the side panel and c
 
 Then click the button on the page yourself to carry on recording. That click is part of the layer step, so it is not recorded twice. Fill the form before you map it if you want its current values kept, or switch the recorder to **Manual** first so your typing is not also recorded as separate steps.
 
-### Edit form and New form layer
+### Edit form and Build a form step by hand
 
 Each Device layer step in the side panel's step list has an **Edit form** button (▤ while recording, **Edit form** in the step's menu while editing a recording). It opens the form as one card:
 
-- **Add field** or **Add button**, then click it on the page.
+- **Fill or click one thing** or **Add button**, then click it on the page.
 - Remove a field or button with ×, and move fields with ↑ and ↓.
 - Change a field's kind (Text box, Dropdown, Type and choose, Date, Checkbox, and so on), its name and its value.
-- Tick **Fixed value** for a value that is the same every run, or leave it as a value for each run and tick **Mandatory** to be asked when it comes out empty. A dropdown can **Follow** a field above it.
+- Tick **Fixed value** for a value that is the same every run, or leave it as a value for each run and tick **Must be filled in** to be asked when it comes out empty. A dropdown can **Follow** a field above it.
 - Choose the button the step clicks under **Then click**, or **Ask each run**.
 
 **Save form** changes the step in Jizza. Values you made into workflow inputs stay with their fields.
 
-When Map as a layer can't find the form by itself, use **New form layer**: the same card starts empty, you pick each field and button on the page, and **Add form step** records the step.
+When Capture a whole form can't find the form by itself, use **Build a form step by hand**: the same card starts empty, you pick each field and button on the page, and **Add form step** records the step.
 
 ## Build it in the workflow builder
 
 Add **Device layer** from the Web Automation steps, then open it.
 
 - **Area of the page**: pick the box that holds the form (optional), and press **Scan this area**. The fields, groups and buttons are filled in for you. Scanning again keeps the buttons you already had, so their paths stay connected.
-- **Fixed values**: filled first, the same on every run. Use **Make it a fixed value** on a field to move it here.
-- **Values for each run**: filled after the fixed values, group by group. Map each one from earlier steps with a data chip, or type it. Tick **Mandatory** to have the run ask you when it comes out empty. Set **Follows** on a dropdown that loads its choices after another field, and press **Load items from the page** to see what it offers now.
+- **Same every run**: filled first, the same on every run. Use **Make it a fixed value** on a field to move it here.
+- **Asked each run**: filled after the fixed values, group by group. Map each one from earlier steps with a data chip, or type it. Tick **Must be filled in** to have the run ask you when it comes out empty. Set **Follows** on a dropdown that loads its choices after another field, and press **Load items from the page** to see what it offers now.
 - **Buttons**: one row per button: its name, its kind and where it is on the page. **Add button** adds one, and with it a new path out of the step.
 - **Button to click**: the button the step clicks at the end. Map it from earlier steps to choose at run time, or leave it empty to be asked each run.
 
-Each field shows only its name, its value and **Mandatory**, so the step is quick to read. Where it is on the page (**Edit selectors**, **Pick on page**), its **Kind**, **Group**, **Follows**, **Load items from the page** and **Make it a fixed value** are under **More options** on that field; the short line beside it says what is set there. A field or button not yet picked on the page opens its **More options** by itself and shows **Needs attention** while folded. **Area of the page** folds the same way once the step has fields.
+Each field shows only its name, its value and **Must be filled in**, so the step is quick to read. Where it is on the page (**Edit selectors**, **Pick on page**), its **Kind**, **Group**, **Follows**, **Load items from the page** and **Make it a fixed value** are under **More options** on that field; the short line beside it says what is set there. A field or button not yet picked on the page opens its **More options** by itself and shows **Needs attention** while folded. **Area of the page** folds the same way once the step has fields.
 
 ## Removing a button
 
