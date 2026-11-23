@@ -223,7 +223,7 @@ describe('palette groups', () => {
       ['Get web page details', 'browser.pageInfo', 1], ['Go forward a page', 'browser.forward', 1],
       ['Go back a page', 'browser.back', 1], ['Close browser', 'browser.close', 1],
       ['Wait', 'browser.wait', 1], ['Screenshot', 'browser.screenshot', 1],
-      ['Answer browser pop-ups', 'browser.handleDialog', 1], ['Drag and drop', 'browser.dragDrop', 1],
+      ['Answer browser pop-ups', 'browser.handleDialog', 1], ['Drag this onto that', 'browser.dragDrop', 1],
       ['Fill several fields', 'browser.fillForm', 1], ['Fill a whole form', 'browser.fillLayer', 1], ['Type a date', 'browser.setDate', 1],
       ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and pick a suggestion', 'browser.chooseOption', 1],
       ['Tick several boxes', 'browser.checkItems', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],

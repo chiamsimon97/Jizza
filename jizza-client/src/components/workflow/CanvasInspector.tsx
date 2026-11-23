@@ -1692,7 +1692,7 @@ function webInputShown(action: string, key: string, inputs: Record<string, unkno
   return (WAIT_INPUTS[mode] ?? []).includes(key)
 }
 
-/** A schema input that takes an element (a locator bundle), such as Drag and drop's "to". */
+/** A schema input that takes an element (a locator bundle), such as Drag this onto that's "to". */
 function isLocatorProperty(property: WebProperty): boolean {
   return typeof property.$ref === 'string' && property.$ref.endsWith('locatorBundle')
 }
