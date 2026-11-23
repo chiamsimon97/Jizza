@@ -108,6 +108,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Set checkbox', 'browser.setCheckbox'),
   web('Get checkbox state', 'browser.getCheckbox'),
   web('Make sure it is on, off or open', 'browser.ensureState'),
+  web('Always close this if it shows up', 'browser.alwaysClose'),
   web('Select item', 'browser.selectItem'),
   web('Read a table', 'browser.extractTable'),
   web('Select radio button', 'browser.selectRadio'),
@@ -158,7 +159,7 @@ export const WEB_ELEMENT_ACTIONS = new Set([
 export const WEB_ELEMENT_INPUT_ACTIONS = new Set([
   ...WEB_ELEMENT_ACTIONS,
   'browser.selectRadio', 'browser.getRadio', 'browser.scroll', 'browser.sendKeys', 'browser.switchTo',
-  'browser.getSelectors', 'browser.wait', 'browser.screenshot',
+  'browser.getSelectors', 'browser.wait', 'browser.screenshot', 'browser.alwaysClose',
 ])
 
 /** The palette's steps, grouped by what they do. Start is added once, automatically. */
