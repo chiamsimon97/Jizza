@@ -156,7 +156,8 @@ public class WorkflowValidator {
       "browser.setCheckbox", "browser.getCheckbox", "browser.ensureState", "browser.setNumber", "browser.selectItem",
       "browser.extractTable", "browser.typeInto", "browser.exists", "browser.setDate",
       "browser.checkItems", "browser.listItems", "browser.clickItem", "browser.pickDate",
-      "browser.chooseOption");
+      "browser.chooseOption", "browser.tableRow", "browser.addTags", "browser.pickDateRange",
+      "browser.pickSlot");
 
   /**
    * A device layer: unique field and button ids and names, a known group for each value asked

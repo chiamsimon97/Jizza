@@ -57,6 +57,16 @@ public final class FakeBrowser {
     handle("browser.setCheckbox@1", this::setCheckbox);
     handle("browser.ensureState@1", this::ensureState);
     handle("browser.setNumber@1", this::setNumber);
+    handle("browser.tableRow@1", this::tableRow);
+    handle("browser.addTags@1", this::addTags);
+    handle("browser.pickDateRange@1", in -> {
+      find(in);
+      return object().put("from", in.path("from").asText()).put("to", in.path("to").asText());
+    });
+    handle("browser.pickSlot@1", in -> {
+      find(in);
+      return object().put("picked", in.path("day").asText() + " " + in.path("time").asText());
+    });
     handle("browser.alwaysClose@1", in -> object().put("watching", in.path("clear").asBoolean() ? 0 : 1).put("closedNow", false));
     handle("browser.dragDrop@1", in -> elementResult(in, "dragged", true).put("dropped", true));
     handle("browser.getCheckbox@1", in -> object().put("checked", find(in).checked));
@@ -195,6 +205,51 @@ public final class FakeBrowser {
     element.value = want;
     double value = Double.parseDouble(want.replace(',', '.'));
     return object().put("value", value).put("changed", changed).put("presses", changed ? 1 : 0).put("kind", "stepper");
+  }
+
+  /** The row of a table element whose cell (in the column, else any) says the value. */
+  private JsonNode tableRow(JsonNode in) {
+    Element table = find(in);
+    String want = in.path("value").asText();
+    String column = in.path("column").asText("");
+    for (int index = 0; index < table.rows.size(); index++) {
+      Map<String, Object> row = table.rows.get(index);
+      boolean match = column.isEmpty()
+          ? row.values().stream().anyMatch(cell -> want.equals(String.valueOf(cell)))
+          : want.equals(String.valueOf(row.get(column)));
+      if (match) {
+        ObjectNode out = object().put("index", index).put("pressed", !in.path("press").asText("").isEmpty());
+        ObjectNode cells = out.putObject("row");
+        row.forEach((name, cell) -> cells.put(name, String.valueOf(cell)));
+        return out;
+      }
+    }
+    ObjectNode error = object();
+    error.putObject("error").put("kind", "item_not_found").put("detail", "No row says " + want).put("url", url);
+    throw new SimDevice.Failure("failed", "No row of the table says \"" + want + "\"", error);
+  }
+
+  private JsonNode addTags(JsonNode in) {
+    Element element = find(in);
+    List<String> items = new ArrayList<>();
+    JsonNode given = in.path("items");
+    if (given.isArray()) given.forEach(item -> items.add(item.asText().trim()));
+    else for (String item : given.asText().split("[,;\\n]")) items.add(item.trim());
+    items.removeIf(String::isEmpty);
+    List<String> have = new ArrayList<>(List.of(element.value.isEmpty() ? new String[0] : element.value.split(", ")));
+    ObjectNode out = object();
+    ArrayNode added = out.putArray("added");
+    ArrayNode already = out.putArray("already");
+    for (String item : items) {
+      if (have.stream().anyMatch(tag -> tag.equalsIgnoreCase(item))) {
+        already.add(item);
+      } else {
+        have.add(item);
+        added.add(item);
+      }
+    }
+    element.value = String.join(", ", have);
+    return out;
   }
 
   private JsonNode selectItem(JsonNode in) {
