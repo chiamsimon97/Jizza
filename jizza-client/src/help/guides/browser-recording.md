@@ -135,6 +135,12 @@ A cookie banner, an offer or a chat bubble may show up on one run and not on the
 
 From that step on, before each step the run closes it if it is showing. If one comes over what a step needs while the step runs, the run closes it and tries the step once more. The step's output lists what was closed. In the builder the step is **Always close this if it shows up**, with the close button and a name for the run's log; **clear** forgets them all. A run closes at most 10 such things.
 
+### Dragging things
+
+Moving a card onto another column, a file onto a folder, or an item to a new place in a list is recorded as one step, **Drag this onto that**, such as Drag "Fix the roof" onto "Done" (browser agent 0.33.0 or later). The recorder catches both kinds of drag: things the browser itself carries, and boards or lists the site moves with the mouse (press the grip ≡, or whatever shows a grab or move pointer, and let go over the new place). A run presses where you did and lets go over the same item or area.
+
+If a drag did not become a step, press **Drag this onto that** in the side panel, click what to drag, then click where to drop it. Then drag it yourself so the page is ready for the next step; that drag is part of the step, not one of its own. On sites that ignore anything but a real mouse, turn on **Trusted input** on the step in the builder.
+
 ### Buttons that stay on, and sections that open
 
 Some buttons switch between two states: Follow and Following, Add to wishlist, Show more. Some sections open and close: an accordion, "More options", a tab. Pressing one again turns it back. So a click on one is recorded as **Make sure it is on** (or **open**), with the state your click left it in (browser agent 0.31.0 or later). On a run, Jizza looks first and presses it only when it is not that way already, so a run never turns off what was already on.
@@ -469,7 +475,7 @@ do more than a recording can:
 | Step or option | What it does |
 | --- | --- |
 | **Handle pop-up dialogs** | Answers the page's OK/Cancel and "type a value" pop-ups for you until the page changes. Put it before the step that makes the pop-up appear, otherwise that step waits for a person. |
-| **Drag and drop** | Drags one element onto another (**Drop onto**). Turn on **Trusted input** for sites that only react to a real mouse. |
+| **Drag this onto that** | Drags one element onto another (**Drop onto**). Turn on **Trusted input** for sites that only react to a real mouse. |
 | **Wait** for text or an address | Waits until some text shows (or goes away), or until the page address contains a value, for example after a payment page redirects. |
 | **Advanced options › Highlight the element** | Outlines the element for a moment before acting, so you can watch what the run does. |
 | **Advanced options › Tries before giving up** | How many times the step runs before it counts as failed (default 3), and how long to wait between tries. |

@@ -127,7 +127,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Wait', 'browser.wait'),
   web('Screenshot', 'browser.screenshot'),
   web('Answer browser pop-ups', 'browser.handleDialog'),
-  web('Drag and drop', 'browser.dragDrop'),
+  web('Drag this onto that', 'browser.dragDrop'),
   web('Fill several fields', 'browser.fillForm'),
   {
     ...web('Fill a whole form', 'browser.fillLayer'),
