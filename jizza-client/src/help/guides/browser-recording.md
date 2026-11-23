@@ -135,6 +135,12 @@ A cookie banner, an offer or a chat bubble may show up on one run and not on the
 
 From that step on, before each step the run closes it if it is showing. If one comes over what a step needs while the step runs, the run closes it and tries the step once more. The step's output lists what was closed. In the builder the step is **Always close this if it shows up**, with the close button and a name for the run's log; **clear** forgets them all. A run closes at most 10 such things.
 
+### Counts with + and −, and sliders
+
+Guests, rooms, tickets and quantities are often a number between a **−** and a **+** button. Pressing **+** three times is recorded as one step, **Set a number with + and −**, such as Set "Adults" to 4 (browser agent 0.34.0 or later). A run reads the number first and presses + or − only as many times as needed, so the same step sets 1 on one run and 4 on the next, and leaves it alone when it is already right. A slider the site built (price, distance) is recorded the same way and moved with the arrow keys; a number box is filled in.
+
+Make the number an input (⇄) to choose it each run. If the page will not go that far (+ turns off at 6), the run stops and says so, such as "It stops at 6, not 9". In **Fill or click one thing** and in form steps, the kind is **Number with + and − or a slider**.
+
 ### Dragging things
 
 Moving a card onto another column, a file onto a folder, or an item to a new place in a list is recorded as one step, **Drag this onto that**, such as Drag "Fix the roof" onto "Done" (browser agent 0.33.0 or later). The recorder catches both kinds of drag: things the browser itself carries, and boards or lists the site moves with the mouse (press the grip ≡, or whatever shows a grab or move pointer, and let go over the new place). A run presses where you did and lets go over the same item or area.
