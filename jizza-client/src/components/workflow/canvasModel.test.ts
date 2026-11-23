@@ -214,7 +214,7 @@ describe('palette groups', () => {
     expect(WEB_PALETTE.map(e => [e.label, e.config?.action, e.config?.version])).toEqual([
       ['Open URL', 'browser.open', 2], ['Click', 'browser.click', 2], ['Point at it', 'browser.hover', 1],
       ['Type text', 'browser.setText', 1], ['Read text', 'browser.getText', 1], ['Set checkbox', 'browser.setCheckbox', 1],
-      ['Get checkbox state', 'browser.getCheckbox', 1], ['Make sure it is on, off or open', 'browser.ensureState', 1], ['Select item', 'browser.selectItem', 1],
+      ['Get checkbox state', 'browser.getCheckbox', 1], ['Make sure it is on, off or open', 'browser.ensureState', 1], ['Always close this if it shows up', 'browser.alwaysClose', 1], ['Select item', 'browser.selectItem', 1],
       ['Read a table', 'browser.extractTable', 1], ['Select radio button', 'browser.selectRadio', 1],
       ['Get radio button state', 'browser.getRadio', 1], ['Scroll', 'browser.scroll', 1],
       ['Send hotkeys', 'browser.sendKeys', 1], ['Type text key by key', 'browser.typeInto', 1],

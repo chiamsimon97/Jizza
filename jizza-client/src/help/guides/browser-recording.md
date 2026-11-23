@@ -129,6 +129,12 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | Close the last tab | Close browser |
 | Check or read the page, Read a table, Point at it to open a menu (side panel) | Check it is on the page or Read text, Read a table, Point at it |
 
+### Pop-ups that come at any time
+
+A cookie banner, an offer or a chat bubble may show up on one run and not on the next, or halfway through. Press **Always close this if it shows up** in the side panel and click the button that closes it (×, Close, No thanks, Accept), then close it yourself; that click is not a step of its own (browser agent 0.32.0 or later).
+
+From that step on, before each step the run closes it if it is showing. If one comes over what a step needs while the step runs, the run closes it and tries the step once more. The step's output lists what was closed. In the builder the step is **Always close this if it shows up**, with the close button and a name for the run's log; **clear** forgets them all. A run closes at most 10 such things.
+
 ### Buttons that stay on, and sections that open
 
 Some buttons switch between two states: Follow and Following, Add to wishlist, Show more. Some sections open and close: an accordion, "More options", a tab. Pressing one again turns it back. So a click on one is recorded as **Make sure it is on** (or **open**), with the state your click left it in (browser agent 0.31.0 or later). On a run, Jizza looks first and presses it only when it is not that way already, so a run never turns off what was already on.

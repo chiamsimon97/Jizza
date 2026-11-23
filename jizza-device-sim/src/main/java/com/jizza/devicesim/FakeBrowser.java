@@ -56,6 +56,7 @@ public final class FakeBrowser {
     handle("browser.getText@1", this::getText);
     handle("browser.setCheckbox@1", this::setCheckbox);
     handle("browser.ensureState@1", this::ensureState);
+    handle("browser.alwaysClose@1", in -> object().put("watching", in.path("clear").asBoolean() ? 0 : 1).put("closedNow", false));
     handle("browser.getCheckbox@1", in -> object().put("checked", find(in).checked));
     handle("browser.selectItem@1", this::selectItem);
     handle("browser.extractTable@1", this::extractTable);
