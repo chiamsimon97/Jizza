@@ -217,7 +217,7 @@ describe('palette groups', () => {
       ['Get checkbox state', 'browser.getCheckbox', 1], ['Make sure it is on, off or open', 'browser.ensureState', 1], ['Set a number with + and −', 'browser.setNumber', 1], ['Always close this if it shows up', 'browser.alwaysClose', 1], ['Select item', 'browser.selectItem', 1],
       ['Read a table', 'browser.extractTable', 1], ['Select radio button', 'browser.selectRadio', 1],
       ['Get radio button state', 'browser.getRadio', 1], ['Scroll', 'browser.scroll', 1],
-      ['Send hotkeys', 'browser.sendKeys', 1], ['Type text key by key', 'browser.typeInto', 1],
+      ['Press a key', 'browser.sendKeys', 1], ['Type text key by key', 'browser.typeInto', 1],
       ['Check it is on the page', 'browser.exists', 1], ['Switch to', 'browser.switchTo', 1],
       ['Refresh page', 'browser.refresh', 1], ['Get element selectors', 'browser.getSelectors', 1],
       ['Get web page details', 'browser.pageInfo', 1], ['Go forward a page', 'browser.forward', 1],

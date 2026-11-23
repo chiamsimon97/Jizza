@@ -113,12 +113,12 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | What you do | Step you get |
 | --- | --- |
 | Type an address or open a bookmark | Open URL |
-| Click a button or link (also double-click, Ctrl/Shift-click) | Click, on the control itself |
+| Click a button or link (also double-click, right-click, Ctrl/Shift-click) | Click, on the control itself: Double-click or Right-click when you did that |
 | Click one card of a list you mapped (Scan) or marked (Choose from a list of cards): a movie, a date in a date strip, a showtime | Choose from a list, with the item you clicked |
 | Click one of the buttons you grouped (Choose one of these buttons) | Click one of these buttons, with the button you clicked |
 | Type in a field | Set text, one step per field when you leave it |
 | Type a password, one-time code or card number | Set text marked as a password; the value is never read |
-| Press a shortcut, Escape, or an arrow key outside a field | Send hotkeys, for example `Control+K` |
+| Press a shortcut, Escape, or an arrow key outside a field | Press a key, for example `Control+K` |
 | Tick or untick a box | Set checkbox |
 | Press a button that stays on (Follow, Add to wishlist), or open a section, a tab or "More options" | Make sure it is on, off or open: a run presses it only when it is not that way already |
 | Choose from a drop-down or a custom list | Select item |
@@ -128,6 +128,15 @@ Each thing you do becomes one named step. Steps inside frames (embedded pages) a
 | A popup opens, or you move to another tab | Switch to |
 | Close the last tab | Close browser |
 | Check or read the page, Read a table, Point at it to open a menu (side panel) | Check it is on the page or Read text, Read a table, Point at it |
+
+### Keys, right-clicks and double-clicks
+
+Keys you press, right-clicks (a file or row whose site opens its own menu) and double-clicks (open a file, rename, edit a cell) are recorded as you do them. In **Record only what I add**, or when one was missed, add them from the side panel (browser agent 0.35.0 or later):
+
+- **Press a key**: press the key or shortcut in the box (Control+K), or choose a common one (Enter, Escape, Tab, Shift+Tab, arrow keys), then **Add**. The run presses it on the page where the cursor is.
+- **Right-click** and **Double-click**: click what to press on the page. Then do it yourself if the page should go on; that press is part of the step, not one of its own.
+
+In the builder these are **Press a key**, and **Click** with **button** set to right or **clickCount** set to 2.
 
 ### Pop-ups that come at any time
 

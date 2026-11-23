@@ -115,7 +115,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Select radio button', 'browser.selectRadio'),
   web('Get radio button state', 'browser.getRadio'),
   web('Scroll', 'browser.scroll'),
-  web('Send hotkeys', 'browser.sendKeys'),
+  web('Press a key', 'browser.sendKeys'),
   web('Type text key by key', 'browser.typeInto'),
   web('Check it is on the page', 'browser.exists'),
   web('Switch to', 'browser.switchTo'),
