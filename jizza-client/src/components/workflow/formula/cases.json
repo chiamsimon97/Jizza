@@ -10,7 +10,8 @@
         { "sku": "B", "status": "due", "amount": 12.5 },
         { "sku": "C", "status": "paid", "amount": 10 }
       ],
-      "customer": { "name": "Asha", "email": "asha@x.in", "phone": "99" }
+      "customer": { "name": "Asha", "email": "asha@x.in", "phone": "99" },
+      "mail": "Hi Asha, <a href=\"https://news.x.in/u?id=9\">News</a>. Sign in: <https://app.x.in/magic?token=a1b2&amp;next=%2Fhome>."
     },
     "nodes": { "fetch": { "status": 200, "body": { "price": 1500 } } },
     "vars": { "tier": "gold" }
@@ -21,6 +22,9 @@
     { "formula": "fmt:upper(vars.tier)", "result": "GOLD" },
     { "formula": "input.total.toNumber() > 1000 and vars.tier == 'gold'", "result": true },
     { "formula": "nodes.fetch.body.price * 2", "result": 3000 },
+    { "formula": "input.mail.extractLink()", "result": "https://news.x.in/u?id=9" },
+    { "formula": "input.mail.extractLink('app.x.in')", "result": "https://app.x.in/magic?token=a1b2&next=%2Fhome" },
+    { "formula": "extractLink(input.name)", "result": "" },
     { "formula": "nodes.fetch.status == 200 ? 'ok' : 'failed'", "result": "ok" },
     { "formula": "input.due.addDays(3).formatDate('dd MMM yyyy')", "result": "24 Oct 2026" },
     { "formula": "input.lines.where('status', 'paid').pluck('sku')", "result": ["A", "C"] },

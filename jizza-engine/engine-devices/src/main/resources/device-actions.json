@@ -1083,6 +1083,16 @@
       "defaultTimeoutSec":1200
     },
     {
+      "action":"browser.signInLink","version":1,"capability":"browser","actionType":"READ","title":"Open the sign-in link from my email","description":"Opens the sign-in link a site emails you (a magic link) in the browser. Map the link from an earlier step, such as an email connector's search read with extractLink; left empty, it asks you to paste the link on a card. The link is kept secret and never shown in the run.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"expectOrigin":{"type":"string","maxLength":300,"description":"The site the step was recorded on: it refuses to act while the tab shows another one."},"link":{"type":"string","maxLength":4000,"description":"The sign-in link. Empty: you are asked to paste it."},"linkContains":{"type":"string","maxLength":500,"description":"The link must contain this (the site's address), so a wrong link is never opened."},"message":{"type":"string","maxLength":300,"default":"Paste the sign-in link from your email."},"timeoutMs":{"type":"integer","default":600000,"minimum":10000,"maximum":1800000},"screenshotOnError":{"type":"boolean","default":true}},"required":[]},
+      "output":{"type":"object","properties":{"opened":{"type":"boolean"},"from":{"enum":["step","card","browser"]},"url":{"type":"string"}},"required":["opened"]},"conditions":["site"],"platforms":["browser"],"defaultTimeoutSec":1200
+    },
+    {
+      "action":"browser.signInWindow","version":1,"capability":"browser","actionType":"READ","title":"Sign in through the window that opens","description":"Follows a \"Sign in with ...\" window the step before opened. When you are already signed in there, it closes by itself and the run goes on; otherwise it comes to the front and you sign in, and the run goes on when it closes or you press Done. Jizza types nothing in it.",
+      "input":{"type":"object","properties":{"session":{"type":"string"},"expectOrigin":{"type":"string","maxLength":300,"description":"The site the step was recorded on: it refuses to act while the tab shows another one."},"appearMs":{"type":"integer","default":10000,"minimum":0,"maximum":60000,"description":"How long to wait for the window to open."},"closeMs":{"type":"integer","default":5000,"minimum":0,"maximum":60000,"description":"How long the window may take to close by itself."},"message":{"type":"string","maxLength":300,"default":"Finish signing in in the window that opened. The run carries on when it closes."},"timeoutMs":{"type":"integer","default":600000,"minimum":10000,"maximum":1800000},"screenshotOnError":{"type":"boolean","default":false}},"required":[]},
+      "output":{"type":"object","properties":{"how":{"enum":["closed_itself","closed","done","no_window"]}},"required":["how"]},"conditions":["site"],"platforms":["browser"],"defaultTimeoutSec":1200
+    },
+    {
       "action": "browser.runRecording",
       "version": 1,
       "capability": "browser",

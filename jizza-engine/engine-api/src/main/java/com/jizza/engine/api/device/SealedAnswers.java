@@ -18,8 +18,9 @@ public final class SealedAnswers {
   /** An uncompressed P-256 point, base64url: 65 bytes is 87 characters. */
   private static final Pattern KEY = Pattern.compile("[A-Za-z0-9_-]{87}");
   private static final Pattern IV = Pattern.compile("[A-Za-z0-9_-]{16}");
-  /** 200 characters of answer at most 4 bytes each, plus the 16-byte tag. */
-  private static final Pattern CT = Pattern.compile("[A-Za-z0-9_-]{22,1400}");
+  /** 4,000 characters of answer (a pasted sign-in link) at most 4 bytes each, plus the 16-byte
+   *  tag. */
+  private static final Pattern CT = Pattern.compile("[A-Za-z0-9_-]{22,21400}");
 
   public static boolean isKey(String value) {
     return value != null && KEY.matcher(value).matches();

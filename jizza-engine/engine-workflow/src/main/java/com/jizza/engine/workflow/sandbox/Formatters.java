@@ -116,6 +116,25 @@ public final class Formatters {
     return m.find() ? m.group() : "";
   }
 
+  /** The first web link in the text (an email's body, a connector's answer), or empty. */
+  public static String extractLink(Object s) { return extractLink(s, null); }
+
+  /**
+   * The first web link in the text that contains {@code part} (a site's address, "sign-in"), or
+   * empty. A link as written in an email's HTML is read too: {@code &amp;} becomes {@code &}, and
+   * the quote, bracket or full stop around it is left out.
+   */
+  public static String extractLink(Object s, Object part) {
+    String wanted = text(part).toLowerCase(Locale.ROOT);
+    var m = java.util.regex.Pattern.compile("https?://[^\\s\"'<>()\\[\\]{}|\\\\^`]+")
+        .matcher(text(s).replace("&amp;", "&").replace("\\u0026", "&").replace("\\/", "/"));
+    while (m.find()) {
+      String link = m.group().replaceAll("[.,;:!?]+$", "");
+      if (wanted.isEmpty() || link.toLowerCase(Locale.ROOT).contains(wanted)) return link;
+    }
+    return "";
+  }
+
   /** The first number in the text, or null. */
   public static Double extractNumber(Object s) {
     var m = java.util.regex.Pattern.compile("-?\\d+(?:[.,]\\d+)*").matcher(text(s));
