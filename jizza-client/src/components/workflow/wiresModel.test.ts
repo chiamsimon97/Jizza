@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fromGraph, toGraph, type CanvasGraph } from './canvasModel'
 import {
-  CARD_H, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route, setWireLabel, stepNumbers,
+  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, keepPlaces, placeStep, placedAt, previewPath, rewire, rewireTargets, route, setWireLabel, stepNumbers,
   wireKey, wireLabel, wiresLayout,
 } from './wiresModel'
 
@@ -169,5 +169,22 @@ describe('wiresModel', () => {
     expect(rewireTargets(locked, 'ok', 'approved', locked.edges.find(e => e.from === 'ok' && e.branch === 'approved')).has('skip')).toBe(false)
     expect(rewireTargets(locked, 'ok', 'approved', locked.edges.find(e => e.from === 'ok' && e.branch === 'approved')).has('tell')).toBe(true)
     expect(rewireTargets(locked, 'start', null, locked.edges.find(e => e.from === 'start')).has('ok')).toBe(true)
+  })
+
+  it('keeps every step where it is drawn through an edit, and puts an added step in a free spot', () => {
+    const g = booking()
+    const at = wiresLayout(g).at
+    const rewired = keepPlaces(g, rewire(g, 'ok', 'rejected', 'tell', g.edges.find(e => e.branch === 'rejected')), at)
+    for (const n of g.nodes) expect(placedAt(rewired.nodes.find(m => m.id === n.id)!.config)).toEqual(at.get(n.id))
+    expect(wiresLayout(rewired).at.get('skip')).toEqual(at.get('skip'))
+
+    const inserted = keepPlaces(g, dropOnStep(g, 'hold', 'NOTIFY')!.graph, at)
+    const added = inserted.nodes.find(n => !g.nodes.some(m => m.id === n.id))!
+    const spot = placedAt(added.config)!
+    for (const n of g.nodes) {
+      const b = at.get(n.id)!
+      expect(Math.abs(b.x - spot.x) >= CARD_W || Math.abs(b.y - spot.y) >= CARD_H).toBe(true)
+    }
+    expect(placedAt(inserted.nodes.find(n => n.id === 'tell')!.config)).toEqual(at.get('tell'))
   })
 })

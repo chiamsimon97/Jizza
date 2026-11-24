@@ -43,6 +43,42 @@ export function placeStep(graph: CanvasGraph, id: string, at: Box): CanvasGraph 
   return updateNode(graph, id, { config: { ...node.config, wiresAt: { x: snap(at.x), y: snap(at.y) } } })
 }
 
+/**
+ * Keeps every step where it is on the board after an edit, so wiring, re-wiring, adding or deleting
+ * never moves the other steps: only dragging a step or Auto align does. {@code at} is where each step
+ * is drawn now. A step the edit added goes where the automatic layout would put it, or, if that
+ * spot is taken, the nearest free spot beside or below it.
+ */
+export function keepPlaces(before: CanvasGraph, after: CanvasGraph, at: Map<string, Box>): CanvasGraph {
+  const had = new Set(before.nodes.map(n => n.id))
+  const pinned = new Map<string, Box>()
+  let nodes = after.nodes.map(n => {
+    const box = placedAt(n.config) ?? (had.has(n.id) ? at.get(n.id) : undefined)
+    if (!box) return n
+    pinned.set(n.id, box)
+    return placedAt(n.config) ? n : { ...n, config: { ...n.config, wiresAt: { x: box.x, y: box.y } } }
+  })
+  const added = nodes.filter(n => !had.has(n.id) && !pinned.has(n.id))
+  if (added.length) {
+    const auto = wiresLayout({ ...after, nodes }).at
+    const taken = (b: Box) => [...pinned.values()].some(o => Math.abs(o.x - b.x) < CARD_W + 16 && Math.abs(o.y - b.y) < CARD_H + 24)
+    for (const n of added) {
+      const base = auto.get(n.id)
+      if (!base) continue
+      let spot = base
+      search: for (let row = 0; row < 40; row++) {
+        for (const col of [0, 1, -1, 2, -2]) {
+          const b = { x: base.x + col * COL, y: base.y + row * (ROW / 2) }
+          if (b.x >= 8 && !taken(b)) { spot = b; break search }
+        }
+      }
+      pinned.set(n.id, spot)
+      nodes = nodes.map(m => (m.id === n.id ? { ...m, config: { ...m.config, wiresAt: { x: spot.x, y: spot.y } } } : m))
+    }
+  }
+  return { ...after, nodes }
+}
+
 /** Whether any step was moved by hand, so lining everything up again would change something. */
 export const isArranged = (graph: CanvasGraph) => graph.nodes.some(n => placedAt(n.config) !== null)
 

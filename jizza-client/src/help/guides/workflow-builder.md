@@ -3,7 +3,7 @@ title: The workflow builder
 summary: Build a workflow by dropping steps onto steps and wires. Undo, copy and paste, full screen, and the keys for each.
 section: Automation
 order: 24
-updated: 2026-11-21
+updated: 2026-11-24
 ---
 
 ## One view
@@ -50,6 +50,7 @@ The keys work once you have clicked in the builder, and not while you are typing
 ## See the whole workflow
 
 - **Full screen** (top right) gives the builder the whole window. Esc goes back.
+- Steps stay where they are when you wire, re-wire, add or delete steps. Only dragging a step or **Auto align** moves them. A new step goes in the nearest free spot.
 - **Auto align** lines every step up top to bottom again after you have moved some by hand.
 - **Preview path** walks the wires from Start without running anything.
 - After a run, the steps it went through are marked **Done**, **Running**, **Waiting for you**, **Failed** or **Skipped**, and arrows follow its path. A folded group shows how its steps did. **Hide on wires** turns this off.
