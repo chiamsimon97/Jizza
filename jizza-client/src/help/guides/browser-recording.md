@@ -150,6 +150,22 @@ Guests, rooms, tickets and quantities are often a number between a **−** and a
 
 Make the number an input (⇄) to choose it each run. If the page will not go that far (+ turns off at 6), the run stops and says so, such as "It stops at 6, not 9". In **Fill or click one thing** and in form steps, the kind is **Number with + and − or a slider**.
 
+### A button in one row of a table
+
+Pressing **View**, **Edit** or **Cancel** (or an order's own link) in one row of a table is recorded as one step, **Act on a table row**, such as Press "Cancel" in the row where Order is "A-1002" (browser agent 0.36.0 or later). The row is found by what one of its cells says, not by where it sits, so the step still finds order A-1002 when the table is sorted another way, has a new page, or gains rows. Make the value an input (⇄) to act on a different row each run. Leave **press** empty to only read the row: its cells come out by column name for later steps. If no row says it, or several do, the run stops and shows the values it found.
+
+### Several picks and tags
+
+In a list where several can be picked (languages, interests), every pick made while it is open becomes one **Select item** step with the picks listed, and a run leaves exactly those picked, unpicking the rest. In a tag box (skills, labels, recipients), words typed and confirmed with **Enter** that turn into chips are recorded as one **Add tags** step; a run types each tag and presses Enter, and skips tags that are already there. Make the tags an input to add other ones each run, with commas between them.
+
+### Date ranges and time slots
+
+A check-in date followed by a check-out date (from and to, start and end, depart and return) is recorded as one step, **Pick a date range**, with both dates as inputs. In the builder it can also pick both days in one calendar the site opens.
+
+**Pick a time slot** presses a time under a day in a grid of free times (appointments, classes, delivery windows). Give the day as the grid names it (Wed, 25 Nov) or as a date, and the time as the clock shows it; 14:00 also finds 2:00 PM. A day shown as a tab is pressed first. If that day has no such time, the run stops and lists the times it has.
+
+In **Fill or click one thing** and in form steps, the kinds are **Tags typed one by one**, **Pick several in a list**, **From and to dates** (write 2026-12-01 to 2026-12-05) and **Day and time slot** (write Wed 25 at 10:30).
+
 ### Dragging things
 
 Moving a card onto another column, a file onto a folder, or an item to a new place in a list is recorded as one step, **Drag this onto that**, such as Drag "Fix the roof" onto "Done" (browser agent 0.33.0 or later). The recorder catches both kinds of drag: things the browser itself carries, and boards or lists the site moves with the mouse (press the grip ≡, or whatever shows a grab or move pointer, and let go over the new place). A run presses where you did and lets go over the same item or area.

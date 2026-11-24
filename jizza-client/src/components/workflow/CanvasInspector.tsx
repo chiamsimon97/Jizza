@@ -2229,7 +2229,7 @@ function WebSchemaField({ name, property, value, required, mapping, label: named
   </Labelled>
 }
 
-type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox' | 'number'
+type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox' | 'number' | 'tags' | 'several' | 'daterange' | 'slot'
 type FormFieldRow = { element?: unknown; kind: FormFieldKind; value?: unknown; label?: string; required?: boolean; format?: string }
 
 const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] = [
@@ -2242,6 +2242,10 @@ const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] =
   { kind: 'datepicker', label: 'Calendar the site draws', hint: 'The date to pick. Pick the field that opens the calendar.' },
   { kind: 'combobox', label: 'Search and choose', hint: 'What to type; the suggestion that matches is chosen.' },
   { kind: 'number', label: 'Number with + and − or a slider', hint: 'The number to set, such as 2. Pick the count, the slider or the box.' },
+  { kind: 'tags', label: 'Tags typed one by one', hint: 'The tags, with commas between them, such as design, travel. Pick the box they are typed into.' },
+  { kind: 'several', label: 'Pick several in a list', hint: 'The choices, with commas between them. Exactly these are left picked.' },
+  { kind: 'daterange', label: 'From and to dates', hint: 'Such as 2026-12-01 to 2026-12-05. Pick what opens the calendar.' },
+  { kind: 'slot', label: 'Day and time slot', hint: 'Such as Wed 25 at 10:30. Pick the grid of days and times.' },
 ]
 
 /** Same test as the step's check before saving: picked on the page, or mapped. */

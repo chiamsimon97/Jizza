@@ -215,7 +215,7 @@ describe('palette groups', () => {
       ['Open URL', 'browser.open', 2], ['Click', 'browser.click', 2], ['Point at it', 'browser.hover', 1],
       ['Type text', 'browser.setText', 1], ['Read text', 'browser.getText', 1], ['Set checkbox', 'browser.setCheckbox', 1],
       ['Get checkbox state', 'browser.getCheckbox', 1], ['Make sure it is on, off or open', 'browser.ensureState', 1], ['Set a number with + and −', 'browser.setNumber', 1], ['Always close this if it shows up', 'browser.alwaysClose', 1], ['Select item', 'browser.selectItem', 1],
-      ['Read a table', 'browser.extractTable', 1], ['Select radio button', 'browser.selectRadio', 1],
+      ['Read a table', 'browser.extractTable', 1], ['Act on a table row', 'browser.tableRow', 1], ['Select radio button', 'browser.selectRadio', 1],
       ['Get radio button state', 'browser.getRadio', 1], ['Scroll', 'browser.scroll', 1],
       ['Press a key', 'browser.sendKeys', 1], ['Type text key by key', 'browser.typeInto', 1],
       ['Check it is on the page', 'browser.exists', 1], ['Switch to', 'browser.switchTo', 1],
@@ -226,7 +226,8 @@ describe('palette groups', () => {
       ['Answer browser pop-ups', 'browser.handleDialog', 1], ['Drag this onto that', 'browser.dragDrop', 1],
       ['Fill several fields', 'browser.fillForm', 1], ['Fill a whole form', 'browser.fillLayer', 1], ['Type a date', 'browser.setDate', 1],
       ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and pick a suggestion', 'browser.chooseOption', 1],
-      ['Tick several boxes', 'browser.checkItems', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],
+      ['Tick several boxes', 'browser.checkItems', 1], ['Add tags', 'browser.addTags', 1],
+      ['Pick a date range', 'browser.pickDateRange', 1], ['Pick a time slot', 'browser.pickSlot', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],
       ['Read a list', 'browser.listItems', 1], ['Ask me', 'browser.ask', 1],
       ['Hand over to me', 'browser.handOff', 1],
     ])

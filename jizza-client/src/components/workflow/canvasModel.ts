@@ -112,6 +112,7 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Always close this if it shows up', 'browser.alwaysClose'),
   web('Select item', 'browser.selectItem'),
   web('Read a table', 'browser.extractTable'),
+  web('Act on a table row', 'browser.tableRow'),
   web('Select radio button', 'browser.selectRadio'),
   web('Get radio button state', 'browser.getRadio'),
   web('Scroll', 'browser.scroll'),
@@ -141,6 +142,9 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Pick a date in a calendar', 'browser.pickDate'),
   web('Type and pick a suggestion', 'browser.chooseOption'),
   web('Tick several boxes', 'browser.checkItems'),
+  web('Add tags', 'browser.addTags'),
+  web('Pick a date range', 'browser.pickDateRange'),
+  web('Pick a time slot', 'browser.pickSlot'),
   web('Choose from a list', 'browser.clickItem'),
   web('Pick from a dropdown', 'browser.selectOption'),
   web('Read a list', 'browser.listItems'),
@@ -154,6 +158,7 @@ export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.getCheckbox', 'browser.ensureState', 'browser.setNumber', 'browser.selectItem', 'browser.extractTable', 'browser.typeInto', 'browser.exists',
   'browser.dragDrop', 'browser.setDate', 'browser.checkItems', 'browser.clickItem', 'browser.listItems',
   'browser.pickDate', 'browser.chooseOption', 'browser.selectOption', 'browser.listOptions',
+  'browser.tableRow', 'browser.addTags', 'browser.pickDateRange', 'browser.pickSlot',
 ])
 
 /** Actions that can use an element, including those where it is an optional targeting mode. */
