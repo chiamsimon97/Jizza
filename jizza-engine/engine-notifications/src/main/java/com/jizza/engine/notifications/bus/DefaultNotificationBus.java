@@ -201,8 +201,8 @@ public class DefaultNotificationBus implements NotificationBus {
     return toDto(entity);
   }
 
-  /** Longest answer passed on to a device (a CAPTCHA's text, a code, a short value). */
-  static final int MAX_DEVICE_ANSWER = 200;
+  /** Longest answer passed on to a device (a CAPTCHA's text, a code, a pasted sign-in link). */
+  static final int MAX_DEVICE_ANSWER = 4_000;
 
   private NotificationDto answerPermission(NotificationEntity entity, Answer answer) {
     JsonNode help = entity.getContext() == null ? null : entity.getContext().get("deviceHelp");

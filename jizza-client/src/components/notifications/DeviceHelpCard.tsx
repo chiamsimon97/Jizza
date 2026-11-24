@@ -78,7 +78,7 @@ export function DeviceHelpCard({ help, expiresAt, open, busy, onSend, onDone, on
           <label htmlFor={`help-${help.commandId}`} className="text-xs font-medium text-gray-700 dark:text-gray-300">Your answer</label>
           <div className="flex gap-2">
             <input id={`help-${help.commandId}`} data-testid="device-help-answer" autoFocus autoComplete="off" spellCheck={false}
-              type={masked ? 'password' : 'text'} value={answer} maxLength={200}
+              type={masked ? 'password' : 'text'} value={answer} maxLength={4000}
               onChange={e => setAnswer(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); send() } }}
               className={fieldClass} />

@@ -148,6 +148,8 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Write formatted text', 'browser.setRichText'),
   web('Answer a grid of choices', 'browser.answerGrid'),
   web('Let the site fill this', 'browser.siteFills'),
+  web('Open the sign-in link from my email', 'browser.signInLink'),
+  web('Sign in through the window that opens', 'browser.signInWindow'),
   web('Choose from a list', 'browser.clickItem'),
   web('Pick from a dropdown', 'browser.selectOption'),
   web('Read a list', 'browser.listItems'),

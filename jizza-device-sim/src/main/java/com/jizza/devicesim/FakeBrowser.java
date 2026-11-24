@@ -84,6 +84,13 @@ public final class FakeBrowser {
       String value = element.value.isEmpty() ? in.path("expect").asText("") : element.value;
       return object().put("value", value).put("filled", true);
     });
+    handle("browser.signInLink@1", in -> {
+      String link = in.path("link").asText("").strip();
+      if (!link.startsWith("http")) throw new SimDevice.Failure("bad_input", "No sign-in link was given");
+      url = link.contains("?") ? link.substring(0, link.indexOf('?')) : link;
+      return object().put("opened", true).put("from", "step").put("url", url);
+    });
+    handle("browser.signInWindow@1", in -> object().put("how", "closed_itself"));
     handle("browser.pickSlot@1", in -> {
       find(in);
       return object().put("picked", in.path("day").asText() + " " + in.path("time").asText());

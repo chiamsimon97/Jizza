@@ -80,7 +80,8 @@ public class CommandBroker implements DeviceCommands {
 
   public static final String RUN_STEPS = "browser.runSteps";
   private static final java.util.Set<String> NOT_BATCHED = java.util.Set.of(
-      RUN_STEPS, "browser.record", "browser.pickElement", "browser.ask", "browser.handOff");
+      RUN_STEPS, "browser.record", "browser.pickElement", "browser.ask", "browser.handOff",
+      "browser.signInLink", "browser.signInWindow");
 
   private static final Logger log = LoggerFactory.getLogger(CommandBroker.class);
 

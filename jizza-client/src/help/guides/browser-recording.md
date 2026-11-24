@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-10
+updated: 2026-11-24
 ---
 
 ## What it is
@@ -498,6 +498,23 @@ Some pages need a person: a CAPTCHA, a one-time code, a "confirm it's you" check
 4. The step runs again from the start and the run carries on.
 
 If nobody responds before the step's time limit, the run stops as timed out. Cancelling the run also ends the wait.
+
+### Sign-in links from email
+
+Some sites sign you in with a link they email you (a "magic link") instead of a password. Such a link works once, so a recording never keeps it: when you paste a sign-in link into the address bar while recording, the step becomes **Open the sign-in link from my email** (browser agent 0.38.0 or later). The step only records which site the link must be for.
+
+On a run, the step needs the new link:
+
+- **From your email, by itself.** Add your email under [Connectors](/connectors) (Gmail, for example). Before the sign-in step, add a **Wait** of a minute, then the connector's step that searches your mail for the site's latest sign-in email. In the sign-in step, set **link** to the link in that email, for example `{{ nodes.search_mail.extractLink('example.com') }}`. `extractLink` finds the first web link in any text, or the first one with the part you give.
+- **From you.** Leave **link** empty, and the run asks you on a card to paste the link from your email.
+
+The link is handled like a password: it is never shown in the run or kept anywhere, and the run only opens it on the site the step was recorded for.
+
+### "Sign in with ..." windows
+
+When a site signs you in with another account (Sign in with Google, Continue with Apple, your company's single sign-on), it opens a window for that account. Nothing you do in that window is recorded. The recording gets one step instead, **Sign in through the window that opens**, right after the click that opened it.
+
+On a run, when you are already signed in to that account in the browser, the window closes by itself and the run goes on. Otherwise the window comes to the front, you get a card, and you sign in there yourself; the run carries on once the window closes, or when you press **Done**.
 
 ## Safety and privacy
 
