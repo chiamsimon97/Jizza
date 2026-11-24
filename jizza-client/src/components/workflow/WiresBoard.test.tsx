@@ -221,6 +221,19 @@ describe('WiresBoard', () => {
       expect(last().edges).toContainEqual({ from: 'hold', to: 'loose', branch: null })
     })
 
+    it('leaves every step where it is when a wire is moved', () => {
+      const graph = withLoose()
+      const before = wiresLayout(graph).at
+      const { view, last } = show(graph)
+      flat(view)
+      const [x, y] = middle('loose', graph)
+      pointer('pointerDown', screen.getByRole('button', { name: /"rejected" exit of OK these seats/ }), 10, 10)
+      pointer('pointerMove', window, x, y)
+      pointer('pointerUp', window, x, y)
+      const after = wiresLayout(last()).at
+      for (const [id, box] of before) expect(after.get(id)).toEqual(box)
+    })
+
     it('refuses a wire that would make a loop, and says why', () => {
       const { view, onChange } = show()
       flat(view)

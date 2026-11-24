@@ -3,7 +3,7 @@ title: Wiring steps
 summary: Drag from an exit dot, or drag the end of a wire, to connect steps in the workflow builder, or take a wire off.
 section: Automation
 order: 26
-updated: 2026-11-21
+updated: 2026-11-24
 ---
 
 ## Wire a step
@@ -22,6 +22,8 @@ You can still click an exit dot, then click the step, if you prefer.
 - **Drag the end:** hover a wire. A round handle shows at its arrow. Drag the handle to another step and let go.
 - **Drag the exit:** drag the exit dot a wire leaves from to another step. Each exit has one wire, so the old one is replaced.
 - **Re-wire button:** hover the wire, click **Re-wire** on its toolbar, then click the new step. Esc cancels.
+
+Re-wiring never moves your steps: they stay where they are until you drag them or click **Auto align**.
 
 ## Take a wire off
 

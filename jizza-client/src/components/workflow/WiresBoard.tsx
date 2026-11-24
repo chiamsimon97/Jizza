@@ -22,7 +22,7 @@ import { RecordFlow } from '@/components/web/RecordFlow'
 import { canConfigureWithJizza } from '@/jizza/commands'
 import { createGroup, foldedGraph, groupOfNode, groupsOf, isLockedEdge, lockedChange, lockedGroupOf, removeFromGroup, ungroup, updateGroup, type StepGroup } from './groupModel'
 import {
-  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route,
+  CARD_H, CARD_W, autoAlign, deleteStep, distanceTo, dropOnStep, exitPoint, inPoint, isArranged, keepPlaces, keepWiresSettings, placeStep, previewPath, rewire, rewireTargets, route,
   setWireLabel, stepNumbers, wireKey, wireLabel, wiresLayout, type Box, type Point, type Route,
 } from './wiresModel'
 
@@ -186,14 +186,17 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
    * Every edit goes through here, as its own undo step. A change to what is inside a locked group
    * is refused with a note saying why. Any preview stops, as it no longer matches the flow.
    */
-  const commit = useCallback((next: CanvasGraph): boolean => {
-    const why = lockedChange(graph, next)
+  const commit = useCallback((edited: CanvasGraph, opts?: { reflow?: boolean }): boolean => {
+    const why = lockedChange(graph, edited)
     if (why) { flash(why); return false }
     window.clearInterval(previewTimer.current)
     setPreview(null)
-    history.commit(next)
+    // Steps stay where they are drawn: only dragging them or Auto align moves them.
+    history.commit(opts?.reflow ? edited : keepPlaces(graph, edited, placesRef.current))
     return true
   }, [history, graph, flash])
+  /** Where each step is drawn now, for keeping it there through an edit. */
+  const placesRef = useRef<Map<string, Box>>(new Map())
 
   const mayLeave = useCallback(() => {
     if (!unsaved.current) return true
@@ -222,6 +225,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
   const foldView = useMemo(() => foldedGraph(shown, isFolded), [shown, isFolded])
   const into = foldView.into
   const layout = useMemo(() => wiresLayout(foldView.graph), [foldView])
+  placesRef.current = layout.at
   const arranged = useMemo(() => isArranged(graph), [graph])
   const byId = useMemo(() => new Map(graph.nodes.map(n => [n.id, n])), [graph])
   const routes = useMemo(() => {
@@ -668,7 +672,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
       at: { ...at, flipX: e.clientX },
       items: readOnly ? view : [
         ...view,
-        { label: 'Auto align', disabled: !arranged, onSelect: () => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') } },
+        { label: 'Auto align', disabled: !arranged, onSelect: () => { commit(autoAlign(graph), { reflow: true }); flash('Lined up top to bottom again.') } },
         { label: 'Undo', shortcut: `${MOD}+Z`, divider: true, disabled: !history.canUndo, onSelect: history.undo },
         { label: 'Redo', shortcut: `${MOD}+Shift+Z`, disabled: !history.canRedo, onSelect: history.redo },
         { label: toGroup.length > 1 ? `Group ${toGroup.length} steps` : 'Group steps', shortcut: `${MOD}+G`, divider: true, disabled: !canGroup, onSelect: () => groupSteps(toGroup) },
@@ -788,7 +792,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
   }
   if (pending) status = `Click the step that comes after “${byId.get(pending.from)?.label}”${pending.branch ? ` (${exitLabel(pending.branch, byId.get(pending.from))})` : ''}. Esc cancels.`
   if (dragging) status = suggest?.kind === 'step' ? `Drop to wire it in after “${byId.get(suggest.id)?.label}”.`
-    : suggest?.kind === 'wire' ? 'Drop to put it on this wire. Steps below move down.' : 'Hover a step or a wire to wire it in.'
+    : suggest?.kind === 'wire' ? 'Drop to put it on this wire.' : 'Hover a step or a wire to wire it in.'
   if (preview !== null && plan) status = preview > plan.last ? `Preview done: ${ranCount} steps on the path. Nothing ran.` : 'Previewing the path from Start. Nothing runs.'
 
   const focusIds = useMemo(() => {
@@ -911,7 +915,7 @@ export function WiresBoard({ graph, onChange, readOnly = false, run, focusNode, 
             </button>
           )}
           {!readOnly && (
-            <button type="button" disabled={!arranged} onClick={() => { commit(autoAlign(graph)); flash('Lined up top to bottom again.') }}
+            <button type="button" disabled={!arranged} onClick={() => { commit(autoAlign(graph), { reflow: true }); flash('Lined up top to bottom again.') }}
               title={arranged ? 'Put every step back in a neat top-to-bottom layout' : 'Every step is already lined up'}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:disabled:hover:bg-gray-900">
               <Sparkles className="h-3.5 w-3.5" />Auto align
