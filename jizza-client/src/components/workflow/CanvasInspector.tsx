@@ -2229,8 +2229,8 @@ function WebSchemaField({ name, property, value, required, mapping, label: named
   </Labelled>
 }
 
-type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox' | 'number' | 'tags' | 'several' | 'daterange' | 'slot'
-type FormFieldRow = { element?: unknown; kind: FormFieldKind; value?: unknown; label?: string; required?: boolean; format?: string }
+type FormFieldKind = 'text' | 'select' | 'checkbox' | 'checkboxes' | 'radio' | 'date' | 'datepicker' | 'combobox' | 'number' | 'tags' | 'several' | 'daterange' | 'slot' | 'richtext' | 'grid'
+type FormFieldRow = { element?: unknown; kind: FormFieldKind; value?: unknown; label?: string; required?: boolean; format?: string; siteFills?: 'wait' | 'check' }
 
 const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] = [
   { kind: 'text', label: 'Text or text area', hint: 'The text to type.' },
@@ -2246,6 +2246,8 @@ const FORM_FIELD_KINDS: { kind: FormFieldKind; label: string; hint: string }[] =
   { kind: 'several', label: 'Pick several in a list', hint: 'The choices, with commas between them. Exactly these are left picked.' },
   { kind: 'daterange', label: 'From and to dates', hint: 'Such as 2026-12-01 to 2026-12-05. Pick what opens the calendar.' },
   { kind: 'slot', label: 'Day and time slot', hint: 'Such as Wed 25 at 10:30. Pick the grid of days and times.' },
+  { kind: 'richtext', label: 'Formatted text', hint: 'Such as Hi **team**, see @[Asha Rao]. Pick the editor.' },
+  { kind: 'grid', label: 'Grid of choices', hint: 'One answer per row, such as Service: Good; Price: Fair. Pick the grid.' },
 ]
 
 /** Same test as the step's check before saving: picked on the page, or mapped. */
@@ -2313,6 +2315,14 @@ function FillFormFields({ value, browsers, deviceId, mapping, missing, onChange 
                   onChange={e => set(index, { label: e.target.value })} />
               </Labelled>
             </div>
+            <Labelled label="Who fills it" hint="Some sites fill a field by themselves, such as the city after a postcode. The run then waits for it instead of typing over it.">
+              <select aria-label={`Who fills ${label}`} className={fieldClass} value={row.siteFills ?? ''}
+                onChange={e => set(index, { siteFills: (e.target.value || undefined) as FormFieldRow['siteFills'] })}>
+                <option value="">Fill it in</option>
+                <option value="wait">Let the site fill this</option>
+                <option value="check">Let the site fill this, then check it says the value</option>
+              </select>
+            </Labelled>
             {row.kind === 'date' && (
               <Labelled label="Date format (text fields only)" hint="Such as DD/MM/YYYY. Date pickers built into the browser need none.">
                 <input aria-label={`Date format of ${label}`} className={fieldClass} value={row.format ?? ''}
