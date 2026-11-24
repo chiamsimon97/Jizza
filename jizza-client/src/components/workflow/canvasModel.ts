@@ -145,6 +145,9 @@ export const WEB_PALETTE: PaletteEntry[] = [
   web('Add tags', 'browser.addTags'),
   web('Pick a date range', 'browser.pickDateRange'),
   web('Pick a time slot', 'browser.pickSlot'),
+  web('Write formatted text', 'browser.setRichText'),
+  web('Answer a grid of choices', 'browser.answerGrid'),
+  web('Let the site fill this', 'browser.siteFills'),
   web('Choose from a list', 'browser.clickItem'),
   web('Pick from a dropdown', 'browser.selectOption'),
   web('Read a list', 'browser.listItems'),
@@ -159,6 +162,7 @@ export const WEB_ELEMENT_ACTIONS = new Set([
   'browser.dragDrop', 'browser.setDate', 'browser.checkItems', 'browser.clickItem', 'browser.listItems',
   'browser.pickDate', 'browser.chooseOption', 'browser.selectOption', 'browser.listOptions',
   'browser.tableRow', 'browser.addTags', 'browser.pickDateRange', 'browser.pickSlot',
+  'browser.setRichText', 'browser.answerGrid', 'browser.siteFills',
 ])
 
 /** Actions that can use an element, including those where it is an optional targeting mode. */

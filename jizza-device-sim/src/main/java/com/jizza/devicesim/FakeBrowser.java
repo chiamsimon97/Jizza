@@ -63,6 +63,27 @@ public final class FakeBrowser {
       find(in);
       return object().put("from", in.path("from").asText()).put("to", in.path("to").asText());
     });
+    handle("browser.setRichText@1", in -> {
+      find(in).value = in.path("text").asText();
+      return object().put("set", true).putArray("mentions");
+    });
+    handle("browser.answerGrid@1", in -> {
+      find(in);
+      ObjectNode out = object().put("changed", 0);
+      ObjectNode answered = out.putObject("answered");
+      JsonNode answers = in.path("answers");
+      if (answers.isObject()) answers.fields().forEachRemaining(e -> answered.put(e.getKey(), e.getValue().asText()));
+      else for (String part : answers.asText().split("[;\\n]")) {
+        int at = part.lastIndexOf(':');
+        if (at > 0) answered.put(part.substring(0, at).trim(), part.substring(at + 1).trim());
+      }
+      return out.put("changed", answered.size());
+    });
+    handle("browser.siteFills@1", in -> {
+      Element element = find(in);
+      String value = element.value.isEmpty() ? in.path("expect").asText("") : element.value;
+      return object().put("value", value).put("filled", true);
+    });
     handle("browser.pickSlot@1", in -> {
       find(in);
       return object().put("picked", in.path("day").asText() + " " + in.path("time").asText());

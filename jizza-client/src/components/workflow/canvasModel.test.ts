@@ -227,7 +227,8 @@ describe('palette groups', () => {
       ['Fill several fields', 'browser.fillForm', 1], ['Fill a whole form', 'browser.fillLayer', 1], ['Type a date', 'browser.setDate', 1],
       ['Pick a date in a calendar', 'browser.pickDate', 1], ['Type and pick a suggestion', 'browser.chooseOption', 1],
       ['Tick several boxes', 'browser.checkItems', 1], ['Add tags', 'browser.addTags', 1],
-      ['Pick a date range', 'browser.pickDateRange', 1], ['Pick a time slot', 'browser.pickSlot', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],
+      ['Pick a date range', 'browser.pickDateRange', 1], ['Pick a time slot', 'browser.pickSlot', 1], ['Write formatted text', 'browser.setRichText', 1],
+      ['Answer a grid of choices', 'browser.answerGrid', 1], ['Let the site fill this', 'browser.siteFills', 1], ['Choose from a list', 'browser.clickItem', 1], ['Pick from a dropdown', 'browser.selectOption', 1],
       ['Read a list', 'browser.listItems', 1], ['Ask me', 'browser.ask', 1],
       ['Hand over to me', 'browser.handOff', 1],
     ])

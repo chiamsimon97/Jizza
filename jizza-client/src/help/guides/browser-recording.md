@@ -166,6 +166,18 @@ A check-in date followed by a check-out date (from and to, start and end, depart
 
 In **Fill or click one thing** and in form steps, the kinds are **Tags typed one by one**, **Pick several in a list**, **From and to dates** (write 2026-12-01 to 2026-12-05) and **Day and time slot** (write Wed 25 at 10:30).
 
+### Fields the site fills by itself
+
+Some sites fill a field for you: the city after a postcode, five address boxes after an address search. A run that types into such a field can overwrite the site's answer, or type before the site is done. In a form step, set the field's **Who fills it** to **Let the site fill this** (browser agent 0.37.0 or later): the run waits for the site and leaves the field alone. **Let the site fill this, then check it** also stops the run if the site filled something other than the value, such as a different city. As its own step it is **Let the site fill this**, with what the field should say.
+
+### Formatted text and mentions
+
+Writing in an editor with **bold**, lists or links (an email body, a comment box) is recorded as **Write formatted text**, with the text kept the way it reads: \*\*bold\*\*, \*italic\*, lines starting with - for a list, and @[Full Name] for a mention. A run pastes the text so the editor keeps its own formatting, and types each mention and picks the matching name from the suggestions. Make the text an input to write something different each run. A name with no suggestion is typed as text and listed in the step's output.
+
+### Grids of choices
+
+A survey grid (rate each row from Poor to Good, a yes/no question per row) is recorded as one step, **Answer a grid of choices**, such as Answer "Service: Good; Price: Fair". Each answer is kept by the row's question and the answer's name, so a run picks the same answers wherever the grid sits. Make the answers an input to answer differently each run. In **Fill or click one thing** and in form steps, the kinds are **Formatted text** and **Grid of choices**.
+
 ### Dragging things
 
 Moving a card onto another column, a file onto a folder, or an item to a new place in a list is recorded as one step, **Drag this onto that**, such as Drag "Fix the roof" onto "Done" (browser agent 0.33.0 or later). The recorder catches both kinds of drag: things the browser itself carries, and boards or lists the site moves with the mouse (press the grip ≡, or whatever shows a grab or move pointer, and let go over the new place). A run presses where you did and lets go over the same item or area.
