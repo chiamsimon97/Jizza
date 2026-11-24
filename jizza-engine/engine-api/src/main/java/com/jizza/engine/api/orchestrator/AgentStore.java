@@ -29,6 +29,15 @@ public interface AgentStore {
     throw new UnsupportedOperationException("Web access is not supported");
   }
 
+  /** The model the agent answers with by default (a model reference); null for its tier. */
+  default String model(UUID agentId) {
+    return null;
+  }
+
+  default void setModel(UUID agentId, String model) {
+    throw new UnsupportedOperationException("Agent models are not supported");
+  }
+
   /**
    * Creates a custom agent under {@code key}, with its own memory domain equal to the key. Draft
    * and archived agents are stored disabled whatever else is asked.

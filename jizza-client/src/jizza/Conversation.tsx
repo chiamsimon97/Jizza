@@ -25,6 +25,7 @@ import { UserStepsCard, cardLinks } from './UserStepsCard'
 import { StartRunCard } from './StartRunCard'
 import { RunInChat } from './RunInChat'
 import { matchAgents, mentionOf, mentionQuery } from './mentions'
+import { AnsweredByLabel, AskAnotherModel, CompareAnswers, DepthSwitch, ModelPicker, TeamStrip } from './ModelControls'
 import { fileAttachment, folderFromFiles, pickLinkedFolder, splitAttachments, withAttachments, type Attachment, type AttachmentKind } from './attachments'
 
 const SUGGESTIONS = [
@@ -53,7 +54,7 @@ interface ConversationProps {
 
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
-  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, rate, conversationId, lastReplyId, setThreadsNext } = useAssistantStore()
+  const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, rate, conversationId, lastReplyId, setThreadsNext, choice, setChoice, keepVersion } = useAssistantStore()
   const [input, setInput] = useState('')
   // The message being replied to: quoted above what the user writes.
   const [replyTo, setReplyTo] = useState<{ who: string; text: string } | null>(null)
@@ -308,7 +309,8 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
                 inlineDiscussion={inlineDiscussion} onRevise={() => inputRef.current?.focus()}
                 onSendMany={text => void send(text)}
                 onTryAgain={!thinking && !msg.streaming && (msg.error || i === lastReply) && messages.slice(0, i).some(m => m.role === 'user')
-                  ? deeper => void tryAgain(msg.id, deeper) : undefined}
+                  ? (deeper, model) => void tryAgain(msg.id, deeper, model) : undefined}
+                onKeep={!thinking && !msg.streaming && msg.versions?.length ? index => keepVersion(msg.id, index) : undefined}
                 onReply={() => reply(msg)} busy={thinking} onEdit={msg.role === 'user' && !thinking ? text => edit(msg.id, text) : undefined}
                 onRate={msg.role === 'assistant' && conversationId && !incognito && msg.jobId ? feedback => rate(msg.id, feedback) : undefined}
                 sentToThread={msg.role === 'user' && messages.slice(i + 1).some(m => m.role === 'assistant' && m.jobId === msg.jobId && !!m.jobId && !!m.thread)} />
@@ -514,6 +516,14 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </Button>
           )}
         </div>
+        <div className={`${width} mt-1.5 flex flex-wrap items-center gap-2 px-1`}>
+          <ModelPicker value={choice.model ?? undefined} onChange={model => setChoice({ ...choice, model })}
+            attached={{
+              image: attachments.some(a => a.kind === 'image'),
+              pdf: attachments.some(a => a.kind === 'file' && /\.pdf$/i.test(a.name)),
+            }} />
+          <DepthSwitch value={choice.depth ?? undefined} onChange={depth => setChoice({ ...choice, depth })} />
+        </div>
         {!compact && (
           <p className={`${width} mt-1.5 text-center text-[11px] text-gray-400 dark:text-gray-500`}>
             Enter to send · Shift+Enter for a new line · / for shortcuts · @ asks a specialist · /run starts a workflow · + to add files or a folder · Ctrl+K opens Jizza anywhere
@@ -524,13 +534,18 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   )
 }
 
-function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onTryAgain, onReply, onEdit, onRate, sentToThread, busy }: {
+function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, onRevise, onSendMany, onTryAgain, onKeep, onReply, onEdit, onRate, sentToThread, busy }: {
   msg: AssistantMessage; compact: boolean; busy?: boolean; onChoose: (text: string) => void; onOpenJob?: (jobId: string) => void
   inlineDiscussion?: boolean; onRevise?: () => void
   /** Sends several ticked answers together. */
   onSendMany: (text: string) => void
-  /** Asks again for this reply, keeping this answer as an earlier version; {@code deeper} uses the deeper model. */
-  onTryAgain?: (deeper: boolean) => void
+  /**
+   * Asks again for this reply, keeping this answer as an earlier version; {@code deeper} uses the
+   * deeper model, {@code model} another model ("Ask another model").
+   */
+  onTryAgain?: (deeper: boolean, model?: string) => void
+  /** Keeps an earlier answer in place of this one; false when it did not save. */
+  onKeep?: (index: number) => Promise<boolean>
   /** Quotes this message in the next one. */
   onReply: () => void
   /** The user's own message: replaces it, and everything after it, with the edited text. */
@@ -547,6 +562,8 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
   const current = shown === null || shown >= versionCount - 1
   const shownText = current ? msg.text : msg.versions![shown].text
   const shownDeep = current ? msg.deep : msg.versions![shown].deep
+  const shownModel = current ? msg.model : msg.versions![shown].model
+  const [comparing, setComparing] = useState(false)
   if (msg.role === 'event') {
     return (
       <div className="flex items-center gap-2 py-1 animate-fade-in" role="note">
@@ -632,8 +649,15 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
         {(versionCount > 1 || (!msg.streaming && msg.text && !msg.error) || onTryAgain) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {versionCount > 1 && !msg.streaming && (
-              <VersionPager index={current ? versionCount - 1 : shown!} count={versionCount} deep={shownDeep}
+              <VersionPager index={current ? versionCount - 1 : shown!} count={versionCount} deep={shownDeep && !shownModel}
                 onPick={i => setShown(i >= versionCount - 1 ? null : i)} />
+            )}
+            {!msg.streaming && !msg.error && <AnsweredByLabel model={shownModel} />}
+            {versionCount > 1 && !msg.streaming && onKeep && (
+              <button type="button" onClick={() => setComparing(true)}
+                className="text-xs font-medium text-gray-500 transition-colors hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-300">
+                Compare
+              </button>
             )}
             {!msg.streaming && msg.text && !msg.error && <MessageActions text={shownText} onReply={onReply} align="start" />}
             {!msg.streaming && msg.text && !msg.error && onRate && <FeedbackButtons feedback={msg.feedback} onRate={onRate} />}
@@ -644,7 +668,14 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
               </button>
             )}
             {onTryAgain && !msg.error && <TryAgainButtons onTryAgain={onTryAgain} />}
+            {onTryAgain && !msg.error && <AskAnotherModel current={msg.model?.ref} onPick={ref => onTryAgain(false, ref)} />}
           </div>
+        )}
+        {current && !msg.streaming && msg.team && msg.team.length > 0 && <TeamStrip team={msg.team} />}
+        {onKeep && msg.versions && (
+          <CompareAnswers open={comparing} onClose={() => setComparing(false)} versions={msg.versions}
+            current={{ text: msg.text, model: msg.model, deep: msg.deep }}
+            onKeep={async i => { const ok = await onKeep(i); if (ok) setShown(null); return ok }} />
         )}
         {msg.plan && <WorkflowPlanCard plan={msg.plan} onRevise={onRevise} />}
         {msg.proposal && <AgentProposalCard proposal={msg.proposal} />}

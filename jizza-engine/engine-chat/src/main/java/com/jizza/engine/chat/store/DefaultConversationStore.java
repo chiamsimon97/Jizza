@@ -246,6 +246,69 @@ class DefaultConversationStore implements ConversationStore {
         Json.obj().put("rating", rating == null ? "none" : rating).put("reason", !why.isEmpty()));
   }
 
+  static final java.util.Set<String> DEPTHS = java.util.Set.of("quick", "normal", "deep");
+
+  @Override
+  @Transactional(readOnly = true)
+  public ChatChoice choice(UUID userId, UUID conversationId) {
+    ConversationEntity c = owned(userId, conversationId);
+    return new ChatChoice(c.getModel(), c.getDepth() == null ? "normal" : c.getDepth());
+  }
+
+  @Override
+  @Transactional
+  public ChatChoice setChoice(UUID userId, UUID conversationId, String model, String depth) {
+    ConversationEntity c = owned(userId, conversationId);
+    if (model != null) {
+      String m = model.trim();
+      if (m.length() > 200) throw new com.jizza.engine.api.error.ValidationException("That model name is too long");
+      c.setModel(m.isEmpty() || "auto".equalsIgnoreCase(m) ? null : m);
+    }
+    if (depth != null) {
+      String d = depth.trim().toLowerCase(java.util.Locale.ROOT);
+      if (!DEPTHS.contains(d)) throw new com.jizza.engine.api.error.ValidationException("Depth is quick, normal or deep");
+      c.setDepth("normal".equals(d) ? null : d);
+    }
+    return new ChatChoice(c.getModel(), c.getDepth() == null ? "normal" : c.getDepth());
+  }
+
+  static final String VERSIONS = "versions";
+
+  @Override
+  @Transactional
+  public void keepVersion(UUID userId, UUID conversationId, UUID messageId, int index) {
+    owned(userId, conversationId);
+    MessageEntity reply = messages.findById(messageId)
+        .filter(m -> m.getConversationId().equals(conversationId) && m.getRole() == MessageRole.ASSISTANT)
+        .orElseThrow(() -> new NotFoundException("Message", messageId));
+    ObjectNode meta = reply.getMetadata() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    JsonNode versions = meta.path(VERSIONS);
+    if (!versions.isArray() || index < 0 || index >= versions.size()) {
+      throw new NotFoundException("Answer", String.valueOf(index));
+    }
+    JsonNode kept = versions.get(index);
+    // The answer shown until now becomes an earlier version, with what said where it came from.
+    ObjectNode replaced = Json.obj().put("text", reply.getContent() == null ? "" : reply.getContent());
+    if (meta.path("deep").asBoolean(false)) replaced.put("deep", true);
+    if (meta.has("model")) replaced.set("model", meta.get("model"));
+    com.fasterxml.jackson.databind.node.ArrayNode rest = Json.mapper().createArrayNode();
+    for (int i = 0; i < versions.size(); i++) if (i != index) rest.add(versions.get(i));
+    rest.add(replaced);
+    meta.set(VERSIONS, rest);
+    if (kept.path("deep").asBoolean(false)) meta.put("deep", true);
+    else meta.remove("deep");
+    if (kept.has("model")) meta.set("model", kept.get("model"));
+    else meta.remove("model");
+    // Web sources, the team and other details belonged to the replaced answer only.
+    meta.remove("sources");
+    meta.remove("team");
+    reply.setContent(kept.path("text").asText(""));
+    reply.setMetadata(meta);
+    messages.save(reply);
+    audit.record(userId, ActorType.USER, userId, "chat.version.kept", messageId.toString(),
+        Json.obj().put("index", index));
+  }
+
   /**
    * What a rating teaches the thread's lead, under "How to work here": a thumbs down always (with
    * the reason, or the reply's opening words), a thumbs up only with a reason. A full guide is left

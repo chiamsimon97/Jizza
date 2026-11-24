@@ -68,7 +68,7 @@ describe('Try again', () => {
     const body = vi.mocked(chatApi.send).mock.calls[0][0]
     expect(body.message).toBe('Plan my week')
     expect(body.context).toMatchObject({ versions: [{ text: 'Here is a plan.' }] })
-    expect(body.context).not.toHaveProperty('depth')
+    expect(body.context).toMatchObject({ depth: 'normal', model: 'auto' })
     const reply = useAssistantStore.getState().messages.at(-1)!
     expect(reply).toMatchObject({ role: 'assistant', jobId: 'job-2', versions: [{ text: 'Here is a plan.' }] })
   })

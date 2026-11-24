@@ -102,6 +102,49 @@ public class AgentAdminUseCase {
     return new WebAccess(on, webAvailable);
   }
 
+  /**
+   * The model an agent answers with unless the person picks one in the chat box: {@code model} is
+   * null (or "auto") for its tier as before. Only a model the person can use is accepted.
+   */
+  public record AgentModel(String model, String label) {}
+
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void setCatalog(org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog) {
+    this.catalog = catalog;
+  }
+
+  @Transactional(readOnly = true)
+  public AgentModel model(UUID userId, UUID agentId) {
+    ownedBy(userId, agentId);
+    String model = agents.model(agentId);
+    return new AgentModel(model, model == null ? null : labelOf(userId, model));
+  }
+
+  @Transactional
+  public AgentModel setModel(UUID userId, UUID agentId, String model) {
+    AgentDto agent = ownedBy(userId, agentId);
+    String m = model == null || model.isBlank() || "auto".equalsIgnoreCase(model.trim()) ? null : model.trim();
+    if (m != null) {
+      var known = catalog == null ? null : catalog.getIfAvailable();
+      boolean offered = known != null && known.available(userId).stream().anyMatch(i -> i.ref().equals(m));
+      if (!offered) {
+        throw new ValidationException("That model isn't one you can use. Connect its provider under "
+            + "Settings, AI models, or pick another.");
+      }
+    }
+    agents.setModel(agentId, m);
+    audit.record(userId, ActorType.USER, null, "agent.model", agent.key(),
+        Json.obj().put("model", m == null ? "auto" : m));
+    return new AgentModel(m, m == null ? null : labelOf(userId, m));
+  }
+
+  private String labelOf(UUID userId, String model) {
+    var known = catalog == null ? null : catalog.getIfAvailable();
+    return known == null ? model : known.label(userId, model);
+  }
+
   public AgentDto ownedBy(UUID userId, UUID agentId) {
     return directory.byId(agentId)
         .filter(agent -> agent.userId().equals(userId))

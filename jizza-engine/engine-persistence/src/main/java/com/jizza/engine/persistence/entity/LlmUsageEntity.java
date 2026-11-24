@@ -27,6 +27,16 @@ public class LlmUsageEntity {
 
   private String purpose;
 
+  /** {@code platform} or {@code own} (the person's own key). */
+  @Column(nullable = false)
+  private String paidBy = PLATFORM;
+
+  public static final String PLATFORM = "platform";
+  public static final String OWN = "own";
+
+  public String getPaidBy() { return paidBy; }
+  public void setPaidBy(String v) { this.paidBy = v; }
+
   private int inputTokens;
 
   private int outputTokens;

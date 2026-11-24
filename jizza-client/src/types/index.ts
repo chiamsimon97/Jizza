@@ -616,7 +616,31 @@ export interface MessageDto {
     sources?: WebSource[]
     /** The user's thumbs up or down on this reply. */
     feedback?: ReplyFeedback
+    /** The model that wrote this answer. */
+    model?: AnsweredBy
+    /** Specialists who worked on the reply, with the model each used and its cost. */
+    team?: TeamMember[]
   }
+}
+
+/** The model that wrote an answer; {@code ownKey} when it ran on the person's own provider key. */
+export interface AnsweredBy {
+  ref: string
+  label: string
+  ownKey?: boolean
+}
+
+/** One specialist who worked on a reply: what they were asked, which model, and what it cost. */
+export interface TeamMember {
+  name: string
+  key?: string
+  agentId?: string
+  task?: string
+  model: string
+  ownKey?: boolean
+  inputTokens?: number
+  outputTokens?: number
+  cost?: number
 }
 
 /** A thumbs up or down on a reply, and why if the user said. */
@@ -646,6 +670,8 @@ export interface ReplyVersion {
   text: string
   /** Written by the deeper model ("Try again with a deeper model"). */
   deep?: boolean
+  /** The model that wrote it. */
+  model?: AnsweredBy
 }
 
 /** What Jizza remembers of a long chat's older messages, folded into a summary to keep turns small. */

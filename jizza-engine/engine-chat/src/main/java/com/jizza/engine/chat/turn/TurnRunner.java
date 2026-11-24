@@ -269,8 +269,11 @@ public class TurnRunner implements ChatService {
       // "@Kai …": the agent the user named answers this message itself, wherever it was typed.
       com.jizza.engine.persistence.entity.AgentEntity mentioned = continuation == null && direct.isEmpty()
           ? mentioned(userId, s.text(), s.context()) : null;
+      // The model and depth this chat is set to, unless this message asked for its own.
+      com.fasterxml.jackson.databind.JsonNode asked = withChoice(s.context(),
+          ref.incognito() ? null : store.settings(ref.conversationId()));
       Orchestrator.TurnInput turnInput =
-          new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), screenContext(s.context()));
+          new Orchestrator.TurnInput(input, s.screen(), told, ref.userMessageId(), screenContext(asked));
       // The reply may read the PDFs and photos the user attached; routing it does not.
       Supplier<Orchestrator.Turn> respond = () -> ChatFileAccess.run(userId, () ->
           mentioned != null ? orchestrator.respondAs(userId, mentioned.getId(), turnInput)
@@ -299,6 +302,10 @@ public class TurnRunner implements ChatService {
       String summary = JobSummaries.summarize(recorder.all());
       // The web pages this reply drew on, shown as chips under it.
       com.fasterxml.jackson.databind.node.ArrayNode sources = webSources(recorder.all());
+      // Which model answered, and who else worked on it (F6).
+      ObjectNode answeredWith = routed.isPresent() ? null : answeredWith(recorder.all());
+      com.fasterxml.jackson.databind.node.ArrayNode team = routed.isPresent() ? null
+          : team(recorder.all(), done.delegations());
       // A reply that left a call waiting for the user's approval is done talking, not done working.
       String status = recorder.all().stream()
           .anyMatch(e -> ActivityTypes.APPROVAL_REQUIRED.equals(e.type()))
@@ -315,6 +322,8 @@ public class TurnRunner implements ChatService {
         p.put("status", status);
         if (lead != null) p.set("lead", lead);
         if (!sources.isEmpty()) p.set("sources", sources);
+        if (answeredWith != null) p.set("model", answeredWith);
+        if (team != null && !team.isEmpty()) p.set("team", team);
       }));
       if (persist) {
         ObjectNode meta = metadata(ref, answer);
@@ -323,6 +332,8 @@ public class TurnRunner implements ChatService {
         com.fasterxml.jackson.databind.node.ArrayNode versions = earlierVersions(s.context());
         if (versions != null) meta.set(VERSIONS, versions);
         if (!sources.isEmpty()) meta.set("sources", sources);
+        if (answeredWith != null) meta.set("model", answeredWith);
+        if (team != null && !team.isEmpty()) meta.set("team", team);
         if (s.context() != null && "deep".equalsIgnoreCase(s.context().path("depth").asText())) {
           meta.put("deep", true);
         }
@@ -432,6 +443,80 @@ public class TurnRunner implements ChatService {
     return out;
   }
 
+  /**
+   * The turn's context with the chat's own model and depth filled in where the message did not say;
+   * the context unchanged when the chat is on Auto and normal, or there is no saved chat.
+   */
+  static com.fasterxml.jackson.databind.JsonNode withChoice(
+      com.fasterxml.jackson.databind.JsonNode context,
+      com.jizza.engine.persistence.entity.ConversationEntity chat) {
+    if (chat == null || (chat.getModel() == null && chat.getDepth() == null)) return context;
+    ObjectNode out = context instanceof ObjectNode o ? o.deepCopy() : Json.obj();
+    if (chat.getModel() != null && !out.has("model")) out.put("model", chat.getModel());
+    if (chat.getDepth() != null && !out.has("depth")) out.put("depth", chat.getDepth());
+    return out;
+  }
+
+  /** The model the answering agent used: the last agent whose run finished, since it waits for its helpers. */
+  static ObjectNode answeredWith(List<JobEventDto> events) {
+    for (int i = events.size() - 1; i >= 0; i--) {
+      JobEventDto e = events.get(i);
+      if (!ActivityTypes.AGENT_USAGE.equals(e.type()) || e.payload() == null) continue;
+      ObjectNode model = Json.obj().put("ref", e.payload().path("model").asText(""))
+          .put("label", e.payload().path("modelLabel").asText(e.payload().path("model").asText("")));
+      if (e.payload().path("ownKey").asBoolean(false)) model.put("ownKey", true);
+      return model;
+    }
+    return null;
+  }
+
+  /**
+   * Who else worked on the reply: each specialist the answering agent asked, with the model it used,
+   * what it cost and the task it was given (F6). Empty when nobody else did.
+   */
+  static com.fasterxml.jackson.databind.node.ArrayNode team(List<JobEventDto> events,
+                                                           List<Orchestrator.Delegation> delegations) {
+    com.fasterxml.jackson.databind.node.ArrayNode out = Json.mapper().createArrayNode();
+    int last = -1;
+    for (int i = events.size() - 1; i >= 0; i--) {
+      if (ActivityTypes.AGENT_USAGE.equals(events.get(i).type())) {
+        last = i;
+        break;
+      }
+    }
+    if (last < 0) return out;
+    java.util.Map<UUID, java.util.Deque<String>> tasks = new java.util.HashMap<>();
+    if (delegations != null) {
+      for (Orchestrator.Delegation d : delegations) {
+        if (d.agentId() != null) tasks.computeIfAbsent(d.agentId(), k -> new java.util.ArrayDeque<>()).add(
+            d.task() == null ? "" : d.task());
+      }
+    }
+    for (int i = 0; i < last; i++) {
+      JobEventDto e = events.get(i);
+      if (!ActivityTypes.AGENT_USAGE.equals(e.type()) || e.payload() == null) continue;
+      var p = e.payload();
+      ObjectNode member = Json.obj()
+          .put("name", e.agentName() == null ? "" : e.agentName())
+          .put("key", p.path("agentKey").asText(""))
+          .put("model", p.path("modelLabel").asText(p.path("model").asText("")))
+          .put("inputTokens", p.path("inputTokens").asInt())
+          .put("outputTokens", p.path("outputTokens").asInt())
+          .put("cost", p.path("cost").asDouble());
+      if (p.path("ownKey").asBoolean(false)) member.put("ownKey", true);
+      if (e.agentId() != null) {
+        member.put("agentId", e.agentId().toString());
+        var queue = tasks.get(e.agentId());
+        String task = queue == null ? null : queue.poll();
+        if (task != null && !task.isBlank()) {
+          member.put("task", task.length() > 200 ? task.substring(0, 199) + "…" : task);
+        }
+      }
+      out.add(member);
+    }
+    return out;
+  }
+
   /** The agent an "@Name" in the message picked to answer it: its id, in the turn's context. */
   static final String MENTION = "mention";
 
@@ -508,6 +593,16 @@ public class TurnRunner implements ChatService {
       ObjectNode version = Json.obj().put("text",
           text.length() > MAX_VERSION_CHARS ? text.substring(0, MAX_VERSION_CHARS) : text);
       if (v.path("deep").asBoolean(false)) version.put("deep", true);
+      // Which model wrote it, as the reply said when it came: shown beside it to compare.
+      if (v.path("model").isObject()) {
+        ObjectNode model = Json.obj();
+        for (String f : new String[] {"ref", "label"}) {
+          String value = v.path("model").path(f).asText("");
+          if (!value.isBlank()) model.put(f, value.length() > 200 ? value.substring(0, 200) : value);
+        }
+        if (v.path("model").path("ownKey").asBoolean(false)) model.put("ownKey", true);
+        if (!model.isEmpty()) version.set("model", model);
+      }
       kept.add(version);
     }
     if (kept.isEmpty()) return null;

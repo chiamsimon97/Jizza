@@ -19,9 +19,19 @@ public interface CostAccountant {
 
   /** Records one model call, falling back to the requested model when the reply names none. */
   default void record(UUID userId, String requestedModel, LlmResponse response, String purpose) {
-    record(userId, response.model() == null ? requestedModel : response.model(),
+    // A model on the person's own key is recorded as asked for, so it is priced from their catalog.
+    record(userId, response.model() == null || ModelRefs.ownKey(requestedModel) ? requestedModel
+            : response.model(),
         response.inputTokens(), response.outputTokens(), response.cacheReadTokens(),
         response.cacheWriteTokens(), purpose);
+  }
+
+  /**
+   * What one call cost, in the same unit as {@link #spendInWindow}, without recording it. Zero when
+   * the model's price is not known.
+   */
+  default double costOf(UUID userId, String model, LlmResponse response) {
+    return 0d;
   }
 
   /** @return true when the user is still inside their configured budget. */

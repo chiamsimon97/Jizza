@@ -70,6 +70,13 @@ public class BaseAgent implements Agent {
   private final AgentProperties props;
   private final ObjectProvider<MemoryContextProvider> memory;
   private ObservationRegistry observations = ObservationRegistry.NOOP;
+  private ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog;
+
+  /** What each model can do and its name; without it every model is taken to use tools. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setCatalog(ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog) {
+    this.catalog = catalog;
+  }
 
   public BaseAgent(AgentRepository agents, LlmClient llm, CapabilityRegistry capabilities,
                    CostAccountant costs, AutonomyGate autonomyGate, KillSwitch killSwitch,
@@ -139,7 +146,9 @@ public class BaseAgent implements Agent {
         .lowCardinalityKeyValue("dry_run", String.valueOf(req.dryRun()))
         .start();
     try (Observation.Scope scope = run.openScope()) {
-      AgentResult result = loop(req, agent, run);
+      // Models on the person's own key are reached with their key, whichever thread this is on.
+      AgentResult result = com.jizza.engine.api.llm.LlmCallContext.run(req.userId(), req.effort(),
+          () -> loop(req, agent, run));
       run.lowCardinalityKeyValue("outcome", result.truncatedByBudget() ? "budget" : "done");
       return result;
     } catch (RuntimeException e) {
@@ -171,7 +180,11 @@ public class BaseAgent implements Agent {
     // An agent set to think harder always does; otherwise the caller's tier stands.
     ModelTier tier = "deep".equalsIgnoreCase(agent.getModelTier()) && req.tier() != ModelTier.DEEP
         ? ModelTier.DEEP : req.tier();
-    String model = llm.modelFor(tier);
+    String model = modelFor(req, agent, tier);
+    com.jizza.engine.api.llm.ModelCatalog.ModelInfo modelInfo = modelInfo(req.userId(), model);
+    // A model that can only talk gets no tools; it answers from what it is told.
+    if (modelInfo != null && !modelInfo.tools()) tools = List.of();
+    double cost = 0d;
     run.lowCardinalityKeyValue("tier", tier.name()).lowCardinalityKeyValue("model", model);
     int inputTokens = 0;
     int outputTokens = 0;
@@ -208,6 +221,7 @@ public class BaseAgent implements Agent {
         inputTokens += response.inputTokens();
         outputTokens += response.outputTokens();
         costs.record(req.userId(), model, response, "agent:" + agent.getKey());
+        cost += costs.costOf(req.userId(), model, response);
         budget.addTokens(response.budgetTokens() - response.outputTokens(), response.outputTokens());
         // A stop pressed while the model was thinking wins over whatever it came back with.
         Activity.checkCancelled();
@@ -222,6 +236,7 @@ public class BaseAgent implements Agent {
         if (!response.wantsTools()) {
           audit.record(req.userId(), ActorType.AGENT, agent.getId(), "agent.run.done",
               agent.getKey(), Json.obj().put("iterations", budget.iterations()));
+          usage(agent, req, model, modelInfo, inputTokens, outputTokens, cost);
           return new AgentResult(agent.getId(), agent.getName(), lastText, callsMade, false,
               inputTokens, outputTokens, null);
         }
@@ -253,9 +268,51 @@ public class BaseAgent implements Agent {
       String text = lastText.isBlank()
           ? "I stopped before finishing: " + e.getMessage()
           : lastText;
+      usage(agent, req, model, modelInfo, inputTokens, outputTokens, cost);
       return new AgentResult(agent.getId(), agent.getName(), text, callsMade, true,
           inputTokens, outputTokens, null);
     }
+  }
+
+  /**
+   * The model this run answers with. A model the person picked for this request wins; then "think
+   * harder" asked for this time (the deep tier); then the agent's own default model; then its tier.
+   */
+  String modelFor(AgentRequest req, AgentEntity agent, ModelTier tier) {
+    if (req.model() != null && !req.model().isBlank()) return req.model().trim();
+    if (req.tier() == ModelTier.DEEP) return llm.modelFor(ModelTier.DEEP);
+    if (agent.getModel() != null && !agent.getModel().isBlank()) return agent.getModel().trim();
+    return llm.modelFor(tier);
+  }
+
+  private com.jizza.engine.api.llm.ModelCatalog.ModelInfo modelInfo(java.util.UUID userId, String model) {
+    var known = catalog == null ? null : catalog.getIfAvailable();
+    if (known == null) return null;
+    try {
+      return known.find(userId, model).orElse(null);
+    } catch (RuntimeException e) {
+      log.debug("Could not look up model {}", model, e);
+      return null;
+    }
+  }
+
+  /**
+   * Who answered with which model, and what it cost: the reply's "Answered by" line and, when
+   * several specialists worked on one turn, the team strip under it (F6).
+   */
+  private static void usage(AgentEntity agent, AgentRequest req, String model,
+                            com.jizza.engine.api.llm.ModelCatalog.ModelInfo info, int input,
+                            int output, double cost) {
+    if (!Activity.active()) return;
+    Activity.emit(ActivityTypes.AGENT_USAGE, agent.getId(), agent.getName(), p -> {
+      p.put("agentKey", agent.getKey()).put("orchestrator", agent.isOrchestrator())
+          .put("model", model)
+          .put("modelLabel", info != null ? info.label() : model)
+          .put("ownKey", info != null ? info.ownKey() : com.jizza.engine.api.llm.ModelRefs.ownKey(model))
+          .put("inputTokens", input).put("outputTokens", output)
+          .put("cost", Math.round(cost * 1_000_000d) / 1_000_000d);
+      if (req.effort() != null) p.put("effort", req.effort());
+    });
   }
 
   /** The pages a reply searched, read or cited, for the chat to show under it. */

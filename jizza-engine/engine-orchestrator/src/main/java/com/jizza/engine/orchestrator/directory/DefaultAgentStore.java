@@ -93,6 +93,20 @@ public class DefaultAgentStore implements AgentStore {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public String model(UUID agentId) {
+    return require(agentId).getModel();
+  }
+
+  @Override
+  @Transactional
+  public void setModel(UUID agentId, String model) {
+    AgentEntity agent = require(agentId);
+    agent.setModel(model);
+    save(agent);
+  }
+
+  @Override
   @Transactional
   public AgentDto createCustom(UUID userId, String key, CustomAgentDraft draft) {
     AgentEntity agent = new AgentEntity();

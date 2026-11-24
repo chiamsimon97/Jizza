@@ -3,6 +3,8 @@ package com.jizza.engine.agents.config;
 import com.jizza.engine.api.chat.ChatFiles;
 import com.jizza.engine.api.llm.LlmClient;
 import com.jizza.engine.agents.llm.AnthropicLlmClient;
+import com.jizza.engine.agents.llm.ModelProviders;
+import com.jizza.engine.agents.llm.RoutingLlmClient;
 import com.jizza.engine.agents.llm.UnconfiguredLlmClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -18,10 +20,13 @@ public class AgentConfig {
    * deliberately supported so the scheduler, connectors and workflow engine stay testable.
    */
   @Bean
-  public LlmClient llmClient(AgentProperties props, ObjectProvider<ChatFiles> chatFiles) {
+  public LlmClient llmClient(AgentProperties props, ObjectProvider<ChatFiles> chatFiles,
+                             ObjectProvider<ModelProviders> providers) {
     String apiKey = props.getAnthropic().getApiKey();
-    return apiKey == null || apiKey.isBlank()
+    LlmClient platform = apiKey == null || apiKey.isBlank()
         ? new UnconfiguredLlmClient()
         : new AnthropicLlmClient(props, chatFiles::getIfAvailable);
+    // Models on the person's own key (F1) go to their connection; everything else to the platform.
+    return new RoutingLlmClient(platform, providers::getIfAvailable);
   }
 }

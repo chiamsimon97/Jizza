@@ -31,6 +31,7 @@ import { ActivityPage } from '@/pages/ActivityPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { SecurityPage } from '@/pages/SecurityPage'
+import { AiModelsPage } from '@/pages/AiModelsPage'
 import { DevicesPage } from '@/pages/DevicesPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 import { MembersPage } from '@/pages/MembersPage'
@@ -116,6 +117,7 @@ export default function App() {
             <Route path="/settings/devices" element={<DevicesPage />} />
           </Route>
           <Route path="/settings/security" element={<SecurityPage />} />
+          <Route path="/settings/ai-models" element={<AiModelsPage />} />
           <Route path="/settings" element={<Navigate to="/settings/security" replace />} />
         </Route>
       </Route>

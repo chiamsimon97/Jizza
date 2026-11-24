@@ -128,6 +128,35 @@ public class ConversationUseCase {
     store.rewind(userId, conversationId, messageId);
   }
 
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog;
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void setCatalog(org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog) {
+    this.catalog = catalog;
+  }
+
+  public ConversationStore.ChatChoice choice(UUID userId, UUID conversationId) {
+    return store.choice(userId, conversationId);
+  }
+
+  /** Sets the chat's model and depth; only a model the person can use is accepted. */
+  public ConversationStore.ChatChoice setChoice(UUID userId, UUID conversationId, String model,
+                                                String depth) {
+    String m = model == null ? null : model.trim();
+    if (m != null && !m.isEmpty() && !"auto".equalsIgnoreCase(m)) {
+      var known = catalog == null ? null : catalog.getIfAvailable();
+      if (known == null || known.available(userId).stream().noneMatch(i -> i.ref().equals(m))) {
+        throw new ValidationException("That model isn't one you can use. Connect its provider under "
+            + "Settings, AI models, or pick another.");
+      }
+    }
+    return store.setChoice(userId, conversationId, m, depth);
+  }
+
+  public void keepVersion(UUID userId, UUID conversationId, UUID messageId, int index) {
+    store.keepVersion(userId, conversationId, messageId, index);
+  }
+
   /** A thumbs up ({@code up}), down ({@code down}) or none ({@code none} or null) on a reply. */
   public void feedback(UUID userId, UUID conversationId, UUID messageId, String rating, String reason) {
     String r = rating == null ? "none" : rating.strip().toLowerCase(java.util.Locale.ROOT);

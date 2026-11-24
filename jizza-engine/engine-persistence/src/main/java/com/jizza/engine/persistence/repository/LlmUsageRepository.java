@@ -13,7 +13,7 @@ public interface LlmUsageRepository extends JpaRepository<LlmUsageEntity, UUID> 
 
   @Query("""
       select coalesce(sum(u.costUnits), 0) from LlmUsageEntity u
-       where u.userId = :userId and u.createdAt >= :since
+       where u.userId = :userId and u.createdAt >= :since and u.paidBy = 'platform'
       """)
   java.math.BigDecimal spendSince(@Param("userId") UUID userId, @Param("since") Instant since);
 

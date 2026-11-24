@@ -75,6 +75,17 @@ public class ConversationEntity {
   @Column(nullable = false)
   private boolean threadsEnabled;
 
+  /** The model the person picked for this chat (a model reference); null is Auto. */
+  private String model;
+
+  /** quick, normal or deep; null is normal. */
+  private String depth;
+
+  public String getModel() { return model; }
+  public void setModel(String v) { this.model = v; }
+  public String getDepth() { return depth; }
+  public void setDepth(String v) { this.depth = v; }
+
   public static final String KIND_MAIN = "main";
   public static final String KIND_THREAD = "thread";
 

@@ -5,7 +5,7 @@ import {
   MessageSquare, Bell, Bot, Brain, ListTodo,
   Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
   ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, ClipboardList, UserCog,
-  MonitorSmartphone, Video, LifeBuoy,
+  MonitorSmartphone, Video, LifeBuoy, Cpu,
   type LucideIcon,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -58,6 +58,7 @@ const personalSections: NavSection[] = [
       { to: '/runs',     icon: History,   label: 'Run history' },
       { to: '/usage',    icon: BarChart2, label: 'Usage' },
       { to: '/settings/devices', icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
+      { to: '/settings/ai-models', icon: Cpu, label: 'AI models' },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },
@@ -82,6 +83,7 @@ const organizationSections: NavSection[] = [
       { to: '/discover',          icon: Compass,     label: 'Discover' },
       { to: '/help',              icon: LifeBuoy,    label: 'Help' },
       { to: '/settings/devices',  icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
+      { to: '/settings/ai-models', icon: Cpu,        label: 'AI models' },
       { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
     ],
   },

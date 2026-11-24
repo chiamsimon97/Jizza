@@ -158,6 +158,12 @@ public class TurnStore {
         .ifPresent(j -> j.setStatus(ChatJobEntity.COMPLETED));
   }
 
+  /** The model and depth the conversation is set to; null for an incognito turn or Auto and normal. */
+  @Transactional(readOnly = true)
+  public ConversationEntity settings(UUID conversationId) {
+    return conversationId == null ? null : conversations.findById(conversationId).orElse(null);
+  }
+
   /** The turns before this one, oldest first: what Jizza is reminded of. */
   @Transactional(readOnly = true)
   public List<Msg> history(UUID conversationId, UUID userMessageId) {

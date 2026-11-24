@@ -59,6 +59,30 @@ public class ConversationController {
         body.threads());
   }
 
+  /** The model and depth the chat is set to (Auto and normal unless the person picked). */
+  @GetMapping("/{id}/choice")
+  public com.jizza.engine.api.orchestrator.ConversationStore.ChatChoice choice(@PathVariable UUID id) {
+    return conversations.choice(CurrentUser.userId(), id);
+  }
+
+  public record ChoiceBody(@jakarta.validation.constraints.Size(max = 200) String model,
+                           @jakarta.validation.constraints.Size(max = 16) String depth) {}
+
+  @org.springframework.web.bind.annotation.PutMapping("/{id}/choice")
+  public com.jizza.engine.api.orchestrator.ConversationStore.ChatChoice setChoice(
+      @PathVariable UUID id, @jakarta.validation.Valid @RequestBody ChoiceBody body) {
+    return conversations.setChoice(CurrentUser.userId(), id, body.model(), body.depth());
+  }
+
+  public record KeepBody(int index) {}
+
+  /** Keeps an earlier answer of a reply; the chat continues from it. */
+  @PostMapping("/{id}/messages/{messageId}/keep")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void keep(@PathVariable UUID id, @PathVariable UUID messageId, @RequestBody KeepBody body) {
+    conversations.keepVersion(CurrentUser.userId(), id, messageId, body.index());
+  }
+
   @DeleteMapping("/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void delete(@PathVariable UUID id) {
