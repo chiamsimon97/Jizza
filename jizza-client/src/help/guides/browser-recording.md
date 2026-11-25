@@ -3,7 +3,7 @@ title: Browser recording
 summary: Record a task once in Chrome, review the steps, and run it as a module whenever you need it.
 section: Web automation
 order: 10
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## What it is
@@ -12,7 +12,7 @@ Browser recording turns a task you do once in Chrome into a module that Jizza re
 
 With a saved recording you can:
 
-- **Run it on demand**, from the [Recordings](/recordings) page or by asking Jizza in chat ("download last month's invoices").
+- **Run it on demand**, from the [Build › Recordings](/recordings) page or by asking Jizza in chat ("download last month's invoices").
 - **Use it inside other workflows**, through "Run a module" or "For each", for example once per row of a spreadsheet.
 - **Change values per run**: any value you typed (an invoice number, a date, a search term) can become an input.
 - **Read data off pages**: pull text, check that something is on the page, or extract a whole table, and pass it to later steps.
@@ -56,7 +56,7 @@ This is the full procedure, checked end to end against a running Jizza server an
 
 ### B. Record
 
-4. In Jizza, open [Recordings](/recordings) and press **Record**.
+4. In Jizza, open [Build › Recordings](/recordings) and press **Record**.
 5. Choose your browser under **Browser agent**, type the full **Start page** address starting with `https://` (or `http://`), give the recording a **Name**, and press **Record**.
 6. The start page opens in its own window beside Jizza: Jizza moves to the left half of the screen and the site takes the right half, so you can see both. (If Jizza is open in a different browser, or you turned this off in the extension's Options, it opens as a new tab instead.) Jizza shows "Recording in Chrome on …" with a red dot. Wait for the page to finish loading before you start.
 7. Do the task at a normal pace. Click into a field, type, then click the next thing or press Tab: the typed value is saved as a step when you leave the field. Click buttons and links, tick boxes, choose from lists.
@@ -72,10 +72,10 @@ Tip: press **Float controls over the site** while it records. A small Jizza wind
 
 ### D. Test the module
 
-12. The module now shows under saved recordings on the [Recordings](/recordings) page. Keep the browser open and press **Run now**.
+12. The module now shows under saved recordings on the [Build › Recordings](/recordings) page. Keep the browser open and press **Run now**.
 13. The browser opens the start page again and Jizza replays the steps in order. Before each step the extension brings the run's tab to the front, because some sites (for example a booking site's "Select language and format" dialog) only draw part of the page while their tab is visible. You can watch the run in Jizza; the browser tab comes back to the front at the next step.
-14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked for a step, open the workflow's **Guardrails** on the [Workflows](/workflows) page and set that step to **Auto** for the agent that leads it (see "Who runs it and which steps ask" below).
-15. Open [Run history](/runs). The run should end as **Done**, with every step ticked. A failed step shows what went wrong in words, and a screenshot when the browser took one.
+14. Each step that changes the page (typing, clicking, ticking) goes through your guardrails, so the first run usually stops before such a step and asks you. Open [Notifications](/notifications) (or [Activity › Run history](/runs) and the run) and approve the step. The run carries on to the next step. To stop being asked for a step, open the workflow's **Guardrails** on the [Build › Workflows](/workflows) page and set that step to **Auto** for the agent that leads it (see "Who runs it and which steps ask" below).
+15. Open [Activity › Run history](/runs). The run should end as **Done**, with every step ticked. A failed step shows what went wrong in words, and a screenshot when the browser took one.
 
 ### If recording does not start or captures nothing
 
@@ -88,7 +88,7 @@ Tip: press **Float controls over the site** while it records. A small Jizza wind
 
 A recording runs from **Record** to **Stop**, and gives you a list of steps to review.
 
-1. In Jizza, open [Recordings](/recordings) and press **Record**.
+1. In Jizza, open [Build › Recordings](/recordings) and press **Record**.
 2. Choose the **browser agent**, a **start page** (for example `https://portal.example.com/invoices`) and a **name** for the recording.
 3. Chrome opens the start page in its own tab group, in a window placed beside Jizza, and the extension's side panel lists each step as you go. Later recordings and picks reuse that window while it stays open.
 4. Do the task the way you normally would: click, type, pick from lists, tick boxes, switch tabs.
@@ -471,7 +471,7 @@ On the Recordings page, **Delete** next to a saved recording removes it after yo
 
 ## Who runs it and which steps ask
 
-Each workflow has a **Guardrails** panel on the [Workflows](/workflows) page.
+Each workflow has a **Guardrails** panel on the [Build › Workflows](/workflows) page.
 
 - **Maintained by**: pick one or more agents, the same way you pick agents for a connector. The first one you pick **leads**: its guardrails decide every run of this workflow. With none picked, Jizza (or the agent that made the workflow) leads.
 - **Each step, per agent**: every step that acts on your apps or your browser is listed, with what each maintaining agent's guardrails will do: **Auto**, **Ask me**, **Let Jizza decide** or **Never**.
@@ -505,7 +505,7 @@ Some sites sign you in with a link they email you (a "magic link") instead of a 
 
 On a run, the step needs the new link:
 
-- **From your email, by itself.** Add your email under [Connectors](/connectors) (Gmail, for example). Before the sign-in step, add a **Wait** of a minute, then the connector's step that searches your mail for the site's latest sign-in email. In the sign-in step, set **link** to the link in that email, for example `{{ nodes.search_mail.extractLink('example.com') }}`. `extractLink` finds the first web link in any text, or the first one with the part you give.
+- **From your email, by itself.** Add your email under [Settings › Connectors](/connectors) (Gmail, for example). Before the sign-in step, add a **Wait** of a minute, then the connector's step that searches your mail for the site's latest sign-in email. In the sign-in step, set **link** to the link in that email, for example `{{ nodes.search_mail.extractLink('example.com') }}`. `extractLink` finds the first web link in any text, or the first one with the part you give.
 - **From you.** Leave **link** empty, and the run asks you on a card to paste the link from your email.
 
 The link is handled like a password: it is never shown in the run or kept anywhere, and the run only opens it on the site the step was recorded for.
@@ -524,7 +524,7 @@ The recorder only watches what you allow, and you can stop it at any time.
 - **Only its own tabs.** The recorder watches only the tab group it opened, not your other tabs.
 - **Only real actions.** Only the clicks and keys you actually make are recorded, never ones a page fakes.
 - **No secrets stored.** Password, one-time-code and card fields are never read, also on pages that only name them that way (a box called "CVV", "OTP" or "Card number"), and a password stays unread after the page's "show password" turns it into plain text. They are blurred in every screenshot and step picture, and if the server ever receives one of their values, it removes it.
-- **Your approval.** Steps that change a site (submitting, typing) go through your [guardrails](/guardrails) like any other action. In chat, clicking or typing in your browser always asks first.
+- **Your approval.** Steps that change a site (submitting, typing) go through your guardrails ([Settings › Guardrails](/guardrails)) like any other action. In chat, clicking or typing in your browser always asks first.
 - **Stop everything.** **Pause automation** in the extension popup refuses all commands until you resume. **Stop all** (Alt+Shift+S) ends whatever is running now.
 
 ## Advanced web steps and options

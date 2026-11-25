@@ -3,7 +3,7 @@ title: Chat with Jizza and your specialists
 summary: Let Jizza look things up on the web, send it Word, Excel and PowerPoint files, ask a specialist with @, use the / shortcuts, and rate replies.
 section: Chat
 order: 10
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## Looking things up on the web
@@ -46,4 +46,4 @@ Type **/** in the message box to see the shortcuts for where you are. Wherever y
 
 Under each reply there's a thumbs up and a thumbs down. Tap one and, if you like, say why. Tap it again to take it back.
 
-In a thread, what you say is added to the thread's guide under **How to work here**, so its lead does better next time. Every rating also shows on the [Usage](/usage) page under **Reply quality**: each agent's thumbs for the last 30 days, and the latest replies you rated with your reasons.
+In a thread, what you say is added to the thread's guide under **How to work here**, so its lead does better next time. Every rating also shows on the [Settings › Usage](/usage) page under **Reply quality**: each agent's thumbs for the last 30 days, and the latest replies you rated with your reasons.

@@ -3,14 +3,14 @@ title: Forms
 summary: Build a form from fields or from a workflow's steps, publish it at a link, and start workflows with what people send.
 section: Automation
 order: 20
-updated: 2026-11-08
+updated: 2026-11-25
 ---
 
 ## What it is
 
 A form is a page anyone can fill in at its link, without a Jizza account. Every response is kept under the form's **Submissions**, and it can start one or more of your workflows with the answers as their input.
 
-Open [Forms](/forms) and choose **New form**:
+Open [Build › Forms](/forms) and choose **New form**:
 
 - **Blank form**: drag fields in from the left panel.
 - **From a workflow**: pick one of your workflows. Its steps are listed on the left, and dropping a step makes the fields it needs for you.
@@ -48,7 +48,7 @@ Adding a step from a workflow also makes the form start that workflow, unless an
 
 A form starts a workflow only while the workflow is **on**. Under **When someone sends this form** (in the right panel when no field is selected), tick the workflows to start and switch each one on.
 
-You can also do this from [Workflows](/workflows): each workflow has an **On/Off** switch and a **Starts when** picker for its form.
+You can also do this from [Build › Workflows](/workflows): each workflow has an **On/Off** switch and a **Starts when** picker for its form.
 
 - Turning a workflow on holds for its current steps. Saving changes in the builder keeps it on.
 - A workflow that is off can still be run by hand to test it.
