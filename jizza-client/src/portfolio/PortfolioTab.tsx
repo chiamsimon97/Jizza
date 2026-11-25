@@ -18,13 +18,17 @@ import { SAMPLE_PROFILE } from './sample'
 import { ActionPlan } from './screens/ActionPlan'
 import { CashFlow } from './screens/CashFlow'
 import { Home } from './screens/Home'
+import { GoalDetail, Goals, useGoals } from './screens/Goals'
+import { GoalWizard } from './screens/GoalWizard'
 import { Loans } from './screens/Loans'
 import { NetWorth } from './screens/NetWorth'
 import { NotYet } from './screens/NotYet'
 import { People } from './screens/People'
+import { PlanBuilder } from './screens/PlanBuilder'
 import { Protection } from './screens/Protection'
 import { QUICK_START_STEPS, QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
+import { Tax } from './screens/Tax'
 import { usePortfolioScope } from './usePortfolioScope'
 
 /** Views that work on the sample household; the rest are the user's own setup. */
@@ -40,6 +44,7 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   const navigate = useNavigate()
   const [scope, setScope] = usePortfolioScope()
   const { data: profile, isLoading, error } = useQuery({ queryKey: financeKeys.profile, queryFn: financeApi.profile })
+  const goals = useGoals()
   const hide = useMutation({
     mutationFn: (hideAmounts: boolean) => financeApi.updateSettings({ hideAmounts }),
     onSuccess: () => qc.invalidateQueries({ queryKey: financeKeys.profile }),
@@ -57,7 +62,7 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   const investments = visible.filter(v => v.group === 'investments')
   const people = shown.people.filter(p => p.status === 'active')
   const inInvestments = view.group === 'investments'
-  const open = (id: string) => setScope({ view: id, step: null })
+  const open = (id: string) => setScope({ view: id, step: null, goal: null })
   const answer = (step: QuickStartStep) => setScope({ view: 'quick-start', step, sample: null })
   const startStep = QUICK_START_STEPS.some(s => s.id === scope.step) ? scope.step as QuickStartStep : null
   const askKai = () => {
@@ -92,8 +97,11 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
               </label>
               <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 Goal
-                <select aria-label="Goal" className={`${fieldClass} !w-auto !py-1 text-xs`} value="all" disabled title="Goals arrive with the plan builder">
+                <select aria-label="Goal" className={`${fieldClass} !w-auto !py-1 text-xs`} disabled={sample || !goals.data?.length}
+                  value={view.id === 'goal' ? scope.goal : 'all'}
+                  onChange={e => setScope(e.target.value === 'all' ? { view: 'goals', goal: null } : { view: 'goal', goal: e.target.value, step: null })}>
                   <option value="all">All goals</option>
+                  {!sample && goals.data?.filter(g => g.goal.status !== 'archived').map(g => <option key={g.goal.id} value={g.goal.id}>{g.goal.name}</option>)}
                 </select>
               </label>
               <span className="inline-flex items-center gap-1 rounded-full bg-gray-900 px-2 py-0.5 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900"
@@ -136,6 +144,19 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
                 {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} />}
                 {view.id === 'quick-start' && <QuickStart profile={profile} startAt={startStep} onOpen={open} />}
                 {view.id === 'actions' && <ActionPlan onOpen={open} />}
+                {view.id === 'goals' && <Goals person={scope.person} onNew={() => open('goal-new')} onOpenGoal={id => setScope({ view: 'goal', goal: id })} />}
+                {view.id === 'goal' && scope.goal !== 'all' && (
+                  <GoalDetail key={scope.goal} id={scope.goal} people={profile.people} onBack={() => open('goals')}
+                    onEdit={() => setScope({ view: 'goal-new', goal: scope.goal })} />
+                )}
+                {view.id === 'goal' && scope.goal === 'all' && <Goals person={scope.person} onNew={() => open('goal-new')} onOpenGoal={id => setScope({ view: 'goal', goal: id })} />}
+                {view.id === 'goal-new' && (
+                  <GoalWizard key={scope.goal} people={profile.people} editId={scope.goal !== 'all' ? scope.goal : null}
+                    onDone={id => setScope({ view: 'goal', goal: id })}
+                    onCancel={() => (scope.goal !== 'all' ? setScope({ view: 'goal' }) : open('goals'))} />
+                )}
+                {view.id === 'plan-builder' && <PlanBuilder onOpen={open} />}
+                {view.id === 'tax' && <Tax people={profile.people} person={scope.person} onOpen={open} />}
                 {view.id === 'cash-flow' && <CashFlow onOpen={open} onAnswer={answer} />}
                 {view.id === 'loans' && <Loans />}
                 {view.id === 'protection' && <Protection people={people} onOpen={open} onAnswer={answer} />}

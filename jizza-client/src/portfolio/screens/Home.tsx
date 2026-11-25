@@ -220,6 +220,8 @@ const STEP_UNLOCKS: Record<QuickStartStep, CheckKey[]> = {
   loans: ['debt'],
   insurance: ['protection'],
   savings: ['emergencyFund'],
+  goals: ['goalFunding'],
+  risk: [],
 }
 
 /** What is still missing and which checks each answer unlocks. */

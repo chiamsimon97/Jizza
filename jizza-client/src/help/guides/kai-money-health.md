@@ -14,7 +14,7 @@ Kai looks at your own money and the money of people you manage who have no login
 
 ## Quick start
 
-Six questions, one per screen, take about 10 minutes:
+Eight questions, one per screen, take about 10 minutes:
 
 1. Whose money you look after here
 2. What comes in each month (take-home, and gross if you know it)
@@ -22,6 +22,8 @@ Six questions, one per screen, take about 10 minutes:
 4. Loans and borrowings, with the rate the way you know it ("14% a year", "₹2 per ₹100 a month", "no interest")
 5. Term and health cover, ticking **Only through my employer** where that applies
 6. Rough totals of what you have saved
+7. Up to three goals you are saving for; Kai fills in the amount and date
+8. Six questions on how you react to risk
 
 Each answer is saved as you press **Next**, so you can stop with **Finish later** and carry on where you left off. **Skip for now** leaves that question's checks as **Not enough data**. A skipped question never counts against you. Answering a question again replaces what you said before.
 
