@@ -35,6 +35,10 @@ export JIZZA_CALLBACK_BASE_URL=https://your-tunnel.example   # see "OAuth callba
 Optional: `JIZZA_EMBEDDING_PROVIDER=openai-compatible` with a local Ollama gives memory and
 knowledge real semantic search without data leaving the machine (see [docs/MEMORY.md](docs/MEMORY.md)).
 
+Kai's Portfolio tab (family finance planning) is being built behind a switch:
+`JIZZA_FINANCE_ENABLED=true` turns on `/api/finance/**` and shows the tab on Kai's page. It is off by
+default, so unfinished phases stay hidden.
+
 Everything else has a working local default. The full list is in
 [`jizza-app/src/main/resources/application.yml`](jizza-app/src/main/resources/application.yml);
 each value is an environment variable, so nothing sensitive belongs in the file.

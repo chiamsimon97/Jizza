@@ -80,6 +80,8 @@ public abstract class E2eSupport {
 
     // A fresh database has no Super Admin account to own the Public organization.
     registry.add("jizza.development", () -> "true");
+    // Swept by the route suites like every other module while it is being built.
+    registry.add("jizza.finance.enabled", () -> "true");
     registry.add("jizza.security.session.cookie-secure", () -> "false");
     // Every suite registers its own throwaway users and signs in with a password alone. The auth
     // suite switches two-step enforcement on where that is what it is testing.
