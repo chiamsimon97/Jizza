@@ -35,6 +35,17 @@ describe('Sidebar', () => {
     expect(menu.getByText('me@example.com')).toBeInTheDocument()
   })
 
+  it('switches accounts from the account menu, not from the top of the left menu', () => {
+    renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />, makeSnapshot('PERSONAL'))
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(1) // only the account menu opens a popup
+    fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }))
+    const menu = within(screen.getByRole('menu', { name: 'Account menu' }))
+    expect(menu.getByText('Accounts')).toBeInTheDocument()
+    expect(menu.getByRole('menuitem', { name: /Acme/ })).toBeInTheDocument()
+    expect(menu.getByRole('menuitem', { name: 'Create organization' })).toBeInTheDocument()
+    expect(menu.getByRole('menuitem', { name: /Pending requests/ })).toHaveAttribute('href', '/invitations')
+  })
+
   it('groups an Organization Owner\'s pages under Organization', () => {
     const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER'))
     const labels = nav.getAllByRole('link').map(l => l.textContent)
@@ -49,8 +60,9 @@ describe('Sidebar', () => {
 
   it('shows the active account in the switcher', () => {
     renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />, makeSnapshot('ORGANIZATION', 'ADMIN'))
-    expect(screen.getByRole('button', { name: 'Account: Acme' })).toBeInTheDocument()
-    expect(screen.getByText('Private organization · Admin')).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'Open account menu' })
+    expect(within(button).getByText('Acme')).toBeInTheDocument()
+    expect(within(button).getByText('Private organization · Admin')).toBeInTheDocument()
   })
 
   it('shows Platform only to the Super Admin', () => {
@@ -64,6 +76,7 @@ describe('Sidebar', () => {
     renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />,
       makeSnapshot('ORGANIZATION', 'OWNER', { platformRole: 'SUPER_ADMIN', publicWorkspaceIds: ['ws-acme'] }))
     expect(screen.getByText('Public')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }))
     expect(screen.getByText('Public organization · Owner')).toBeInTheDocument()
     expect(screen.getByText('Super Admin')).toBeInTheDocument()
   })

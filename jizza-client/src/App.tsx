@@ -91,10 +91,10 @@ export default function App() {
             </Route>
             <Route path="/forms/:formId" element={<FormBuilderPage />} />
             <Route path="/autonomy" element={<Navigate to="/guardrails" replace />} />
-            <Route element={<HubLayout hub="activity" />}>
-              <Route path="/activity" element={<ActivityPage />} />
-              <Route path="/runs" element={<RunHistoryPage />} />
-            </Route>
+            {/* Activity, Run history and Usage switch with their own strip (MonitorTabs). */}
+            <Route path="/activity" element={<ActivityPage />} />
+            <Route path="/runs" element={<RunHistoryPage />} />
+            <Route path="/usage" element={<UsagePage />} />
           </Route>
 
           <Route path="/notifications" element={<NotificationsPage />} />
@@ -136,7 +136,6 @@ export default function App() {
             </Route>
             <Route element={<PersonalOnly />}>
               <Route path="/guardrails" element={<GuardrailsPage />} />
-              <Route path="/usage" element={<UsagePage />} />
             </Route>
             <Route element={<RequirePermission permission={PERMISSIONS.GUARDRAILS_VIEW} />}>
               <Route path="/organization/guardrails" element={<OrganizationGuardrailsPage />} />

@@ -4,8 +4,8 @@ import { useAuthorization } from '@/auth/useAuthorization'
 import { pathMatches, settingsFor } from '@/components/layout/navigation'
 
 /**
- * Settings: the configuration pages (theme, security, AI models, devices, connectors, guardrails,
- * usage) in one place, opened from the account menu at the bottom of the left menu. The list sits on
+ * Settings: the configuration pages (theme, accounts, security, AI models, devices, connectors and
+ * guardrails) in one place, opened from the account menu at the bottom of the left menu. The list sits on
  * the left on a wide screen and scrolls across the top on a phone. Each page keeps its own address.
  */
 export function SettingsLayout() {
@@ -44,7 +44,8 @@ export function SettingsLayout() {
           ))}
         </nav>
       </aside>
-      <div className="min-w-0 flex-1">
+      {/* Pages are centred on their own; beside this list they line up on the left instead. */}
+      <div className="min-w-0 flex-1 [&>.page]:mx-0">
         <Outlet />
       </div>
     </div>

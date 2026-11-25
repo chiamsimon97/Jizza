@@ -36,7 +36,7 @@ describe('SettingsLayout', () => {
     renderAt('/connectors')
     const nav = within(screen.getByRole('navigation', { name: 'Settings' }))
     expect(nav.getAllByRole('link').map(l => l.textContent))
-      .toEqual(['General', 'Security', 'AI models', 'Devices', 'Connectors', 'Guardrails', 'Usage'])
+      .toEqual(['General', 'Security', 'AI models', 'Devices', 'Connectors', 'Guardrails'])
     expect(nav.getByRole('link', { name: 'Connectors' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('connectors page')).toBeInTheDocument()
   })

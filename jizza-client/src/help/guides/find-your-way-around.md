@@ -18,15 +18,16 @@ The left menu holds only the places you work in every day. Pages that belong tog
 | [Agents](/agents) | Agents, Memory |
 | [Tasks](/tasks) | |
 | [Build](/workflows) | Workflows, Recordings, Forms, Functions, Procedures |
-| [Activity](/activity) | Activity, Run history |
+| [Activity](/activity) | Activity, Run history, Usage |
 
 In an Organization account the menu shows Notifications, Discover and **Organization** (Members, Public listing, Agent templates, as your role allows).
 
-## Settings, Help and Sign out
+## Accounts, Settings, Help and Sign out
 
-Press your name at the bottom of the left menu. The menu that opens has:
+Press the account at the bottom of the left menu (Personal, or your organization's name). The menu that opens has:
 
-- **Settings**: General (theme and who is signed in), Security, AI models, Devices, Connectors, Guardrails and Usage.
+- **Accounts**: switch between your Individual account and your organizations, see Pending requests, or Create organization. The same list is on Settings › General.
+- **Settings**: General (theme, accounts and who is signed in), Security, AI models, Devices, Connectors and Guardrails.
 - **Get help**: these guides.
 - **Theme**: Light, Dark or Sunset.
 - **Sign out**.

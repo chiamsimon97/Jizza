@@ -11,9 +11,11 @@ export function HubLayout({ hub: id }: { hub: HubId }) {
   const { pathname } = useLocation()
   const hub = visibleHub(HUBS[id], snapshot)
   if (!hub || hub.tabs.length < 2) return <Outlet />
+  const wide = hub.tabs.some(t => t.wide && pathMatches(t, pathname))
   return (
-    <>
-      <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
+    // The page below keeps its own width; the tabs take the same width and the page's top gap shrinks.
+    <div className="[&>.page]:pt-4">
+      <div className={`mx-auto w-full px-4 pt-4 sm:px-6 lg:px-8 ${wide ? '' : 'max-w-6xl'}`}>
         <nav aria-label={hub.label}
           className="-mb-2 flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
           {hub.tabs.map(tab => {
@@ -33,6 +35,6 @@ export function HubLayout({ hub: id }: { hub: HubId }) {
         </nav>
       </div>
       <Outlet />
-    </>
+    </div>
   )
 }

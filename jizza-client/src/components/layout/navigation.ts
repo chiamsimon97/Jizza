@@ -17,6 +17,8 @@ export interface NavTab {
   superAdmin?: boolean
   /** Other paths that belong to this tab, such as an item's own page. */
   also?: string[]
+  /** The page spans the full width (like Memory), so its tabs do too. */
+  wide?: boolean
 }
 
 /**
@@ -37,7 +39,7 @@ const single = (to: string, label: string, icon: LucideIcon, extra: Partial<NavT
 export const HUBS = {
   agents: hub('agents', 'Agents', Bot, [
     { to: '/agents', label: 'Agents', icon: Bot },
-    { to: '/memory', label: 'Memory', icon: Brain },
+    { to: '/memory', label: 'Memory', icon: Brain, wide: true },
   ]),
   build: hub('build', 'Build', Hammer, [
     { to: '/workflows', label: 'Workflows', icon: Workflow },
@@ -49,6 +51,7 @@ export const HUBS = {
   activity: hub('activity', 'Activity', Activity, [
     { to: '/activity', label: 'Activity', icon: Activity },
     { to: '/runs', label: 'Run history', icon: History },
+    { to: '/usage', label: 'Usage', icon: BarChart2 },
   ]),
   organization: hub('organization', 'Organization', Building2, [
     { to: '/members', label: 'Members', icon: Users, permission: PERMISSIONS.MEMBERS_VIEW },
@@ -99,7 +102,6 @@ const personalSettings: SettingsGroup[] = [
     items: [
       { to: '/connectors', label: 'Connectors', icon: Plug, permission: PERMISSIONS.CONNECTOR_VIEW },
       { to: '/guardrails', label: 'Guardrails', icon: Shield },
-      { to: '/usage', label: 'Usage', icon: BarChart2 },
     ],
   },
 ]
