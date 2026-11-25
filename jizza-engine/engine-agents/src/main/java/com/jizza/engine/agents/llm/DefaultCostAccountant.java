@@ -20,10 +20,23 @@ public class DefaultCostAccountant implements CostAccountant {
 
   private final LlmUsageRepository usage;
   private final AgentProperties props;
+  private org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog;
 
   public DefaultCostAccountant(LlmUsageRepository usage, AgentProperties props) {
     this.usage = usage;
     this.props = props;
+  }
+
+  /** Prices for models on a person's own key; without it they are recorded at no cost. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setCatalog(org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> catalog) {
+    this.catalog = catalog;
+  }
+
+  @Override
+  public double costOf(UUID userId, String model, com.jizza.engine.api.llm.LlmResponse r) {
+    return cost(userId, model, r.inputTokens(), r.outputTokens(), r.cacheReadTokens(),
+        r.cacheWriteTokens()).doubleValue();
   }
 
   @Override
@@ -44,7 +57,10 @@ public class DefaultCostAccountant implements CostAccountant {
     entity.setOutputTokens(outputTokens);
     entity.setCacheReadTokens(cacheReadTokens);
     entity.setCacheWriteTokens(cacheWriteTokens);
-    entity.setCostUnits(cost(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens));
+    entity.setCostUnits(cost(userId, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens));
+    // A model on the person's own key is billed to them, not to the platform's ceiling.
+    entity.setPaidBy(com.jizza.engine.api.llm.ModelRefs.ownKey(model)
+        ? LlmUsageEntity.OWN : LlmUsageEntity.PLATFORM);
     usage.save(entity);
   }
 
@@ -69,6 +85,24 @@ public class DefaultCostAccountant implements CostAccountant {
   public double spendSince(UUID userId, String purpose, Instant since) {
     BigDecimal spend = usage.spendSinceForPurpose(userId, purpose, since);
     return spend == null ? 0d : spend.doubleValue();
+  }
+
+  /** A platform model is priced from configuration; one on the person's own key from their catalog. */
+  BigDecimal cost(UUID userId, String model, int inputTokens, int outputTokens, int cacheReadTokens,
+                  int cacheWriteTokens) {
+    if (!com.jizza.engine.api.llm.ModelRefs.ownKey(model)) {
+      return cost(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
+    }
+    var known = catalog == null ? null : catalog.getIfAvailable();
+    if (known == null) return BigDecimal.ZERO;
+    var info = known.find(userId, model).orElse(null);
+    if (info == null || info.inputPerMillion() == null || info.outputPerMillion() == null) {
+      return BigDecimal.ZERO;
+    }
+    // Cached input is priced at the full input rate here: providers differ in how they discount it.
+    return BigDecimal.valueOf(inputTokens).multiply(info.inputPerMillion())
+        .add(BigDecimal.valueOf(outputTokens).multiply(info.outputPerMillion()))
+        .divide(MILLION, 6, RoundingMode.HALF_UP);
   }
 
   BigDecimal cost(String model, int inputTokens, int outputTokens) {

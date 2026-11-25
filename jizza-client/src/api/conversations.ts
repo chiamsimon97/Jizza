@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import type { ChatChoice } from '@/api/aiModels'
 import type { ConversationSummary, EarlierSummary, JobDto, LearnedFact, MessageDto, ReplyQuality, ThreadGuide } from '@/types'
 
 /** A file name made of a title, the way the server names its exports. */
@@ -70,6 +71,15 @@ export const conversationsApi = {
   /** The summary standing in for a long chat's older messages; null while every message is sent as written. */
   earlier: async (id: string) =>
     (await api.get<EarlierSummary | undefined>(`/api/conversations/${id}/earlier`)) ?? null,
+
+  /** The model and depth picked for this chat; empty means Jizza decides. */
+  choice: (id: string) => api.get<ChatChoice>(`/api/conversations/${id}/choice`),
+
+  setChoice: (id: string, choice: ChatChoice) => api.put<ChatChoice>(`/api/conversations/${id}/choice`, choice),
+
+  /** Keeps an earlier answer to a question (by its place among the earlier versions); the chat continues from it. */
+  keep: (id: string, messageId: string, index: number) =>
+    api.post<void>(`/api/conversations/${id}/messages/${messageId}/keep`, { index }),
 
   jobs: (id: string) =>
     api.get<JobDto[]>(`/api/conversations/${id}/jobs`),

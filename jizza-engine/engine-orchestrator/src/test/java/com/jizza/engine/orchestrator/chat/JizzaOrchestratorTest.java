@@ -84,6 +84,47 @@ class JizzaOrchestratorTest {
     assertThat(request.getValue().tier()).isEqualTo(ModelTier.ROUTING);
   }
 
+  private AgentRequest askWith(com.fasterxml.jackson.databind.JsonNode context) {
+    answerWith("ok");
+    orchestrator.respond(userId, new Orchestrator.TurnInput("hello", null, List.of(), UUID.randomUUID(), context));
+    ArgumentCaptor<AgentRequest> request = ArgumentCaptor.forClass(AgentRequest.class);
+    Mockito.verify(baseAgent).run(request.capture());
+    return request.getValue();
+  }
+
+  @Test
+  void aModelPickedInTheChatBoxAnswersWithNoRoutingCheck() {
+    AgentRequest r = askWith(Json.obj().put("model", "openai:gpt-5.1"));
+    assertThat(r.model()).isEqualTo("openai:gpt-5.1");
+    assertThat(r.effort()).isNull();
+    Mockito.verify(tiers, Mockito.never()).tierFor(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void quickRunsOnTheFastModelThinkingLittle() {
+    AgentRequest r = askWith(Json.obj().put("depth", "quick"));
+    assertThat(r.tier()).isEqualTo(ModelTier.ROUTING);
+    assertThat(r.effort()).isEqualTo("low");
+    assertThat(r.model()).isNull();
+  }
+
+  @Test
+  void deepOnAPickedModelThinksHarderOnThatModel() {
+    AgentRequest r = askWith(Json.obj().put("depth", "deep").put("model", "gemini:gemini-2.5-pro"));
+    assertThat(r.model()).isEqualTo("gemini:gemini-2.5-pro");
+    assertThat(r.tier()).isEqualTo(ModelTier.STANDARD);
+    assertThat(r.effort()).isEqualTo("high");
+  }
+
+  @Test
+  void autoIsTheUsualRouting() {
+    AgentRequest r = askWith(Json.obj().put("model", "auto").put("depth", "normal"));
+    assertThat(r.model()).isNull();
+    assertThat(r.effort()).isNull();
+    Mockito.verify(tiers).tierFor(any(), any(), any(), any(), any());
+    assertThat(JizzaOrchestrator.withoutDepth(Json.obj().put("model", "x").put("depth", "quick"))).isNull();
+  }
+
   @Test
   void tryingAgainWithADeeperModelSkipsTheRoutingCheck() {
     answerWith("A closer look.");

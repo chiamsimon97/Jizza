@@ -66,10 +66,17 @@ public class ChatUseCase {
         s.incognito(), context);
   }
 
-  /** The viewer's time zone alone (for "tomorrow" in a request), when that is all that applies. */
+  /**
+   * Off any screen, only what is about the message itself: the viewer's time zone (for "tomorrow"
+   * in a request), and the model, depth, mention and earlier answers it was sent with.
+   */
   private static com.fasterxml.jackson.databind.JsonNode zoneOnly(com.fasterxml.jackson.databind.JsonNode context) {
+    var out = com.jizza.engine.api.util.Json.obj();
     String zone = context.path("timeZone").asText("");
-    if (zone.isBlank() || zone.length() > 64) return null;
-    return com.jizza.engine.api.util.Json.obj().put("timeZone", zone);
+    if (!zone.isBlank() && zone.length() <= 64) out.put("timeZone", zone);
+    for (String key : java.util.List.of("model", "depth", "mention", "versions")) {
+      if (context.has(key)) out.set(key, context.get(key));
+    }
+    return out.isEmpty() ? null : out;
   }
 }

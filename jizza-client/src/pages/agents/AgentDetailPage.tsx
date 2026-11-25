@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowLeft, Brain, History, Lock, Play, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
+import { groupModels, priceHint } from '@/api/aiModels'
+import { useModels } from '@/jizza/ModelControls'
 import { connectorHubApi } from '@/api/connectorHub'
 import { HUB_KEY, HealthBadge, toolSummary } from '@/pages/connectors/ConnectorHub'
 import { usePermission } from '@/auth/usePermission'
@@ -329,6 +331,7 @@ function Tools({ agent }: { agent: AgentDto }) {
         </ul>
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Section>
+      <ModelFor agent={agent} />
       <WebAccess agent={agent} />
       <ConnectorsFor agent={agent} />
       <Section title="Add a tool">
@@ -343,6 +346,39 @@ function Tools({ agent }: { agent: AgentDto }) {
         </ul>
       </Section>
     </div>
+  )
+}
+
+/** The model this agent answers with when the chat box is on Auto; Jizza picks unless one is set. */
+function ModelFor({ agent }: { agent: AgentDto }) {
+  const qc = useQueryClient()
+  const canModify = usePermission(PERMISSIONS.AGENT_MODIFY)
+  const { data } = useQuery({ queryKey: ['agent-model', agent.id], queryFn: () => agentsApi.model(agent.id) })
+  const { data: models = [] } = useModels()
+  const save = useMutation({
+    mutationFn: (model: string) => agentsApi.setModel(agent.id, model),
+    onSuccess: result => qc.setQueryData(['agent-model', agent.id], result),
+  })
+  if (!data) return null
+  const known = !data.model || models.some(m => m.ref === data.model)
+  return (
+    <Section title="Model" hint="Which model this agent answers with when the chat box is on Auto. A model picked in the chat box wins.">
+      <select aria-label="Model" className={fieldClass} value={data.model ?? 'auto'}
+        disabled={!canModify || save.isPending} onChange={e => save.mutate(e.target.value)}>
+        <option value="auto">Auto: Jizza picks</option>
+        {!known && <option value={data.model!}>{data.label ?? data.model} (not available now)</option>}
+        {groupModels(models).map(g => (
+          <optgroup key={g.group} label={g.group}>
+            {g.models.map(m => (
+              <option key={m.ref} value={m.ref}>
+                {[m.label, !m.tools && 'talk only, no tools', priceHint(m)].filter(Boolean).join(' · ')}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {save.error && <p className="mt-2 text-sm text-red-600">{errorText(save.error, 'Could not change it')}</p>}
+    </Section>
   )
 }
 

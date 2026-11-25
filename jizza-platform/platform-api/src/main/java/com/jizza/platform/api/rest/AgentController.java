@@ -278,6 +278,20 @@ public class AgentController {
 
   public record WebAccessBody(boolean enabled) {}
 
+  /** The model the agent answers with by default; null is its usual tier. */
+  @GetMapping("/{id}/model")
+  public AgentAdminUseCase.AgentModel model(@PathVariable UUID id) {
+    return admin.model(CurrentUser.userId(), id);
+  }
+
+  @PutMapping("/{id}/model")
+  @RequiresPermission(Permissions.AGENT_MODIFY)
+  public AgentAdminUseCase.AgentModel setModel(@PathVariable UUID id, @RequestBody ModelBody body) {
+    return admin.setModel(CurrentUser.userId(), id, body.model());
+  }
+
+  public record ModelBody(@Size(max = 200) String model) {}
+
   @GetMapping("/{id}/modes")
   public List<CustomAgentUseCase.ModeLine> modes(@PathVariable UUID id) {
     return custom.modes(CurrentUser.userId(), id);

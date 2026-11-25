@@ -79,6 +79,9 @@ public class AgentEntity {
   /** May search the web and read pages with the model provider's own tools. */
   private boolean webAccess = true;
 
+  /** The model it answers with by default (a model reference); null uses its tier. */
+  private String model;
+
   private UUID originTemplateId;
 
   private Integer originTemplateVersion;
@@ -166,4 +169,7 @@ public class AgentEntity {
 
   public Instant getUpdatedAt() { return updatedAt; }
   public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+
+  public String getModel() { return model; }
+  public void setModel(String v) { this.model = v; }
 }

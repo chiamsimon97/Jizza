@@ -41,6 +41,8 @@ public final class ActivityTypes {
   public static final String UI_ACTION = "ui.action";
   /** Web pages an agent searched, read or cited for its reply: {@code sources} of url and title. */
   public static final String WEB_SOURCES = "web.sources";
+  /** One agent's run finished: which model answered, its tokens and what it cost. */
+  public static final String AGENT_USAGE = "agent.usage";
 
   /** The conversation was given a title after its first exchange. */
   public static final String CONVERSATION_TITLED = "conversation.titled";

@@ -46,6 +46,9 @@ public final class AgentTestFixtures {
     private final LlmResponse repeatingTail;
     public final List<List<Msg>> requests = new ArrayList<>();
     public final List<List<ToolSpec>> offeredTools = new ArrayList<>();
+    /** The model each call asked for, and whose run it was made in. */
+    public final List<String> models = new ArrayList<>();
+    public final List<java.util.Optional<com.jizza.engine.api.llm.LlmCallContext.Call>> callers = new ArrayList<>();
 
     public ScriptedLlm(List<LlmResponse> responses) { this(responses, null); }
 
@@ -60,6 +63,8 @@ public final class AgentTestFixtures {
     @Override
     public LlmResponse complete(String model, List<Msg> messages, List<ToolSpec> tools) {
       requests.add(List.copyOf(messages));
+      models.add(model);
+      callers.add(com.jizza.engine.api.llm.LlmCallContext.current());
       offeredTools.add(tools == null ? List.of() : List.copyOf(tools));
       if (!script.isEmpty()) return script.poll();
       if (repeatingTail != null) return repeatingTail;

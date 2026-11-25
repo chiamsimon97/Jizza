@@ -66,6 +66,35 @@ public interface ConversationStore {
     throw new UnsupportedOperationException("Feedback is not kept here");
   }
 
+  /**
+   * The model and depth a chat is set to (F1, F3).
+   *
+   * @param model a model reference, null for Auto
+   * @param depth quick, normal or deep
+   */
+  record ChatChoice(String model, String depth) {
+    public static final ChatChoice AUTO = new ChatChoice(null, "normal");
+  }
+
+  default ChatChoice choice(UUID userId, UUID conversationId) {
+    return ChatChoice.AUTO;
+  }
+
+  /** Sets the chat's model (null or "auto" for Auto) and depth (null keeps it). */
+  default ChatChoice setChoice(UUID userId, UUID conversationId, String model, String depth) {
+    throw new UnsupportedOperationException("Chat choices are not kept here");
+  }
+
+  /**
+   * Keeps an earlier answer of a reply ("Ask another model" or "Try again" left several): it becomes
+   * the reply the chat continues from, and the one it replaces becomes an earlier version.
+   *
+   * @param index the earlier answer's position in the reply's versions, oldest first
+   */
+  default void keepVersion(UUID userId, UUID conversationId, UUID messageId, int index) {
+    throw new UnsupportedOperationException("Reply versions are not kept here");
+  }
+
   /** How the user rated replies over the last {@code days} days. */
   default com.jizza.engine.api.dto.ReplyQualityDto quality(UUID userId, int days) {
     return new com.jizza.engine.api.dto.ReplyQualityDto(days, List.of(), List.of());

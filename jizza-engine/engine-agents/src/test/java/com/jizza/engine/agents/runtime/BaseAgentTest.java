@@ -306,4 +306,48 @@ class BaseAgentTest {
     assertThat(result.text()).isEqualTo("still here");
     assertThat(llm.requests.get(0).get(0).text()).doesNotContain("What you already know");
   }
+
+  // ── A choice of models (Phase D) ─────────────────────────────────────────────
+
+  @Test
+  void aModelPickedForTheRequestAnswersOnThePersonsOwnAccount() {
+    var llm = new ScriptedLlm(List.of(text("Hi.")));
+    agentWith(llm).run(AgentRequest.of(agent.getUserId(), agent.getId(), "hi")
+        .withModel("openai:gpt-5.1").withEffort("low"));
+
+    assertThat(llm.models).containsExactly("openai:gpt-5.1");
+    assertThat(llm.callers.get(0)).isPresent();
+    assertThat(llm.callers.get(0).get().userId()).isEqualTo(agent.getUserId());
+    assertThat(llm.callers.get(0).get().effort()).isEqualTo("low");
+  }
+
+  @Test
+  void anAgentsOwnDefaultModelIsUsedUnlessTheRequestAsksForDeeper() {
+    agent.setModel("gemini:gemini-2.5-pro");
+    var llm = new ScriptedLlm(List.of(text("a"), text("b")));
+    BaseAgent base = agentWith(llm);
+
+    base.run(AgentRequest.of(agent.getUserId(), agent.getId(), "hi"));
+    base.run(AgentRequest.of(agent.getUserId(), agent.getId(), "hi")
+        .withTier(com.jizza.engine.api.enums.ModelTier.DEEP));
+
+    assertThat(llm.models).containsExactly("gemini:gemini-2.5-pro", "test-model-DEEP");
+  }
+
+  @Test
+  void aModelThatCanOnlyTalkIsOfferedNoTools() {
+    var llm = new ScriptedLlm(List.of(text("Hello.")));
+    BaseAgent base = agentWith(llm);
+    var catalog = mock(com.jizza.engine.api.llm.ModelCatalog.class);
+    when(catalog.find(any(), org.mockito.ArgumentMatchers.eq("ollama:tiny"))).thenReturn(Optional.of(
+        new com.jizza.engine.api.llm.ModelCatalog.ModelInfo("ollama:tiny", "ollama", "tiny", null, true,
+            false, false, false, null, null, null)));
+    var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+    beans.addBean("catalog", catalog);
+    base.setCatalog(beans.getBeanProvider(com.jizza.engine.api.llm.ModelCatalog.class));
+
+    base.run(AgentRequest.of(agent.getUserId(), agent.getId(), "hi").withModel("ollama:tiny"));
+
+    assertThat(llm.offeredTools.get(0)).isEmpty();
+  }
 }

@@ -72,4 +72,26 @@ class DefaultCostAccountantTest {
     when(usage.spendSince(any(), any())).thenReturn(new BigDecimal("999"));
     assertThat(accountant.withinBudget(UUID.randomUUID())).isTrue();
   }
+
+  @Test
+  void aModelOnThePersonsOwnKeyIsPricedFromTheirCatalogAndNotChargedToThePlatform() {
+    UUID user = UUID.randomUUID();
+    com.jizza.engine.api.llm.ModelCatalog catalog = mock(com.jizza.engine.api.llm.ModelCatalog.class);
+    when(catalog.find(user, "openai:gpt-5.1")).thenReturn(java.util.Optional.of(
+        new com.jizza.engine.api.llm.ModelCatalog.ModelInfo("openai:gpt-5.1", "openai", "GPT-5.1", null,
+            true, true, true, true, null, new BigDecimal("1.25"), new BigDecimal("10"))));
+    @SuppressWarnings("unchecked")
+    org.springframework.beans.factory.ObjectProvider<com.jizza.engine.api.llm.ModelCatalog> provider =
+        mock(org.springframework.beans.factory.ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(catalog);
+    accountant.setCatalog(provider);
+    when(usage.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+    accountant.record(user, "openai:gpt-5.1", 1_000_000, 100_000, 0, 0, "agent:jizza");
+
+    var saved = org.mockito.ArgumentCaptor.forClass(com.jizza.engine.persistence.entity.LlmUsageEntity.class);
+    org.mockito.Mockito.verify(usage).save(saved.capture());
+    assertThat(saved.getValue().getPaidBy()).isEqualTo("own");
+    assertThat(saved.getValue().getCostUnits()).isEqualByComparingTo("2.25");
+  }
 }

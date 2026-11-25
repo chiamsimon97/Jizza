@@ -3,7 +3,7 @@ title: Chat with Jizza and your specialists
 summary: Let Jizza look things up on the web, send it Word, Excel and PowerPoint files, ask a specialist with @, use the / shortcuts, and rate replies.
 section: Chat
 order: 10
-updated: 2026-11-21
+updated: 2026-11-24
 ---
 
 ## Looking things up on the web
@@ -38,7 +38,7 @@ Type **/** in the message box to see the shortcuts for where you are. Wherever y
 | /run | Runs a saved workflow now, with no AI and no tokens |
 | /thread | Turns threads on for this chat and starts a thread on a topic |
 | /remember | Starts a sentence for Jizza to keep in memory |
-| /model | Uses the deeper model for your next message only; type it again to switch back |
+| /model | Uses the deeper model for your next message only; type it again to switch back. To pick a model for the whole chat, use the model button under the message box ([Pick the AI model for a chat](/help/ai-models)) |
 | /new | Starts a new conversation |
 | /help | Lists the shortcuts here |
 

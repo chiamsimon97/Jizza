@@ -4,7 +4,7 @@ import { chatApi } from '@/api/chat'
 import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
-import type { AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyFeedback, ReplyVersion, StartRunCard, WebSource, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
+import type { AnsweredBy, TeamMember, AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyFeedback, ReplyVersion, StartRunCard, WebSource, ThreadCard, UiAction, UserSteps, WorkflowPlan } from '@/types'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -13,6 +13,7 @@ import { applyStepConfig, currentContext, useContextStore } from './contextStore
 import type { Starter } from './commands'
 import { splitAttachments } from './attachments'
 import { viewerZone } from '@/api/activity'
+import type { ChatChoice, Depth } from '@/api/aiModels'
 
 export interface Step {
   label: string
@@ -62,6 +63,10 @@ export interface AssistantMessage {
   versions?: ReplyVersion[]
   /** This answer came from the deeper model. */
   deep?: boolean
+  /** The model that wrote this answer. */
+  model?: AnsweredBy
+  /** Specialists who worked on this reply, with the model each used and what it cost. */
+  team?: TeamMember[]
   /** Web pages the reply searched, read or cited. */
   sources?: WebSource[]
   /** The user's thumbs up or down on this reply. */
@@ -72,7 +77,9 @@ export interface AssistantMessage {
 
 /** What a turn asks beyond its text: a deeper model, and the answers it replaces. */
 export interface TurnExtras {
-  depth?: 'deep'
+  depth?: Depth
+  /** A model for this message only ("Ask another model"); the chat's own choice otherwise. */
+  model?: string
   versions?: ReplyVersion[]
   /** The specialist an "@Name" picked to answer this message itself. */
   mention?: string
@@ -124,6 +131,12 @@ interface AssistantState {
   expanded: Record<string, boolean>
   dockOpen: boolean
   voiceReplies: boolean
+  /** The model and depth picked in the chat box for this chat; empty lets Jizza decide. */
+  choice: ChatChoice
+  /** Picks the chat's model or depth; saved on the chat so it sticks when it is opened again. */
+  setChoice: (choice: ChatChoice) => void
+  /** Keeps an earlier answer (by its place among the reply's versions): the chat continues from it. */
+  keepVersion: (id: number, index: number) => Promise<boolean>
   /** Bumped whenever Jizza replies, so voice output and other listeners can react. */
   lastReplyId: number
   /** Bumped when the conversation list should refresh (a new conversation, a new title). */
@@ -144,7 +157,7 @@ interface AssistantState {
    * Asks again for the reply {@code id}: the message it answered is sent once more in its place,
    * and the replaced answer is kept as an earlier version. {@code deeper} uses the deeper model.
    */
-  tryAgain: (id: number, deeper?: boolean) => Promise<void>
+  tryAgain: (id: number, deeper?: boolean, model?: string) => Promise<void>
   /**
    * Replaces the user's message {@code id} with {@code text}: it and everything after it are
    * removed (on the server too), then the new text is sent in its place.
@@ -460,7 +473,7 @@ export const useAssistantStore = create<AssistantState>()(
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors), ...(e.payload.sources?.length ? { sources: e.payload.sources as WebSource[] } : {}) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors), ...(e.payload.sources?.length ? { sources: e.payload.sources as WebSource[] } : {}), ...(e.payload.model?.ref ? { model: e.payload.model as AnsweredBy } : {}), ...(e.payload.team?.length ? { team: e.payload.team as TeamMember[] } : {}) }
                 : m)),
               lastReplyId: id,
               // A new thread belongs in the list straight away.
@@ -522,6 +535,7 @@ export const useAssistantStore = create<AssistantState>()(
         expanded: {},
         dockOpen: false,
         voiceReplies: false,
+        choice: {},
         lastReplyId: 0,
         conversationsVersion: 0,
         plannerOpen: false,
@@ -564,7 +578,7 @@ export const useAssistantStore = create<AssistantState>()(
               // The viewer's time zone rides along, so "tomorrow" in a request means their tomorrow.
               context: {
                 ...(ctx.data ? (ctx.goal ? { ...ctx.data, goal: ctx.goal } : ctx.data) : {}), timeZone: viewerZone(),
-                ...(extras?.depth ? { depth: extras.depth } : {}),
+                ...turnChoice(get().choice, extras),
                 ...(extras?.versions?.length ? { versions: extras.versions } : {}),
                 ...(extras?.mention ? { mention: extras.mention } : {}),
               },
@@ -580,10 +594,12 @@ export const useAssistantStore = create<AssistantState>()(
               messages: [
                 ...s.messages.map((m, i) => (i === s.messages.length - 1 && m.role === 'user' ? { ...m, jobId: ref.jobId } : m)),
                 { id: nextId++, role: 'assistant', text: '', streaming: true, jobId: ref.jobId,
-                  ...(extras?.versions?.length ? { versions: extras.versions } : {}), ...(extras?.depth === 'deep' ? { deep: true } : {}) },
+                  ...(extras?.versions?.length ? { versions: extras.versions } : {}), ...(turnChoice(get().choice, extras).depth === 'deep' && turnChoice(get().choice, extras).model === 'auto' ? { deep: true } : {}) },
               ],
               conversationsVersion: s.conversationsVersion + 1,
             }))
+            // A chat created by this message takes the picker's choice with it.
+            if (!incognito && !conversationId && ref.conversationId) void saveChoice(ref.conversationId, get().choice)
             const held = early.get(ref.jobId) ?? []
             early.delete(ref.jobId)
             for (const e of held) apply(e)
@@ -629,7 +645,7 @@ export const useAssistantStore = create<AssistantState>()(
           if (await rewindFrom(id)) await get().send(text)
         },
 
-        tryAgain: async (id, deeper) => {
+        tryAgain: async (id, deeper, model) => {
           const { messages, thinking } = get()
           if (thinking) return
           const i = messages.findIndex(m => m.id === id && m.role === 'assistant')
@@ -637,9 +653,12 @@ export const useAssistantStore = create<AssistantState>()(
           if (i < 0 || !asked) return
           const reply = messages[i]
           // A reply that failed or said nothing is not worth paging back to.
-          const replaced = reply.text && !reply.error ? [{ text: reply.text, ...(reply.deep ? { deep: true } : {}) }] : []
+          const replaced = reply.text && !reply.error
+            ? [{ text: reply.text, ...(reply.deep ? { deep: true } : {}), ...(reply.model ? { model: reply.model } : {}) }] : []
           const versions = [...(reply.versions ?? []), ...replaced].slice(-MAX_VERSIONS)
-          if (await rewindFrom(asked.id)) await get().send(asked.text, { ...(deeper ? { depth: 'deep' as const } : {}), versions })
+          if (await rewindFrom(asked.id)) {
+            await get().send(asked.text, { ...(deeper ? { depth: 'deep' as const } : {}), ...(model ? { model } : {}), versions })
+          }
         },
 
         stop: async () => {
@@ -655,6 +674,31 @@ export const useAssistantStore = create<AssistantState>()(
         setIncognito: (on) => set({ incognito: on, messages: [], conversationId: undefined, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {} }),
         setDockOpen: (open) => set({ dockOpen: open }),
         setVoiceReplies: (on) => set({ voiceReplies: on }),
+
+        setChoice: (choice) => {
+          set({ choice })
+          const { conversationId, incognito } = get()
+          if (conversationId && !incognito) void saveChoice(conversationId, choice)
+        },
+
+        keepVersion: async (id, index) => {
+          const { messages, conversationId, incognito } = get()
+          const reply = messages.find(m => m.id === id && m.role === 'assistant')
+          const kept = reply?.versions?.[index]
+          if (!reply || !kept) return false
+          if (conversationId && !incognito) {
+            try {
+              const serverId = reply.serverId ?? (reply.jobId ? (await conversationsApi.messages(conversationId))
+                .find(m => m.role === 'assistant' && (m.jobId ?? m.metadata?.jobId) === reply.jobId)?.id : undefined)
+              if (!serverId) return false
+              await conversationsApi.keep(conversationId, serverId, index)
+            } catch {
+              return false
+            }
+          }
+          set(s => ({ messages: s.messages.map(m => (m.id === id ? keptAnswer(m, index) : m)) }))
+          return true
+        },
 
         selectJob: (jobId) => {
           set({ selectedJobId: jobId })
@@ -770,6 +814,8 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
     ...(m.metadata?.versions?.length ? { versions: m.metadata.versions } : {}),
     ...(m.metadata?.deep ? { deep: true } : {}),
+    ...(m.metadata?.model?.ref ? { model: m.metadata.model } : {}),
+    ...(m.metadata?.team?.length ? { team: m.metadata.team } : {}),
     ...(m.metadata?.sources?.length ? { sources: m.metadata.sources } : {}),
     createdAt: m.createdAt,
   }
@@ -780,8 +826,12 @@ export async function loadHistory() {
   const { conversationId, messages } = useAssistantStore.getState()
   if (!conversationId || messages.length > 0) return
   try {
-    const [rows, jobs] = await Promise.all([conversationsApi.messages(conversationId), conversationsApi.jobs(conversationId)])
+    const [rows, jobs, choice] = await Promise.all([
+      conversationsApi.messages(conversationId), conversationsApi.jobs(conversationId),
+      Promise.resolve().then(() => conversationsApi.choice(conversationId)).catch(() => null),
+    ])
     if (useAssistantStore.getState().conversationId !== conversationId) return
+    if (choice) useAssistantStore.setState({ choice: { model: choice.model ?? undefined, depth: choice.depth ?? undefined } })
     const running = jobs.find(j => j.status === 'running')
     useAssistantStore.setState(s => (s.messages.length > 0 ? s : {
       messages: rows.map(messageFromDto),
@@ -817,4 +867,38 @@ async function catchUpRunning(jobId: string) {
 export function resumeConversation(conversationId: string) {
   useAssistantStore.setState({ conversationId, messages: [], incognito: false, jobs: {}, jobOrder: [], selectedJobId: undefined, expanded: {}, activeJobId: undefined, thinking: false, threadsNext: false })
   void loadHistory()
+}
+
+/**
+ * What the chat box's model and depth add to a turn; a one-off model (Ask another model) wins over
+ * the chat's. Both always go, "auto" and "normal" included, so the server never falls back on an
+ * older choice saved on the chat.
+ */
+export function turnChoice(choice: ChatChoice, extras?: TurnExtras): { model: string; depth: Depth } {
+  return {
+    model: extras?.model || choice.model || 'auto',
+    depth: extras?.depth ?? choice.depth ?? 'normal',
+  }
+}
+
+async function saveChoice(conversationId: string, choice: ChatChoice) {
+  try {
+    await conversationsApi.setChoice(conversationId, { model: choice.model ?? null, depth: choice.depth ?? null })
+  } catch { /* the picker still applies to the messages sent from here */ }
+}
+
+/** The reply after keeping its earlier version {@code index}: the shown answer swaps places with it, as the server does. */
+export function keptAnswer(m: AssistantMessage, index: number): AssistantMessage {
+  const versions = m.versions ?? []
+  const kept = versions[index]
+  if (!kept) return m
+  const replaced = { text: m.text, ...(m.deep ? { deep: true } : {}), ...(m.model ? { model: m.model } : {}) }
+  const { deep: _deep, model: _model, sources: _sources, team: _team, ...rest } = m
+  return {
+    ...rest,
+    text: kept.text,
+    versions: [...versions.filter((_, i) => i !== index), replaced],
+    ...(kept.deep ? { deep: true } : {}),
+    ...(kept.model ? { model: kept.model } : {}),
+  }
 }

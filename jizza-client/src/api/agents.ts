@@ -18,6 +18,13 @@ export const agentsApi = {
   setWeb: (id: string, enabled: boolean) =>
     api.put<{ enabled: boolean; available: boolean }>(`/api/agents/${id}/web`, { enabled }),
 
+  /** The model this agent answers with by default; null lets Jizza pick. */
+  model: (id: string) => api.get<{ model: string | null; label: string | null }>(`/api/agents/${id}/model`),
+
+  /** Sets the agent's default model; 'auto' lets Jizza pick again. */
+  setModel: (id: string, model: string) =>
+    api.put<{ model: string | null; label: string | null }>(`/api/agents/${id}/model`, { model }),
+
   create: (body: AgentCreate) => api.post<AgentDto>('/api/agents', body),
 
   /** A gallery team or one Jizza proposed, under a manager (Jizza when left out). */

@@ -107,19 +107,29 @@ public class AnthropicLlmClient implements LlmClient {
   }
 
   AnthropicLlmClient(AgentProperties props, Pause pause, Supplier<ChatFiles> chatFiles) {
+    this(props, pause, chatFiles, props.getAnthropic().getApiKey());
+  }
+
+  /** The same client on a person's own key, for the models they reach with it. */
+  public AnthropicLlmClient(AgentProperties props, Supplier<ChatFiles> chatFiles, String apiKey) {
+    this(props, AnthropicLlmClient::sleepWatchingForStop, chatFiles, apiKey);
+  }
+
+  AnthropicLlmClient(AgentProperties props, Pause pause, Supplier<ChatFiles> chatFiles,
+                     String apiKey) {
     this.props = props;
     this.pause = pause;
     this.chatFiles = chatFiles;
     this.http = RestClient.builder()
         .baseUrl(props.getAnthropic().getBaseUrl())
         .requestFactory(requestFactory(props.getAnthropic().getTimeout()))
-        .defaultHeader("x-api-key", props.getAnthropic().getApiKey())
+        .defaultHeader("x-api-key", apiKey)
         .defaultHeader("anthropic-version", props.getAnthropic().getVersion())
         .defaultHeader("content-type", "application/json")
         .build();
   }
 
-  private static SimpleClientHttpRequestFactory requestFactory(Duration timeout) {
+  static SimpleClientHttpRequestFactory requestFactory(Duration timeout) {
     SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
     factory.setConnectTimeout((int) timeout.toMillis());
     factory.setReadTimeout((int) timeout.toMillis());
@@ -247,7 +257,7 @@ public class AnthropicLlmClient implements LlmClient {
   }
 
   /** Sleeps in short steps so a stop pressed while waiting ends the wait. */
-  private static void sleepWatchingForStop(Duration duration) {
+  static void sleepWatchingForStop(Duration duration) {
     long until = System.nanoTime() + duration.toNanos();
     try {
       while (true) {
@@ -272,7 +282,7 @@ public class AnthropicLlmClient implements LlmClient {
     return new Transient(failure, retryAfter(headers));
   }
 
-  private static JizzaException unreachable(RuntimeException e) {
+  static JizzaException unreachable(RuntimeException e) {
     return new JizzaException(HttpStatus.BAD_GATEWAY, "llm-unreachable", "Model call failed",
         "Could not reach the model provider: " + e.getMessage(), e);
   }
@@ -614,6 +624,9 @@ public class AnthropicLlmClient implements LlmClient {
   /** The effort level set for the tier this model serves, when the model accepts one. */
   String effortFor(String model) {
     if (!AgentProperties.matches(model, props.getAnthropic().getEffortModels())) return null;
+    // Quick or Deep picked in the chat box wins over the tier's own setting.
+    var asked = com.jizza.engine.api.llm.LlmCallContext.effort();
+    if (asked.isPresent()) return asked.get().trim().toLowerCase(java.util.Locale.ROOT);
     for (Map.Entry<ModelTier, String> tier : props.getModels().entrySet()) {
       if (!model.equals(tier.getValue())) continue;
       String effort = props.getAnthropic().getEffort().get(tier.getKey());

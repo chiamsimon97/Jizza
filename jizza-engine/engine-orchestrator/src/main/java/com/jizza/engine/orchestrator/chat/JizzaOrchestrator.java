@@ -86,7 +86,13 @@ public class JizzaOrchestrator implements Orchestrator {
     List<Msg> history = scrubbed(input.history());
     // "Try again with a deeper model" asks for the deep tier outright, with no triage call.
     JsonNode context = withoutDepth(input.context());
-    ModelTier tier = deepAsked(input.context()) ? ModelTier.DEEP
+    String picked = pickedModel(input.context());
+    String depth = depthOf(input.context());
+    // A model the person picked answers as it is; Quick and Deep pick the tier outright, with no
+    // triage call; otherwise a short check sorts simple turns onto the fast model.
+    ModelTier tier = DEEP.equals(depth) ? ModelTier.DEEP
+        : QUICK.equals(depth) ? ModelTier.ROUTING
+        : picked != null ? ModelTier.STANDARD
         : tiers.tierFor(userId, jizza, message, input.screen(), history);
     history = withWorkspace(userId, history);
     recorder.beginTurn();
@@ -97,8 +103,9 @@ public class JizzaOrchestrator implements Orchestrator {
     try {
       String annotated = libraryHints == null ? message : libraryHints.annotate(userId, message);
       result = baseAgent.run(new AgentRequest(userId, jizza.getId(),
-          withScreen(annotated, input.screen(), context), null, history, tier,
-          false, trace));
+          withScreen(annotated, input.screen(), context), null, history,
+          picked != null && DEEP.equals(depth) ? ModelTier.STANDARD : tier,
+          false, trace).withModel(picked).withEffort(effortFor(depth, picked)));
     } finally {
       contributions = recorder.endTurn();
       actions = uiActions.endTurn();
@@ -137,9 +144,13 @@ public class JizzaOrchestrator implements Orchestrator {
     AgentResult result;
     List<DelegationRecorder.Contribution> contributions;
     try {
+      String picked = pickedModel(input.context());
+      String depth = depthOf(input.context());
+      ModelTier tier = picked == null && DEEP.equals(depth) ? ModelTier.DEEP
+          : picked == null && QUICK.equals(depth) ? ModelTier.ROUTING : ModelTier.STANDARD;
       result = baseAgent.run(new AgentRequest(userId, lead.getId(), message, null,
-          scrubbed(input.history()), deepAsked(input.context()) ? ModelTier.DEEP : ModelTier.STANDARD,
-          false, trace));
+          scrubbed(input.history()), tier, false, trace).withModel(picked)
+          .withEffort(effortFor(depth, picked)));
     } finally {
       contributions = recorder.endTurn();
     }
@@ -253,17 +264,46 @@ public class JizzaOrchestrator implements Orchestrator {
     return context != null && "deep".equalsIgnoreCase(context.path(DEPTH).asText());
   }
 
-  /** The screen context without the depth the client asked for, which is not about the screen. */
+  /** The screen context without the model and depth the client asked for, which are not about the screen. */
   static JsonNode withoutDepth(JsonNode context) {
-    if (!(context instanceof com.fasterxml.jackson.databind.node.ObjectNode object) || !object.has(DEPTH)) {
+    if (!(context instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+        || !(object.has(DEPTH) || object.has(MODEL))) {
       return context;
     }
     com.fasterxml.jackson.databind.node.ObjectNode rest = object.deepCopy();
     rest.remove(DEPTH);
+    rest.remove(MODEL);
     return rest.isEmpty() ? null : rest;
   }
 
   static final String DEPTH = "depth";
+  /** The model picked in the chat box (a model reference); absent is Auto. */
+  static final String MODEL = "model";
+  static final String QUICK = "quick";
+  static final String DEEP = "deep";
+
+  /** The model the person picked for this turn, or null for Auto. */
+  static String pickedModel(JsonNode context) {
+    String model = context == null ? "" : context.path(MODEL).asText("").trim();
+    return model.isEmpty() || "auto".equalsIgnoreCase(model) || model.length() > 200 ? null : model;
+  }
+
+  /** quick, deep, or null for normal. */
+  static String depthOf(JsonNode context) {
+    String depth = context == null ? "" : context.path(DEPTH).asText("").trim().toLowerCase(java.util.Locale.ROOT);
+    return QUICK.equals(depth) || DEEP.equals(depth) ? depth : null;
+  }
+
+  /**
+   * How hard the model thinks for Quick and Deep (F3). Normal leaves each tier's own setting; a
+   * model that does not take an effort level ignores it.
+   */
+  static String effortFor(String depth, String picked) {
+    if (QUICK.equals(depth)) return "low";
+    // Deep on Auto runs on the deep tier with that tier's own setting.
+    if (DEEP.equals(depth) && picked != null) return "high";
+    return null;
+  }
 
   static String withScreen(String message, String screen, JsonNode context) {
     if (screen == null || screen.isBlank()) return message;
