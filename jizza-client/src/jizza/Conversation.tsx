@@ -1,4 +1,5 @@
 import { FormEvent, Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { takeChatDraft } from './chatDraft'
 import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Globe, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { notificationsApi } from '@/api/notifications'
@@ -55,7 +56,8 @@ interface ConversationProps {
 /** The conversation with Jizza, shared by the Chat page and the dock so it is one thread everywhere. */
 export function Conversation({ compact = false, autoFocus = false, onOpenJob, intro, placeholder, inlineDiscussion = false }: ConversationProps) {
   const { messages, thinking, incognito, send, stop, guide, localReply, newConversation, edit, tryAgain, rate, conversationId, lastReplyId, setThreadsNext, choice, setChoice, keepVersion } = useAssistantStore()
-  const [input, setInput] = useState('')
+  // The Chat page's box picks up a question another page handed over ("Ask Kai").
+  const [input, setInput] = useState(() => (compact ? '' : takeChatDraft() ?? ''))
   // The message being replied to: quoted above what the user writes.
   const [replyTo, setReplyTo] = useState<{ who: string; text: string } | null>(null)
   const { ctx, token } = useCurrentContext()
