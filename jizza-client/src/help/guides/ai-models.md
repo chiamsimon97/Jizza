@@ -3,12 +3,12 @@ title: Pick the AI model for a chat
 summary: Connect OpenAI, Gemini, OpenRouter, Ollama or your own Anthropic key, pick a model and Quick, Normal or Deep in the chat box, ask another model and keep the better answer, and give an agent its own model.
 section: Chat
 order: 20
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## Connecting a provider with your own key
 
-Open [AI models](/settings/ai-models) under Settings. Each provider has a card:
+Open [Settings › AI models](/settings/ai-models) (your name at the bottom of the left menu, then **Settings**). Each provider has a card:
 
 | Provider | What it needs |
 | --- | --- |

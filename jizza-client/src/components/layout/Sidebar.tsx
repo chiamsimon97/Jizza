@@ -1,115 +1,13 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { notificationsApi } from '@/api/notifications'
-import {
-  MessageSquare, Bell, Bot, Brain, ListTodo,
-  Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2, History,
-  ChevronsLeft, ChevronsRight, LogOut, X, ShieldCheck, Users, Compass, Globe, ClipboardCheck, ClipboardList, UserCog,
-  MonitorSmartphone, Video, LifeBuoy, Cpu,
-  type LucideIcon,
-} from 'lucide-react'
-import { authApi } from '@/api/auth'
-import { endLocalSession } from '@/lib/session'
-import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
+import { ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 import { JizzaLogo } from '@/components/brand/JizzaLogo'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { useAuthorization } from '@/auth/useAuthorization'
-import { PERMISSIONS } from '@/lib/permissions'
-import type { AuthorizationSnapshot } from '@/types'
 import { AccountSwitcher } from './AccountSwitcher'
-
-interface NavItem {
-  to: string; icon: LucideIcon; label: string; permission?: string
-  /** Shown only to the platform's Super Admin. */
-  superAdmin?: boolean
-}
-interface NavSection { title: string; items: NavItem[] }
-
-/** The Individual account's sections. Connectors appear only with `connector_view`. */
-const personalSections: NavSection[] = [
-  {
-    title: 'Workspace',
-    items: [
-      { to: '/chat',          icon: MessageSquare, label: 'Chat' },
-      { to: '/notifications', icon: Bell,          label: 'Notifications' },
-      { to: '/discover',      icon: Compass,       label: 'Discover' },
-      { to: '/help',          icon: LifeBuoy,      label: 'Help' },
-    ],
-  },
-  {
-    title: 'Automation',
-    items: [
-      { to: '/agents',      icon: Bot,       label: 'Agents' },
-      { to: '/memory',      icon: Brain,     label: 'Memory' },
-      { to: '/tasks',       icon: ListTodo,  label: 'Tasks' },
-      { to: '/workflows',   icon: Workflow,  label: 'Workflows' },
-      { to: '/forms',       icon: ClipboardList, label: 'Forms' },
-      { to: '/recordings',  icon: Video,     label: 'Recordings' },
-      { to: '/functions',   icon: Braces,    label: 'Functions' },
-      { to: '/procedures',  icon: GitBranch, label: 'Procedures' },
-      { to: '/connectors',  icon: Plug,      label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
-    ],
-  },
-  {
-    title: 'Governance',
-    items: [
-      { to: '/guardrails', icon: Shield,  label: 'Guardrails' },
-      { to: '/activity', icon: Activity,  label: 'Activity' },
-      { to: '/runs',     icon: History,   label: 'Run history' },
-      { to: '/usage',    icon: BarChart2, label: 'Usage' },
-      { to: '/settings/devices', icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
-      { to: '/settings/ai-models', icon: Cpu, label: 'AI models' },
-      { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
-    ],
-  },
-]
-
-/** An Organization account shows only what is workspace-scoped, plus the person's own settings. */
-const organizationSections: NavSection[] = [
-  {
-    title: 'Organization',
-    items: [
-      { to: '/members',    icon: Users, label: 'Members',    permission: PERMISSIONS.MEMBERS_VIEW },
-      { to: '/organization/listing', icon: Globe, label: 'Public listing', permission: PERMISSIONS.LISTING_MANAGE },
-      { to: '/connectors', icon: Plug,  label: 'Connectors', permission: PERMISSIONS.CONNECTOR_VIEW },
-      { to: '/organization/guardrails', icon: Shield, label: 'Guardrails', permission: PERMISSIONS.GUARDRAILS_VIEW },
-      { to: '/organization/agent-templates', icon: Bot, label: 'Agent templates', permission: PERMISSIONS.AGENT_TEMPLATE_MANAGE },
-    ],
-  },
-  {
-    title: 'Account',
-    items: [
-      { to: '/notifications',     icon: Bell,        label: 'Notifications' },
-      { to: '/discover',          icon: Compass,     label: 'Discover' },
-      { to: '/help',              icon: LifeBuoy,    label: 'Help' },
-      { to: '/settings/devices',  icon: MonitorSmartphone, label: 'Devices', permission: PERMISSIONS.DEVICE_VIEW },
-      { to: '/settings/ai-models', icon: Cpu,        label: 'AI models' },
-      { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
-    ],
-  },
-]
-
-/** Platform-wide work, whichever account is active. */
-const platformSection: NavSection = {
-  title: 'Platform',
-  items: [
-    { to: '/admin/listings', icon: ClipboardCheck, label: 'Listing reviews', superAdmin: true },
-    { to: '/admin/accounts', icon: UserCog, label: 'Registered accounts', superAdmin: true },
-  ],
-}
-
-/** The sidebar's sections for the active account, with items the role can't open left out. */
-export function sectionsFor(snapshot: AuthorizationSnapshot): NavSection[] {
-  const granted = new Set(snapshot.permissions)
-  const superAdmin = snapshot.platformRole === 'SUPER_ADMIN'
-  const base = snapshot.activeWorkspace.type === 'ORGANIZATION' ? organizationSections : personalSections
-  return [...base, platformSection]
-    .map(section => ({
-      ...section,
-      items: section.items.filter(i => (!i.permission || granted.has(i.permission)) && (!i.superAdmin || superAdmin)),
-    }))
-    .filter(section => section.items.length > 0)
-}
+import { AccountMenu } from './AccountMenu'
+import { menuFor, pathMatches, type NavHub } from './navigation'
 
 interface SidebarProps {
   collapsed: boolean
@@ -124,21 +22,56 @@ export function Logo({ collapsed = false }: { collapsed?: boolean }) {
 }
 
 export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps) {
-  const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { data: snapshot, isError } = useAuthorization()
-  // Until the account is known, show nothing rather than the wrong account's sections. If it can't
-  // be loaded at all, fall back to the personal sections; the server still checks every request.
-  const sections = snapshot ? sectionsFor(snapshot) : isError ? personalSections : []
+  // Until the account is known, show nothing rather than the wrong account's menu. If it can't be
+  // loaded at all, fall back to the personal menu; the server still checks every request.
+  const menu = snapshot || isError ? menuFor(snapshot) : { main: [], platform: null }
   // What is waiting on the user shows on the Notifications item, red when any of it is urgent.
   const { data: inbox } = useQuery({
     queryKey: ['notifications', 'summary'],
     queryFn: () => notificationsApi.summary(),
     refetchInterval: 60_000,
   })
-  async function signOut() {
-    try { await authApi.logout() } catch { /* session may already be gone */ }
-    endLocalSession()
-    navigate('/login')
+
+  function entry(hub: NavHub) {
+    const Icon = hub.icon
+    const isActive = hub.tabs.some(t => pathMatches(t, pathname))
+    const to = hub.tabs[0].to
+    return (
+      <NavLink
+        key={hub.id}
+        to={to}
+        onClick={onClose}
+        title={collapsed ? hub.label : undefined}
+        aria-current={isActive ? 'page' : undefined}
+        className={`group relative flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+          collapsed ? 'justify-center px-2' : 'px-3'
+        } ${
+          isActive
+            ? 'bg-brand-100/60 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+        }`}
+      >
+        <span
+          className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-brand-500 transition-all duration-200 ${
+            isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-30'
+          }`}
+        />
+        <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-110" />
+        {!collapsed && <span className="truncate">{hub.label}</span>}
+        {to === '/notifications' && inbox && inbox.needsYou > 0 && (
+          <span
+            aria-label={`${inbox.needsYou} waiting on you`}
+            className={`grid min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[11px] font-semibold leading-5 text-white ${
+              inbox.urgent > 0 ? 'bg-red-500' : 'bg-brand-500'
+            } ${collapsed ? 'absolute right-1 top-0.5 min-w-[1rem] px-1 text-[10px] leading-4' : 'ml-auto'}`}
+          >
+            {inbox.needsYou > 99 ? '99+' : inbox.needsYou}
+          </span>
+        )}
+      </NavLink>
+    )
   }
 
   return (
@@ -163,88 +96,35 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
       <AccountSwitcher collapsed={collapsed} onNavigate={onClose} />
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {sections.map(section => (
-          <div key={section.title}>
+        <div className="space-y-0.5">{menu.main.map(entry)}</div>
+        {menu.platform && (
+          <div>
             {collapsed ? (
               <div className="mx-auto mb-2 h-px w-6 bg-gray-200 dark:bg-gray-800" />
             ) : (
               <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                {section.title}
+                Platform
               </p>
             )}
-            <div className="space-y-0.5">
-              {section.items.map(({ to, icon: Icon, label }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={onClose}
-                  title={collapsed ? label : undefined}
-                  className={({ isActive }) =>
-                    `group relative flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
-                      collapsed ? 'justify-center px-2' : 'px-3'
-                    } ${
-                      isActive
-                        ? 'bg-brand-100/60 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-brand-500 transition-all duration-200 ${
-                          isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-30'
-                        }`}
-                      />
-                      <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-110" />
-                      {!collapsed && <span className="truncate">{label}</span>}
-                      {to === '/notifications' && inbox && inbox.needsYou > 0 && (
-                        <span
-                          aria-label={`${inbox.needsYou} waiting on you`}
-                          className={`grid min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[11px] font-semibold leading-5 text-white ${
-                            inbox.urgent > 0 ? 'bg-red-500' : 'bg-brand-500'
-                          } ${collapsed ? 'absolute right-1 top-0.5 min-w-[1rem] px-1 text-[10px] leading-4' : 'ml-auto'}`}
-                        >
-                          {inbox.needsYou > 99 ? '99+' : inbox.needsYou}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            <div className="space-y-0.5">{entry(menu.platform)}</div>
           </div>
-        ))}
+        )}
       </nav>
 
-      <div className="space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
-        {collapsed ? (
-          <ThemeSwitcher compact className="mx-auto" />
-        ) : (
-          <ThemeSwitcher />
-        )}
-        <div className={`flex gap-1 ${collapsed ? 'flex-col items-center' : ''}`}>
-          <button
-            onClick={signOut}
-            title="Sign out"
-            className={`flex items-center gap-2 rounded-lg py-2 text-sm text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-400 ${
-              collapsed ? 'justify-center px-2' : 'flex-1 px-3'
-            }`}
-          >
-            <LogOut className="h-4 w-4" />
-            {!collapsed && 'Sign out'}
-          </button>
-          {!onClose && (
-            <button
-              onClick={onToggleCollapsed}
-              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-            >
-              {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-            </button>
-          )}
+      <div className={`flex gap-1 border-t border-gray-200 p-3 dark:border-gray-800 ${collapsed ? 'flex-col items-center' : 'items-center'}`}>
+        <div className={collapsed ? '' : 'min-w-0 flex-1'}>
+          <AccountMenu collapsed={collapsed} onNavigate={onClose} />
         </div>
+        {!onClose && (
+          <button
+            onClick={onToggleCollapsed}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          >
+            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
     </aside>
   )

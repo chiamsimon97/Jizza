@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { makeSnapshot, renderWithSnapshot } from '@/test/utils'
 import { Sidebar } from './Sidebar'
 
@@ -9,37 +9,42 @@ function renderSidebar(snapshot = makeSnapshot()) {
 }
 
 describe('Sidebar', () => {
-  it('shows the personal sections, with Connectors, for a Personal account', () => {
+  it('shows a short menu of grouped entries for a Personal account', () => {
     const nav = renderSidebar(makeSnapshot('PERSONAL'))
-    for (const label of ['Chat', 'Notifications', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Recordings', 'Functions', 'Procedures',
-      'Connectors', 'Guardrails', 'Activity', 'Usage', 'Security', 'Help']) {
-      expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
-    }
-    expect(nav.queryByRole('link', { name: 'Members' })).not.toBeInTheDocument()
-    expect(nav.queryByText('Organization')).not.toBeInTheDocument()
+    const labels = nav.getAllByRole('link').map(l => l.textContent)
+    expect(labels).toEqual(['Chat', 'Notifications', 'Discover', 'Agents', 'Tasks', 'Build', 'Activity'])
+    expect(nav.getByRole('link', { name: 'Build' })).toHaveAttribute('href', '/workflows')
+    expect(nav.getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '/activity')
   })
 
-  it('leaves Connectors out of a Personal account without connector_view', () => {
-    const nav = renderSidebar(makeSnapshot('PERSONAL', 'OWNER', { permissions: [] }))
-    expect(nav.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
-    expect(nav.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument()
-  })
-
-  it('shows only the Organization section, Notifications and Security for an Organization Owner', () => {
-    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER'))
-    expect(nav.getByText('Organization')).toBeInTheDocument()
-    for (const label of ['Members', 'Connectors', 'Guardrails', 'Notifications', 'Security', 'Help']) {
-      expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
-    }
-    for (const label of ['Chat', 'Agents', 'Memory', 'Tasks', 'Workflows', 'Procedures', 'Activity', 'Usage']) {
+  it('keeps configuration pages out of the left menu', () => {
+    const nav = renderSidebar(makeSnapshot('PERSONAL'))
+    for (const label of ['Connectors', 'Guardrails', 'Usage', 'Devices', 'AI models', 'Security', 'Help', 'Workflows', 'Run history']) {
       expect(nav.queryByRole('link', { name: label })).not.toBeInTheDocument()
     }
   })
 
-  it('hides Connectors from an organization User', () => {
-    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER'))
-    expect(nav.getByRole('link', { name: 'Members' })).toBeInTheDocument()
-    expect(nav.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument()
+  it('opens Settings, Help and Sign out from the account menu', () => {
+    renderWithSnapshot(<Sidebar collapsed={false} onToggleCollapsed={() => {}} />, makeSnapshot('PERSONAL'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }))
+    const menu = within(screen.getByRole('menu', { name: 'Account menu' }))
+    expect(menu.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+    expect(menu.getByRole('menuitem', { name: 'Get help' })).toHaveAttribute('href', '/help')
+    expect(menu.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
+    expect(menu.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument()
+    expect(menu.getByText('me@example.com')).toBeInTheDocument()
+  })
+
+  it('groups an Organization Owner\'s pages under Organization', () => {
+    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER'))
+    const labels = nav.getAllByRole('link').map(l => l.textContent)
+    expect(labels).toEqual(['Notifications', 'Discover', 'Organization'])
+    expect(nav.getByRole('link', { name: 'Organization' })).toHaveAttribute('href', '/members')
+  })
+
+  it('leaves Organization out when the role can open none of its pages', () => {
+    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER', { permissions: [] }))
+    expect(nav.queryByRole('link', { name: 'Organization' })).not.toBeInTheDocument()
   })
 
   it('shows the active account in the switcher', () => {
@@ -48,29 +53,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('Private organization · Admin')).toBeInTheDocument()
   })
 
-  it('shows Discover in a Personal account', () => {
-    expect(renderSidebar(makeSnapshot('PERSONAL')).getByRole('link', { name: 'Discover' })).toBeInTheDocument()
-  })
-
-  it('shows Public listing to an organization Owner', () => {
-    expect(renderSidebar(makeSnapshot('ORGANIZATION', 'OWNER')).getByRole('link', { name: 'Public listing' })).toBeInTheDocument()
-  })
-
-  it('hides Public listing from a Developer', () => {
-    const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'DEVELOPER'))
-    expect(nav.getByRole('link', { name: 'Discover' })).toBeInTheDocument()
-    expect(nav.queryByRole('link', { name: 'Public listing' })).not.toBeInTheDocument()
-  })
-
-  it('shows Listing reviews only to the Super Admin', () => {
-    expect(renderSidebar(makeSnapshot('PERSONAL')).queryByRole('link', { name: 'Listing reviews' })).not.toBeInTheDocument()
-  })
-
-  it('shows Listing reviews to the Super Admin in any account', () => {
+  it('shows Platform only to the Super Admin', () => {
+    expect(renderSidebar(makeSnapshot('PERSONAL')).queryByRole('link', { name: 'Platform' })).not.toBeInTheDocument()
+    cleanup()
     const nav = renderSidebar(makeSnapshot('ORGANIZATION', 'USER', { platformRole: 'SUPER_ADMIN' }))
-    expect(nav.getByText('Platform')).toBeInTheDocument()
-    expect(nav.getByRole('link', { name: 'Listing reviews' })).toBeInTheDocument()
-    expect(nav.getByRole('link', { name: 'Registered accounts' })).toBeInTheDocument()
+    expect(nav.getByRole('link', { name: 'Platform' })).toHaveAttribute('href', '/admin/listings')
   })
 
   it('marks public organizations and the Super Admin in the account switcher', () => {

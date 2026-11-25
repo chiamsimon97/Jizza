@@ -3,12 +3,12 @@ title: Connect your apps, servers and devices
 summary: See every connector in one place, build one by chatting, start workflows the moment a service calls, add older and local MCP servers, and sign in again when a connection drops.
 section: Connectors
 order: 10
-updated: 2026-11-22
+updated: 2026-11-25
 ---
 
 ## One place for everything your agents can reach
 
-[Connectors](/connectors) has four tabs:
+[Settings › Connectors](/connectors) has four tabs:
 
 | Tab | What's there |
 | --- | --- |
@@ -44,7 +44,7 @@ In [Chat](/chat), tell Jizza which app you want to connect and paste a link to i
 4. tries each action with you. Reads run straight away; anything that changes something asks you first,
 5. publishes it when you say so, after asking you once more.
 
-You can open the draft in [Connectors](/connectors) at any point and change it yourself.
+You can open the draft in [Settings › Connectors](/connectors) at any point and change it yourself.
 
 ## Starting workflows the moment something happens
 

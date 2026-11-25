@@ -3,12 +3,12 @@ title: Record a task on Windows
 summary: Press a hotkey on your PC, do a task once in any Windows app, and save it as a workflow that Jizza repeats.
 section: Web automation
 order: 20
-updated: 2026-11-05
+updated: 2026-11-25
 ---
 
 ## What it is
 
-The Jizza Agent for Windows can record what you do in your own apps, the way the browser extension records web tasks. Press **Ctrl+Alt+R** in any app, do the task once, and press **Ctrl+Alt+R** again. Jizza gets each click, the text you typed into each field, and the shortcuts you pressed as steps. You review them on the [Recordings](/recordings) page and save them as an ordinary workflow.
+The Jizza Agent for Windows can record what you do in your own apps, the way the browser extension records web tasks. Press **Ctrl+Alt+R** in any app, do the task once, and press **Ctrl+Alt+R** again. Jizza gets each click, the text you typed into each field, and the shortcuts you pressed as steps. You review them on the [Build › Recordings](/recordings) page and save them as an ordinary workflow.
 
 It works with apps that describe their buttons and fields to Windows, which is how screen readers work. Most apps do: Office, Notepad, File Explorer, and apps built on Win32, WinForms, WPF, Store apps, Qt and Electron. Apps that draw their own controls (some games, older accounting tools, remote desktop windows) show little to Windows and record poorly.
 

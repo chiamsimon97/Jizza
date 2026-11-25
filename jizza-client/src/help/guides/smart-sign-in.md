@@ -3,7 +3,7 @@ title: Smart sign-in with a QR code
 summary: Sign in on a computer by scanning a QR code with a phone that is already signed in to Jizza.
 section: Account and security
 order: 10
-updated: 2026-11-02
+updated: 2026-11-25
 ---
 
 ## What it is
@@ -15,7 +15,7 @@ Smart sign-in lets you skip the password on a computer. The login page shows a Q
 1. On the computer, open the Jizza login page and click the blurred QR code under **Smart sign-in with the Jizza app**.
 2. On your phone, either:
    - open the camera and scan the code, then open the link. Jizza opens in the phone's browser. If the phone is not signed in yet, sign in there first and the approve screen comes back; or
-   - scan it from the **Jizza Agent** app, if your phone is paired under [Devices](/settings/devices).
+   - scan it from the **Jizza Agent** app, if your phone is paired under [Settings › Devices](/settings/devices).
 3. Check the browser and IP address shown on the phone, then tap **Approve**.
 4. The computer signs in within a couple of seconds.
 
@@ -27,7 +27,7 @@ Each code lasts 2 minutes and works once. If it runs out, click **Get a new code
 - If your account uses two-step sign-in, the phone that approves must have passed it too. A paired Jizza Agent phone counts as your second factor, and the app asks for your fingerprint or PIN first.
 - Only the computer that showed the code can use the approval. A photo of the QR code is no use to anyone else.
 - Every approval and denial is in your [Activity](/activity) log, and you get the usual email when a new device signs in.
-- You can sign the computer out later under [Security](/settings/security), in **Sessions**.
+- You can sign the computer out later under [Settings › Security](/settings/security), in **Sessions**.
 
 ## When it does not work
 
