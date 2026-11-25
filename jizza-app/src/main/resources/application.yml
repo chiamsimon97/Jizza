@@ -366,6 +366,11 @@ jizza:
     ai-fix-ranking: ${JIZZA_WEBAUTO_AI_FIX_RANKING:false}
     fast-replay: ${JIZZA_WEBAUTO_FAST_REPLAY:false}
 
+  # Kai's Portfolio tab (family finance planning). Off until the feature is ready: while off,
+  # /api/finance/** does not exist and the tab stays hidden. See docs/kai-handoff/.
+  finance:
+    enabled: ${JIZZA_FINANCE_ENABLED:false}
+
   platform:
     queue:
       enabled: true
