@@ -115,6 +115,12 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var actions = owner.get("/api/finance/actions");
     assertThat(actions.json()).as(actions.body()).isNotEmpty();
     owned.put("/api/finance/actions/", actions.json().get(0).path("id").asText());
+    var goal = owner.post("/api/finance/goals", Map.of("type", "travel", "name", "Owner's trip",
+        "targetAmountToday", 200000, "targetDate", "2028-12-01"));
+    assertThat(goal.ok()).as(goal.body()).isTrue();
+    owned.put("/api/finance/goals/", goal.json().path("goal").path("id").asText());
+    owned.put("/api/finance/risk/", person.json().path("id").asText());
+    owned.put("/api/finance/tax/", person.json().path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
@@ -229,6 +235,9 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var quick = other.post("/api/finance/quick-start", Map.of("step", "income", "answers",
         Map.of("incomes", List.of(Map.of("personId", owned.get("/api/finance/people/"), "takeHomeMonthly", 1)))));
     assertThat(quick.ok()).as("quick start for the owner's person: %s", quick.body()).isFalse();
+    var goal = other.post("/api/finance/goals", Map.of("type", "travel", "targetAmountToday", 1,
+        "targetDate", "2030-01-01", "ownerPersonId", owned.get("/api/finance/people/")));
+    assertThat(goal.ok()).as("goal for the owner's person: %s", goal.body()).isFalse();
   }
 
   @Test
@@ -240,7 +249,8 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         "/api/finance/assets", "/api/finance/loans", "/api/finance/loans-given",
         "/api/finance/policies", "/api/finance/actions", "/api/finance/health",
         "/api/finance/income", "/api/finance/budget", "/api/finance/protection",
-        "/api/finance/loans/plan", "/api/finance/net-worth", "/api/finance/quick-start")) {
+        "/api/finance/loans/plan", "/api/finance/net-worth", "/api/finance/quick-start",
+        "/api/finance/goals", "/api/finance/goal-library", "/api/finance/builder")) {
       String body = other.get(list).body();
       for (String id : owned.values()) {
         assertThat(body).as("%s shows the owner's %s", list, id).doesNotContain(id);

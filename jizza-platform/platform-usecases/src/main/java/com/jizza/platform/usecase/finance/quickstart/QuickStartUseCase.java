@@ -11,10 +11,12 @@ import com.jizza.engine.api.finance.FinanceStore;
 import com.jizza.engine.api.util.Json;
 import com.jizza.platform.usecase.finance.cashflow.FinCashFlowUseCase;
 import com.jizza.platform.usecase.finance.debt.FinLoansUseCase;
+import com.jizza.platform.usecase.finance.goal.FinGoalUseCase;
 import com.jizza.platform.usecase.finance.profile.FinPersonUseCase;
 import com.jizza.platform.usecase.finance.profile.FinProfileUseCase;
 import com.jizza.platform.usecase.finance.records.FinRecordsUseCase;
 import com.jizza.platform.usecase.finance.records.FinTable;
+import com.jizza.platform.usecase.finance.risk.FinRiskUseCase;
 import com.jizza.platform.usecase.finance.sharing.FinScopeResolver;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -27,7 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Quick start (7.13), steps 1 to 6: each answer is saved as soon as it is sent, so the user can
+ * Quick start (7.13), steps 1 to 8 (goals and risk from Phase 1b): each answer is saved as soon as it is sent, so the user can
  * stop and come back. Answering a step again replaces what that step wrote the first time; rows
  * added elsewhere are left alone. Every step can be skipped: its checks then show "unknown".
  *
@@ -38,7 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class QuickStartUseCase {
 
   public static final List<String> STEPS =
-      List.of("people", "income", "spending", "loans", "insurance", "savings");
+      List.of("people", "income", "spending", "loans", "insurance", "savings", "goals", "risk");
+  /** Quick start offers up to three goals from the library (7.13 step 7). */
+  public static final int MAX_GOALS = 3;
   private static final int MAX_ITEMS = 10;
   private static final int MAX_SAVINGS = 12;
 
@@ -48,18 +52,23 @@ public class QuickStartUseCase {
   private final FinPersonUseCase people;
   private final FinCashFlowUseCase cashFlow;
   private final FinLoansUseCase loans;
+  private final FinGoalUseCase goals;
+  private final FinRiskUseCase risk;
   private final FinScopeResolver scopes;
   private final AuditLog audit;
 
   public QuickStartUseCase(FinanceStore store, FinanceRecords records, FinRecordsUseCase forms,
                            FinPersonUseCase people, FinCashFlowUseCase cashFlow,
-                           FinLoansUseCase loans, FinScopeResolver scopes, AuditLog audit) {
+                           FinLoansUseCase loans, FinGoalUseCase goals, FinRiskUseCase risk,
+                           FinScopeResolver scopes, AuditLog audit) {
     this.store = store;
     this.records = records;
     this.forms = forms;
     this.people = people;
     this.cashFlow = cashFlow;
     this.loans = loans;
+    this.goals = goals;
+    this.risk = risk;
     this.scopes = scopes;
     this.audit = audit;
   }
@@ -95,9 +104,11 @@ public class QuickStartUseCase {
         case "loans" -> saveLoans(caller, owner, answers, ids(created, step));
         case "insurance" -> savePolicies(caller, owner, answers, ids(created, step));
         case "savings" -> saveSavings(caller, owner, answers, ids(created, step));
+        case "goals" -> saveGoals(caller, owner, answers, ids(created, step));
+        case "risk" -> saveRisk(caller, owner, answers);
         default -> throw new IllegalStateException(step);
       };
-      if (List.of("loans", "insurance", "savings").contains(step)) {
+      if (List.of("loans", "insurance", "savings", "goals").contains(step)) {
         ArrayNode list = created.putArray(step);
         ids.forEach(list::add);
       }
@@ -237,6 +248,26 @@ public class QuickStartUseCase {
       out.add(forms.create(caller, FinTable.ASSET, body, null).path("id").asText());
     }
     return out;
+  }
+
+  private List<String> saveGoals(UUID caller, UUID owner, JsonNode a, List<String> before) {
+    JsonNode list = a.path("goals");
+    if (!list.isArray()) throw new ValidationException("goals must be a list (it can be empty).");
+    if (list.size() > MAX_GOALS) throw new ValidationException("Pick up to " + MAX_GOALS + " goals here; add more later.");
+    goals.removeQuickStartGoals(owner, before);
+    List<String> out = new ArrayList<>();
+    for (JsonNode g : list) {
+      ObjectNode body = Json.obj();
+      copy(g, body, "type", "name", "targetAmountToday", "targetDate", "ownerPersonId", "currentValue",
+          "monthlyContribution");
+      out.add(goals.create(caller, body, "quick_start").goal().path("id").asText());
+    }
+    return out;
+  }
+
+  private List<String> saveRisk(UUID caller, UUID owner, JsonNode a) {
+    UUID person = a.hasNonNull("personId") ? FinRecordsUseCase.uuidOf("personId", a.get("personId")) : forms.selfId(owner);
+    return List.of(risk.assess(caller, person, a.get("answers")).path("id").asText());
   }
 
   // ── state ───────────────────────────────────────────────────────────────────

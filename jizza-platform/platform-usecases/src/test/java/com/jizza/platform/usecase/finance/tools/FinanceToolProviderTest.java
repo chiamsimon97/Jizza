@@ -37,15 +37,15 @@ class FinanceToolProviderTest {
     ObjectProvider<FinHealthUseCase> h = mock(ObjectProvider.class);
     when(h.getObject()).thenReturn(health);
     return new FinanceToolProvider(agents, h, mock(ObjectProvider.class), mock(ObjectProvider.class),
-        mock(ObjectProvider.class), enabled);
+        mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
   }
 
   @Test
   void onlyKaiGetsTheToolsAndOnlyWhileFinanceIsOn() {
     var p = provider(true);
     assertThat(p.toolsFor(kaiId)).extracting(t -> t.name()).containsExactly("finance_overview",
-        "finance_cash_flow", "finance_loans", "finance_protection", "finance_open_screen",
-        "finance_update_action");
+        "finance_cash_flow", "finance_loans", "finance_protection", "finance_goals", "finance_tax",
+        "finance_open_screen", "finance_update_action");
     assertThat(p.toolsFor(otherId)).isEmpty();
     assertThat(p.supports(otherId, "finance_overview")).isFalse();
     assertThat(provider(false).toolsFor(kaiId)).isEmpty();
@@ -56,6 +56,8 @@ class FinanceToolProviderTest {
     var p = provider(true);
     assertThat(p.actionTypeOf(kaiId, "finance_overview")).contains(ActionType.READ);
     assertThat(p.actionTypeOf(kaiId, "finance_loans")).contains(ActionType.READ);
+    assertThat(p.actionTypeOf(kaiId, "finance_goals")).contains(ActionType.READ);
+    assertThat(p.actionTypeOf(kaiId, "finance_tax")).contains(ActionType.READ);
     assertThat(p.actionTypeOf(kaiId, "finance_open_screen")).contains(ActionType.DRAFT);
     assertThat(p.actionTypeOf(kaiId, "finance_update_action")).contains(ActionType.UPDATE);
     assertThat(p.actionTypeOf(kaiId, "bank_transfer")).isEmpty();

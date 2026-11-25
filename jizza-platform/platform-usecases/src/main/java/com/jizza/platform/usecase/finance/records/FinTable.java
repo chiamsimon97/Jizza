@@ -93,7 +93,23 @@ public enum FinTable {
       oneOf("stability", "stable", "variable"), of("nextHikeMonth", Type.DATE))),
 
   BUDGET("fin_expense_budget", "Budget line", List.of(
-      of("categoryId", Type.CATEGORY).need(), of("monthlyAmount", Type.MONEY).need()));
+      of("categoryId", Type.CATEGORY).need(), of("monthlyAmount", Type.MONEY).need())),
+
+  /** Phase 1b: a goal ({@code fin_plan}). Until Phase 2 and 3 it records what is saved and what goes in. */
+  GOAL("fin_plan", "Goal", List.of(
+      oneOf("type", "emergency", "retirement", "education", "home", "car", "travel", "wedding",
+          "wealth", "custom").need(),
+      text("name", 80).need(), of("ownerPersonId", Type.PERSON), of("targetDate", Type.DATE).need(),
+      of("targetAmountToday", Type.MONEY).need(), oneOf("inflationKey", "cpi", "education", "car", "none"),
+      oneOf("priorityTier", "survival", "important", "aspirational"),
+      oneOf("riskProfile", "conservative", "moderate", "aggressive"),
+      oneOf("status", "draft", "active", "paused", "achieved", "archived"),
+      of("currentValue", Type.MONEY), of("monthlyContribution", Type.MONEY), of("stepupPct", Type.PCT),
+      text("colour", 16))),
+
+  /** Phase 1b: one person's tax inputs for one financial year. */
+  TAX_PROFILE("fin_tax_profile", "Tax profile", List.of(
+      oneOf("regime", "new", "old"), of("rentPaidMonthly", Type.MONEY), of("metro", Type.BOOL)));
 
   public final String table;
   public final String label;

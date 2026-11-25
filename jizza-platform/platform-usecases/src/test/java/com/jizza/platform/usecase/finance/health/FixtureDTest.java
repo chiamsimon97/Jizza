@@ -50,7 +50,29 @@ class FixtureDTest {
             new Policy("group", "me", "health", bd(500_000), null, "yearly", true,
                 List.of("me", "spouse", "child"), null)),
         List.of(new Asset("liquid", "me", "savings_balance", "cash", bd(250_000), true, false, true)),
-        List.of(), List.of(), false, bd(78), known);
+        List.of(), List.of(), false, goalFunding(), known);
+  }
+
+  /**
+   * Fixture D's "weighted funding 78%", computed from two Important goals rather than given:
+   * retirement at 60 is fully funded (₹2 crore saved against ₹1.5 crore in today's money), child
+   * education at 18 has nothing saved yet (₹50.55 lakh in today's money). Weighted by future
+   * target: 78.0%.
+   */
+  static BigDecimal goalFunding() {
+    var people = new java.util.HashMap<String, Person>();
+    people.put("me", new Person("me", "Me", "self", LocalDate.of(1992, 6, 1), true, false));
+    people.put("child", new Person("child", "Child", "child", LocalDate.of(2020, 6, 1), false, true));
+    var retirement = com.jizza.engine.api.util.Json.obj().put("type", "retirement").put("status", "active")
+        .put("priorityTier", "important").put("ownerPersonId", "me").put("targetDate", "2052-06-01")
+        .put("targetAmountToday", 15_000_000).put("inflationKey", "cpi").put("currentValue", 20_000_000)
+        .put("monthlyContribution", 0).put("stepupPct", 0);
+    var education = com.jizza.engine.api.util.Json.obj().put("type", "education").put("status", "active")
+        .put("priorityTier", "important").put("ownerPersonId", "child").put("targetDate", "2038-06-01")
+        .put("targetAmountToday", 5_055_000).put("inflationKey", "education").put("currentValue", 0)
+        .put("monthlyContribution", 0).put("stepupPct", 0);
+    return com.jizza.platform.usecase.finance.goal.GoalMath.importantFundedPct(List.of(retirement, education),
+        people, java.util.Map.of(), "me", AS_OF, KaiDefaults.plan());
   }
 
   static final Set<String> ALL = Set.of(Household.INCOME, Household.SPENDING, Household.LOANS,
