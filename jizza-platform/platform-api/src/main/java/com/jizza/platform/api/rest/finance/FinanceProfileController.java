@@ -57,11 +57,12 @@ public class FinanceProfileController {
     return profiles.get(CurrentUser.userId());
   }
 
-  public record SettingsBody(Boolean advanced, Boolean hideAmounts) {}
+  public record SettingsBody(Boolean advanced, Boolean hideAmounts, @Size(max = 20) List<String> mutedAlerts) {}
 
   @PatchMapping("/profile/settings")
   public FinProfileUseCase.Settings settings(@RequestBody SettingsBody body) {
-    return profiles.updateSettings(CurrentUser.userId(), body.advanced(), body.hideAmounts());
+    return profiles.updateSettings(CurrentUser.userId(), body.advanced(), body.hideAmounts(),
+        body.mutedAlerts());
   }
 
   public record PersonBody(@Size(max = 80) String displayName, @Size(max = 10) String kind,

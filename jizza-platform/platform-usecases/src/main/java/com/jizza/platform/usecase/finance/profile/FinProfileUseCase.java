@@ -31,16 +31,23 @@ public class FinProfileUseCase {
     this.audit = audit;
   }
 
-  public record Settings(boolean advanced, boolean hideAmounts) {
+  /** {@code mutedAlerts}: the kinds of Kai alert the person turned off. */
+  public record Settings(boolean advanced, boolean hideAmounts, List<String> mutedAlerts) {
     static Settings of(JsonNode json) {
+      List<String> muted = new java.util.ArrayList<>();
+      json.path("mutedAlerts").forEach(n -> muted.add(n.asText()));
       return new Settings(json.path("advanced").asBoolean(false),
-          json.path("hideAmounts").asBoolean(false));
+          json.path("hideAmounts").asBoolean(false), List.copyOf(muted));
     }
   }
 
+  /** The alert kinds that can be muted (5.11). */
+  public static final java.util.Set<String> ALERT_KINDS = java.util.Set.of("policy_renewal",
+      "loan_maturity", "gold_ltv", "child_majority", "emergency_low", "needs_verification");
+
   public record ProfileSummary(UUID id, String baseCurrency, long version) {}
 
-  /** How far set-up has got; Quick start arrives in Phase 1a. */
+  /** How far set-up has got: Quick start not_started, in_progress or done. */
   public record SetupProgress(String quickStart, int peopleManaged) {}
 
   public record ProfileView(ProfileSummary profile, List<FinanceStore.PersonRow> people,
@@ -59,11 +66,28 @@ public class FinProfileUseCase {
 
   /** Changes only the settings named; anything else in the body is ignored. */
   public Settings updateSettings(UUID callerUserId, Boolean advanced, Boolean hideAmounts) {
+    return updateSettings(callerUserId, advanced, hideAmounts, null);
+  }
+
+  /** As above, plus the alert kinds to mute (the whole list; null leaves it as it is). */
+  public Settings updateSettings(UUID callerUserId, Boolean advanced, Boolean hideAmounts,
+                                 List<String> mutedAlerts) {
+    if (mutedAlerts != null) {
+      for (String k : mutedAlerts) {
+        if (!ALERT_KINDS.contains(k)) {
+          throw new com.jizza.engine.api.error.ValidationException("Unknown alert kind " + k + ".");
+        }
+      }
+    }
     var scope = scopes.own(callerUserId);
     var profile = store.ensureProfile(scope.ownerUserId(), SELF_NAME);
     ObjectNode settings = profile.settings() instanceof ObjectNode o ? o.deepCopy() : Json.obj();
     if (advanced != null) settings.put("advanced", advanced);
     if (hideAmounts != null) settings.put("hideAmounts", hideAmounts);
+    if (mutedAlerts != null) {
+      var arr = settings.putArray("mutedAlerts");
+      new java.util.TreeSet<>(mutedAlerts).forEach(arr::add);
+    }
     var saved = store.saveSettings(scope.ownerUserId(), settings);
     return Settings.of(saved.settings());
   }
@@ -73,6 +97,7 @@ public class FinProfileUseCase {
     int managed = (int) people.stream()
         .filter(p -> !"self".equals(p.kind()) && "active".equals(p.status())).count();
     return new ProfileView(new ProfileSummary(profile.id(), profile.baseCurrency(), profile.version()),
-        people, Settings.of(profile.settings()), new SetupProgress("not_started", managed));
+        people, Settings.of(profile.settings()), new SetupProgress(
+        com.jizza.platform.usecase.finance.quickstart.QuickStartUseCase.status(profile.settings()), managed));
   }
 }
