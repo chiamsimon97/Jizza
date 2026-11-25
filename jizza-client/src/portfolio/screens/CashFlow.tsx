@@ -104,7 +104,7 @@ export function CashFlow({ onOpen, onAnswer }: { onOpen: (view: string) => void;
               <p className="text-xs text-gray-500 dark:text-gray-400">Survival comes before goals: an emergency buffer and high-interest debt first.</p>
             </>
           ) : (
-            <p className="text-sm text-gray-600 dark:text-gray-300">Goals come with the plan builder; until then the surplus stays unassigned.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-300">No survival gaps: the plan builder splits it across your goals. <button type="button" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => onOpen('plan-builder')}>Open the plan builder</button></p>
           )}
           {data.surplusUse.some(u => u.key === 'debt') && (
             <button type="button" className="self-start text-sm text-brand-600 hover:underline dark:text-brand-300" onClick={() => onOpen('loans')}>See the repayment plan</button>

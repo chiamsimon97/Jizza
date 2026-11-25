@@ -1,4 +1,4 @@
-import type { AssetClass, AssetKind, LoanKind, PolicyKind } from '@/types/finance'
+import type { AssetClass, AssetKind, Bucket, GoalStatus, GoalTier, InflationKey, LoanKind, PolicyKind, RiskProfile } from '@/types/finance'
 
 export const LOAN_KINDS: Record<LoanKind, string> = {
   HOME: 'Home loan', VEHICLE: 'Vehicle loan', EDUCATION: 'Education loan', PERSONAL: 'Personal loan',
@@ -50,4 +50,33 @@ export function personName(names: Record<string, string>, id: string | null | un
   if (!id) return 'You'
   if (id === selfId) return 'You'
   return names[id] ?? 'Someone you manage'
+}
+
+export const GOAL_TIERS: Record<GoalTier, string> = { survival: 'Survival', important: 'Important', aspirational: 'Aspirational' }
+
+export const BUCKETS: Record<Bucket, string> = { short: 'Short · under 3 years', mid: 'Mid · 3–7 years', long: 'Long · 7 years and more' }
+export const BUCKET_SHORT: Record<Bucket, string> = { short: 'Short', mid: 'Mid', long: 'Long' }
+
+export const RISK_PROFILES: Record<RiskProfile, string> = { conservative: 'Conservative', moderate: 'Moderate', aggressive: 'Aggressive' }
+
+export const GOAL_STATUS: Record<GoalStatus, string> = {
+  draft: 'Draft', active: 'Active', paused: 'Paused', achieved: 'Achieved', archived: 'Archived',
+}
+
+export const INFLATION_KEYS: Record<InflationKey, string> = {
+  cpi: 'General prices', education: 'Education costs', car: 'Car prices', none: 'No inflation',
+}
+
+/** A colour per bucket for dots and bars, the same in light and dark. */
+export const BUCKET_COLOURS: Record<Bucket, string> = { short: 'bg-amber-500', mid: 'bg-cyan-600', long: 'bg-indigo-500' }
+
+/** The bucket a date falls in, by whole months from today: Short under 36, Mid under 84. */
+export function bucketFor(months: number): Bucket {
+  return months < 36 ? 'short' : months < 84 ? 'mid' : 'long'
+}
+
+/** Whole months from today's month to a date's month. */
+export function monthsUntil(iso: string, today = new Date()): number {
+  const [y, m] = iso.slice(0, 7).split('-').map(Number)
+  return (y - today.getFullYear()) * 12 + (m - 1 - today.getMonth())
 }

@@ -7,7 +7,7 @@ export const CHECKS: Record<CheckKey, {
   value: (c: HealthCheck) => string
   target: (c: HealthCheck) => string
   question: string
-  /** The Quick start step that fills it in; none for goals, which come with the plan builder. */
+  /** The Quick start step that fills it in. */
   step?: QuickStartStep
   /** The Portfolio view that shows the detail. */
   view: string
@@ -40,8 +40,8 @@ export const CHECKS: Record<CheckKey, {
     title: 'Goal funding',
     value: c => `${c.shown}% funded`,
     target: c => `Target ${c.target}%`,
-    question: 'Goals and how they are funded come with the plan builder.',
-    view: 'goals',
+    question: 'What are you saving for, and by when?',
+    step: 'goals', view: 'goals',
   },
   protection: {
     title: 'Protection',

@@ -19,5 +19,11 @@ export const financeKeys = {
   loansGiven: (sample = false) => ['finance', 'loans-given', sample ? 'sample' : 'mine'] as const,
   policies: (sample = false) => ['finance', 'policies', sample ? 'sample' : 'mine'] as const,
   protection: (sample = false) => ['finance', 'protection', sample ? 'sample' : 'mine'] as const,
+  goalLibrary: ['finance', 'goal-library'] as const,
+  goals: ['finance', 'goals'] as const,
+  goal: (id: string) => ['finance', 'goals', id] as const,
+  builder: ['finance', 'builder'] as const,
+  risk: (personId: string) => ['finance', 'risk', personId] as const,
+  tax: (personId: string, year: string) => ['finance', 'tax', personId, year] as const,
   estate: (sample: boolean, personId: string) => ['finance', 'estate', sample ? 'sample' : 'mine', personId] as const,
 }

@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
+import { financeApi } from '@/api/finance'
 import { Button } from '@/components/ui/Button'
 import type {
-  FinPerson, PersonKind, PolicyKind, QuickStartAnswers, QuickStartLoan, QuickStartPerson, QuickStartPolicy,
-  QuickStartSaving, QuickStartStep,
+  FinPerson, GoalType, PersonKind, PolicyKind, QuickStartAnswers, QuickStartGoal, QuickStartLoan, QuickStartPerson,
+  QuickStartPolicy, QuickStartSaving, QuickStartStep,
 } from '@/types/finance'
 import { AmountField, CheckField, SelectField, TextField } from '../../components/Fields'
 import { COMMON_LOAN_KINDS, LOAN_KINDS, POLICY_KINDS, SAVING_TYPES, isInformal } from '../../labels'
 import { KIND_LABELS } from '../People'
+import { financeKeys } from '../../queryKeys'
 
 /** What a step hands its parent: the answers to save, or why they can't be saved yet. */
 export type Payload<S extends QuickStartStep> = { ok: true; answers: QuickStartAnswers[S] } | { ok: false; message: string }
@@ -297,6 +300,101 @@ export function SavingsStep({ saved, onChange }: StepProps<'savings'>) {
         ))}
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400">Rough totals are fine; Kai marks them as estimates. Importing statements comes with Connect.</p>
+    </div>
+  )
+}
+
+// ── 7. Goals ───────────────────────────────────────────────────────────────────
+
+/** Quick start offers up to three goals; the emergency fund is a check of its own, so it is not here. */
+export const QUICK_GOAL_TYPES: GoalType[] = ['retirement', 'education', 'home', 'car', 'travel', 'wedding', 'custom']
+export const MAX_QUICK_GOALS = 3
+
+export function GoalsStep({ saved, onChange }: StepProps<'goals'>) {
+  const { data: library } = useQuery({ queryKey: financeKeys.goalLibrary, queryFn: financeApi.goalLibrary })
+  const [picked, setPicked] = useState<QuickStartGoal[]>(saved?.goals ?? [])
+  const card = (t: GoalType) => library?.find(c => c.type === t)
+  const toggle = (t: GoalType) => setPicked(p => p.some(g => g.type === t)
+    ? p.filter(g => g.type !== t)
+    : p.length >= MAX_QUICK_GOALS ? p : [...p, { type: t, targetAmountToday: card(t)?.targetAmountToday ?? null }])
+  const set = (t: GoalType, patch: Partial<QuickStartGoal>) => setPicked(p => p.map(g => (g.type === t ? { ...g, ...patch } : g)))
+
+  useEffect(() => {
+    const missing = picked.find(g => !(g.targetAmountToday && g.targetAmountToday > 0) && !card(g.type)?.targetAmountToday)
+    if (missing) return onChange({ ok: false, message: `Enter roughly what ${card(missing.type)?.name.toLowerCase() ?? 'this goal'} costs today.` })
+    onChange({ ok: true, answers: { goals: picked.map(g => ({ type: g.type, ...(g.targetAmountToday ? { targetAmountToday: g.targetAmountToday } : {}) })) } })
+  }, [picked, library]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Goals">
+        {QUICK_GOAL_TYPES.map(t => {
+          const on = picked.some(g => g.type === t)
+          return (
+            <button key={t} type="button" aria-pressed={on} onClick={() => toggle(t)}
+              disabled={!on && picked.length >= MAX_QUICK_GOALS}
+              className={`rounded-full border px-3 py-1.5 text-sm disabled:opacity-40 ${on
+                ? 'border-brand-500 bg-brand-50 font-medium text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'
+                : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
+              {card(t)?.name ?? t}
+            </button>
+          )
+        })}
+      </div>
+      {picked.map(g => {
+        const c = card(g.type)
+        return (
+          <div key={g.type} className={rowClass}>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{c?.name ?? g.type}</p>
+            <AmountField label="What it costs in today’s rupees" value={g.targetAmountToday}
+              onChange={v => set(g.type, { targetAmountToday: v })} hint={c?.hint} />
+          </div>
+        )
+      })}
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Pick up to {MAX_QUICK_GOALS}. Kai fills in the date and grows the amount by inflation; change any of it later under Goals.
+      </p>
+    </div>
+  )
+}
+
+// ── 8. Risk ────────────────────────────────────────────────────────────────────
+
+export function RiskStep({ saved, people, onChange }: StepProps<'risk'>) {
+  const self = people.find(p => p.kind === 'self')
+  const { data } = useQuery({ queryKey: financeKeys.risk(self?.id ?? ''), queryFn: () => financeApi.risk(self!.id), enabled: !!self })
+  const questions = data?.questions ?? []
+  const [answers, setAnswers] = useState<(number | null)[]>(() => saved?.answers ?? [])
+
+  useEffect(() => {
+    if (!questions.length) return onChange({ ok: false, message: 'The questions are still loading.' })
+    const open = questions.findIndex((_, i) => !answers[i])
+    if (open >= 0) return onChange({ ok: false, message: `Answer question ${open + 1} too, or skip this step.` })
+    onChange({ ok: true, answers: { answers: answers.slice(0, questions.length) as number[] } })
+  }, [answers, questions.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex flex-col gap-4">
+      {questions.map((q, i) => (
+        <fieldset key={q.key} className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium text-gray-900 dark:text-gray-100">{i + 1}. {q.text}</legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {q.answers.map((a, j) => {
+              const on = answers[i] === j + 1
+              return (
+                <button key={a} type="button" aria-pressed={on}
+                  onClick={() => setAnswers(x => { const n = [...x]; n[i] = j + 1; return n })}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm ${on
+                    ? 'border-brand-500 bg-brand-50 font-medium text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'
+                    : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
+                  {a}
+                </button>
+              )
+            })}
+          </div>
+        </fieldset>
+      ))}
+      {data?.note && <p className="text-xs text-gray-500 dark:text-gray-400">{data.note}</p>}
     </div>
   )
 }

@@ -36,7 +36,7 @@ function mockReads(health: HealthView = SAMPLE_HEALTH) {
   vi.spyOn(financeApi, 'netWorth').mockResolvedValue(SAMPLE_NET_WORTH)
   vi.spyOn(financeApi, 'cashFlow').mockResolvedValue(SAMPLE_CASH_FLOW)
   vi.spyOn(financeApi, 'policies').mockResolvedValue(SAMPLE_POLICIES)
-  vi.spyOn(financeApi, 'quickStart').mockResolvedValue({ answers: {}, progress: { completed: [], skipped: [], next: null, done: true, total: 6 } })
+  vi.spyOn(financeApi, 'quickStart').mockResolvedValue({ answers: {}, progress: { completed: [], skipped: [], next: null, done: true, total: 8 } })
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -92,18 +92,18 @@ describe('Home', () => {
 
 describe('Quick start', () => {
   const view = (over: Partial<QuickStartView['progress']> = {}): QuickStartView => ({
-    answers: {}, progress: { completed: [], skipped: [], next: 'people', done: false, total: 6, ...over },
+    answers: {}, progress: { completed: [], skipped: [], next: 'people', done: false, total: 8, ...over },
   })
 
   it('asks one question at a time and saves each answer', async () => {
     vi.spyOn(financeApi, 'quickStart').mockResolvedValue(view({ completed: ['people'], next: 'income' }))
     const save = vi.spyOn(financeApi, 'saveQuickStart').mockResolvedValue({ progress: view({ completed: ['people', 'income'], next: 'spending' }).progress })
     render(<QuickStart profile={done} onOpen={noop} />, { wrapper: wrap() })
-    expect(await screen.findByText('Question 2 of 6')).toBeInTheDocument()
+    expect(await screen.findByText('Question 2 of 8')).toBeInTheDocument()
     fireEvent.change(screen.getAllByLabelText('Take-home a month')[0], { target: { value: '120000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => expect(save).toHaveBeenCalledWith('income', { incomes: [{ personId: 'sample-01', takeHomeMonthly: 120000 }] }))
-    expect(await screen.findByText('Question 3 of 6')).toBeInTheDocument()
+    expect(await screen.findByText('Question 3 of 8')).toBeInTheDocument()
   })
 
   it('says what is missing instead of saving half an answer', async () => {

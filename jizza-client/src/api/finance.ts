@@ -4,6 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
+  BuilderInput, BuilderView, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
 } from '@/types/finance'
 
 /** Kai's Portfolio (spec 5.15). Every path answers 404 while the server's finance switch is off. */
@@ -72,4 +73,25 @@ export const financeApi = {
 
   estate: (personId: string) => api.get<FinEstate>(`/api/finance/estate/${personId}`),
   saveEstate: (personId: string, body: Partial<FinEstate>) => api.put<FinEstate>(`/api/finance/estate/${personId}`, body),
+
+  // ── Phase 1b: goals, plan builder, risk and tax ─────────────────────────────
+
+  goalLibrary: () => api.get<GoalLibraryCard[]>('/api/finance/goal-library'),
+  goals: () => api.get<GoalView[]>('/api/finance/goals'),
+  goal: (id: string) => api.get<GoalView>(`/api/finance/goals/${id}`),
+  addGoal: (body: GoalInput) => api.post<GoalView>('/api/finance/goals', body),
+  updateGoal: (id: string, body: GoalInput) => api.patch<GoalView>(`/api/finance/goals/${id}`, body),
+  achieveGoal: (id: string) => api.post<GoalView>(`/api/finance/goals/${id}/achieve`),
+
+  builder: () => api.get<BuilderView>('/api/finance/builder'),
+  /** Keeps the inputs as a draft without writing the plan lines. */
+  putBuilder: (body: BuilderInput) => api.put<BuilderView>('/api/finance/builder', body),
+  previewBuilder: (body: BuilderInput) => api.post<BuilderView>('/api/finance/builder/preview', body),
+  saveBuilder: (body: BuilderInput) => api.post<BuilderView>('/api/finance/builder/save', body),
+
+  risk: (personId: string) => api.get<RiskView>(`/api/finance/risk/${personId}`),
+  assessRisk: (personId: string, answers: number[]) => api.post<RiskAssessment>(`/api/finance/risk/${personId}`, { answers }),
+
+  tax: (personId: string, year?: string) => api.get<TaxView>(`/api/finance/tax/${personId}${year ? `?year=${encodeURIComponent(year)}` : ''}`),
+  saveTax: (personId: string, body: TaxInput) => api.put<TaxView>(`/api/finance/tax/${personId}`, body),
 }

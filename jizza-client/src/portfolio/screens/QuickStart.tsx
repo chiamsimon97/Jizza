@@ -10,9 +10,11 @@ import { ScoreRing } from '../components/ScoreRing'
 import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText, useHealth, useNetWorth } from '../data'
 import { financeKeys } from '../queryKeys'
-import { IncomeStep, InsuranceStep, LoansStep, PeopleStep, SavingsStep, SpendingStep, type Payload, type StepProps } from './quickstart/steps'
+import {
+  GoalsStep, IncomeStep, InsuranceStep, LoansStep, PeopleStep, RiskStep, SavingsStep, SpendingStep, type Payload, type StepProps,
+} from './quickstart/steps'
 
-/** Quick start's questions (7.13), one per screen. Goals and risk (7 and 8) come with Phase 1b. */
+/** Quick start's eight questions (7.13), one per screen. */
 export const QUICK_START_STEPS: { id: QuickStartStep; title: string; why: string }[] = [
   { id: 'people', title: 'Whose money do you look after here?',
     why: 'You, and anyone without their own login, such as a child or a parent. Family members with their own account join through a Family.' },
@@ -21,16 +23,19 @@ export const QUICK_START_STEPS: { id: QuickStartStep; title: string; why: string
   { id: 'loans', title: 'Any loans or borrowings?', why: 'Bank loans, cards, gold loans, money from family or a moneylender: Kai puts them in the order to repay.' },
   { id: 'insurance', title: 'What cover do you have?', why: 'Term and health cover protect everything else. Kai never names or recommends an insurer.' },
   { id: 'savings', title: 'What have you saved so far?', why: 'Rough totals are enough to see your net worth and emergency money.' },
+  { id: 'goals', title: 'What are you saving for?', why: 'Kai fills in the numbers; you correct them later.' },
+  { id: 'risk', title: 'How would you react?', why: 'Your answers set how much risk each goal takes, along with what your finances can carry.' },
 ]
 
 type StepComponent = (props: StepProps<QuickStartStep>) => JSX.Element
 const BODIES: Record<QuickStartStep, StepComponent> = {
   people: PeopleStep as StepComponent, income: IncomeStep as StepComponent, spending: SpendingStep as StepComponent,
   loans: LoansStep as StepComponent, insurance: InsuranceStep as StepComponent, savings: SavingsStep as StepComponent,
+  goals: GoalsStep as StepComponent, risk: RiskStep as StepComponent,
 }
 
 /**
- * Quick start (7.13): six questions, each saved as it is answered so the user can stop and come
+ * Quick start (7.13): eight questions, each saved as it is answered so the user can stop and come
  * back; each can be skipped, which leaves its checks "Not enough data". Then the result.
  */
 export function QuickStart({ profile, startAt, onOpen }: {
@@ -114,7 +119,7 @@ export function QuickStart({ profile, startAt, onOpen }: {
           <Button variant="secondary" disabled={index === 0} onClick={() => { setPayload(null); setStep(QUICK_START_STEPS[index - 1].id) }}>Back</Button>
           <span className="flex-1" />
           <Button variant="ghost" loading={skip.isPending} onClick={() => skip.mutate(meta.id)}>Skip for now</Button>
-          <Button loading={save.isPending} onClick={next}>{index === QUICK_START_STEPS.length - 1 ? 'See my result' : 'Next'}</Button>
+          <Button loading={save.isPending} onClick={next}>{index === QUICK_START_STEPS.length - 1 ? 'See my plan' : 'Next'}</Button>
         </div>
       </section>
       <p className="text-center text-xs text-gray-500 dark:text-gray-400">A skipped question leaves its check as “Not enough data”. It never counts against you.</p>
@@ -155,10 +160,11 @@ function Result({ onOpen, onRestart }: { onOpen: (view: string) => void; onResta
           {h.topActions.map((a, i) => <ActionCard key={a.id} action={a} index={i + 1} />)}
         </section>
       )}
-      <p className="text-xs text-gray-500 dark:text-gray-400">Nothing has been bought, sold or moved. Goals and your risk profile come next, with the plan builder.</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">Nothing has been bought, sold or moved, and no broker login was needed.</p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => onOpen('home')}>Open Money Health</Button>
-        <Button variant="secondary" onClick={onRestart}>Go through the answers again</Button>
+        <Button variant="secondary" onClick={() => onOpen('plan-builder')}>Split what you invest</Button>
+        <Button variant="ghost" onClick={onRestart}>Go through the answers again</Button>
       </div>
     </div>
   )

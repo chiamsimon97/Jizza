@@ -70,7 +70,7 @@ export interface FinConfigItem {
 
 // ── Phase 1a: Money Health ────────────────────────────────────────────────────
 
-export type QuickStartStep = 'people' | 'income' | 'spending' | 'loans' | 'insurance' | 'savings'
+export type QuickStartStep = 'people' | 'income' | 'spending' | 'loans' | 'insurance' | 'savings' | 'goals' | 'risk'
 
 export interface QuickStartProgress {
   completed: QuickStartStep[]
@@ -88,6 +88,16 @@ export interface QuickStartAnswers {
   loans?: { loans: QuickStartLoan[] }
   insurance?: { policies: QuickStartPolicy[] }
   savings?: { totals: QuickStartSaving[] }
+  goals?: { goals: QuickStartGoal[] }
+  risk?: { answers: number[]; personId?: string }
+}
+
+export interface QuickStartGoal {
+  type: GoalType
+  name?: string
+  targetAmountToday?: number | null
+  targetDate?: string | null
+  ownerPersonId?: string | null
 }
 
 export interface QuickStartPerson {
@@ -403,4 +413,221 @@ export interface FinEstate {
   willDate?: string | null
   executor?: string | null
   notes?: string | null
+}
+
+// ── Phase 1b: goals, plan builder, risk and tax ────────────────────────────────
+
+export type GoalType = 'emergency' | 'retirement' | 'education' | 'home' | 'car' | 'travel' | 'wedding' | 'wealth' | 'custom'
+export type GoalTier = 'survival' | 'important' | 'aspirational'
+export type GoalStatus = 'draft' | 'active' | 'paused' | 'achieved' | 'archived'
+export type RiskProfile = 'conservative' | 'moderate' | 'aggressive'
+export type Bucket = 'short' | 'mid' | 'long'
+export type InflationKey = 'cpi' | 'education' | 'car' | 'none'
+
+/** A card of the goal library (7.3 step 1), with Kai's smart defaults where it can work them out. */
+export interface GoalLibraryCard {
+  type: GoalType
+  name: string
+  priority: GoalTier
+  inflationKey: InflationKey
+  inflationPct: number | null
+  targetAmountToday: number | null
+  targetDate: string | null
+  bucket: Bucket | null
+  ownerPersonId: string | null
+  hint: string
+  defaults: Record<string, JsonValue> | null
+}
+
+export interface FinGoal {
+  id: string
+  type: GoalType
+  name: string
+  ownerPersonId: string | null
+  targetDate: string
+  targetAmountToday: number
+  inflationKey: InflationKey
+  priorityTier: GoalTier
+  riskProfile: RiskProfile | null
+  status: GoalStatus
+  currentValue: number
+  monthlyContribution: number
+  stepupPct: number
+  colour: string | null
+  createdVia: 'wizard' | 'quick_start' | 'system'
+  achievedAt: string | null
+  createdAt?: string
+}
+
+export interface GoalFunding {
+  monthsToTarget: number
+  bucket: Bucket
+  inflationPct: number
+  futureTarget: number
+  projected: number
+  fundedPct: number
+  requiredSip: number
+  blendedReturnNow: number
+  mixNow: Record<string, number>
+  monthsToNextBucket: number | null
+  nextBucket: Bucket | null
+}
+
+export interface GoalView {
+  goal: FinGoal
+  ownerName: string
+  funding: GoalFunding | null
+  risk: RiskProfile
+  riskSource: 'goal' | 'self' | 'person' | 'default'
+  moveNote: string | null
+  expectedReturnPct: number | null
+}
+
+export type GoalInput = Partial<Pick<FinGoal, 'type' | 'name' | 'ownerPersonId' | 'targetDate' | 'targetAmountToday' |
+  'inflationKey' | 'priorityTier' | 'riskProfile' | 'status' | 'currentValue' | 'monthlyContribution' | 'stepupPct' | 'colour'>>
+
+export interface BuilderEdit { key: string; monthly: number }
+
+export interface BuilderInput {
+  monthly: number
+  lumpsum?: number | null
+  frequency?: string | null
+  stepUpPct?: number | null
+  topupMonth?: number | null
+  topupAmount?: number | null
+  age?: number | null
+  riskProfile?: RiskProfile | null
+  edits?: BuilderEdit[]
+}
+
+export interface AllocationNode {
+  key: string
+  label: string
+  level: 'root' | 'bucket' | 'asset_class' | 'sub_category'
+  monthly: number
+  lumpsum: number
+  pct: number
+  source: string
+  sourceLabel: string
+  edited: boolean
+  children: AllocationNode[]
+}
+
+export interface AllocationLine {
+  key: string
+  bucket: Bucket
+  assetClass: string
+  subCategory: string
+  label: string
+  monthly: number
+  lumpsum: number
+  pct: number
+  source: string
+  sourceLabel: string
+}
+
+export interface OffTheTop { key: string; label: string; monthly: number; lumpsum: number; reason: string }
+export interface GoalShare { goalId: string | null; name: string; bucket: Bucket; monthly: number; required: number }
+
+export interface AllocationResult {
+  monthlyIn: number
+  lumpsumIn: number
+  offTheTop: OffTheTop[]
+  monthlyInvested: number
+  lumpsumInvested: number
+  age: number
+  risk: RiskProfile
+  tree: AllocationNode
+  lines: AllocationLine[]
+  goalLens: GoalShare[]
+  timeline: {
+    today: { key: string; label: string; amount: number }[]
+    investedToday: number
+    parked: number
+    stpMonths: number
+    stp: { month: number; amount: number }[]
+  }
+  notes: string[]
+}
+
+export interface BuilderView {
+  input: BuilderInput | null
+  age: number
+  ageSource: string
+  risk: RiskProfile
+  riskSource: string
+  result: AllocationResult | null
+  savedAt: string | null
+  savedLines: Record<string, JsonValue>[]
+}
+
+export interface RiskQuestion { key: string; text: string; answers: string[] }
+export interface RiskFactScore { key: string; label: string; score: number; assumed: boolean; reading: string }
+
+export interface RiskAssessment {
+  id: string
+  personId: string
+  questionnaireVersion: number
+  toleranceScore: number
+  toleranceProfile: RiskProfile
+  capacityScore: number
+  capacityProfile: RiskProfile
+  profile: RiskProfile
+  conflictFlag: boolean
+  answers: { tolerance: number[] }
+  facts: { scores: RiskFactScore[]; decidedBy: string; explanation: string }
+  createdAt?: string
+}
+
+export interface RiskView {
+  personId: string
+  questions: RiskQuestion[]
+  latest: RiskAssessment | null
+  capacityNow: RiskFactScore[]
+  note: string
+}
+
+export type DeductionKey = 'section80C' | 'section80CCD1B' | 'section80DSelf' | 'section80DParents' | 'homeLoanInterest'
+
+export interface TaxStep { label: string; amount: number }
+export interface TaxRegimeResult { taxableIncome: number; slabTax: number; rebate: number; cess: number; total: number; steps: TaxStep[] }
+
+export interface TaxComparison {
+  status: string
+  newRegime: TaxRegimeResult | null
+  oldRegime: TaxRegimeResult | null
+  oldStatus: string
+  cheaper: 'new' | 'old' | 'same' | null
+  gap: number | null
+  needsVerification: boolean
+  notes: string[]
+}
+
+export interface TaxProfile {
+  id?: string
+  personId: string
+  taxYear: string
+  regime?: 'new' | 'old' | null
+  rentPaidMonthly?: number | null
+  metro?: boolean | null
+  deductions: Partial<Record<DeductionKey, number>> & { parentsSenior?: boolean }
+}
+
+export interface TaxView {
+  personId: string
+  personName: string
+  year: string
+  profile: TaxProfile
+  grossAnnual: number | null
+  comparison: TaxComparison
+  unverified: string[]
+  gainsNote: string
+}
+
+export interface TaxInput {
+  year?: string
+  regime?: 'new' | 'old' | null
+  rentPaidMonthly?: number | null
+  metro?: boolean | null
+  deductions?: Partial<Record<DeductionKey, number | null>> & { parentsSenior?: boolean }
 }

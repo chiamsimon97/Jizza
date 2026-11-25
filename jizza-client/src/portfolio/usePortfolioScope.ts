@@ -15,7 +15,10 @@ export interface PortfolioScope {
   step: string | null
 }
 
-export function usePortfolioScope(): [PortfolioScope, (patch: Partial<PortfolioScope>) => void] {
+/** A change to the scope; null (or a default) removes the key from the URL. */
+export type ScopePatch = { [K in keyof PortfolioScope]?: PortfolioScope[K] | null }
+
+export function usePortfolioScope(): [PortfolioScope, (patch: ScopePatch) => void] {
   const [params, setParams] = useSearchParams()
   const scope: PortfolioScope = {
     view: findView(params.get('view')).id,
@@ -24,7 +27,7 @@ export function usePortfolioScope(): [PortfolioScope, (patch: Partial<PortfolioS
     sample: params.get('sample') === '1' ? '1' : null,
     step: params.get('step'),
   }
-  const update = useCallback((patch: Partial<PortfolioScope>) => {
+  const update = useCallback((patch: ScopePatch) => {
     setParams(prev => {
       const next = new URLSearchParams(prev)
       for (const [key, value] of Object.entries(patch)) {
