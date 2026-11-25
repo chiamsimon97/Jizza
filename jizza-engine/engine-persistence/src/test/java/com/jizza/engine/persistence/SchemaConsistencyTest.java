@@ -69,10 +69,12 @@ class SchemaConsistencyTest {
 
   private List<Class<?>> entityClasses() throws Exception {
     List<Class<?>> out = new ArrayList<>();
-    try (Stream<Path> files = Files.list(ENTITY_DIR)) {
-      for (Path p : files.toList()) {
-        String simple = p.getFileName().toString().replace(".java", "");
-        Class<?> c = Class.forName("com.jizza.engine.persistence.entity." + simple);
+    // Sub-packages too (entity/finance/...), so a feature's own folder is checked like the rest.
+    try (Stream<Path> files = Files.walk(ENTITY_DIR)) {
+      for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+        String relative = ENTITY_DIR.relativize(p).toString().replace(".java", "")
+            .replace(java.io.File.separatorChar, '.');
+        Class<?> c = Class.forName("com.jizza.engine.persistence.entity." + relative);
         if (c.isAnnotationPresent(Entity.class)) out.add(c);
       }
     }

@@ -83,6 +83,16 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     assertThat(service.ok()).as(service.body()).isTrue();
     owned.put("/api/services/", service.json().path("id").asText());
 
+    // Kai Portfolio: someone the owner manages, and that person's consent note.
+    var person = owner.post("/api/finance/people", Map.of("displayName", "Owner's mother",
+        "kind", "parent", "type", "individual"));
+    assertThat(person.ok()).as(person.body()).isTrue();
+    owned.put("/api/finance/people/", person.json().path("id").asText());
+    var consent = owner.post("/api/finance/people/" + person.json().path("id").asText()
+        + "/consents", Map.of("scope", "manage"));
+    assertThat(consent.ok()).as(consent.body()).isTrue();
+    owned.put("/api/finance/consents/", consent.json().path("id").asText());
+
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
 
@@ -135,6 +145,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     for (var e : owned.entrySet()) {
       String path = e.getKey() + e.getValue();
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
+      if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       var still = owner.get(path);
       assertThat(still.ok()).as("owner still has %s: %s", path, still.body()).isTrue();
     }
@@ -186,7 +197,8 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
   void listsOnlyEverShowTheCallersOwnThings() {
     for (String list : List.of("/api/conversations", "/api/workflows", "/api/tasks", "/api/memory",
         "/api/memory/subjects", "/api/services", "/api/agents", "/api/notifications",
-        "/api/runs", "/api/activity?limit=200", "/api/procedures")) {
+        "/api/runs", "/api/activity?limit=200", "/api/procedures", "/api/finance/people",
+        "/api/finance/profile", "/api/finance/config")) {
       String body = other.get(list).body();
       for (String id : owned.values()) {
         assertThat(body).as("%s shows the owner's %s", list, id).doesNotContain(id);
