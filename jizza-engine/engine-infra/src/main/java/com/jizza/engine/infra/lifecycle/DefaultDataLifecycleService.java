@@ -64,6 +64,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
   private final MemorySubjectRelationRepository memoryRelations;
   private final com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess;
   private final com.jizza.engine.api.finance.FinanceStore finance;
+  private final com.jizza.engine.api.finance.FinanceRecords financeRecords;
 
   public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
@@ -76,7 +77,9 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
                               MemorySubjectRepository memorySubjects,
                               MemorySubjectRelationRepository memoryRelations,
                               com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess,
-                              com.jizza.engine.api.finance.FinanceStore finance) {
+                              com.jizza.engine.api.finance.FinanceStore finance,
+                              com.jizza.engine.api.finance.FinanceRecords financeRecords) {
+    this.financeRecords = financeRecords;
     this.users = users;
     this.agents = agents;
     this.knowledge = knowledge;
@@ -286,6 +289,12 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
       o.put("effectiveFrom", c.effectiveFrom().toString());
       o.set("value", c.value());
     });
+    // Phase 1a on: accounts, assets, income, budget, loans, policies, health runs, actions…
+    ObjectNode tables = node.putObject("records");
+    for (String table : com.jizza.engine.infra.finance.JdbcFinanceRecords.TABLES_IN_ORDER) {
+      ArrayNode rows = tables.putArray(table);
+      financeRecords.list(table, userId, java.util.Map.of()).forEach(rows::add);
+    }
   }
 
   /** "Forget everything": irreversible, and audited immediately before the row disappears. */

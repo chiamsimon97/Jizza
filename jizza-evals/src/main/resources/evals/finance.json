@@ -108,5 +108,257 @@
       "calls": ["bank_list_transactions"],
       "notCalls": ["bank_transfer"]
     }
+  },
+  {
+    "id": "kai-money-health-read-does-not-ask",
+    "agent": "finance",
+    "description": "Reading the Money Health result is Kai's to do without asking, and nothing is changed on the way.",
+    "instruction": "How healthy are my finances right now?",
+    "tools": [
+      {
+        "name": "finance_overview",
+        "description": "The user's Money Health: score out of 100, the six checks with status, net worth, monthly surplus and the top actions, as Kai's engines computed them. Quote these figures; do not work out your own.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": [
+                "me"
+              ]
+            }
+          }
+        },
+        "actionType": "read",
+        "result": {
+          "asOf": "2026-11-24",
+          "score": 38,
+          "checks": [
+            {
+              "check": "emergencyFund",
+              "status": "amber",
+              "value": 3.2,
+              "unit": "months",
+              "target": 6
+            },
+            {
+              "check": "debt",
+              "status": "red",
+              "value": 16.2,
+              "unit": "pctOfGrossIncome",
+              "target": 30
+            },
+            {
+              "check": "savingsRate",
+              "status": "amber",
+              "value": 16.7,
+              "unit": "pctOfTakeHome",
+              "target": 20
+            },
+            {
+              "check": "goalFunding",
+              "status": "amber",
+              "value": 78,
+              "unit": "pctFunded",
+              "target": 90
+            },
+            {
+              "check": "protection",
+              "status": "red",
+              "value": 3,
+              "unit": "gaps",
+              "target": 0
+            },
+            {
+              "check": "spendingControl",
+              "status": "green",
+              "value": 43.3,
+              "unit": "needsPctOfTakeHome",
+              "target": 50
+            }
+          ],
+          "monthlySurplus": 22000,
+          "netWorth": -3170000,
+          "topActions": [
+            {
+              "id": "a1",
+              "title": "Repay the ₹1.5 lakh personal loan at 14%",
+              "reason": "Use the ₹22,000 unallocated monthly surplus on top of the ₹8,000 EMI: cleared in about 6 months.",
+              "layer": "survival",
+              "impactPoints": 20
+            },
+            {
+              "id": "a2",
+              "title": "Close protection gaps",
+              "layer": "survival",
+              "impactPoints": 15
+            },
+            {
+              "id": "a3",
+              "title": "Grow the emergency fund to ₹4.68 lakh",
+              "layer": "survival",
+              "impactPoints": 10
+            }
+          ],
+          "note": "Figures are Kai's engine results."
+        }
+      },
+      {
+        "name": "finance_update_action",
+        "description": "Mark one of the user's actions done, or snooze it until a date, when the user says so.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "actionId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "done",
+                "snoozed"
+              ]
+            },
+            "snoozedUntil": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "actionId",
+            "status"
+          ]
+        },
+        "actionType": "update"
+      }
+    ],
+    "expect": {
+      "calls": [
+        "finance_overview"
+      ],
+      "notCalls": [
+        "finance_update_action"
+      ],
+      "decisions": {
+        "finance_overview": "ALLOW"
+      },
+      "answerMentions": [
+        "38"
+      ],
+      "maxRounds": 4
+    }
+  },
+  {
+    "id": "kai-quotes-engine-figures",
+    "agent": "finance",
+    "description": "Kai quotes the engine's figures (surplus, months to clear the loan) instead of working out its own.",
+    "instruction": "What should I fix first, and how long will it take?",
+    "tools": [
+      {
+        "name": "finance_overview",
+        "description": "The user's Money Health: score out of 100, the six checks with status, net worth, monthly surplus and the top actions, as Kai's engines computed them. Quote these figures; do not work out your own.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": [
+                "me"
+              ]
+            }
+          }
+        },
+        "actionType": "read",
+        "result": {
+          "asOf": "2026-11-24",
+          "score": 38,
+          "checks": [
+            {
+              "check": "emergencyFund",
+              "status": "amber",
+              "value": 3.2,
+              "unit": "months",
+              "target": 6
+            },
+            {
+              "check": "debt",
+              "status": "red",
+              "value": 16.2,
+              "unit": "pctOfGrossIncome",
+              "target": 30
+            },
+            {
+              "check": "savingsRate",
+              "status": "amber",
+              "value": 16.7,
+              "unit": "pctOfTakeHome",
+              "target": 20
+            },
+            {
+              "check": "goalFunding",
+              "status": "amber",
+              "value": 78,
+              "unit": "pctFunded",
+              "target": 90
+            },
+            {
+              "check": "protection",
+              "status": "red",
+              "value": 3,
+              "unit": "gaps",
+              "target": 0
+            },
+            {
+              "check": "spendingControl",
+              "status": "green",
+              "value": 43.3,
+              "unit": "needsPctOfTakeHome",
+              "target": 50
+            }
+          ],
+          "monthlySurplus": 22000,
+          "netWorth": -3170000,
+          "topActions": [
+            {
+              "id": "a1",
+              "title": "Repay the ₹1.5 lakh personal loan at 14%",
+              "reason": "Use the ₹22,000 unallocated monthly surplus on top of the ₹8,000 EMI: cleared in about 6 months.",
+              "layer": "survival",
+              "impactPoints": 20
+            },
+            {
+              "id": "a2",
+              "title": "Close protection gaps",
+              "layer": "survival",
+              "impactPoints": 15
+            },
+            {
+              "id": "a3",
+              "title": "Grow the emergency fund to ₹4.68 lakh",
+              "layer": "survival",
+              "impactPoints": 10
+            }
+          ],
+          "note": "Figures are Kai's engine results."
+        }
+      }
+    ],
+    "expect": {
+      "calls": [
+        "finance_overview"
+      ],
+      "decisions": {
+        "finance_overview": "ALLOW"
+      },
+      "answerMentions": [
+        "personal loan",
+        "22,000|22000|22 000",
+        "6 months|six months"
+      ],
+      "answerAvoids": [
+        "emergency fund to repay",
+        "use your emergency fund"
+      ],
+      "maxRounds": 4
+    }
   }
 ]

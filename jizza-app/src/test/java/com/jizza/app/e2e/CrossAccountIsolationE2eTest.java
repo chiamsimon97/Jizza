@@ -92,6 +92,29 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         + "/consents", Map.of("scope", "manage"));
     assertThat(consent.ok()).as(consent.body()).isTrue();
     owned.put("/api/finance/consents/", consent.json().path("id").asText());
+    owned.put("/api/finance/estate/", person.json().path("id").asText());
+    // Phase 1a: an account, an asset, a loan (high interest, so the plan holds an action),
+    // money lent and a policy.
+    var account = owner.post("/api/finance/accounts", Map.of("kind", "savings", "nickname", "Owner's savings"));
+    assertThat(account.ok()).as(account.body()).isTrue();
+    owned.put("/api/finance/accounts/", account.json().path("id").asText());
+    var asset = owner.post("/api/finance/assets", Map.of("kind", "fd", "value", 100000,
+        "accountId", account.json().path("id").asText()));
+    assertThat(asset.ok()).as(asset.body()).isTrue();
+    owned.put("/api/finance/assets/", asset.json().path("id").asText());
+    var loan = owner.post("/api/finance/loans", Map.of("kind", "PERSONAL", "outstanding", 150000,
+        "rateInput", "14%", "emiOrInterest", 8000));
+    assertThat(loan.ok()).as(loan.body()).isTrue();
+    owned.put("/api/finance/loans/", loan.json().path("id").asText());
+    var lent = owner.post("/api/finance/loans-given", Map.of("borrowerName", "Owner's friend", "amount", 20000));
+    assertThat(lent.ok()).as(lent.body()).isTrue();
+    owned.put("/api/finance/loans-given/", lent.json().path("id").asText());
+    var policy = owner.post("/api/finance/policies", Map.of("kind", "term", "sumAssured", 5000000));
+    assertThat(policy.ok()).as(policy.body()).isTrue();
+    owned.put("/api/finance/policies/", policy.json().path("id").asText());
+    var actions = owner.get("/api/finance/actions");
+    assertThat(actions.json()).as(actions.body()).isNotEmpty();
+    owned.put("/api/finance/actions/", actions.json().get(0).path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
@@ -146,6 +169,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       String path = e.getKey() + e.getValue();
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
+      if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
       var still = owner.get(path);
       assertThat(still.ok()).as("owner still has %s: %s", path, still.body()).isTrue();
     }
@@ -191,6 +215,20 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
 
     var share = other.post("/api/memory/" + ownersMemory + "/share", Map.of("agentId", othersAgent));
     assertThat(share.ok()).isFalse();
+
+    // Kai Portfolio: the caller's new rows cannot point at the owner's account, person or loan.
+    var asset = other.post("/api/finance/assets", Map.of("kind", "fd", "value", 1,
+        "accountId", owned.get("/api/finance/accounts/")));
+    assertThat(asset.ok()).as("asset in the owner's account: %s", asset.body()).isFalse();
+    var policy = other.post("/api/finance/policies", Map.of("kind", "health", "sumAssured", 1,
+        "coveredPersonIds", List.of(owned.get("/api/finance/people/"))));
+    assertThat(policy.ok()).as("policy covering the owner's person: %s", policy.body()).isFalse();
+    var income = other.put("/api/finance/income", List.of(Map.of("personId",
+        owned.get("/api/finance/people/"), "takeHomeMonthly", 1)));
+    assertThat(income.ok()).as("income for the owner's person: %s", income.body()).isFalse();
+    var quick = other.post("/api/finance/quick-start", Map.of("step", "income", "answers",
+        Map.of("incomes", List.of(Map.of("personId", owned.get("/api/finance/people/"), "takeHomeMonthly", 1)))));
+    assertThat(quick.ok()).as("quick start for the owner's person: %s", quick.body()).isFalse();
   }
 
   @Test
@@ -198,7 +236,11 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     for (String list : List.of("/api/conversations", "/api/workflows", "/api/tasks", "/api/memory",
         "/api/memory/subjects", "/api/services", "/api/agents", "/api/notifications",
         "/api/runs", "/api/activity?limit=200", "/api/procedures", "/api/finance/people",
-        "/api/finance/profile", "/api/finance/config")) {
+        "/api/finance/profile", "/api/finance/config", "/api/finance/accounts",
+        "/api/finance/assets", "/api/finance/loans", "/api/finance/loans-given",
+        "/api/finance/policies", "/api/finance/actions", "/api/finance/health",
+        "/api/finance/income", "/api/finance/budget", "/api/finance/protection",
+        "/api/finance/loans/plan", "/api/finance/net-worth", "/api/finance/quick-start")) {
       String body = other.get(list).body();
       for (String id : owned.values()) {
         assertThat(body).as("%s shows the owner's %s", list, id).doesNotContain(id);

@@ -9,6 +9,7 @@
   <dependencies>
     <dependency><groupId>com.jizza</groupId><artifactId>platform-usecases</artifactId></dependency>
     <dependency><groupId>com.jizza</groupId><artifactId>engine-api</artifactId></dependency>
+    <dependency><groupId>net.javacrumbs.shedlock</groupId><artifactId>shedlock-spring</artifactId></dependency>
     <!--
       engine-security, engine-infra and engine-connectors are compile-scope: platform-api's
       controllers reach directly into a handful of their classes (CurrentUser, SessionCookies,
