@@ -12,11 +12,16 @@ export interface PortfolioView {
   advanced?: boolean
   /** Grouped under Investments. */
   group?: 'investments'
+  /** Reached from a screen, not listed in the sub-navigation. */
+  hidden?: boolean
+  /** What "Ask Kai" starts the question with on this view. */
+  ask?: string
 }
 
 export const PORTFOLIO_VIEWS: PortfolioView[] = [
-  { id: 'home', label: 'Home', phase: '0', about: 'Your Money Health, the next actions and what changed.' },
-  { id: 'actions', label: 'Actions', phase: '1a', about: 'The action plan, in the order Kai suggests funding it.' },
+  { id: 'home', label: 'Home', phase: '0', about: 'Your Money Health, the next actions and what changed.', ask: 'About my Money Health score: ' },
+  { id: 'quick-start', label: 'Quick start', phase: '1a', hidden: true, about: 'Six questions that give your first Money Health score.', ask: 'Helping me through Quick start: ' },
+  { id: 'actions', label: 'Actions', phase: '1a', about: 'The action plan, in the order Kai suggests funding it.', ask: 'About my action plan: ' },
   { id: 'goals', label: 'Goals', phase: '1b', about: 'Each goal with its target, date, funding and required SIP.' },
   { id: 'plan-builder', label: 'Plan builder', phase: '1b', about: 'How much goes in, split across short, mid and long term down to each sleeve.' },
   { id: 'holdings', label: 'Holdings', phase: '2', group: 'investments', about: 'What you hold, in which account, and which goal each unit is for.' },
@@ -25,11 +30,11 @@ export const PORTFOLIO_VIEWS: PortfolioView[] = [
   { id: 'proposals', label: 'Proposals', phase: '4', group: 'investments', about: 'Rebalance proposals with options and their tax effect, for you to approve.' },
   { id: 'lists', label: 'Lists', phase: '2', group: 'investments', about: 'Watchlists and shortlists you can promote into a goal.' },
   { id: 'rules', label: 'Rules', phase: '2', group: 'investments', advanced: true, about: 'Stop-loss, target and drift rules, inherited level by level.' },
-  { id: 'cash-flow', label: 'Cash flow', phase: '1a', about: 'Income, spending by need, want and save, and what is left each month.' },
-  { id: 'loans', label: 'Loans', phase: '1a', about: 'Every loan and borrowing, its real rate, and a repayment plan.' },
-  { id: 'protection', label: 'Protection', phase: '1a', about: 'Term and health cover against what each person needs.' },
+  { id: 'cash-flow', label: 'Cash flow', phase: '1a', about: 'Income, spending by need, want and save, and what is left each month.', ask: 'About my cash flow this month: ' },
+  { id: 'loans', label: 'Loans', phase: '1a', about: 'Every loan and borrowing, its real rate, and a repayment plan.', ask: 'About my loans and the repayment plan: ' },
+  { id: 'protection', label: 'Protection', phase: '1a', about: 'Term and health cover against what each person needs.', ask: 'About my term and health cover: ' },
   { id: 'tax', label: 'Tax', phase: '1b', about: 'Old against new regime, deductions and capital gains for the year.' },
-  { id: 'net-worth', label: 'Net worth', phase: '1a', about: 'What you own and owe, by class and by person, month by month.' },
+  { id: 'net-worth', label: 'Net worth', phase: '1a', about: 'What you own and owe, by class and by person, month by month.', ask: 'About my net worth: ' },
   { id: 'schedules', label: 'Schedules', phase: '3', about: 'SIPs, STPs and SWPs with each instalment matched or missed.' },
   { id: 'people', label: 'People', phase: '0', about: 'People you manage who have no login of their own.' },
   { id: 'sharing', label: 'Sharing', phase: '5', about: 'What you share into a Family, with View or Edit.' },
@@ -44,4 +49,4 @@ export function findView(id: string | null | undefined): PortfolioView {
 }
 
 /** Views built in this release; the rest show a placeholder. */
-export const BUILT_VIEWS = new Set(['home', 'people', 'settings'])
+export const BUILT_VIEWS = new Set(['home', 'quick-start', 'actions', 'cash-flow', 'loans', 'protection', 'net-worth', 'people', 'settings'])

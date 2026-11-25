@@ -31,6 +31,8 @@ export interface FinPersonInput {
 export interface FinSettings {
   advanced: boolean
   hideAmounts: boolean
+  /** Alert kinds Kai does not send (policy_renewal, loan_maturity, gold_ltv, …). */
+  mutedAlerts?: string[]
 }
 
 export interface FinProfileView {
@@ -64,4 +66,341 @@ export interface FinConfigItem {
   sourceUrl: string | null
   verifiedOn: string | null
   needsVerification: boolean
+}
+
+// ── Phase 1a: Money Health ────────────────────────────────────────────────────
+
+export type QuickStartStep = 'people' | 'income' | 'spending' | 'loans' | 'insurance' | 'savings'
+
+export interface QuickStartProgress {
+  completed: QuickStartStep[]
+  skipped: QuickStartStep[]
+  next: QuickStartStep | null
+  done: boolean
+  total: number
+}
+
+/** What each step last saved, so answering again starts from it. */
+export interface QuickStartAnswers {
+  people?: { me?: { dob?: string | null; isEarning?: boolean }; people?: QuickStartPerson[] }
+  income?: { incomes: { personId: string; takeHomeMonthly: number; grossMonthly?: number | null }[] }
+  spending?: { essentialMonthly?: number | null; otherMonthly?: number | null; investingMonthly?: number | null }
+  loans?: { loans: QuickStartLoan[] }
+  insurance?: { policies: QuickStartPolicy[] }
+  savings?: { totals: QuickStartSaving[] }
+}
+
+export interface QuickStartPerson {
+  id?: string
+  displayName: string
+  kind: PersonKind
+  type: PersonType
+  dob?: string | null
+  isEarning?: boolean
+  isDependent?: boolean
+}
+
+export interface QuickStartLoan {
+  kind: LoanKind
+  outstanding: number
+  monthlyPayment?: number | null
+  rateInput?: string
+  lenderName?: string
+  dueDate?: string | null
+  grams?: number | null
+  purityKarat?: number | null
+  goldValue?: number | null
+}
+
+export interface QuickStartPolicy {
+  kind: PolicyKind
+  sumAssured: number
+  premium?: number | null
+  employerProvided?: boolean
+  personId?: string
+  coveredPersonIds?: string[]
+}
+
+export interface QuickStartSaving {
+  kind: AssetKind
+  value: number
+  isEmergency?: boolean
+  name?: string
+  assetClass?: AssetClass
+}
+
+export interface QuickStartView {
+  answers: QuickStartAnswers
+  progress: QuickStartProgress
+}
+
+export type CheckKey = 'emergencyFund' | 'debt' | 'savingsRate' | 'goalFunding' | 'protection' | 'spendingControl'
+export type CheckStatus = 'green' | 'amber' | 'red' | 'unknown'
+
+export interface HealthCheck {
+  key: CheckKey
+  status: CheckStatus
+  value: number | null
+  /** The value as the tile shows it, rounded. */
+  shown: number | null
+  unit: 'months' | 'pctOfGrossIncome' | 'pctOfTakeHome' | 'pctFunded' | 'gaps' | 'needsPctOfTakeHome'
+  target: number
+  weight: number
+  points: number
+  facts: Record<string, JsonValue>
+}
+
+export type ActionLayer = 'survival' | 'important' | 'aspirational' | 'hygiene'
+export type ActionStatus = 'open' | 'later' | 'snoozed' | 'done' | 'dismissed'
+
+export interface FinAction {
+  id: string
+  personId: string | null
+  actionKey: string
+  layer: ActionLayer
+  title: string
+  reason: string
+  impactPoints: number | null
+  rank: number | null
+  details: Record<string, JsonValue> | null
+  status: ActionStatus
+  snoozedUntil: string | null
+  dismissReason: string | null
+  sourceCheck: string | null
+  dueDate: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HealthView {
+  asOf: string
+  /** Out of 100; null until at least one check has data. */
+  score: number | null
+  rawScore: number | null
+  checks: HealthCheck[]
+  trend: { at: string; score: number }[]
+  flags: { nomineeMissing: boolean; willMissing: boolean; needsVerification: boolean }
+  surplus: number
+  essentialMonthly: number
+  topActions: FinAction[]
+}
+
+export interface CashFlowView {
+  asOf: string
+  month: string
+  income: { personId: string; name: string; grossMonthly: number | null; takeHomeMonthly: number }[]
+  spendByBucket: { need: number; want: number; save: number }
+  takeHome: number
+  essential: number
+  loanPayments: number
+  premiumsMonthly: number
+  surplus: number
+  surplusUse: { key: string; label: string; amount: number }[]
+  needsWantsSavePct: { need: number; want: number; save: number }
+}
+
+export interface NetWorthSlice { key: string; assets: number; liabilities: number; netWorth: number }
+
+export interface NetWorthView {
+  asOf: string
+  assets: number
+  liabilities: number
+  netWorth: number
+  pledged: number
+  byClass: NetWorthSlice[]
+  byPerson: NetWorthSlice[]
+  trend: { asOf: string; assets: number; liabilities: number; netWorth: number }[]
+}
+
+export type AssetKind = 'savings_balance' | 'fd' | 'rd' | 'epf' | 'ppf' | 'nps' | 'ssy' | 'post_office'
+  | 'gold_physical' | 'gold_digital' | 'property' | 'policy_surrender' | 'chit' | 'cash' | 'vehicle' | 'other'
+export type AssetClass = 'cash' | 'debt' | 'equity' | 'gold' | 'other'
+
+export interface FinAsset {
+  id: string
+  personId: string | null
+  accountId: string | null
+  kind: AssetKind
+  name: string | null
+  assetClass: AssetClass | null
+  subCategory: string | null
+  value: number
+  valueAsOf: string | null
+  rate: number | null
+  maturityDate: string | null
+  grams: number | null
+  purityKarat: number | null
+  isEmergency: boolean
+  isEstimate: boolean
+  pledged: boolean
+}
+
+export type FinAssetInput = Partial<Omit<FinAsset, 'id' | 'pledged'>>
+
+export type LoanKind = 'HOME' | 'VEHICLE' | 'EDUCATION' | 'PERSONAL' | 'CREDIT_CARD' | 'CONSUMER_EMI'
+  | 'GOLD_LOAN' | 'LOAN_AGAINST_SECURITIES' | 'LOAN_AGAINST_FD' | 'LOAN_AGAINST_INSURANCE' | 'PPF_LOAN'
+  | 'OVERDRAFT' | 'BUSINESS' | 'EMPLOYER_ADVANCE' | 'FAMILY_FRIEND' | 'MONEYLENDER' | 'CHIT_PRIZE' | 'OTHER'
+
+export interface FinPledge {
+  id?: string
+  assetKind: 'gold' | 'silver' | 'securities' | 'fd' | 'policy' | 'property'
+  assetId?: string | null
+  grams?: number | null
+  purityKarat?: number | null
+  units?: number | null
+  valuation?: number | null
+  valuedOn?: string | null
+}
+
+export interface GoldLoanDetail {
+  loanId: string
+  principal: number
+  termDays: number
+  maturityAmount: number
+  maturityInterest: number
+  accruedDays: number
+  accruedInterest: number
+  pledgedGrams: number
+  valuation: number
+  ltvPct: number
+  capPct: number
+  warn: boolean
+  maturityWithinWarning: boolean
+  ltvBasis: string
+}
+
+export interface FinLoan {
+  id: string
+  personId: string | null
+  kind: LoanKind
+  lenderType: string | null
+  lenderName: string | null
+  isPrivate: boolean
+  principalTaken: number | null
+  outstanding: number
+  /** What the user typed: "14%", "₹2 per ₹100 a month". */
+  rateInput: string | null
+  effectiveAnnualRate: number | null
+  rateType: string | null
+  repaymentMode: 'emi' | 'interest_only' | 'bullet' | 'revolving' | 'flexible' | null
+  emiOrInterest: number | null
+  startDate: string | null
+  maturityOrPromisedDate: string | null
+  status: 'active' | 'closed'
+  pledges: FinPledge[]
+  label: string
+  /** What anyone the loan is shared with sees: "Family / friend" for a private lender. */
+  sharedLabel: string
+  ltv: { pct: number; capPct: number; warn: boolean; needsVerification: boolean; detail: GoldLoanDetail } | null
+}
+
+export interface FinLoanInput {
+  kind?: LoanKind
+  lenderName?: string | null
+  isPrivate?: boolean
+  outstanding?: number
+  rateInput?: string | null
+  emiOrInterest?: number | null
+  repaymentMode?: FinLoan['repaymentMode']
+  principalTaken?: number | null
+  startDate?: string | null
+  maturityOrPromisedDate?: string | null
+  personId?: string
+  pledges?: FinPledge[]
+}
+
+export interface PlanOrderItem {
+  loanId: string
+  label: string
+  step: 'pay_in_full' | 'date_bound' | 'prepay' | 'split' | 'keep_emi'
+  ratePct: number | null
+  dueDate: string | null
+}
+
+export interface LoanPlanView {
+  asOf: string
+  monthlySurplus: number
+  method: 'avalanche' | 'snowball'
+  plan: {
+    order: PlanOrderItem[]
+    monthly: { month: string; payments: Record<string, number>; investable: number }[]
+    loans: { loanId: string; debtFreeBy: string | null; interestPaid: number; monthlySetAside: number | null }[]
+    goldLoans: GoldLoanDetail[]
+    interestSaved: number
+    debtFreeBy: string | null
+    dateBoundFirst: boolean
+  }
+  labels: Record<string, string>
+  figuresNeedVerification: boolean
+}
+
+export interface FinLoanGiven {
+  id: string
+  personId: string | null
+  borrowerName: string
+  isPrivate: boolean
+  amount: number
+  rate: number | null
+  givenOn: string | null
+  expectedBackOn: string | null
+  status: 'on_track' | 'overdue' | 'doubtful' | 'repaid'
+}
+
+export type FinLoanGivenInput = Partial<Omit<FinLoanGiven, 'id'>>
+
+export type PolicyKind = 'term' | 'health' | 'super_topup' | 'personal_accident' | 'critical_illness'
+  | 'vehicle' | 'home' | 'endowment' | 'ulip'
+
+export interface FinPolicy {
+  id: string
+  personId: string | null
+  kind: PolicyKind
+  providerName: string | null
+  sumAssured: number
+  deductible: number | null
+  premium: number | null
+  premiumFrequency: 'monthly' | 'quarterly' | 'yearly' | 'single' | null
+  renewalDate: string | null
+  policyEndDate: string | null
+  employerProvided: boolean
+  coveredPersonIds: string[]
+}
+
+export type FinPolicyInput = Partial<Omit<FinPolicy, 'id'>>
+
+export interface PersonCover {
+  personId: string
+  name: string
+  needsTerm: boolean
+  method: string
+  multiple: number | null
+  termNeed: number
+  termCover: number
+  termGap: number
+  personalHealthCover: number
+  employerHealthCover: number
+  superTopUp: number
+}
+
+export interface ProtectionView {
+  asOf: string
+  /** False while the insurance step is skipped and no policy is recorded. */
+  known: boolean
+  protection: {
+    perPerson: PersonCover[]
+    gaps: { kind: 'term' | 'health'; personIds: string[]; amount: number }[]
+    premiumsYearly: number
+    premiumsPctOfIncome: number
+    affordabilityFlag: boolean
+    healthFloor: number
+  }
+  names: Record<string, string>
+}
+
+export interface FinEstate {
+  personId: string
+  willStatus: 'none' | 'draft' | 'registered'
+  willDate?: string | null
+  executor?: string | null
+  notes?: string | null
 }

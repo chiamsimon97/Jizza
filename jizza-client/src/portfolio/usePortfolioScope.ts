@@ -9,6 +9,10 @@ export interface PortfolioScope {
   person: string
   /** 'all', 'unassigned' or a goal's id. */
   goal: string
+  /** '1' while looking around with the sample household. */
+  sample: '1' | null
+  /** The Quick start question to open on. */
+  step: string | null
 }
 
 export function usePortfolioScope(): [PortfolioScope, (patch: Partial<PortfolioScope>) => void] {
@@ -17,6 +21,8 @@ export function usePortfolioScope(): [PortfolioScope, (patch: Partial<PortfolioS
     view: findView(params.get('view')).id,
     person: params.get('person') ?? 'all',
     goal: params.get('goal') ?? 'all',
+    sample: params.get('sample') === '1' ? '1' : null,
+    step: params.get('step'),
   }
   const update = useCallback((patch: Partial<PortfolioScope>) => {
     setParams(prev => {

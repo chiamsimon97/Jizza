@@ -69,6 +69,9 @@ export default defineConfig({
         JIZZA_PLATFORM_MAIL_ENABLED: 'false',
         MANAGEMENT_HEALTH_MAIL_ENABLED: 'false',
         JIZZA_STORAGE_ROOT: './target/e2e-storage',
+        JIZZA_FINANCE_ENABLED: 'true',
+        // A fresh suite database has no Super Admin to own the Public organization.
+        JIZZA_DEVELOPMENT: 'true',
       },
     },
     {
