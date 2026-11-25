@@ -63,6 +63,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
   private final MemorySubjectRepository memorySubjects;
   private final MemorySubjectRelationRepository memoryRelations;
   private final com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess;
+  private final com.jizza.engine.api.finance.FinanceStore finance;
 
   public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
@@ -74,7 +75,8 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
                               PlatformProperties props, MemoryEntryRepository memories,
                               MemorySubjectRepository memorySubjects,
                               MemorySubjectRelationRepository memoryRelations,
-                              com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess) {
+                              com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess,
+                              com.jizza.engine.api.finance.FinanceStore finance) {
     this.users = users;
     this.agents = agents;
     this.knowledge = knowledge;
@@ -94,6 +96,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
     this.memorySubjects = memorySubjects;
     this.memoryRelations = memoryRelations;
     this.memoryAccess = memoryAccess;
+    this.finance = finance;
   }
 
   /**
@@ -241,9 +244,48 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
       node.put("hash", entry.getHash());
     });
 
+    exportFinance(userId, root);
+
     audit.record(userId, ActorType.USER, userId, "data.exported", null,
         Json.obj().put("agents", agentArray.size()).put("workflows", workflowArray.size()));
     return root;
+  }
+
+  /**
+   * Kai Portfolio (finance) rows, when the person has any. A PAN is never exported, only whether
+   * one is stored and its last four characters. Hard delete needs nothing extra: every finance
+   * table cascades from {@code users}.
+   */
+  private void exportFinance(UUID userId, ObjectNode root) {
+    var profile = finance.profile(userId);
+    if (profile.isEmpty()) return;
+    ObjectNode node = root.putObject("finance");
+    node.put("baseCurrency", profile.get().baseCurrency());
+    node.set("settings", profile.get().settings());
+    ArrayNode peopleArray = node.putArray("people");
+    finance.people(userId).forEach(p -> peopleArray.addObject()
+        .put("id", p.id().toString())
+        .put("displayName", p.displayName())
+        .put("kind", p.kind())
+        .put("type", p.type())
+        .put("dob", p.dob() == null ? null : p.dob().toString())
+        .put("earning", p.earning())
+        .put("dependent", p.dependent())
+        .put("status", p.status()));
+    ArrayNode consentArray = node.putArray("consents");
+    finance.allConsents(userId).forEach(c -> consentArray.addObject()
+        .put("personId", c.personId().toString())
+        .put("scope", c.scope())
+        .put("grantedAt", String.valueOf(c.grantedAt()))
+        .put("withdrawnAt", c.withdrawnAt() == null ? null : c.withdrawnAt().toString())
+        .put("channel", c.channel()));
+    ArrayNode overrideArray = node.putArray("settingsOverrides");
+    finance.config(userId).stream().filter(c -> c.userId() != null).forEach(c -> {
+      ObjectNode o = overrideArray.addObject();
+      o.put("key", c.key());
+      o.put("effectiveFrom", c.effectiveFrom().toString());
+      o.set("value", c.value());
+    });
   }
 
   /** "Forget everything": irreversible, and audited immediately before the row disappears. */

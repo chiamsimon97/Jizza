@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowLeft, Brain, History, Lock, Play, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { agentsApi } from '@/api/agents'
@@ -18,18 +18,30 @@ import { Input } from '@/components/ui/Input'
 import { ACTION_LABELS, MODE_BADGE, MODE_LABELS } from '@/components/guardrails/labels'
 import { AgentAvatar, AgentBadges, COLOURS, SHARED_DOMAINS, Section, TeamTrailList, errorText } from '@/components/agents/agentParts'
 import { ManagerSelect } from './NewAgentPage'
-import { PortfolioTab } from './portfolio/PortfolioTab'
-import { usePortfolioEnabled } from './portfolio/usePortfolioEnabled'
+import { PortfolioTab } from '@/portfolio/PortfolioTab'
+import { usePortfolioEnabled } from '@/portfolio/usePortfolioEnabled'
 import type { AgentDto, AgentTrial, ConnectorCard } from '@/types'
 
 const TABS = ['Overview', 'Instructions', 'Tools', 'Guardrails', 'Try it', 'Team', 'Portfolio'] as const
 type Tab = (typeof TABS)[number]
 
+/** The tab's name in the URL (?tab=try-it), so a link or a reload opens the same tab. */
+function tabSlug(tab: Tab): string {
+  return tab.toLowerCase().replace(/\s+/g, '-')
+}
+
+function tabFromSlug(slug: string | null): Tab {
+  return TABS.find(t => tabSlug(t) === slug) ?? 'Overview'
+}
+
 /** One agent: what it's for, how it works, what it can use and do, a trial, and where it sits in the team. */
 export function AgentDetailPage() {
   const { agentId = '' } = useParams()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('Overview')
+  const [params, setParams] = useSearchParams()
+  const tab = tabFromSlug(params.get('tab'))
+  // A tab's own scope (the Portfolio's view, person and goal) is dropped when the tab changes.
+  const setTab = (t: Tab) => setParams(t === 'Overview' ? {} : { tab: tabSlug(t) }, { replace: true })
   const { data: agent, isLoading } = useQuery({ queryKey: ['agent', agentId], queryFn: () => agentsApi.get(agentId) })
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const portfolio = usePortfolioEnabled(agent)
