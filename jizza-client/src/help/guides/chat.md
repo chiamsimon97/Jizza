@@ -46,4 +46,4 @@ Type **/** in the message box to see the shortcuts for where you are. Wherever y
 
 Under each reply there's a thumbs up and a thumbs down. Tap one and, if you like, say why. Tap it again to take it back.
 
-In a thread, what you say is added to the thread's guide under **How to work here**, so its lead does better next time. Every rating also shows on the [Settings › Usage](/usage) page under **Reply quality**: each agent's thumbs for the last 30 days, and the latest replies you rated with your reasons.
+In a thread, what you say is added to the thread's guide under **How to work here**, so its lead does better next time. Every rating also shows on the [Activity › Usage](/usage) page under **Reply quality**: each agent's thumbs for the last 30 days, and the latest replies you rated with your reasons.

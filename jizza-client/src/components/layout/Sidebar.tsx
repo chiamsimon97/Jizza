@@ -5,7 +5,6 @@ import { ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 import { JizzaLogo } from '@/components/brand/JizzaLogo'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { useAuthorization } from '@/auth/useAuthorization'
-import { AccountSwitcher } from './AccountSwitcher'
 import { AccountMenu } from './AccountMenu'
 import { menuFor, pathMatches, type NavHub } from './navigation'
 
@@ -92,8 +91,6 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
           </button>
         )}
       </div>
-
-      <AccountSwitcher collapsed={collapsed} onNavigate={onClose} />
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         <div className="space-y-0.5">{menu.main.map(entry)}</div>
