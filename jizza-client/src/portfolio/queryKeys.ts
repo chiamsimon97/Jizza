@@ -25,5 +25,10 @@ export const financeKeys = {
   builder: ['finance', 'builder'] as const,
   risk: (personId: string) => ['finance', 'risk', personId] as const,
   tax: (personId: string, year: string) => ['finance', 'tax', personId, year] as const,
+  accounts: ['finance', 'accounts'] as const,
+  categories: ['finance', 'categories'] as const,
+  imports: ['finance', 'imports'] as const,
+  importBatch: (id: string) => ['finance', 'imports', id] as const,
+  transactions: (accountId: string, month: string) => ['finance', 'transactions', accountId, month] as const,
   estate: (sample: boolean, personId: string) => ['finance', 'estate', sample ? 'sample' : 'mine', personId] as const,
 }

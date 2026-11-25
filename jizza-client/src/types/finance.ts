@@ -631,3 +631,137 @@ export interface TaxInput {
   metro?: boolean | null
   deductions?: Partial<Record<DeductionKey, number | null>> & { parentsSenior?: boolean }
 }
+
+// ── Phase 1c: accounts, imports and transactions ──────────────────────────────
+
+export type AccountKind = 'savings' | 'current' | 'credit_card' | 'demat' | 'mf_folio' | 'retirement' | 'deposit'
+  | 'wallet' | 'cash' | 'us_broker' | 'other'
+
+export interface FinAccount {
+  id: string
+  personId: string
+  kind: AccountKind
+  provider: string | null
+  nickname: string | null
+  last4: string | null
+  source: 'manual' | 'statement' | 'api'
+  isEmergency: boolean
+  status: 'active' | 'closed'
+}
+
+export type FinAccountInput = Partial<Pick<FinAccount, 'personId' | 'kind' | 'provider' | 'nickname' | 'last4' | 'isEmergency'>>
+
+export interface FinCategory {
+  id: string
+  name: string
+  bucket: 'need' | 'want' | 'save' | 'income' | 'transfer'
+  isEssential: boolean
+  systemKey: string | null
+  hidden: boolean
+}
+
+export type ImportKind = 'bank_csv' | 'bank_pdf' | 'cas_pdf' | 'broker_holdings' | 'broker_tradebook'
+export type ImportStatus = 'parsed' | 'needs_review' | 'committed' | 'failed' | 'undone'
+export type TxnKind = 'spend' | 'income' | 'transfer' | 'buy' | 'sell' | 'dividend' | 'interest' | 'fee' | 'emi'
+  | 'sip' | 'swp' | 'stp_in' | 'stp_out'
+
+/** One row of a file as Kai read it, before it is saved. */
+export interface ImportRow {
+  i: number
+  line: number
+  date: string
+  amount: number
+  direction: 'in' | 'out'
+  description: string
+  kind: TxnKind
+  units?: number
+  price?: number
+  group?: string
+  categoryId?: string
+  /** Kai can't place it: no category (bank) or kind (funds). */
+  needsLook: boolean
+  /** Already brought in by an earlier import. */
+  duplicate: boolean
+}
+
+export interface ImportHolding {
+  name: string
+  isin: string | null
+  assetClass: AssetClass
+  subCategory: string
+  units: number
+  value: number
+  asOf: string | null
+  group: string | null
+}
+
+/** The column roles of a bank CSV, each naming a header of the file. */
+export interface ColumnMapping {
+  headerRow: number
+  date?: string
+  description?: string
+  debit?: string
+  credit?: string
+  amount?: string
+  drCr?: string
+  balance?: string
+}
+
+export interface ImportCounts {
+  rows: number
+  new: number
+  duplicates: number
+  needsLook: number
+  unreadable: number
+  holdings: number
+  imported?: number
+}
+
+export interface ImportStats {
+  fileName?: string
+  counts?: ImportCounts
+  rows?: ImportRow[]
+  unreadable?: { line: number; reason: string }[]
+  holdings?: ImportHolding[]
+  groups?: { key: string; last4: string; provider: string | null; accountId: string | null }[]
+  balance?: { amount: number; date: string }
+  columns?: { headerRow: number; sure: boolean; headers: string[]; sample: string[][] }
+}
+
+export interface ImportBatch {
+  id: string
+  personId: string
+  accountId: string | null
+  kind: ImportKind
+  status: ImportStatus
+  mapping: Partial<ColumnMapping>
+  stats: ImportStats
+  error: string | null
+  createdAt: string
+}
+
+export interface ImportInput {
+  kind: ImportKind
+  file: File
+  personId?: string
+  accountId?: string
+  mapping?: ColumnMapping
+  /** For a locked PDF; sent once and never kept. */
+  password?: string
+}
+
+export interface FinTransaction {
+  id: string
+  accountId: string
+  personId: string
+  importBatchId: string | null
+  txnDate: string
+  amount: number
+  direction: 'in' | 'out'
+  description: string | null
+  kind: TxnKind
+  categoryId: string | null
+  units: number | null
+  price: number | null
+  needsMapping: boolean
+}

@@ -29,6 +29,7 @@ import { Protection } from './screens/Protection'
 import { QUICK_START_STEPS, QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
 import { Tax } from './screens/Tax'
+import { Connect } from './screens/Connect'
 import { usePortfolioScope } from './usePortfolioScope'
 
 /** Views that work on the sample household; the rest are the user's own setup. */
@@ -162,6 +163,7 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
                 {view.id === 'protection' && <Protection people={people} onOpen={open} onAnswer={answer} />}
                 {view.id === 'net-worth' && <NetWorth people={people} onOpen={open} />}
                 {view.id === 'people' && <People />}
+                {view.id === 'connect' && <Connect people={profile.people} />}
                 {view.id === 'settings' && <Settings settings={profile.settings} />}
                 {!BUILT_VIEWS.has(view.id) && <NotYet view={view} />}
               </>}
