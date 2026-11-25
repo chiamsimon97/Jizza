@@ -66,9 +66,15 @@ class FinanceMoneyHealthE2eTest extends E2eSupport {
         Map.of("kind", "term", "sumAssured", 5000000),
         Map.of("kind", "health", "sumAssured", 500000, "employerProvided", true,
             "coveredPersonIds", List.of(me, spouse, child)))));
-    JsonNode done = step("savings", Map.of("totals", List.of(
+    JsonNode savings = step("savings", Map.of("totals", List.of(
         Map.of("kind", "savings_balance", "value", 250000, "isEmergency", true))));
+    assertThat(savings.path("next").asText()).isEqualTo("goals");
+    // Steps 7 and 8 (Phase 1b): no goals yet, so Goal funding stays unknown; the risk questions.
+    var skipped = api.post("/api/finance/quick-start", Map.of("step", "goals", "skip", true));
+    assertThat(skipped.ok()).as(skipped.body()).isTrue();
+    JsonNode done = step("risk", Map.of("answers", List.of(2, 2, 2, 2, 2, 2)));
     assertThat(done.path("done").asBoolean()).isTrue();
+    assertThat(done.path("total").asInt()).isEqualTo(8);
   }
 
   private String person(String kind) {
@@ -135,7 +141,7 @@ class FinanceMoneyHealthE2eTest extends E2eSupport {
 
   @Test
   void everyStepSkippedStillGivesAResultWithUnknownChecks() {
-    for (String s : List.of("people", "income", "spending", "loans", "insurance", "savings")) {
+    for (String s : List.of("people", "income", "spending", "loans", "insurance", "savings", "goals", "risk")) {
       var r = api.post("/api/finance/quick-start", Map.of("step", s, "skip", true));
       assertThat(r.ok()).as(r.body()).isTrue();
     }

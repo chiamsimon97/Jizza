@@ -19,7 +19,9 @@ import com.jizza.platform.usecase.finance.model.Household.LoanGiven;
 import com.jizza.platform.usecase.finance.model.Household.Person;
 import com.jizza.platform.usecase.finance.model.Household.Pledge;
 import com.jizza.platform.usecase.finance.model.Household.Policy;
+import com.jizza.platform.usecase.finance.goal.GoalMath;
 import com.jizza.platform.usecase.finance.model.KaiConfig;
+import com.jizza.platform.usecase.finance.model.PlanConfig;
 import com.jizza.platform.usecase.finance.profile.FinProfileUseCase;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -64,7 +66,8 @@ public class HouseholdLoader {
    *     verification (a regulatory figure nobody has confirmed for this financial year)
    */
   public record Loaded(Household household, KaiConfig config, Map<String, JsonNode> configValues,
-                       Map<String, Boolean> verification) {}
+                       Map<String, Boolean> verification, PlanConfig plan, List<ObjectNode> goals,
+                       Map<String, String> latestRisk, String selfId) {}
 
   public static LocalDate today() {
     return LocalDate.now(ZONE);
@@ -157,18 +160,31 @@ public class HouseholdLoader {
     if (!policies.isEmpty()) known.add(Household.INSURANCE);
     if (!assets.isEmpty()) known.add(Household.SAVINGS);
 
-    Household household = new Household(asOf, people, incomes, budget, loans, policies,
-        List.copyOf(assets), given, accountInfo, will, null, Set.copyOf(known));
-
     Map<String, JsonNode> values = new HashMap<>();
+    Map<String, JsonNode> planValues = new HashMap<>();
     Map<String, Boolean> verification = new HashMap<>();
     for (ConfigItem item : config.list(owner)) {
       if (KaiConfig.KEYS.contains(item.key())) {
         values.put(item.key(), item.value());
         verification.put(item.key(), item.needsVerification());
       }
+      if (PlanConfig.KEYS.contains(item.key())) planValues.put(item.key(), item.value());
     }
-    return new Loaded(household, KaiConfig.from(values), values, verification);
+    PlanConfig plan = PlanConfig.from(planValues);
+
+    // Phase 1b: the Goal funding check is computed from the goals, not given.
+    List<ObjectNode> goals = records.list("fin_plan", owner, Map.of());
+    Map<String, String> latestRisk = GoalMath.latestRisk(records.list("fin_risk_assessment", owner, Map.of()));
+    Map<String, Person> byId = new HashMap<>();
+    people.forEach(p -> byId.put(p.id(), p));
+    List<ObjectNode> ownGoals = goals.stream()
+        .filter(g -> active.contains(g.path("ownerPersonId").asText(self))).toList();
+    BigDecimal funded = GoalMath.importantFundedPct(ownGoals, byId, latestRisk, self, asOf, plan);
+
+    Household household = new Household(asOf, people, incomes, budget, loans, policies,
+        List.copyOf(assets), given, accountInfo, will, funded, Set.copyOf(known));
+    return new Loaded(household, KaiConfig.from(values), values, verification, plan, ownGoals,
+        latestRisk, self);
   }
 
   /** The loan as the engines see it: the owner's share, the normalised rate. */

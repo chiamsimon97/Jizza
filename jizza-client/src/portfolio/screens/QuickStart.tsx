@@ -55,20 +55,22 @@ export function QuickStart({ profile, startAt, onOpen }: {
   }, [qs, step, startAt])
 
   const index = QUICK_START_STEPS.findIndex(s => s.id === step)
-  const advance = () => {
+  /** Moves on from the question that was answered, named by the mutation, not by whatever is on screen when it settles. */
+  const advance = (from: QuickStartStep) => {
+    const at = QUICK_START_STEPS.findIndex(s => s.id === from)
     setPayload(null)
     setShowProblem(false)
-    setStep(index >= 0 && index < QUICK_START_STEPS.length - 1 ? QUICK_START_STEPS[index + 1].id : 'result')
+    setStep(at >= 0 && at < QUICK_START_STEPS.length - 1 ? QUICK_START_STEPS[at + 1].id : 'result')
   }
   const refresh = () => qc.invalidateQueries({ queryKey: financeKeys.all })
   const save = useMutation({
     mutationFn: async ({ id, value }: { id: QuickStartStep; value: QuickStartAnswers[QuickStartStep] }) =>
       financeApi.saveQuickStart(id, value as never),
-    onSuccess: (_, { id, value }) => { setAnswers(a => ({ ...a, [id]: value })); refresh(); advance() },
+    onSuccess: (_, { id, value }) => { setAnswers(a => ({ ...a, [id]: value })); advance(id); refresh() },
   })
   const skip = useMutation({
     mutationFn: (id: QuickStartStep) => financeApi.skipQuickStart(id),
-    onSuccess: () => { refresh(); advance() },
+    onSuccess: (_, id) => { advance(id); refresh() },
   })
 
   if (loadError) {

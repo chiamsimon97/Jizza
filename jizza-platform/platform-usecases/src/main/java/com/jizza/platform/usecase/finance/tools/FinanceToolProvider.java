@@ -17,8 +17,10 @@ import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.platform.usecase.finance.cashflow.FinCashFlowUseCase;
 import com.jizza.platform.usecase.finance.debt.FinLoansUseCase;
+import com.jizza.platform.usecase.finance.goal.FinGoalUseCase;
 import com.jizza.platform.usecase.finance.health.FinHealthUseCase;
 import com.jizza.platform.usecase.finance.protection.FinProtectionUseCase;
+import com.jizza.platform.usecase.finance.tax.FinTaxUseCase;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,21 +49,26 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   public static final String CASH_FLOW = "finance_cash_flow";
   public static final String LOANS = "finance_loans";
   public static final String PROTECTION = "finance_protection";
+  public static final String GOALS = "finance_goals";
+  public static final String TAX = "finance_tax";
   public static final String OPEN_SCREEN = "finance_open_screen";
   public static final String UPDATE_ACTION = "finance_update_action";
 
   static final Map<String, ActionType> TYPES = Map.of(
       OVERVIEW, ActionType.READ, CASH_FLOW, ActionType.READ, LOANS, ActionType.READ,
-      PROTECTION, ActionType.READ, OPEN_SCREEN, ActionType.DRAFT, UPDATE_ACTION, ActionType.UPDATE);
+      PROTECTION, ActionType.READ, GOALS, ActionType.READ, TAX, ActionType.READ,
+      OPEN_SCREEN, ActionType.DRAFT, UPDATE_ACTION, ActionType.UPDATE);
 
-  static final List<String> SCREENS =
-      List.of("home", "actions", "cash-flow", "loans", "protection", "net-worth", "people", "settings");
+  static final List<String> SCREENS = List.of("home", "actions", "goals", "plan-builder", "cash-flow",
+      "loans", "protection", "tax", "net-worth", "people", "settings");
 
   private final AgentDirectory agents;
   private final ObjectProvider<FinHealthUseCase> health;
   private final ObjectProvider<FinCashFlowUseCase> cashFlow;
   private final ObjectProvider<FinLoansUseCase> loans;
   private final ObjectProvider<FinProtectionUseCase> protection;
+  private final ObjectProvider<FinGoalUseCase> goals;
+  private final ObjectProvider<FinTaxUseCase> tax;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -69,12 +76,16 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                              ObjectProvider<FinCashFlowUseCase> cashFlow,
                              ObjectProvider<FinLoansUseCase> loans,
                              ObjectProvider<FinProtectionUseCase> protection,
+                             ObjectProvider<FinGoalUseCase> goals,
+                             ObjectProvider<FinTaxUseCase> tax,
                              @Value("${jizza.finance.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.health = health;
     this.cashFlow = cashFlow;
     this.loans = loans;
     this.protection = protection;
+    this.goals = goals;
+    this.tax = tax;
     this.enabled = enabled;
     ObjectNode scope = JsonSchemas.string("Whose data: \"me\" (the default) is you and the people you manage.");
     scope.putArray("enum").add("me");
@@ -88,6 +99,15 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
             + "the repayment order, the next months of the repayment plan, the debt-free date "
             + "and the interest the plan saves.", scope),
         read(PROTECTION, "Term and health cover against what each person needs, with the gaps.", scope),
+        read(GOALS, "The user's goals: target in today's rupees and at the target date, bucket "
+            + "(Short, Mid, Long), funded % and the monthly SIP each needs, with the return and "
+            + "inflation assumed. Analysis, not a forecast. Quote these figures.", scope),
+        new ToolSpec(TAX, "Old against new tax regime for one person this financial year, from "
+            + "their income and the deductions they entered. Figures marked needsVerification "
+            + "must be checked with a CA.",
+            JsonSchemas.object(props("scope", scope,
+                "personId", JsonSchemas.string("A person's id from the profile; leave out for the user")),
+                List.of()), false, false),
         new ToolSpec(OPEN_SCREEN, "Give the user a link card into a Portfolio view, such as the "
             + "action plan or the loans view. Changes nothing.",
             JsonSchemas.object(props("scope", scope, "screen", enumOf("The view to open", SCREENS)),
@@ -138,6 +158,9 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
         case CASH_FLOW -> ToolResult.ok(Json.toNode(cashFlow.getObject().cashFlow(user, null)));
         case LOANS -> ToolResult.ok(loans(user));
         case PROTECTION -> ToolResult.ok(Json.toNode(protection.getObject().protection(user)));
+        case GOALS -> ToolResult.ok(goals(user));
+        case TAX -> ToolResult.ok(Json.toNode(tax.getObject().forPerson(user,
+            args.hasNonNull("personId") ? args.get("personId").asText() : null)));
         case OPEN_SCREEN -> ToolResult.ok(openScreen(kai.get(), args));
         case UPDATE_ACTION -> ToolResult.ok(updateAction(user, args));
         default -> ToolResult.error("Unknown finance tool " + call.name());
@@ -169,6 +192,30 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
           .set("impactPoints", a.get("impactPoints"));
     }
     out.put("note", "Figures are Kai's engine results. Unknown checks had no data and are not counted.");
+    return out;
+  }
+
+  private JsonNode goals(UUID user) {
+    ObjectNode out = Json.obj();
+    ArrayNode list = out.putArray("goals");
+    for (var g : goals.getObject().list(user)) {
+      ObjectNode row = g.goal();
+      var f = g.funding();
+      ObjectNode n = list.addObject().put("id", row.path("id").asText()).put("name", row.path("name").asText())
+          .put("type", row.path("type").asText()).put("priority", row.path("priorityTier").asText())
+          .put("status", row.path("status").asText()).put("targetDate", row.path("targetDate").asText())
+          .put("owner", g.ownerName()).put("bucket", f.bucket()).put("riskProfile", g.risk());
+      n.set("targetToday", row.get("targetAmountToday"));
+      n.put("targetAtDate", f.futureTarget()).put("projected", f.projected())
+          .put("fundedPct", com.jizza.platform.usecase.finance.model.Inr.one(f.fundedPct()))
+          .put("requiredMonthlySip", f.requiredSip()).put("inflationPct", f.inflationPct())
+          .put("expectedReturnPct", com.jizza.platform.usecase.finance.model.Inr.one(f.blendedReturnNow()));
+      n.set("savedSoFar", row.get("currentValue"));
+      n.set("monthlyGoingIn", row.get("monthlyContribution"));
+      if (g.moveNote() != null) n.put("moves", g.moveNote());
+    }
+    out.put("note", "Deterministic projection on Kai's default returns; analysis, not a forecast. "
+        + "Nothing is bought: goals are tracked only.");
     return out;
   }
 

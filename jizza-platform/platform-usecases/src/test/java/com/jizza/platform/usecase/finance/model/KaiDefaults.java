@@ -19,17 +19,27 @@ public final class KaiDefaults {
   private static final Path MIGRATIONS =
       Path.of("../../jizza-engine/engine-persistence/src/main/resources/db/migration");
 
+  /** The finance migrations in order; a later seed of a key replaces an earlier one. */
+  static final java.util.List<String> FILES = java.util.List.of("V50__finance_foundation.sql",
+      "V51__finance_accounts_cashflow.sql", "V54__finance_goals.sql");
+
   public static Map<String, JsonNode> values() {
+    return values(KaiConfig.KEYS);
+  }
+
+  public static Map<String, JsonNode> values(java.util.Collection<String> keys) {
     try {
-      String sql = Files.readString(MIGRATIONS.resolve("V50__finance_foundation.sql"))
-          + Files.readString(MIGRATIONS.resolve("V51__finance_accounts_cashflow.sql"));
+      StringBuilder sql = new StringBuilder();
+      for (String f : FILES) sql.append(Files.readString(MIGRATIONS.resolve(f)));
       Map<String, JsonNode> out = new HashMap<>();
       ObjectMapper mapper = new ObjectMapper();
-      for (String key : KaiConfig.KEYS) {
+      for (String key : keys) {
         var m = Pattern.compile("\\('" + Pattern.quote(key) + "',\\s*'system',\\s*'(.*?)'::jsonb",
             Pattern.DOTALL).matcher(sql);
-        if (!m.find()) throw new IllegalStateException("No seed for " + key);
-        out.put(key, mapper.readTree(m.group(1)));
+        String last = null;
+        while (m.find()) last = m.group(1);
+        if (last == null) throw new IllegalStateException("No seed for " + key);
+        out.put(key, mapper.readTree(last));
       }
       return out;
     } catch (java.io.IOException e) {
@@ -39,5 +49,9 @@ public final class KaiDefaults {
 
   public static KaiConfig config() {
     return KaiConfig.from(values());
+  }
+
+  public static PlanConfig plan() {
+    return PlanConfig.from(values(PlanConfig.KEYS));
   }
 }
