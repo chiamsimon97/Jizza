@@ -36,11 +36,11 @@ Download your holdings and your tradebook from your broker's website as CSV, and
 
 Instead of downloading a holdings file, you can let Kai read your holdings straight from your broker.
 
-1. Open **Connectors** and add Zerodha's Kite server at `https://mcp.kite.trade/mcp`. Sign in to Kite when it asks; the sign-in lasts for the day.
+1. Open **Connectors** and add **Zerodha Kite** from the list (its address is `https://mcp.kite.trade/mcp`). On its page, press **Sign in** and log in with your Zerodha account. Zerodha asks you to sign in again from time to time; the page shows **Sign in** when it does.
 2. In Kai, open **Portfolio**, then **Connect**. Under **Connected brokers**, choose Kite and the demat account it holds, then press **Connect**.
 3. Press **Sync now**. Kai reads your shares and your mutual funds held with Zerodha and opens the review below, just like a holdings file.
 
-Kai also syncs on weekdays at 4:30 PM, after the market closes, if you've signed in to Kite that day. When something has changed, you get a notification to review it. If nothing has changed since your last saved sync, nothing happens.
+Kai also syncs on weekdays at 4:30 PM, after the market closes, while your Kite sign-in is still valid. When something has changed, you get a notification to review it. If nothing has changed since your last saved sync, nothing happens.
 
 Kai uses only Kite's tools that read your holdings. It never places, changes or cancels an order. Zerodha's hosted server doesn't offer order placing anyway.
 

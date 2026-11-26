@@ -121,7 +121,8 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
       log.warn("MCP tool {} failed", call.name(), e);
       // A broken session is opened afresh on the next turn rather than reused.
       connection.drop();
-      return ToolResult.error("The MCP server could not run that: " + Redaction.scrub(e.getMessage()));
+      return ToolResult.error(McpErrors.needsSignIn(e) ? McpErrors.SIGN_IN
+          : "The MCP server could not run that: " + Redaction.scrub(e.getMessage()));
     }
   }
 
@@ -186,7 +187,8 @@ public class McpToolProvider implements ToolProvider, ActionTypeSource, Disposab
     } catch (RuntimeException e) {
       log.warn("MCP tool {} on '{}' failed", tool, name, e);
       connection.drop();
-      return ToolResult.error("The MCP server could not run that: " + Redaction.scrub(e.getMessage()));
+      return ToolResult.error(McpErrors.needsSignIn(e) ? McpErrors.SIGN_IN
+          : "The MCP server could not run that: " + Redaction.scrub(e.getMessage()));
     }
   }
 
