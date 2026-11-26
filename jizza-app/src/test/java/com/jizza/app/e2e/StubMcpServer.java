@@ -33,6 +33,8 @@ public final class StubMcpServer implements AutoCloseable {
    */
   public volatile String kiteShares;
   public volatile String kiteFunds = "[]";
+  /** When set with {@link #kiteShares}, {@code get_margins} is listed and answers this text. */
+  public volatile String kiteMargins;
   /** When set, the server answers as a mail server (Gmail's tools) with this one raw message. */
   public volatile String mailRaw;
 
@@ -136,6 +138,7 @@ public final class StubMcpServer implements AutoCloseable {
         order.putObject("quantity").put("type", "integer");
         tools.add(tool("place_order", "Places an order.", order));
         if (kiteShares != null) tools.add(tool("get_mf_holdings", "Mutual fund holdings.", Json.obj()));
+        if (kiteShares != null && kiteMargins != null) tools.add(tool("get_margins", "Funds and margins.", Json.obj()));
       }
       case "tools/call" -> {
         JsonNode params = request.path("params");
@@ -150,6 +153,10 @@ public final class StubMcpServer implements AutoCloseable {
         }
         if (kiteShares != null && name.equals("place_order")) {
           result.putArray("content").addObject().put("type", "text").put("text", "{\"order_id\":\"151220000000000\"}");
+          break;
+        }
+        if (kiteMargins != null && name.equals("get_margins")) {
+          result.putArray("content").addObject().put("type", "text").put("text", kiteMargins);
           break;
         }
         if (kiteShares != null && (name.equals("get_holdings") || name.equals("get_mf_holdings"))) {

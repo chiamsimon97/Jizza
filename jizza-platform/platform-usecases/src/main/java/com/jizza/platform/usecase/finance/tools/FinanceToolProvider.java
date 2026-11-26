@@ -19,6 +19,7 @@ import com.jizza.platform.usecase.finance.cashflow.FinCashFlowUseCase;
 import com.jizza.platform.usecase.finance.debt.FinLoansUseCase;
 import com.jizza.platform.usecase.finance.goal.FinGoalUseCase;
 import com.jizza.platform.usecase.finance.health.FinHealthUseCase;
+import com.jizza.platform.usecase.finance.imports.ImportService;
 import com.jizza.platform.usecase.finance.protection.FinProtectionUseCase;
 import com.jizza.platform.usecase.finance.tax.FinTaxUseCase;
 import java.time.LocalDate;
@@ -34,7 +35,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Kai's own tools (6.1), Phase 1a: read the Money Health result, cash flow, loans and protection
- * the engines computed, open a Portfolio view, and mark an action done or snoozed. Only the agent
+ * the engines computed, open a Portfolio view, and mark an action done or snoozed. From chat Kai
+ * can also sync a connected broker into the Portfolio (a review) and save it once the user says so. Only the agent
  * whose key is {@code finance} gets them, only while the finance switch is on, and only on the
  * caller's own data ({@code scope: me}). No tool moves money, edits a goal or places an order.
  *
@@ -56,16 +58,19 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   public static final String HOLDINGS = "finance_holdings";
   public static final String ALLOCATION = "finance_allocation";
   public static final String EXPLAIN_VALUE = "finance_explain_value";
+  public static final String SYNC = "finance_sync_connected";
+  public static final String SAVE_SYNC = "finance_save_sync";
 
   static final Map<String, ActionType> TYPES = Map.ofEntries(
       Map.entry(OVERVIEW, ActionType.READ), Map.entry(CASH_FLOW, ActionType.READ), Map.entry(LOANS, ActionType.READ),
       Map.entry(PROTECTION, ActionType.READ), Map.entry(GOALS, ActionType.READ), Map.entry(TAX, ActionType.READ),
       Map.entry(HOLDINGS, ActionType.READ), Map.entry(ALLOCATION, ActionType.READ), Map.entry(EXPLAIN_VALUE, ActionType.READ),
-      Map.entry(OPEN_SCREEN, ActionType.DRAFT), Map.entry(UPDATE_ACTION, ActionType.UPDATE));
+      Map.entry(OPEN_SCREEN, ActionType.DRAFT), Map.entry(UPDATE_ACTION, ActionType.UPDATE),
+      Map.entry(SYNC, ActionType.DRAFT), Map.entry(SAVE_SYNC, ActionType.UPDATE));
 
   static final List<String> SCREENS = List.of("home", "actions", "goals", "plan-builder", "cash-flow",
       "loans", "protection", "tax", "net-worth", "people", "settings", "holdings", "allocation", "asset-tree",
-      "lists", "rules");
+      "lists", "rules", "connect");
 
   private final AgentDirectory agents;
   private final ObjectProvider<FinHealthUseCase> health;
@@ -77,6 +82,8 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<com.jizza.platform.usecase.finance.ledger.HoldingsUseCase> holdings;
   private final ObjectProvider<com.jizza.platform.usecase.finance.tree.TreeService> trees;
   private final ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -89,6 +96,8 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                              ObjectProvider<com.jizza.platform.usecase.finance.ledger.HoldingsUseCase> holdings,
                              ObjectProvider<com.jizza.platform.usecase.finance.tree.TreeService> trees,
                              ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules,
+                             ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers,
+                             ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports,
                              @Value("${jizza.finance.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.health = health;
@@ -100,6 +109,8 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     this.holdings = holdings;
     this.trees = trees;
     this.rules = rules;
+    this.brokers = brokers;
+    this.imports = imports;
     this.enabled = enabled;
     ObjectNode scope = JsonSchemas.string("Whose data: \"me\" (the default) is you and the people you manage.");
     scope.putArray("enum").add("me");
@@ -152,7 +163,24 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                 "actionId", JsonSchemas.string("The action's id"),
                 "status", enumOf("done or snoozed", List.of("done", "snoozed")),
                 "snoozedUntil", JsonSchemas.string("For snoozed: yyyy-mm-dd, after today")),
-                List.of("actionId", "status")), true, false));
+                List.of("actionId", "status")), true, false),
+        new ToolSpec(SYNC, "When the user asks to sync, refresh or bring in their holdings from a "
+            + "connected broker (such as Zerodha Kite on Connectors): reads the broker's holdings, "
+            + "mutual funds and the cash in the account, and fills them into the Portfolio's own "
+            + "sections with no mapping by hand. A broker not linked yet is linked to the user's "
+            + "demat account at that broker, or a new one is made for them. Nothing is saved yet: "
+            + "each result is a review with its counts. Tell the user what was found and ask before "
+            + "saving with finance_save_sync. Prefer this over calling the broker's own tools.",
+            JsonSchemas.object(props("scope", scope,
+                "broker", JsonSchemas.string("Part of the connected server's name, e.g. Zerodha (optional; all brokers when left out)")),
+                List.of()), true, false),
+        new ToolSpec(SAVE_SYNC, "Save a sync from finance_sync_connected into the Portfolio once the "
+            + "user has said to save it: holdings, mutual funds and the account's cash go into "
+            + "Holdings and Net worth, and the import can be undone under Connect. Never call it "
+            + "without the user's yes in this conversation.",
+            JsonSchemas.object(props("scope", scope,
+                "batchId", JsonSchemas.string("The batchId finance_sync_connected gave")),
+                List.of("batchId")), true, false));
   }
 
   @Override
@@ -200,6 +228,8 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
         case EXPLAIN_VALUE -> ToolResult.ok(explain(user, args));
         case OPEN_SCREEN -> ToolResult.ok(openScreen(kai.get(), args));
         case UPDATE_ACTION -> ToolResult.ok(updateAction(user, args));
+        case SYNC -> ToolResult.ok(sync(kai.get(), args));
+        case SAVE_SYNC -> ToolResult.ok(saveSync(user, args));
         default -> ToolResult.error("Unknown finance tool " + call.name());
       };
     } catch (ValidationException | NotFoundException e) {
@@ -333,6 +363,53 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     ObjectNode a = health.getObject().updateAction(user, id, status, until, null);
     return Json.obj().put("id", a.path("id").asText()).put("title", a.path("title").asText())
         .put("status", a.path("status").asText());
+  }
+
+  private JsonNode sync(AgentDto kai, JsonNode args) {
+    String hint = args.hasNonNull("broker") ? args.get("broker").asText() : null;
+    var results = brokers.getObject().syncFromChat(kai.userId(), hint);
+    ObjectNode out = Json.obj();
+    ArrayNode list = out.putArray("brokers");
+    for (var r : results) {
+      ObjectNode n = list.addObject().put("broker", r.server()).put("account", r.accountName())
+          .put("linkedNow", r.linkedNow()).put("accountCreated", r.accountCreated())
+          .put("status", r.result().status()).put("message", r.result().message());
+      if (r.result().batchId() != null) {
+        n.put("batchId", r.result().batchId());
+        ObjectNode stats = (ObjectNode) imports.getObject().get(kai.userId(), UUID.fromString(r.result().batchId())).path("stats");
+        n.put("holdings", stats.path("holdings").size());
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        int shares = 0;
+        int funds = 0;
+        for (JsonNode h : stats.path("holdings")) {
+          total = total.add(h.path("value").decimalValue());
+          if ("mf".equals(h.path("subCategory").asText())) funds++; else shares++;
+        }
+        n.put("shares", shares).put("mutualFunds", funds).put("holdingsValue", total);
+        if (stats.has("balance")) n.set("cash", stats.path("balance").path("amount"));
+        n.put("unreadable", stats.path("unreadable").size());
+        if (stats.has("counts")) n.set("counts", stats.get("counts"));
+      } else {
+        n.put("holdings", r.result().holdings());
+      }
+    }
+    out.set("review", openScreen(kai, Json.obj().put("screen", "connect")));
+    out.put("note", "Nothing is saved yet. Summarise per broker, then ask the user whether to save; "
+        + "goal earmarks stay the user's to set on screen.");
+    return out;
+  }
+
+  private JsonNode saveSync(UUID user, JsonNode args) {
+    UUID id = uuid(args, "batchId");
+    if (id == null) throw new ValidationException("batchId is needed.");
+    ImportService svc = imports.getObject();
+    ObjectNode b = svc.get(user, id);
+    if (!"broker_holdings".equals(b.path("kind").asText()) || !b.path("stats").has("syncKey")) {
+      throw new ValidationException("Only a sync from a connected broker can be saved from chat. Review file imports under Connect.");
+    }
+    ObjectNode saved = svc.commit(user, id, null);
+    return Json.obj().put("batchId", saved.path("id").asText()).put("status", saved.path("status").asText())
+        .put("note", "Saved. It can be undone under Connect, Import history.");
   }
 
   private Optional<AgentDto> kai(UUID agentId) {

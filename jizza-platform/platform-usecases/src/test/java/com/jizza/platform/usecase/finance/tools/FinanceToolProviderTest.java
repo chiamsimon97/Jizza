@@ -38,7 +38,8 @@ class FinanceToolProviderTest {
     when(h.getObject()).thenReturn(health);
     return new FinanceToolProvider(agents, h, mock(ObjectProvider.class), mock(ObjectProvider.class),
         mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
-        mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
+        mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
+        enabled);
   }
 
   @Test
@@ -47,7 +48,7 @@ class FinanceToolProviderTest {
     assertThat(p.toolsFor(kaiId)).extracting(t -> t.name()).containsExactly("finance_overview",
         "finance_cash_flow", "finance_loans", "finance_protection", "finance_goals", "finance_tax",
         "finance_holdings", "finance_allocation", "finance_explain_value", "finance_open_screen",
-        "finance_update_action");
+        "finance_update_action", "finance_sync_connected", "finance_save_sync");
     assertThat(p.toolsFor(otherId)).isEmpty();
     assertThat(p.supports(otherId, "finance_overview")).isFalse();
     assertThat(provider(false).toolsFor(kaiId)).isEmpty();
@@ -65,7 +66,8 @@ class FinanceToolProviderTest {
     assertThat(p.actionTypeOf(kaiId, "bank_transfer")).isEmpty();
     assertThat(p.redactArguments("finance_overview")).isTrue();
     assertThat(p.toolsFor(kaiId)).filteredOn(t -> t.sideEffecting()).extracting(t -> t.name())
-        .containsExactly("finance_update_action");
+        .containsExactly("finance_update_action", "finance_sync_connected", "finance_save_sync");
+    assertThat(p.actionTypeOf(kaiId, "finance_save_sync")).contains(ActionType.UPDATE);
   }
 
   @Test

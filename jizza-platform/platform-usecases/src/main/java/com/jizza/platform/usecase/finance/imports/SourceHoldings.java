@@ -55,6 +55,42 @@ final class SourceHoldings {
     return new Statement(List.of(), out, unreadable, List.of(), null, null);
   }
 
+  /**
+   * The cash left in the trading account, from Kite's {@code get_margins}: the equity segment's
+   * live balance (or its cash, or its net). Null when the answer has none, so nothing is guessed.
+   */
+  static Statement.Balance kiteCash(JsonNode margins, LocalDate today) {
+    JsonNode n = margins;
+    if (n != null && n.isTextual()) {
+      try {
+        n = Json.mapper().readTree(n.asText());
+      } catch (Exception notJson) {
+        return null;
+      }
+    }
+    if (n == null || !n.isObject()) return null;
+    if (n.has("data")) n = n.get("data");
+    JsonNode equity = n.path("equity");
+    if (!equity.isObject()) return null;
+    JsonNode available = equity.path("available");
+    for (JsonNode v : List.of(available.path("live_balance"), available.path("cash"), equity.path("net"))) {
+      if (v.isNumber() || v.isTextual()) {
+        BigDecimal amount = num(v);
+        if (amount != null && amount.signum() >= 0) return new Statement.Balance(amount.setScale(2, RoundingMode.HALF_UP), today);
+      }
+    }
+    return null;
+  }
+
+  private static BigDecimal num(JsonNode v) {
+    if (v.isNumber()) return v.decimalValue();
+    try {
+      return new BigDecimal(v.asText().trim());
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
   /** The items of a tool's answer: an array, a {@code data} array, or JSON text holding either. */
   static List<JsonNode> rows(JsonNode answer) {
     JsonNode n = answer;

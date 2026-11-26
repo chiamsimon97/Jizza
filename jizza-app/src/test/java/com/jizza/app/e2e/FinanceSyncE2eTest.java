@@ -35,7 +35,16 @@ class FinanceSyncE2eTest extends E2eSupport {
       [{"folio":"<redacted>","fund":"EXAMPLE FLEXI CAP FUND - DIRECT PLAN","tradingsymbol":"INF000X01AA1",
         "average_price":50,"last_price":60,"quantity":100.5}]""";
 
+  static final String MARGINS = """
+      {"equity":{"enabled":true,"net":4800.5,"available":{"cash":5000.25,"live_balance":5000.25,
+        "opening_balance":5000.25}},"commodity":{"enabled":false,"net":0}}""";
+
   @LocalServerPort private int port;
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.jizza.platform.usecase.finance.tools.FinanceToolProvider kaiTools;
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.jizza.engine.api.orchestrator.AgentDirectory agents;
+  private UUID userId;
 
   private ApiClient api;
   private StubMcpServer kite;
@@ -49,7 +58,9 @@ class FinanceSyncE2eTest extends E2eSupport {
     api.prime();
     String email = "sync-" + UUID.randomUUID() + "@jizza.local";
     assertThat(api.post("/api/auth/register", Map.of("email", email, "password", PASSWORD)).ok()).isTrue();
-    assertThat(api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD)).ok()).isTrue();
+    var login = api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+    assertThat(login.ok()).isTrue();
+    userId = UUID.fromString(login.json().path("userId").asText());
     api.post("/api/auth/step-up", Map.of("password", PASSWORD));
     api.get("/api/finance/profile");
   }
@@ -124,6 +135,79 @@ class FinanceSyncE2eTest extends E2eSupport {
 
     assertThat(api.delete("/api/finance/sources/" + source).status()).isEqualTo(204);
     assertThat(ok(api.get("/api/finance/sources")).path("sources")).isEmpty();
+  }
+
+  @Test
+  void askingKaiToSyncFillsThePortfolioWithNoMappingByHand() {
+    kite.kiteMargins = MARGINS;
+    Map<String, Object> body = new HashMap<>();
+    body.put("name", "Zerodha Kite");
+    body.put("url", kite.url());
+    body.put("authType", "NONE");
+    String serverId = ok(api.post("/api/mcp-servers", body)).path("id").asText();
+    ok(api.post("/api/mcp-servers/" + serverId + "/tools/login/test", Json.obj()));
+    UUID kai = agents.byKey(userId, "finance").orElseThrow().id();
+    BigDecimal before = ok(api.get("/api/finance/net-worth")).path("assets").decimalValue();
+
+    // No demat account and no link yet: Kai makes both and lands a review.
+    var first = kaiTools.invoke(kai, new com.jizza.engine.api.tool.ToolCall("finance_sync_connected", Json.obj()));
+    assertThat(first.ok()).as(String.valueOf(first.error())).isTrue();
+    JsonNode found = first.output().path("brokers").get(0);
+    assertThat(found.path("status").asText()).isEqualTo("to_review");
+    assertThat(found.path("accountCreated").asBoolean()).isTrue();
+    assertThat(found.path("linkedNow").asBoolean()).isTrue();
+    assertThat(found.path("account").asText()).isEqualTo("Zerodha");
+    assertThat(found.path("shares").asInt()).isEqualTo(1);
+    assertThat(found.path("mutualFunds").asInt()).isEqualTo(1);
+    assertThat(found.path("cash").decimalValue()).isEqualByComparingTo("5000.25");
+    assertThat(first.output().path("review").path("url").asText()).endsWith("view=connect");
+    // Nothing saved until the person says so.
+    assertThat(ok(api.get("/api/finance/net-worth")).path("assets").decimalValue()).isEqualByComparingTo(before);
+    JsonNode accounts = ok(api.get("/api/finance/accounts"));
+    assertThat(accounts).filteredOn(a -> "demat".equals(a.path("kind").asText())).hasSize(1)
+        .allMatch(a -> "Zerodha".equals(a.path("provider").asText()));
+    assertThat(ok(api.get("/api/finance/sources")).path("sources")).hasSize(1);
+
+    // A file import can't be saved from chat; the sync can.
+    var saved = kaiTools.invoke(kai, new com.jizza.engine.api.tool.ToolCall("finance_save_sync",
+        Json.obj().put("batchId", found.path("batchId").asText())));
+    assertThat(saved.ok()).as(String.valueOf(saved.error())).isTrue();
+    assertThat(saved.output().path("status").asText()).isEqualTo("committed");
+    // 12 × 1,600 + 100.5 × 60, and the 5,000.25 left in the account (net worth is in whole rupees)
+    assertThat(ok(api.get("/api/finance/net-worth")).path("assets").decimalValue())
+        .isEqualByComparingTo(before.add(new BigDecimal("30230")));
+
+    // Asked again: the same account, nothing new; only read tools were ever called.
+    var again = kaiTools.invoke(kai, new com.jizza.engine.api.tool.ToolCall("finance_sync_connected",
+        Json.obj().put("broker", "zerodha")));
+    JsonNode second = again.output().path("brokers").get(0);
+    assertThat(second.path("status").asText()).isEqualTo("no_change");
+    assertThat(second.path("linkedNow").asBoolean()).isFalse();
+    assertThat(kite.calls).allMatch(c -> c.startsWith("login") || c.startsWith("get_holdings")
+        || c.startsWith("get_mf_holdings") || c.startsWith("get_margins"));
+    var none = kaiTools.invoke(kai, new com.jizza.engine.api.tool.ToolCall("finance_sync_connected",
+        Json.obj().put("broker", "groww")));
+    assertThat(none.ok()).isFalse();
+  }
+
+  @Test
+  void kaiUsesTheDematAccountAlreadyAtThatBroker() {
+    Map<String, Object> body = new HashMap<>();
+    body.put("name", "Kite");
+    body.put("url", kite.url());
+    body.put("authType", "NONE");
+    String serverId = ok(api.post("/api/mcp-servers", body)).path("id").asText();
+    ok(api.post("/api/mcp-servers/" + serverId + "/tools/login/test", Json.obj()));
+    ok(api.post("/api/finance/accounts", Map.of("kind", "demat", "provider", "Other Broker")));
+    String zerodha = ok(api.post("/api/finance/accounts", Map.of("kind", "demat", "provider", "Zerodha")))
+        .path("id").asText();
+    UUID kai = agents.byKey(userId, "finance").orElseThrow().id();
+    var r = kaiTools.invoke(kai, new com.jizza.engine.api.tool.ToolCall("finance_sync_connected", Json.obj()));
+    assertThat(r.ok()).as(String.valueOf(r.error())).isTrue();
+    assertThat(r.output().path("brokers").get(0).path("accountCreated").asBoolean()).isFalse();
+    assertThat(ok(api.get("/api/finance/sources")).path("sources").get(0).path("accountId").asText()).isEqualTo(zerodha);
+    // No cash tool on this server: holdings still sync.
+    assertThat(r.output().path("brokers").get(0).has("cash")).isFalse();
   }
 
   @Test

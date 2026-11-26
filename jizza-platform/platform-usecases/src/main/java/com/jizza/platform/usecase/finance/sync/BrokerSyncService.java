@@ -32,8 +32,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * Connected sources (Kai part A): a broker's MCP server the person added on Connectors, tied to one
- * of their demat accounts. A sync calls only the server's holdings tools ({@code get_holdings},
- * {@code get_mf_holdings}), never anything that changes the account, and lands as a holdings
+ * of their demat accounts. A sync calls only the server's read tools ({@code get_holdings},
+ * {@code get_mf_holdings}, and {@code get_margins} for the cash left in the account), never
+ * anything that changes the account, and lands as a holdings
  * import the person reviews before it is saved. The answers are never logged; the log names only
  * the user, the source and counts.
  */
@@ -45,7 +46,8 @@ public class BrokerSyncService {
   /** The only tools a sync may call: they read and never change the account. */
   static final String SHARES_TOOL = "get_holdings";
   static final String FUNDS_TOOL = "get_mf_holdings";
-  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL);
+  static final String CASH_TOOL = "get_margins";
+  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL, CASH_TOOL);
   private static final Set<String> BROKER_ACCOUNTS = Set.of("demat", "us_broker", "other");
 
   private final FinanceRecords records;
@@ -55,10 +57,11 @@ public class BrokerSyncService {
   private final ImportService imports;
   private final NotificationBus bus;
   private final AgentDirectory agents;
+  private final com.jizza.platform.usecase.finance.records.FinRecordsUseCase people;
 
   public BrokerSyncService(FinanceRecords records, FinScopeResolver scopes, McpServers servers,
                            WorkspaceDirectory workspaces, ImportService imports, NotificationBus bus,
-                           AgentDirectory agents) {
+                           AgentDirectory agents, com.jizza.platform.usecase.finance.records.FinRecordsUseCase people) {
     this.records = records;
     this.scopes = scopes;
     this.servers = servers;
@@ -66,6 +69,7 @@ public class BrokerSyncService {
     this.imports = imports;
     this.bus = bus;
     this.agents = agents;
+    this.people = people;
   }
 
   /** A server on Connectors that can be a source: it offers a holdings tool. */
@@ -182,8 +186,11 @@ public class BrokerSyncService {
     if (looksSignedOut(a.output()) || looksSignedOut(funds)) {
       return done(owner, id, "needs_sign_in", null, 0, "Sign in to " + server.name() + " on Connectors, then sync again.");
     }
+    // The cash is a nice-to-have: a server without the tool, or one that fails it, still syncs holdings.
+    JsonNode cash = tool(server, CASH_TOOL).map(t -> servers.call(serverId, t.name(), Json.obj()))
+        .filter(ToolResult::ok).map(ToolResult::output).filter(x -> !looksSignedOut(x)).orElse(null);
     try {
-      ImportService.Synced s = imports.fromSource(owner, accountId, server.name(), a.output(), funds);
+      ImportService.Synced s = imports.fromSource(owner, accountId, server.name(), a.output(), funds, cash);
       if (!s.changed()) return done(owner, id, "no_change", null, s.holdings(), "Nothing changed since the last saved sync.");
       String batchId = s.batch().path("id").asText();
       if (scheduled) notifyReview(owner, server.name(), batchId);
@@ -223,6 +230,99 @@ public class BrokerSyncService {
         .put("batchId", batchId);
     bus.raise(NotificationKind.INFO, kai, new NotificationContext(owner,
         "New holdings from " + serverName + " are ready to review.", detail, null, null, null, null));
+  }
+
+  // ── From chat ───────────────────────────────────────────────────────────────
+
+  /** What a sync asked for in chat did for one connected broker. */
+  public record ChatSync(String server, UUID accountId, String accountName, boolean linkedNow,
+                         boolean accountCreated, SyncResult result) {}
+
+  /**
+   * "Sync my Zerodha" in chat: every connected broker server (or the one whose name matches
+   * {@code serverHint}) is synced into its account with no mapping by hand. A server not linked
+   * yet is linked to the person's own demat account at the same broker, and when there is none,
+   * a demat account is created for them at that broker. Each sync lands as a batch to review,
+   * exactly as from the Connect screen; nothing is saved until the person says so.
+   */
+  public List<ChatSync> syncFromChat(UUID caller, String serverHint) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    String hint = serverHint == null ? "" : serverHint.strip().toLowerCase(java.util.Locale.ROOT);
+    List<McpServerDto> brokers = ownServers(owner).stream()
+        .filter(s -> tool(s, SHARES_TOOL).isPresent())
+        .filter(s -> hint.isEmpty() || s.name().toLowerCase(java.util.Locale.ROOT).contains(hint)
+            || brand(s.name()).toLowerCase(java.util.Locale.ROOT).contains(hint))
+        .toList();
+    if (brokers.isEmpty()) {
+      throw new ValidationException(hint.isEmpty()
+          ? "No broker is connected yet. Add Zerodha Kite (or another broker) under Settings, Connectors, sign in, then ask again."
+          : "No connected broker matches \"" + serverHint.strip() + "\". Add it under Settings, Connectors first.");
+    }
+    List<ChatSync> out = new ArrayList<>();
+    for (McpServerDto server : brokers) {
+      List<ObjectNode> linked = records.list("fin_sync_source", owner, Map.of("serverId", server.id().toString()));
+      boolean linkedNow = false;
+      boolean created = false;
+      if (linked.isEmpty()) {
+        UUID[] account = {null};
+        created = pickOrCreateAccount(owner, server, account);
+        linked = List.of(records.insert("fin_sync_source", owner, Json.obj()
+            .put("serverId", server.id().toString()).put("accountId", account[0].toString()).put("enabled", true)));
+        linkedNow = true;
+        log.info("Linked broker source for user {} from chat (new account: {})", owner, created);
+      }
+      for (ObjectNode row : linked) {
+        UUID accountId = UUID.fromString(row.path("accountId").asText());
+        SyncResult r = row.path("enabled").asBoolean(true) ? sync(owner, row, false)
+            : new SyncResult("paused", null, 0, "Syncing from " + server.name() + " is paused under Connect.");
+        out.add(new ChatSync(server.name(), accountId, source(owner, row, List.of(server)).accountName(),
+            linkedNow, created, r));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The demat account a broker's holdings go into: the person's own active one at that broker (by
+   * the provider's name), else a single unlinked one with no provider named, else a new demat
+   * account at that broker. Returns true when it was created.
+   */
+  private boolean pickOrCreateAccount(UUID owner, McpServerDto server, UUID[] out) {
+    String brand = brand(server.name());
+    String b = brand.toLowerCase(java.util.Locale.ROOT);
+    java.util.Set<String> taken = new java.util.HashSet<>();
+    records.list("fin_sync_source", owner, Map.of()).forEach(r -> taken.add(r.path("accountId").asText()));
+    String self = people.selfId(owner).toString();
+    List<ObjectNode> mine = records.list("fin_account", owner, Map.of()).stream()
+        .filter(a -> "demat".equals(a.path("kind").asText()) || "us_broker".equals(a.path("kind").asText()))
+        .filter(a -> !"closed".equals(a.path("status").asText()))
+        .filter(a -> self.equals(a.path("personId").asText()))
+        .toList();
+    for (ObjectNode a : mine) {
+      String p = a.path("provider").asText("").toLowerCase(java.util.Locale.ROOT);
+      if (!p.isBlank() && (p.contains(b) || b.contains(p))) {
+        out[0] = UUID.fromString(a.path("id").asText());
+        return false;
+      }
+    }
+    List<ObjectNode> blank = mine.stream().filter(a -> a.path("provider").asText("").isBlank())
+        .filter(a -> !taken.contains(a.path("id").asText())).toList();
+    if (blank.size() == 1) {
+      out[0] = UUID.fromString(blank.get(0).path("id").asText());
+      return false;
+    }
+    ObjectNode a = records.insert("fin_account", owner, Json.obj().put("personId", self).put("kind", "demat")
+        .put("provider", brand.length() > 60 ? brand.substring(0, 60) : brand).put("source", "api"));
+    out[0] = UUID.fromString(a.path("id").asText());
+    return true;
+  }
+
+  /** The broker a server stands for: Zerodha for Kite, else the server's own name. */
+  static String brand(String serverName) {
+    String n = serverName == null ? "" : serverName.strip();
+    String l = n.toLowerCase(java.util.Locale.ROOT);
+    if (l.contains("kite") || l.contains("zerodha")) return "Zerodha";
+    return n.isEmpty() ? "Broker" : n;
   }
 
   // ── Orders (part D) ─────────────────────────────────────────────────────────

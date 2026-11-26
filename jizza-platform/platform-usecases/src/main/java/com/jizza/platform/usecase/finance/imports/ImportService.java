@@ -184,6 +184,17 @@ public class ImportService {
    */
   @Transactional
   public Synced fromSource(UUID owner, UUID accountId, String sourceLabel, JsonNode shares, JsonNode funds) {
+    return fromSource(owner, accountId, sourceLabel, shares, funds, null);
+  }
+
+  /**
+   * As above, with the broker's {@code get_margins} answer: the cash left in the trading account
+   * comes along as the account's balance, saved with the holdings. A sync whose holdings match the
+   * last saved one still lands when that cash differs from the balance saved for the account.
+   */
+  @Transactional
+  public Synced fromSource(UUID owner, UUID accountId, String sourceLabel, JsonNode shares, JsonNode funds,
+                           JsonNode margins) {
     ObjectNode account = records.get("fin_account", owner, accountId)
         .orElseThrow(() -> new NotFoundException("Account", accountId));
     if (!BROKER_ACCOUNTS.contains(account.path("kind").asText())) {
@@ -211,12 +222,19 @@ public class ImportService {
         lastKey = b.path("stats").path("syncKey").asText();
       }
     }
-    if (syncKey.equals(lastKey) && st.unreadable().isEmpty()) return new Synced(null, false, st.holdings().size());
+    Statement.Balance cash = SourceHoldings.kiteCash(margins, LocalDate.now());
+    boolean cashMoved = cash != null && records.list("fin_asset", owner,
+            Map.of("accountId", accountId.toString(), "kind", "savings_balance")).stream()
+        .noneMatch(a -> a.path("value").decimalValue().compareTo(cash.amount()) == 0);
+    if (syncKey.equals(lastKey) && st.unreadable().isEmpty() && !cashMoved) {
+      return new Synced(null, false, st.holdings().size());
+    }
 
     UUID personId = UUID.fromString(account.path("personId").asText());
     ObjectNode stats = preview(owner, "broker_holdings", account, personId, st);
     stats.put("fileName", Parsing.clip(sourceLabel, 80) + " sync").put("source", Parsing.clip(sourceLabel, 80))
         .put("syncKey", syncKey);
+    if (cash != null) stats.putObject("balance").put("amount", cash.amount()).put("date", cash.date().toString());
     ObjectNode batch = Json.obj()
         .put("personId", personId.toString())
         .put("kind", "broker_holdings")
