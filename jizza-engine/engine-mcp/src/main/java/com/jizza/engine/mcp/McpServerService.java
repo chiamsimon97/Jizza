@@ -210,12 +210,13 @@ public class McpServerService implements McpServers, StoredMcpServers {
     } catch (RuntimeException e) {
       String message = Redaction.scrub(describe(e));
       log.info("MCP server '{}' could not be reached: {}", entity.getName(), message, e);
-      boolean unauthorised = message.contains("401") || message.contains("403")
+      boolean unauthorised = McpErrors.needsSignIn(e) || message.contains("401") || message.contains("403")
           || message.toLowerCase(Locale.ROOT).contains("unauthorized");
       entity.setStatus(unauthorised && authType(entity) == McpAuthType.OAUTH ? "needs_auth" : "error");
-      entity.setLastError(unauthorised
-          ? "The server refused Jizza's sign-in. Check the token, or sign in again."
-          : "Could not reach the server: " + abbreviate(message));
+      entity.setLastError(!unauthorised ? "Could not reach the server: " + abbreviate(message)
+          : authType(entity) == McpAuthType.NONE
+              ? "The server asks you to sign in. Edit it, choose OAuth (sign in with the service), save, then press Sign in."
+              : "The server refused Jizza's sign-in. Check the token, or sign in again.");
     }
     return toDto(servers.save(entity));
   }

@@ -114,8 +114,8 @@
   {
     "id": "kite", "name": "Zerodha Kite", "publisher": "Zerodha", "category": "finance",
     "description": "Your holdings, positions, quotes and orders on Kite.",
-    "url": "https://mcp.kite.trade/mcp", "authType": "NONE", "agentKeys": ["jizza", "finance"],
-    "note": "Ask Jizza or Kai to log in to Kite first: its login tool gives you a link to sign in with Zerodha."
+    "url": "https://mcp.kite.trade/mcp", "authType": "OAUTH", "agentKeys": ["jizza", "finance"],
+    "note": "After you add it, press Sign in on its page and log in with your Zerodha account. Zerodha asks you to sign in again from time to time; Jizza shows Sign in when it does."
   },
   {
     "id": "coingecko", "name": "CoinGecko", "publisher": "CoinGecko", "category": "finance",

@@ -110,8 +110,8 @@ export function ConnectedSources({ accounts, onReview }: { accounts: FinAccount[
 
       {servers.length === 0 ? (
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          No broker connected yet. Add Zerodha's Kite server (<code className="text-xs">https://mcp.kite.trade/mcp</code>) on{' '}
-          <Link to="/connectors" className="font-medium text-brand-600 hover:underline dark:text-brand-300">Connectors</Link>, sign in, then come back here.
+          No broker connected yet. Add Zerodha Kite from the list on{' '}
+          <Link to="/connectors" className="font-medium text-brand-600 hover:underline dark:text-brand-300">Connectors</Link>, press Sign in to log in with Zerodha, then come back here.
         </p>
       ) : brokerAccounts.length === 0 ? (
         <p className="text-sm text-gray-600 dark:text-gray-300">Add a demat account (Net worth, then Accounts) to sync holdings into.</p>
