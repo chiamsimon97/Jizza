@@ -14,6 +14,12 @@ Press **New goal** to pick from the library: emergency fund, retirement, child e
 
 Steps 5, 7 and 8 of the wizard (starting mix, glide path, rules) open once you add holdings.
 
+## Adding things from chat
+
+If the Portfolio screens feel like a lot, tell Kai in chat instead, in your own words: "Add a goal for my daughter's college, about 25 lakh in today's money, by 2034" or "I have a home loan of 35 lakh at 8.6%". Kai puts a short form right in the chat with what you said already filled in and tells you what to check. Change anything, fill in what's missing, then press **Save** on the form. Nothing is saved until you do.
+
+Kai can do this for a goal, a loan you owe, money you lent, an insurance policy, a saving or asset (FD, PPF, gold, property and so on) and an account.
+
 ## Does a goal meet its target?
 
 Kai checks every goal against its target and gives it a verdict: **On track**, **At risk**, **Off track** or **Not enough data**.

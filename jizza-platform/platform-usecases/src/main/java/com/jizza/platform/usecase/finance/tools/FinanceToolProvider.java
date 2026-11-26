@@ -60,13 +60,28 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   public static final String EXPLAIN_VALUE = "finance_explain_value";
   public static final String SYNC = "finance_sync_connected";
   public static final String SAVE_SYNC = "finance_save_sync";
+  public static final String SHOW_FORM = "finance_show_form";
+  /** The chat card a form goes out as: fields to check and save, right in the chat. */
+  public static final String FORM_CARD = "finance_form";
+
+  /** The forms Kai can put in the chat, and the table each one saves to. */
+  static final Map<String, com.jizza.platform.usecase.finance.records.FinTable> FORMS = new java.util.LinkedHashMap<>();
+  static {
+    FORMS.put("goal", com.jizza.platform.usecase.finance.records.FinTable.GOAL);
+    FORMS.put("loan", com.jizza.platform.usecase.finance.records.FinTable.LIABILITY);
+    FORMS.put("money_lent", com.jizza.platform.usecase.finance.records.FinTable.LOAN_GIVEN);
+    FORMS.put("policy", com.jizza.platform.usecase.finance.records.FinTable.POLICY);
+    FORMS.put("asset", com.jizza.platform.usecase.finance.records.FinTable.ASSET);
+    FORMS.put("account", com.jizza.platform.usecase.finance.records.FinTable.ACCOUNT);
+  }
 
   static final Map<String, ActionType> TYPES = Map.ofEntries(
       Map.entry(OVERVIEW, ActionType.READ), Map.entry(CASH_FLOW, ActionType.READ), Map.entry(LOANS, ActionType.READ),
       Map.entry(PROTECTION, ActionType.READ), Map.entry(GOALS, ActionType.READ), Map.entry(TAX, ActionType.READ),
       Map.entry(HOLDINGS, ActionType.READ), Map.entry(ALLOCATION, ActionType.READ), Map.entry(EXPLAIN_VALUE, ActionType.READ),
       Map.entry(OPEN_SCREEN, ActionType.DRAFT), Map.entry(UPDATE_ACTION, ActionType.UPDATE),
-      Map.entry(SYNC, ActionType.DRAFT), Map.entry(SAVE_SYNC, ActionType.UPDATE));
+      Map.entry(SYNC, ActionType.DRAFT), Map.entry(SAVE_SYNC, ActionType.UPDATE),
+      Map.entry(SHOW_FORM, ActionType.DRAFT));
 
   static final List<String> SCREENS = List.of("home", "actions", "goals", "plan-builder", "cash-flow",
       "loans", "protection", "tax", "net-worth", "people", "settings", "holdings", "allocation", "asset-tree",
@@ -84,6 +99,7 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules;
   private final ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers;
   private final ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.records.FinRecordsUseCase> forms;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -98,6 +114,7 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                              ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules,
                              ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers,
                              ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports,
+                             ObjectProvider<com.jizza.platform.usecase.finance.records.FinRecordsUseCase> forms,
                              @Value("${jizza.finance.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.health = health;
@@ -111,6 +128,7 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     this.rules = rules;
     this.brokers = brokers;
     this.imports = imports;
+    this.forms = forms;
     this.enabled = enabled;
     ObjectNode scope = JsonSchemas.string("Whose data: \"me\" (the default) is you and the people you manage.");
     scope.putArray("enum").add("me");
@@ -180,7 +198,31 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
             + "without the user's yes in this conversation.",
             JsonSchemas.object(props("scope", scope,
                 "batchId", JsonSchemas.string("The batchId finance_sync_connected gave")),
-                List.of("batchId")), true, false));
+                List.of("batchId")), true, false),
+        new ToolSpec(SHOW_FORM, "Put a short form in the chat for the user to fill in and save "
+            + "right there: a goal, a loan they owe, money they lent, an insurance policy, an "
+            + "asset or an account. Use it whenever the user wants to add one of these, or finds "
+            + "the Portfolio screens hard: fill in everything they already told you (amounts in "
+            + "rupees, dates yyyy-mm-dd) and leave the rest for them. Say in a sentence what to "
+            + "check, then end your turn. Nothing is saved until the user presses Save on the "
+            + "card; you never save it yourself.",
+            JsonSchemas.object(props("scope", scope,
+                "form", enumOf("Which form", List.copyOf(FORMS.keySet())),
+                "title", JsonSchemas.string("Optional heading, e.g. \"Your daughter's college fund\""),
+                "intro", JsonSchemas.string("Optional: one sentence of direction above the fields"),
+                "values", JsonSchemas.objectSchema("What you know, by field. goal: type (emergency, "
+                    + "retirement, education, home, car, travel, wedding, wealth, custom), name, "
+                    + "targetDate, targetAmountToday, currentValue, monthlyContribution, priorityTier "
+                    + "(survival, important, aspirational). loan: kind (HOME, VEHICLE, EDUCATION, "
+                    + "PERSONAL, CREDIT_CARD, GOLD_LOAN, FAMILY_FRIEND, ...), outstanding, "
+                    + "emiOrInterest, rateInput (as the user said it, e.g. \"9.5% a year\"), "
+                    + "lenderName, startDate, maturityOrPromisedDate. money_lent: borrowerName, "
+                    + "amount, givenOn, expectedBackOn. policy: kind (term, health, super_topup, ...), "
+                    + "providerName, sumAssured, premium, premiumFrequency, renewalDate. asset: kind "
+                    + "(fd, ppf, epf, nps, gold_physical, property, savings_balance, ...), name, value, "
+                    + "rate, maturityDate. account: kind (savings, current, demat, ...), provider, "
+                    + "nickname.")),
+                List.of("form")), false, false));
   }
 
   @Override
@@ -230,6 +272,7 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
         case UPDATE_ACTION -> ToolResult.ok(updateAction(user, args));
         case SYNC -> ToolResult.ok(sync(kai.get(), args));
         case SAVE_SYNC -> ToolResult.ok(saveSync(user, args));
+        case SHOW_FORM -> showForm(user, args);
         default -> ToolResult.error("Unknown finance tool " + call.name());
       };
     } catch (ValidationException | NotFoundException e) {
@@ -410,6 +453,53 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     ObjectNode saved = svc.commit(user, id, null);
     return Json.obj().put("batchId", saved.path("id").asText()).put("status", saved.path("status").asText())
         .put("note", "Saved. It can be undone under Connect, Import history.");
+  }
+
+  /**
+   * Checks what Kai filled in field by field, with the same rules as the Portfolio's own forms, and
+   * puts the card on the reply. A value that would not pass is left out and named back to Kai, so
+   * the user never meets a form that can't be saved as given. Nothing is written here.
+   */
+  private ToolResult showForm(UUID user, JsonNode args) {
+    if (com.jizza.engine.api.chat.ChatScope.current().isEmpty()) {
+      return ToolResult.error("There is no chat to show a form in. Point the user to the Portfolio screen instead.");
+    }
+    String form = args.path("form").asText();
+    var table = FORMS.get(form);
+    if (table == null) return ToolResult.error("form must be one of " + String.join(", ", FORMS.keySet()));
+    ObjectNode values = Json.obj();
+    ArrayNode dropped = Json.mapper().createArrayNode();
+    var it = args.path("values").fields();
+    while (it.hasNext()) {
+      var e = it.next();
+      if (!table.fields.containsKey(e.getKey()) || e.getValue().isNull()) {
+        dropped.add(e.getKey() + ": not on this form");
+        continue;
+      }
+      try {
+        ObjectNode one = forms.getObject().clean(user, table, Json.obj().set(e.getKey(), e.getValue()), false);
+        if (one.hasNonNull(e.getKey())) values.set(e.getKey(), one.get(e.getKey()));
+      } catch (ValidationException | NotFoundException bad) {
+        dropped.add(e.getKey() + ": " + bad.getMessage());
+      }
+    }
+    ObjectNode payload = Json.obj().put("id", UUID.randomUUID().toString()).put("form", form);
+    String title = clip(args.path("title").asText(""), 80);
+    String intro = clip(args.path("intro").asText(""), 300);
+    if (!title.isBlank()) payload.put("title", title);
+    if (!intro.isBlank()) payload.put("intro", intro);
+    payload.set("values", values);
+    com.jizza.engine.api.chat.ChatScope.record(new com.jizza.engine.api.orchestrator.UiAction(FORM_CARD, payload));
+    ObjectNode out = Json.obj().put("shown", true).put("note", "The form is in the chat with what you "
+        + "filled in. Say in a sentence what the user should check or add, then end your turn. It is "
+        + "saved only when they press Save.");
+    if (!dropped.isEmpty()) out.set("leftOut", dropped);
+    return ToolResult.ok(out);
+  }
+
+  private static String clip(String s, int max) {
+    String t = s == null ? "" : s.strip();
+    return t.length() > max ? t.substring(0, max) : t;
   }
 
   private Optional<AgentDto> kai(UUID agentId) {
