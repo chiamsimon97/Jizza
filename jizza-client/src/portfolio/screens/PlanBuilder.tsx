@@ -186,7 +186,7 @@ export function PlanBuilder({ onOpen }: { onOpen: (view: string) => void }) {
         <Button size="sm" variant="secondary" disabled={!edits.length} onClick={() => set({ edits: [] })}><RotateCcw className="h-3.5 w-3.5" /> Reset to Kai default</Button>
       </div>
 
-      <section className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <AmountField label="Each month" value={input.monthly || null} onChange={v => set({ monthly: v ?? 0, edits: [] })} />
           <AmountField label="One-time lumpsum" value={input.lumpsum || null} onChange={v => set({ lumpsum: v ?? 0 })} />

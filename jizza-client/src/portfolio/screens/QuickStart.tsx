@@ -147,7 +147,7 @@ function Result({ onOpen, onRestart }: { onOpen: (view: string) => void; onResta
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Your result</h2>
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
           <ScoreRing score={h.score} size={84} />
           <div className="text-sm text-gray-600 dark:text-gray-300">Money Health{h.score == null ? ': answer a question to get a score.' : ''}</div>
         </div>
@@ -172,7 +172,7 @@ function Result({ onOpen, onRestart }: { onOpen: (view: string) => void; onResta
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col justify-center rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex flex-col justify-center rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
       <span className="text-xl font-semibold text-gray-900 dark:text-gray-100">{children}</span>
     </div>

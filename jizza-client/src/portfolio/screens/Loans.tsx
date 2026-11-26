@@ -118,7 +118,7 @@ function Plan({ loans, onEdit }: { loans: FinLoan[]; onEdit: (l: FinLoan) => voi
           onEdit={sample ? undefined : () => onEdit(l)} />)}
       </div>
 
-      <section className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" aria-busy={isFetching}>
+      <section className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900" aria-busy={isFetching}>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             Repayment plan{view ? <> · <Money amount={view.monthlySurplus + extra} /> a month to work with</> : ''}
@@ -175,7 +175,7 @@ function LoanCard({ loan: l, debtFreeBy, setAside, onEdit }: { loan: FinLoan; de
   const ltv = l.ltv
   const due = l.maturityOrPromisedDate
   return (
-    <article className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" data-testid="loan-card">
+    <article className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-gray-800 dark:bg-gray-900" data-testid="loan-card">
       <div className="flex flex-wrap items-center gap-2">
         <Icon className="h-4 w-4 text-gray-500" aria-hidden />
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{l.label}</h3>
@@ -233,7 +233,7 @@ function MoneyLent() {
   })
   const open = (data ?? []).filter(g => g.status !== 'repaid')
   return (
-    <section className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <section className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Money lent to others</h3>
         {!sample && <Button size="sm" variant="ghost" onClick={() => setAdding('new')}><Plus className="h-4 w-4" /> Add</Button>}

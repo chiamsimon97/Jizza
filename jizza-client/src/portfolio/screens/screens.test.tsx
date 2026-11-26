@@ -84,6 +84,24 @@ describe('Home', () => {
     expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument()
   })
 
+  it('filters the checks and ties each part of the score bar to its tile', async () => {
+    mockReads()
+    render(<Home profile={done} onOpen={noop} onAnswer={noop} onSample={noop} />, { wrapper: wrap() })
+    await screen.findByText('Score 38')
+    const greens = SAMPLE_HEALTH.checks.filter(c => c.status === 'green').length
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^On track ${greens}$`) }))
+    expect(screen.getAllByTestId(/^check-/)).toHaveLength(greens)
+    expect(screen.queryByTestId('check-debt')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^All \d+$/ }))
+    expect(screen.getAllByTestId(/^check-/)).toHaveLength(SAMPLE_HEALTH.checks.length)
+
+    const debt = SAMPLE_HEALTH.checks.find(c => c.key === 'debt')!
+    fireEvent.mouseEnter(within(screen.getByRole('list', { name: 'Points by check' })).getByLabelText(new RegExp('^Debt:')))
+    expect(screen.getByText(`Debt: ${debt.points} of ${debt.weight} points`)).toBeInTheDocument()
+    expect(screen.getByTestId('check-debt').className).toMatch(/ring-2/)
+    expect(screen.getByText(/top three actions add up to \+45 points/)).toBeInTheDocument()
+  })
+
   it('sums the score up in a sentence', () => {
     expect(scoreSummary(SAMPLE_HEALTH)).toMatch(/2 checks are red/)
     expect(scoreSummary({ ...SAMPLE_HEALTH, score: null })).toMatch(/Answer a Quick start question/)

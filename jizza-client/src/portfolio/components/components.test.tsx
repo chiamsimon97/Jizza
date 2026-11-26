@@ -131,3 +131,19 @@ describe('AmountField', () => {
     expect(onChange).toHaveBeenCalledWith(65000)
   })
 })
+
+describe('ActionCard', () => {
+  it('shows a tick after Done before the card leaves the list', async () => {
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    const { financeApi } = await import('@/api/finance')
+    const { ActionCard } = await import('./ActionCard')
+    const { SAMPLE_HEALTH } = await import('../sample')
+    const action = SAMPLE_HEALTH.topActions[0]
+    const update = vi.spyOn(financeApi, 'updateAction').mockResolvedValue({ ...action, status: 'done' })
+    render(<QueryClientProvider client={new QueryClient()}><ActionCard action={action} index={1} /></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Nicely done')
+    expect(update).toHaveBeenCalledWith(action.id, { status: 'done' })
+    expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument()
+  })
+})

@@ -90,7 +90,7 @@ function GoalCard({ view, onOpen }: { view: GoalView; onOpen: () => void }) {
   const { goal, funding: f } = view
   const done = goal.status === 'achieved' || goal.status === 'archived'
   return (
-    <article className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <article className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <h3 className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
         {f && <span className={`inline-block h-2.5 w-2.5 rounded-full ${BUCKET_COLOURS[f.bucket]}`} aria-hidden />}
         {goal.name}
