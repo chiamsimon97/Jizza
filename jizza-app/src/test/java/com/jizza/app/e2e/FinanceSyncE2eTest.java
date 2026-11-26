@@ -191,6 +191,33 @@ class FinanceSyncE2eTest extends E2eSupport {
   }
 
   @Test
+  void kitesNewAreaToolsAreFoundAndReadPageByPage() {
+    kite.kiteAreas = true;
+    kite.kiteMargins = MARGINS;
+    Map<String, Object> body = new HashMap<>();
+    body.put("name", "Zerodha Kite");
+    body.put("url", kite.url());
+    body.put("authType", "NONE");
+    String serverId = ok(api.post("/api/mcp-servers", body)).path("id").asText();
+    JsonNode view = ok(api.get("/api/finance/sources"));
+    assertThat(view.path("servers")).hasSize(1);
+    assertThat(view.path("servers").get(0).path("signedIn").asBoolean()).isTrue();
+    assertThat(view.path("servers").get(0).path("funds").asBoolean()).isTrue();
+
+    String demat = ok(api.post("/api/finance/accounts", Map.of("kind", "demat", "provider", "Zerodha"))).path("id").asText();
+    String source = ok(api.post("/api/finance/sources", Map.of("serverId", serverId, "accountId", demat))).path("id").asText();
+    JsonNode synced = ok(api.post("/api/finance/sources/" + source + "/sync", Map.of()));
+    assertThat(synced.path("status").asText()).as(synced.toString()).isEqualTo("to_review");
+    assertThat(synced.path("holdings").asInt()).isEqualTo(2);
+    JsonNode batch = ok(api.get("/api/finance/imports/" + synced.path("batchId").asText()));
+    assertThat(batch.path("stats").path("balance").path("amount").decimalValue()).isEqualByComparingTo("5000.25");
+    // Both holdings pages were read, and only read modes were asked for.
+    assertThat(kite.calls).anyMatch(c -> c.startsWith("portfolio") && c.contains("\"from\":1"));
+    assertThat(kite.calls).allMatch(c -> (c.startsWith("portfolio") && (c.contains("\"holdings\"") || c.contains("\"margins\"")))
+        || (c.startsWith("mutual_funds") && c.contains("\"holdings\"")));
+  }
+
+  @Test
   void kaiUsesTheDematAccountAlreadyAtThatBroker() {
     Map<String, Object> body = new HashMap<>();
     body.put("name", "Kite");

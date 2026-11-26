@@ -47,7 +47,49 @@ public class BrokerSyncService {
   static final String SHARES_TOOL = "get_holdings";
   static final String FUNDS_TOOL = "get_mf_holdings";
   static final String CASH_TOOL = "get_margins";
-  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL, CASH_TOOL);
+  /** Kite's server since late 2026: one tool per area, the part chosen by {@code mode}. */
+  static final String PORTFOLIO_TOOL = "portfolio";
+  static final String FUNDS_AREA_TOOL = "mutual_funds";
+  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL, CASH_TOOL, PORTFOLIO_TOOL, FUNDS_AREA_TOOL);
+  /** The only modes a sync asks for: each reads, none changes the account. */
+  static final Set<String> READ_MODES = Set.of("holdings", "margins");
+  private static final int PAGE = 500;
+  private static final int MAX_PAGES = 20;
+
+  /** How to read one thing from a broker's server: which tool, with which arguments. */
+  record Reader(String tool, ObjectNode args, boolean paged) {}
+
+  /** The shares tool: {@code get_holdings}, or {@code portfolio} with mode holdings. */
+  static Optional<Reader> sharesReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, SHARES_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, PORTFOLIO_TOOL).filter(t -> hasMode(t, "holdings"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "holdings").put("type", "full").put("limit", PAGE), true));
+  }
+
+  /** The funds tool: {@code get_mf_holdings}, or {@code mutual_funds} with mode holdings. */
+  static Optional<Reader> fundsReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, FUNDS_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, FUNDS_AREA_TOOL).filter(t -> hasMode(t, "holdings"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "holdings"), false));
+  }
+
+  /** The cash tool: {@code get_margins}, or {@code portfolio} with mode margins. */
+  static Optional<Reader> cashReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, CASH_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, PORTFOLIO_TOOL).filter(t -> hasMode(t, "margins"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "margins"), false));
+  }
+
+  /** True when the tool's {@code mode} argument offers this value. */
+  static boolean hasMode(McpToolDto t, String mode) {
+    JsonNode values = t.inputSchema() == null ? null : t.inputSchema().path("properties").path("mode").path("enum");
+    if (values == null || !values.isArray()) return false;
+    for (JsonNode v : values) if (mode.equals(v.asText())) return true;
+    return false;
+  }
   private static final Set<String> BROKER_ACCOUNTS = Set.of("demat", "us_broker", "other");
 
   private final FinanceRecords records;
@@ -93,8 +135,8 @@ public class BrokerSyncService {
     List<McpServerDto> mine = ownServers(owner);
     List<Candidate> candidates = new ArrayList<>();
     for (McpServerDto s : mine) {
-      if (tool(s, SHARES_TOOL).isEmpty()) continue;
-      candidates.add(new Candidate(s.id(), s.name(), signedIn(s), s.enabled(), tool(s, FUNDS_TOOL).isPresent(),
+      if (sharesReader(s).isEmpty()) continue;
+      candidates.add(new Candidate(s.id(), s.name(), signedIn(s), s.enabled(), fundsReader(s).isPresent(),
           tool(s, "place_order").isPresent()));
     }
     List<Source> sources = new ArrayList<>();
@@ -108,7 +150,7 @@ public class BrokerSyncService {
     UUID owner = scopes.own(caller).ownerUserId();
     McpServerDto server = ownServers(owner).stream().filter(s -> s.id().equals(serverId)).findFirst()
         .orElseThrow(() -> new NotFoundException("Connected server", serverId));
-    if (tool(server, SHARES_TOOL).isEmpty()) {
+    if (sharesReader(server).isEmpty()) {
       throw new ValidationException(server.name() + " has no holdings tool, so Kai can't read holdings from it.");
     }
     ObjectNode account = records.get("fin_account", owner, accountId)
@@ -171,15 +213,15 @@ public class BrokerSyncService {
     if (!signedIn(server)) {
       return done(owner, id, "needs_sign_in", null, 0, "Sign in to " + server.name() + " on Connectors, then sync again.");
     }
-    Optional<McpToolDto> shares = tool(server, SHARES_TOOL);
+    Optional<Reader> shares = sharesReader(server);
     if (shares.isEmpty()) return done(owner, id, "failed", null, 0, server.name() + " no longer offers its holdings tool.");
 
-    ToolResult a = servers.call(serverId, shares.get().name(), Json.obj());
+    ToolResult a = read(serverId, shares.get());
     if (!a.ok()) return failed(owner, id, server, a.error());
     JsonNode funds = null;
-    Optional<McpToolDto> fundsTool = tool(server, FUNDS_TOOL);
+    Optional<Reader> fundsTool = fundsReader(server);
     if (fundsTool.isPresent()) {
-      ToolResult b = servers.call(serverId, fundsTool.get().name(), Json.obj());
+      ToolResult b = read(serverId, fundsTool.get());
       if (!b.ok()) return failed(owner, id, server, b.error());
       funds = b.output();
     }
@@ -187,7 +229,7 @@ public class BrokerSyncService {
       return done(owner, id, "needs_sign_in", null, 0, "Sign in to " + server.name() + " on Connectors, then sync again.");
     }
     // The cash is a nice-to-have: a server without the tool, or one that fails it, still syncs holdings.
-    JsonNode cash = tool(server, CASH_TOOL).map(t -> servers.call(serverId, t.name(), Json.obj()))
+    JsonNode cash = cashReader(server).map(r -> read(serverId, r))
         .filter(ToolResult::ok).map(ToolResult::output).filter(x -> !looksSignedOut(x)).orElse(null);
     try {
       ImportService.Synced s = imports.fromSource(owner, accountId, server.name(), a.output(), funds, cash);
@@ -197,6 +239,40 @@ public class BrokerSyncService {
       return done(owner, id, "to_review", batchId, s.holdings(), "Review the holdings, then save them.");
     } catch (ValidationException | NotFoundException e) {
       return done(owner, id, "failed", null, 0, e.getMessage());
+    }
+  }
+
+  /**
+   * Calls one read tool. A paged one ({@code portfolio} holdings) is read page by page until the
+   * server says there is no more, and the rows come back as one {@code data} array.
+   */
+  private ToolResult read(UUID serverId, Reader r) {
+    if (!r.paged()) return servers.call(serverId, r.tool(), r.args());
+    com.fasterxml.jackson.databind.node.ArrayNode rows = Json.mapper().createArrayNode();
+    int from = 0;
+    for (int page = 0; page < MAX_PAGES; page++) {
+      ToolResult res = servers.call(serverId, r.tool(), r.args().deepCopy().put("from", from));
+      if (!res.ok()) return res;
+      JsonNode body = parsed(res.output());
+      if (body == null) return res; // not JSON: a sign-in sentence or a plain error, handled by the caller
+      JsonNode data = body.isArray() ? body : body.path("data");
+      if (!data.isArray()) return res;
+      data.forEach(rows::add);
+      JsonNode more = body.path("pagination");
+      boolean hasMore = more.path("has_more").asBoolean(more.path("hasMore").asBoolean(false));
+      if (!hasMore || data.isEmpty()) break;
+      from += data.size();
+    }
+    return ToolResult.ok(Json.obj().set("data", rows));
+  }
+
+  private static JsonNode parsed(JsonNode answer) {
+    if (answer == null) return null;
+    if (!answer.isTextual()) return answer;
+    try {
+      return Json.mapper().readTree(answer.asText());
+    } catch (Exception notJson) {
+      return null;
     }
   }
 
@@ -249,7 +325,7 @@ public class BrokerSyncService {
     UUID owner = scopes.own(caller).ownerUserId();
     String hint = serverHint == null ? "" : serverHint.strip().toLowerCase(java.util.Locale.ROOT);
     List<McpServerDto> brokers = ownServers(owner).stream()
-        .filter(s -> tool(s, SHARES_TOOL).isPresent())
+        .filter(s -> sharesReader(s).isPresent())
         .filter(s -> hint.isEmpty() || s.name().toLowerCase(java.util.Locale.ROOT).contains(hint)
             || brand(s.name()).toLowerCase(java.util.Locale.ROOT).contains(hint))
         .toList();
