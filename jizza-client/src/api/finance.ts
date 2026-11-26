@@ -5,6 +5,7 @@ import type {
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
   BuilderInput, BuilderView, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
 } from '@/types/finance'
 
 /** Kai's Portfolio (spec 5.15). Every path answers 404 while the server's finance switch is off. */
@@ -94,4 +95,39 @@ export const financeApi = {
 
   tax: (personId: string, year?: string) => api.get<TaxView>(`/api/finance/tax/${personId}${year ? `?year=${encodeURIComponent(year)}` : ''}`),
   saveTax: (personId: string, body: TaxInput) => api.put<TaxView>(`/api/finance/tax/${personId}`, body),
+
+  // ── Phase 1c: accounts, imports and transactions ────────────────────────────
+
+  accounts: () => api.get<FinAccount[]>('/api/finance/accounts'),
+  addAccount: (body: FinAccountInput) => api.post<FinAccount>('/api/finance/accounts', body),
+  categories: () => api.get<FinCategory[]>('/api/finance/categories'),
+
+  imports: () => api.get<ImportBatch[]>('/api/finance/imports'),
+  importBatch: (id: string) => api.get<ImportBatch>(`/api/finance/imports/${id}`),
+  /** Reads the file into a batch to review; nothing is saved until commit. */
+  upload: (input: ImportInput) => {
+    const form = new FormData()
+    form.append('file', input.file)
+    form.append('kind', input.kind)
+    if (input.personId) form.append('personId', input.personId)
+    if (input.accountId) form.append('accountId', input.accountId)
+    if (input.mapping) form.append('mapping', JSON.stringify(input.mapping))
+    if (input.password) form.append('password', input.password)
+    return api.upload<ImportBatch>('/api/finance/imports', form)
+  },
+  /** {@code categories} maps a row number to a category; rows in {@code always} become rules. */
+  commitImport: (id: string, body: { categories?: Record<string, string>; always?: number[] } = {}) =>
+    api.post<ImportBatch>(`/api/finance/imports/${id}/commit`, body),
+  /** Undoes a saved import, or discards one not saved yet. */
+  undoImport: (id: string) => api.post<ImportBatch | { id: string; status: 'discarded' }>(`/api/finance/imports/${id}/undo`),
+
+  transactions: (accountId?: string, month?: string) => {
+    const q = new URLSearchParams()
+    if (accountId) q.set('account', accountId)
+    if (month) q.set('month', month)
+    const s = q.toString()
+    return api.get<FinTransaction[]>(`/api/finance/transactions${s ? `?${s}` : ''}`)
+  },
+  recategorise: (id: string, categoryId: string, always = false) =>
+    api.patch<{ transaction: FinTransaction; alsoChanged: number }>(`/api/finance/transactions/${id}`, { categoryId, always }),
 }

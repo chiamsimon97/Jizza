@@ -106,3 +106,48 @@ test('portfolio: the sample household saves nothing', async ({ page, request, pr
   await expect(page.getByText(/Sample household/)).toHaveCount(0)
   expect(problems).toEqual([])
 })
+
+/**
+ * Phase 1c: a made-up bank CSV through Connect: read, reviewed, saved, refused the second time,
+ * and undone. Each run's file differs, so the test runs the same on a database that has seen it.
+ */
+test('portfolio: a bank statement is imported, reviewed, saved and undone', async ({ page, request, problems }) => {
+  const agents = await (await apiCall(request, 'GET', '/api/agents')).json()
+  const kai = agents.find((a: { key: string }) => a.key === 'finance')
+  const run = Date.now()
+  const csv = [
+    'Txn Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance',
+    `2 Apr 2025,2 Apr 2025,UPI/DR/${run}/HOUSE RENT,,15000.00,,20000.00`,
+    `4 Apr 2025,4 Apr 2025,NEFT SALARY APRIL ${run},,,50000.00,70000.00`,
+    `6 Apr 2025,6 Apr 2025,UPI-CORNER BAKERY-${run},,250.00,,69750.00`,
+  ].join('\n')
+  const file = { name: `statement-${run}.csv`, mimeType: 'text/csv', buffer: Buffer.from(csv) }
+
+  await page.goto(`/agents/${kai.id}?tab=portfolio&view=connect`)
+  await expect(page.getByRole('heading', { name: 'Connect and imports' })).toBeVisible()
+  await page.getByRole('button', { name: 'Import a file' }).first().click()
+  await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Add an account…' })
+  await page.getByLabel('Bank', { exact: true }).fill('Example Bank')
+  await page.getByLabel('File', { exact: true }).setInputFiles(file)
+  await page.getByRole('button', { name: 'Read the file' }).click()
+
+  await expect(page.getByText('3 new')).toBeVisible()
+  await expect(page.getByText('1 need a look')).toBeVisible()
+  await page.getByLabel(/Category for UPI-CORNER BAKERY/).selectOption({ label: 'Lifestyle and other' })
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('3 rows')).toBeVisible()
+
+  // The same file again is refused.
+  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Import a file' }).first().click()
+  await page.getByLabel('File', { exact: true }).setInputFiles(file)
+  await page.getByRole('button', { name: 'Read the file' }).click()
+  await expect(page.getByRole('alert')).toContainText('You imported this file on')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  const history = page.getByRole('table', { name: 'Import history' })
+  const row = history.getByRole('row').filter({ hasText: `statement-${run}.csv` })
+  await row.getByRole('button', { name: 'Undo' }).click()
+  await expect(row.getByText('Undone')).toBeVisible()
+  expect(problems).toEqual([])
+})

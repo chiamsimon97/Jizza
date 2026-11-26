@@ -113,7 +113,8 @@ export function CashFlow({ onOpen, onAnswer }: { onOpen: (view: string) => void;
       </div>
 
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Spending here comes from your Quick start answers. Bank statements, categorised row by row, arrive with Connect.
+        Spending here comes from your Quick start answers and budget. To bring in your bank statements, categorised row by row,{' '}
+        <button type="button" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => onOpen('connect')}>open Connect</button>.
       </p>
     </div>
   )

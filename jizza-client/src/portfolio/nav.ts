@@ -52,4 +52,4 @@ export function findView(id: string | null | undefined): PortfolioView {
 
 /** Views built in this release; the rest show a placeholder. */
 export const BUILT_VIEWS = new Set(['home', 'quick-start', 'actions', 'goals', 'goal', 'goal-new', 'plan-builder', 'cash-flow', 'loans', 'protection',
-  'tax', 'net-worth', 'people', 'settings'])
+  'tax', 'net-worth', 'people', 'connect', 'settings'])
