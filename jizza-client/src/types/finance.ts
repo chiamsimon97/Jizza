@@ -796,6 +796,45 @@ export interface SourcesView { sources: SyncSource[]; servers: SyncCandidate[] }
 
 export interface SyncResult { status: SyncStatus; batchId: string | null; holdings: number; message: string }
 
+export type MailStatus = 'to_review' | 'nothing_new' | 'needs_sign_in' | 'needs_password' | 'failed'
+export type MailKind = 'cas' | 'bank'
+
+/** A mail server that can search and read mail (Gmail on Connectors). */
+export interface MailCandidate { serverId: string; name: string; signedIn: boolean; enabled: boolean }
+
+/** Statements Kai pulls from email: a sender, and where its statement goes. The password never comes back. */
+export interface MailSource {
+  id: string
+  serverId: string
+  serverName: string
+  kind: MailKind
+  personId: string | null
+  accountId: string | null
+  accountName: string | null
+  sender: string
+  subject: string | null
+  hasPassword: boolean
+  enabled: boolean
+  signedIn: boolean
+  lastStatus: MailStatus | null
+  lastCheckedAt: string | null
+  lastBatchId: string | null
+}
+
+export interface MailSourcesView { sources: MailSource[]; servers: MailCandidate[]; casSenders: string }
+
+export interface MailSourceInput {
+  serverId: string
+  kind: MailKind
+  personId?: string
+  accountId?: string
+  sender?: string
+  subject?: string
+  password?: string
+}
+
+export interface MailCheckResult { status: MailStatus; batchId: string | null; found: number; message: string }
+
 export type OrderSide = 'buy' | 'sell'
 export type OrderType = 'market' | 'limit'
 

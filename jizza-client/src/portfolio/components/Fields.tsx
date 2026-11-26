@@ -50,12 +50,13 @@ export function TextField({ label, value, onChange, hint, className, placeholder
   className?: string
   placeholder?: string
   maxLength?: number
-  type?: 'text' | 'date' | 'number'
+  type?: 'text' | 'date' | 'number' | 'password'
 }) {
   const id = useId()
   return (
     <Labelled id={id} label={label} className={className} hint={hint}>
       <input id={id} type={type} className={fieldClass} placeholder={placeholder} maxLength={maxLength}
+        autoComplete={type === 'password' ? 'off' : undefined}
         value={value ?? ''} onChange={e => onChange(e.target.value)} />
     </Labelled>
   )

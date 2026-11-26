@@ -33,6 +33,8 @@ public final class StubMcpServer implements AutoCloseable {
    */
   public volatile String kiteShares;
   public volatile String kiteFunds = "[]";
+  /** When set, the server answers as a mail server (Gmail's tools) with this one raw message. */
+  public volatile String mailRaw;
 
   public StubMcpServer() {
     try {
@@ -119,6 +121,14 @@ public final class StubMcpServer implements AutoCloseable {
       }
       case "tools/list" -> {
         var tools = result.putArray("tools");
+        if (mailRaw != null) {
+          ObjectNode q = Json.obj();
+          q.putObject("query").put("type", "string");
+          tools.add(tool("search_threads", "Searches threads.", q));
+          tools.add(tool("get_thread", "Gets a thread.", Json.obj()));
+          tools.add(tool("trash_thread", "Moves a thread to the trash.", Json.obj()));
+          break;
+        }
         tools.add(tool("login", "Log in to Kite. Returns a link to open.", Json.obj()));
         tools.add(tool("get_holdings", "Your holdings.", Json.obj()));
         ObjectNode order = Json.obj();
@@ -131,6 +141,13 @@ public final class StubMcpServer implements AutoCloseable {
         JsonNode params = request.path("params");
         calls.add(params.path("name").asText() + " " + params.path("arguments"));
         String name = params.path("name").asText();
+        if (mailRaw != null) {
+          String text = name.equals("search_threads") ? "{\"threads\":[{\"id\":\"thread-1\",\"snippet\":\"Your statement\"}]}"
+              : Json.obj().put("id", "thread-1").set("messages", Json.mapper().createArrayNode()
+                  .add(Json.obj().put("id", "message-1").put("raw", mailRaw))).toString();
+          result.putArray("content").addObject().put("type", "text").put("text", text);
+          break;
+        }
         if (kiteShares != null && name.equals("place_order")) {
           result.putArray("content").addObject().put("type", "text").put("text", "{\"order_id\":\"151220000000000\"}");
           break;

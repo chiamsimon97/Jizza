@@ -7,6 +7,7 @@ import com.jizza.platform.usecase.finance.ledger.EarmarkService;
 import com.jizza.platform.usecase.finance.market.PriceService;
 import com.jizza.platform.usecase.finance.review.AlertService;
 import com.jizza.platform.usecase.finance.sync.BrokerSyncService;
+import com.jizza.platform.usecase.finance.sync.MailPullService;
 import java.util.UUID;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -34,9 +35,11 @@ public class FinanceJobs {
   private final FinHealthUseCase health;
   private final GoalCheckService goalChecks;
   private final BrokerSyncService sync;
+  private final MailPullService mail;
 
   public FinanceJobs(FinanceRecords records, AlertService alerts, PriceService prices, EarmarkService earmarks,
-                     FinHealthUseCase health, GoalCheckService goalChecks, BrokerSyncService sync) {
+                     FinHealthUseCase health, GoalCheckService goalChecks, BrokerSyncService sync,
+                     MailPullService mail) {
     this.records = records;
     this.alerts = alerts;
     this.prices = prices;
@@ -44,6 +47,7 @@ public class FinanceJobs {
     this.health = health;
     this.goalChecks = goalChecks;
     this.sync = sync;
+    this.mail = mail;
   }
 
   /**
@@ -65,6 +69,23 @@ public class FinanceJobs {
       }
     }
     log.info("Broker sync: {} users, {} batches to review", users, toReview);
+  }
+
+  /** Statements in the mailbox (part B): each new one waits for review; nothing is saved on its own. */
+  @Scheduled(cron = "0 0 7 * * *", zone = "Asia/Kolkata")
+  @SchedulerLock(name = "jizza-fin-mail", lockAtMostFor = "PT1H", lockAtLeastFor = "PT1M")
+  public void mailPull() {
+    int users = 0;
+    int found = 0;
+    for (UUID owner : records.ownersWithProfile()) {
+      try {
+        found += mail.checkAll(owner);
+        users++;
+      } catch (RuntimeException e) {
+        log.warn("Mail check failed for user {}: {}", owner, e.getClass().getSimpleName());
+      }
+    }
+    log.info("Mail check: {} users, {} statements to review", users, found);
   }
 
   @Scheduled(cron = "0 30 23 * * *", zone = "Asia/Kolkata")

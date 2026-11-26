@@ -89,12 +89,27 @@ public class ImportService {
 
   @Transactional
   public ObjectNode upload(UUID caller, Upload u) {
-    UUID owner = scopes.own(caller).ownerUserId();
+    return upload(scopes.own(caller).ownerUserId(), caller, u, null);
+  }
+
+  /**
+   * A statement Kai found in the person's email (part B). Returns empty when this file is already
+   * here, waiting for review or saved, so checking the mailbox again changes nothing.
+   */
+  @Transactional
+  public java.util.Optional<ObjectNode> fromMail(UUID owner, Upload u, String sourceLabel) {
+    if (u.bytes() == null || u.bytes().length == 0) return java.util.Optional.empty();
+    String hash = Parsing.sha256(u.bytes());
+    boolean have = records.list("fin_import_batch", owner, Map.of("contentHash", hash)).stream()
+        .map(b -> b.path("status").asText())
+        .anyMatch(st -> st.equals("committed") || st.equals("parsed") || st.equals("needs_review"));
+    if (have) return java.util.Optional.empty();
+    return java.util.Optional.of(upload(owner, null, u, sourceLabel));
+  }
+
+  private ObjectNode upload(UUID owner, UUID caller, Upload u, String source) {
     String kind = u.kind() == null ? "" : u.kind();
     if (!KINDS.contains(kind)) throw new ValidationException("Choose what kind of file this is.");
-    if (kind.equals("bank_pdf")) {
-      throw new ValidationException("Bank PDFs can't be read yet. Download the statement as CSV (or Excel saved as CSV) instead.");
-    }
     if (u.bytes() == null || u.bytes().length == 0) throw new ValidationException("The file is empty.");
 
     ObjectNode account = null;
@@ -108,9 +123,9 @@ public class ImportService {
       account = records.get("fin_account", owner, u.accountId())
           .orElseThrow(() -> new NotFoundException("Account", u.accountId()));
       String accountKind = account.path("kind").asText();
-      boolean fits = kind.equals("bank_csv") ? BANK_ACCOUNTS.contains(accountKind) : BROKER_ACCOUNTS.contains(accountKind);
+      boolean fits = isBank(kind) ? BANK_ACCOUNTS.contains(accountKind) : BROKER_ACCOUNTS.contains(accountKind);
       if (!fits) {
-        throw new ValidationException(kind.equals("bank_csv")
+        throw new ValidationException(isBank(kind)
             ? "A bank statement goes with a bank, card or wallet account."
             : "A broker file goes with a demat or broker account.");
       }
@@ -133,6 +148,7 @@ public class ImportService {
     Statement st = parse(owner, kind, account, u);
     ObjectNode stats = preview(owner, kind, account, personId, st);
     stats.put("fileName", Parsing.clip(u.filename() == null ? "statement" : u.filename(), 120));
+    if (source != null) stats.put("source", Parsing.clip(source, 80));
     UUID fileId = files.store(owner, u.filename(), u.contentType(), u.bytes());
 
     boolean sure = st.columns() == null || st.columns().sure();
@@ -147,7 +163,8 @@ public class ImportService {
     if (!sure) batch.put("error", "Kai couldn't tell which column is which. Choose the columns to go on.");
     batch.set("stats", stats);
     ObjectNode saved = records.insert("fin_import_batch", owner, batch);
-    audit.record(owner, ActorType.USER, caller, "finance.import.parsed", saved.path("id").asText(),
+    audit.record(owner, caller == null ? ActorType.SYSTEM : ActorType.USER, caller,
+        caller == null ? "finance.import.mailed" : "finance.import.parsed", saved.path("id").asText(),
         Json.obj().put("kind", kind));
     return saved;
   }
@@ -213,10 +230,16 @@ public class ImportService {
     return new Synced(saved, true, st.holdings().size());
   }
 
+  /** A bank statement, as CSV or as the PDF the bank mails. */
+  static boolean isBank(String kind) {
+    return "bank_csv".equals(kind) || "bank_pdf".equals(kind);
+  }
+
   private Statement parse(UUID owner, String kind, ObjectNode account, Upload u) {
     try {
       return switch (kind) {
         case "bank_csv" -> BankCsvImporter.parse(u.bytes(), u.mapping(), remembered(owner, account), MAX_ROWS);
+        case "bank_pdf" -> BankPdfImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
         case "cas_pdf" -> CasImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
         case "broker_holdings" -> BrokerFileImporter.holdings(u.bytes(), LocalDate.now(), MAX_ROWS);
         case "broker_tradebook" -> BrokerFileImporter.tradebook(u.bytes(), MAX_ROWS);
@@ -247,8 +270,8 @@ public class ImportService {
       n.put("accountId", existing);
     }
 
-    Categoriser cat = kind.equals("bank_csv") ? categoriser(owner) : null;
-    Map<UUID, String> buckets = kind.equals("bank_csv") ? buckets(owner) : Map.of();
+    Categoriser cat = isBank(kind) ? categoriser(owner) : null;
+    Map<UUID, String> buckets = isBank(kind) ? buckets(owner) : Map.of();
     Map<String, Set<String>> known = new HashMap<>();
     Map<String, Integer> seen = new HashMap<>();
     ArrayNode rows = stats.putArray("rows");
@@ -449,7 +472,7 @@ public class ImportService {
         rule(owner, rows.get(i).path("description").asText(), chosen.get(i));
       }
     }
-    Categoriser cat = kind.equals("bank_csv") && choices != null && choices.always() != null && !choices.always().isEmpty()
+    Categoriser cat = isBank(kind) && choices != null && choices.always() != null && !choices.always().isEmpty()
         ? categoriser(owner) : null;
 
     Map<String, Set<String>> known = new HashMap<>();
@@ -466,12 +489,12 @@ public class ImportService {
       if (category == null && cat != null) category = cat.categorise(r.path("description").asText(), r.path("direction").asText());
       if (category == null && r.hasNonNull("categoryId")) category = UUID.fromString(r.path("categoryId").asText());
       String txnKind = r.path("kind").asText();
-      if (kind.equals("bank_csv")) {
+      if (isBank(kind)) {
         String bucket = category == null ? null : buckets.get(category);
         if ("transfer".equals(bucket)) txnKind = "transfer";
         else if ("transfer".equals(txnKind)) txnKind = "in".equals(r.path("direction").asText()) ? "income" : "spend";
       }
-      boolean needsLook = kind.equals("bank_csv") ? category == null
+      boolean needsLook = isBank(kind) ? category == null
           : r.path("needsLook").asBoolean() && !chosen.containsKey(i);
       ObjectNode t = Json.obj().put("accountId", accountId).put("personId", personId.toString())
           .put("importBatchId", id.toString()).put("txnDate", r.path("date").asText())
@@ -482,7 +505,7 @@ public class ImportService {
       if (r.hasNonNull("units")) t.put("units", r.path("units").decimalValue());
       if (r.hasNonNull("price")) t.put("price", r.path("price").decimalValue());
       ObjectNode savedTxn = records.insert("fin_transaction", owner, t);
-      if (r.hasNonNull("units") && r.get("units").decimalValue().signum() != 0 && !kind.equals("bank_csv")) {
+      if (r.hasNonNull("units") && r.get("units").decimalValue().signum() != 0 && !isBank(kind)) {
         unitRows.add(new Object[] {r, accountId, savedTxn.path("id").asText()});
       }
       imported++;

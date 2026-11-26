@@ -4,7 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
-  BuilderInput, BuilderView, GoalCheck, GoalInput, OrderInput, OrderPlaced, OrderPreview, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  BuilderInput, BuilderView, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, GoalCheck, GoalInput, OrderInput, OrderPlaced, OrderPreview, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
   AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
   ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
@@ -98,6 +98,15 @@ export const financeApi = {
   unlinkSource: (id: string) => api.delete<void>(`/api/finance/sources/${id}`),
   /** Reads the holdings now; a change comes back as a batch to review, never saved on its own. */
   syncSource: (id: string) => api.post<SyncResult>(`/api/finance/sources/${id}/sync`),
+  // ── Statements from email (part B) ──────────────────────────────────────────
+  mailSources: () => api.get<MailSourcesView>('/api/finance/mail-sources'),
+  linkMailSource: (body: MailSourceInput) => api.post<MailSource>('/api/finance/mail-sources', body),
+  /** A blank password keeps the saved one; the saved one is never sent back. */
+  changeMailSource: (id: string, body: { sender?: string; subject?: string; password?: string; enabled?: boolean }) =>
+    api.patch<MailSource>(`/api/finance/mail-sources/${id}`, body),
+  unlinkMailSource: (id: string) => api.delete<void>(`/api/finance/mail-sources/${id}`),
+  /** Looks for new statement mails now; each one found is a batch to review. */
+  checkMailSource: (id: string) => api.post<MailCheckResult>(`/api/finance/mail-sources/${id}/check`),
   // ── Orders the person places (part D) ───────────────────────────────────────
   prepareOrder: (body: OrderInput) => api.post<OrderPreview>('/api/finance/orders/prepare', body),
   /** Asks for the password every time; Kai never places an order on its own. */
