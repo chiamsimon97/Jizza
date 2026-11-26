@@ -17,9 +17,12 @@ record Statement(List<Txn> txns, List<Holding> holdings, List<Unreadable> unread
   record Txn(int line, LocalDate date, BigDecimal amount, String direction, String description,
              String kind, BigDecimal units, BigDecimal price, String ref, String group, boolean kindKnown) {}
 
-  /** A holding at the statement's date. {@code group} as for {@link Txn}. */
+  /**
+   * A holding at the statement's date. {@code group} as for {@link Txn}; {@code avgCost} is the
+   * broker's average buy price when the file has one.
+   */
   record Holding(String group, String name, String isin, String assetClass, String subCategory,
-                 BigDecimal units, BigDecimal value, LocalDate asOf) {}
+                 BigDecimal units, BigDecimal value, LocalDate asOf, BigDecimal avgCost) {}
 
   /** A line that looked like data but could not be read; it is listed and never imported. */
   record Unreadable(int line, String reason) {}

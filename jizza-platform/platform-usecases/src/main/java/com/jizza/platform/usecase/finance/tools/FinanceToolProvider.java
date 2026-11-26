@@ -53,14 +53,19 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   public static final String TAX = "finance_tax";
   public static final String OPEN_SCREEN = "finance_open_screen";
   public static final String UPDATE_ACTION = "finance_update_action";
+  public static final String HOLDINGS = "finance_holdings";
+  public static final String ALLOCATION = "finance_allocation";
+  public static final String EXPLAIN_VALUE = "finance_explain_value";
 
-  static final Map<String, ActionType> TYPES = Map.of(
-      OVERVIEW, ActionType.READ, CASH_FLOW, ActionType.READ, LOANS, ActionType.READ,
-      PROTECTION, ActionType.READ, GOALS, ActionType.READ, TAX, ActionType.READ,
-      OPEN_SCREEN, ActionType.DRAFT, UPDATE_ACTION, ActionType.UPDATE);
+  static final Map<String, ActionType> TYPES = Map.ofEntries(
+      Map.entry(OVERVIEW, ActionType.READ), Map.entry(CASH_FLOW, ActionType.READ), Map.entry(LOANS, ActionType.READ),
+      Map.entry(PROTECTION, ActionType.READ), Map.entry(GOALS, ActionType.READ), Map.entry(TAX, ActionType.READ),
+      Map.entry(HOLDINGS, ActionType.READ), Map.entry(ALLOCATION, ActionType.READ), Map.entry(EXPLAIN_VALUE, ActionType.READ),
+      Map.entry(OPEN_SCREEN, ActionType.DRAFT), Map.entry(UPDATE_ACTION, ActionType.UPDATE));
 
   static final List<String> SCREENS = List.of("home", "actions", "goals", "plan-builder", "cash-flow",
-      "loans", "protection", "tax", "net-worth", "people", "settings");
+      "loans", "protection", "tax", "net-worth", "people", "settings", "holdings", "allocation", "asset-tree",
+      "lists", "rules");
 
   private final AgentDirectory agents;
   private final ObjectProvider<FinHealthUseCase> health;
@@ -69,6 +74,9 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<FinProtectionUseCase> protection;
   private final ObjectProvider<FinGoalUseCase> goals;
   private final ObjectProvider<FinTaxUseCase> tax;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.ledger.HoldingsUseCase> holdings;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.tree.TreeService> trees;
+  private final ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -78,6 +86,9 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                              ObjectProvider<FinProtectionUseCase> protection,
                              ObjectProvider<FinGoalUseCase> goals,
                              ObjectProvider<FinTaxUseCase> tax,
+                             ObjectProvider<com.jizza.platform.usecase.finance.ledger.HoldingsUseCase> holdings,
+                             ObjectProvider<com.jizza.platform.usecase.finance.tree.TreeService> trees,
+                             ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules,
                              @Value("${jizza.finance.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.health = health;
@@ -86,6 +97,9 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     this.protection = protection;
     this.goals = goals;
     this.tax = tax;
+    this.holdings = holdings;
+    this.trees = trees;
+    this.rules = rules;
     this.enabled = enabled;
     ObjectNode scope = JsonSchemas.string("Whose data: \"me\" (the default) is you and the people you manage.");
     scope.putArray("enum").add("me");
@@ -108,6 +122,26 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
             JsonSchemas.object(props("scope", scope,
                 "personId", JsonSchemas.string("A person's id from the profile; leave out for the user")),
                 List.of()), false, false),
+        new ToolSpec(HOLDINGS, "The user's holdings: units, average cost, the latest dated price, value "
+            + "and gain per instrument, which goals each holding is earmarked to (and what is still "
+            + "Unassigned), and the holdings that need a look. Read only; earmarks are changed on "
+            + "screen by the user, never by Kai.",
+            JsonSchemas.object(props("scope", scope,
+                "goalId", JsonSchemas.string("Only the holdings earmarked to this goal (optional)")),
+                List.of()), false, false),
+        new ToolSpec(ALLOCATION, "One goal's target allocation against what it holds: per node its "
+            + "target, actual, band (the 5/25 rule unless a rule sets another) and whether it is "
+            + "above or below band. Without goalId, the whole picture by asset class.",
+            JsonSchemas.object(props("scope", scope,
+                "goalId", JsonSchemas.string("The goal's id from finance_goals (optional)")),
+                List.of()), false, false),
+        new ToolSpec(EXPLAIN_VALUE, "Where a rule value comes from for a holding (or a tree node) in a "
+            + "goal: each rule's effective value, the level it comes from, and any lock.",
+            JsonSchemas.object(props("scope", scope,
+                "goalId", JsonSchemas.string("The goal's id"),
+                "instrumentId", JsonSchemas.string("The holding's instrument id (optional)"),
+                "nodeId", JsonSchemas.string("A tree node's id (optional)")),
+                List.of("goalId")), false, false),
         new ToolSpec(OPEN_SCREEN, "Give the user a link card into a Portfolio view, such as the "
             + "action plan or the loans view. Changes nothing.",
             JsonSchemas.object(props("scope", scope, "screen", enumOf("The view to open", SCREENS)),
@@ -161,6 +195,9 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
         case GOALS -> ToolResult.ok(goals(user));
         case TAX -> ToolResult.ok(Json.toNode(tax.getObject().forPerson(user,
             args.hasNonNull("personId") ? args.get("personId").asText() : null)));
+        case HOLDINGS -> ToolResult.ok(holdings.getObject().list(user, null, uuid(args, "goalId")));
+        case ALLOCATION -> ToolResult.ok(Json.toNode(trees.getObject().allocation(user, uuid(args, "goalId"))));
+        case EXPLAIN_VALUE -> ToolResult.ok(explain(user, args));
         case OPEN_SCREEN -> ToolResult.ok(openScreen(kai.get(), args));
         case UPDATE_ACTION -> ToolResult.ok(updateAction(user, args));
         default -> ToolResult.error("Unknown finance tool " + call.name());
@@ -240,6 +277,33 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     out.put("debtFreeBy", plan.plan().debtFreeBy() == null ? null : plan.plan().debtFreeBy().toString());
     out.put("figuresNeedVerification", plan.figuresNeedVerification());
     return out;
+  }
+
+  private JsonNode explain(UUID user, JsonNode args) {
+    UUID goal = uuid(args, "goalId");
+    if (goal == null) throw new ValidationException("goalId is needed.");
+    var v = rules.getObject().view(user, goal, uuid(args, "instrumentId"), uuid(args, "nodeId"));
+    ObjectNode out = Json.obj().put("goal", v.goalName()).put("instrument", v.instrumentName());
+    ArrayNode chain = out.putArray("chain");
+    v.chain().forEach(c -> chain.add(c.path("name").asText()));
+    ArrayNode fields = out.putArray("rules");
+    for (var f : v.fields()) {
+      var e = f.effective();
+      ObjectNode x = fields.addObject().put("rule", f.label()).put("state", e.state()).put("from", e.sourceName())
+          .put("locked", e.locked());
+      if (e.value() != null) x.set("value", e.value());
+      if (e.lockedBy() != null) x.put("lockedBy", e.lockedBy());
+    }
+    return out;
+  }
+
+  private static UUID uuid(JsonNode args, String field) {
+    if (!args.hasNonNull(field) || args.get(field).asText().isBlank()) return null;
+    try {
+      return UUID.fromString(args.get(field).asText());
+    } catch (IllegalArgumentException e) {
+      throw new ValidationException(field + " must be an id.");
+    }
   }
 
   private JsonNode openScreen(AgentDto kai, JsonNode args) {

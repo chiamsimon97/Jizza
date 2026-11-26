@@ -83,7 +83,9 @@ final class BrokerFileImporter {
           continue;
         }
         String isin = isin(f.cell(row, "isin"));
-        out.add(new Holding(null, name, isin, assetClass(name), subCategory(name), qty.value(), worth, today));
+        Parsing.Amount avg = f.index().containsKey("avg") ? Parsing.amount(f.cell(row, "avg")) : null;
+        out.add(new Holding(null, name, isin, assetClass(name), subCategory(name), qty.value(), worth, today,
+            avg == null || avg.value().signum() <= 0 ? null : avg.value().abs()));
       } catch (NumberFormatException bad) {
         unreadable.add(new Unreadable(r + 1, "A figure Kai can't read"));
       }

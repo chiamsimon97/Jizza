@@ -131,6 +131,35 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     assertThat(committed.ok()).as(committed.body()).isTrue();
     owned.put("/api/finance/transactions/", owner.get("/api/finance/transactions").json().get(0).path("id").asText());
 
+    // Phase 2: a holding with its lot and earmark, a tree, a rule template and a list item.
+    var demat = owner.post("/api/finance/accounts", Map.of("kind", "demat", "nickname", "Owner's demat"));
+    assertThat(demat.ok()).as(demat.body()).isTrue();
+    owned.put("/api/finance/holdings/", demat.json().path("id").asText());
+    String isin = "INX" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase() + "1";
+    var instrument = owner.post("/api/finance/instruments", Map.of("name", "Owner's fund " + isin, "isin", isin,
+        "type", "mf", "assetClass", "equity"));
+    assertThat(instrument.ok()).as(instrument.body()).isTrue();
+    owned.put("/api/finance/instruments/", instrument.json().path("id").asText());
+    var bought = owner.post("/api/finance/holdings/purchases", Map.of("accountId", demat.json().path("id").asText(),
+        "instrumentId", instrument.json().path("id").asText(), "date", "2025-01-10", "units", 10, "pricePerUnit", 100));
+    assertThat(bought.ok()).as(bought.body()).isTrue();
+    var earmarked = owner.put("/api/finance/earmarks", Map.of("accountId", demat.json().path("id").asText(),
+        "instrumentId", instrument.json().path("id").asText(),
+        "split", List.of(Map.of("goalId", owned.get("/api/finance/goals/"), "units", 10))));
+    assertThat(earmarked.ok()).as(earmarked.body()).isTrue();
+    owned.put("/api/finance/tree/", owned.get("/api/finance/goals/"));
+    var rule = owner.put("/api/finance/rules", Map.of("level", "goal", "goalId", owned.get("/api/finance/goals/"),
+        "field", "stop_loss", "state", "set", "params", Map.of("kind", "fixed", "pct", 10)));
+    assertThat(rule.ok()).as(rule.body()).isTrue();
+    var template = owner.post("/api/finance/rule-templates", Map.of("name", "Owner's template", "level", "goal",
+        "goalId", owned.get("/api/finance/goals/")));
+    assertThat(template.ok()).as(template.body()).isTrue();
+    owned.put("/api/finance/rule-templates/", template.json().path("id").asText());
+    var item = owner.post("/api/finance/lists", Map.of("listType", "watch",
+        "instrumentId", instrument.json().path("id").asText()));
+    assertThat(item.ok()).as(item.body()).isTrue();
+    owned.put("/api/finance/lists/", item.json().path("id").asText());
+
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
 
@@ -186,6 +215,8 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
       if (e.getKey().equals("/api/finance/transactions/")) continue; // read through the list
+      if (java.util.Set.of("/api/finance/holdings/", "/api/finance/instruments/", "/api/finance/tree/",
+          "/api/finance/rule-templates/", "/api/finance/lists/").contains(e.getKey())) continue; // no single GET
       var still = owner.get(path);
       assertThat(still.ok()).as("owner still has %s: %s", path, still.body()).isTrue();
     }
@@ -248,6 +279,21 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var goal = other.post("/api/finance/goals", Map.of("type", "travel", "targetAmountToday", 1,
         "targetDate", "2030-01-01", "ownerPersonId", owned.get("/api/finance/people/")));
     assertThat(goal.ok()).as("goal for the owner's person: %s", goal.body()).isFalse();
+    var buy = other.post("/api/finance/holdings/purchases", Map.of("accountId", owned.get("/api/finance/holdings/"),
+        "instrumentId", owned.get("/api/finance/instruments/"), "date", "2025-01-10", "units", 1, "pricePerUnit", 1));
+    assertThat(buy.ok()).as("purchase into the owner's demat: %s", buy.body()).isFalse();
+    var sell = other.post("/api/finance/holdings/sales", Map.of("accountId", owned.get("/api/finance/holdings/"),
+        "instrumentId", owned.get("/api/finance/instruments/"), "date", "2025-02-10", "units", 1, "proceeds", 1));
+    assertThat(sell.ok()).as("sale from the owner's demat: %s", sell.body()).isFalse();
+    var mark = other.put("/api/finance/earmarks", Map.of("accountId", owned.get("/api/finance/holdings/"),
+        "instrumentId", owned.get("/api/finance/instruments/"), "split", List.of(Map.of("goalId",
+            owned.get("/api/finance/goals/"), "units", 10))));
+    assertThat(mark.ok()).as("earmarking the owner's holding: %s", mark.body()).isFalse();
+    var ruleOnGoal = other.put("/api/finance/rules", Map.of("level", "goal", "goalId", owned.get("/api/finance/goals/"),
+        "field", "stop_loss", "state", "off"));
+    assertThat(ruleOnGoal.ok()).as("rule on the owner's goal: %s", ruleOnGoal.body()).isFalse();
+    var fix = other.patch("/api/finance/instruments/" + owned.get("/api/finance/instruments/"), Map.of("capBucket", "small"));
+    assertThat(fix.ok()).as("changing the owner's instrument: %s", fix.body()).isFalse();
   }
 
   @Test
@@ -260,7 +306,9 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         "/api/finance/policies", "/api/finance/actions", "/api/finance/health",
         "/api/finance/income", "/api/finance/budget", "/api/finance/protection",
         "/api/finance/loans/plan", "/api/finance/net-worth", "/api/finance/quick-start",
-        "/api/finance/goals", "/api/finance/goal-library", "/api/finance/builder")) {
+        "/api/finance/goals", "/api/finance/goal-library", "/api/finance/builder", "/api/finance/holdings",
+        "/api/finance/allocation", "/api/finance/realized-gains", "/api/finance/lists",
+        "/api/finance/rule-templates", "/api/finance/rules/effective")) {
       String body = other.get(list).body();
       for (String id : owned.values()) {
         assertThat(body).as("%s shows the owner's %s", list, id).doesNotContain(id);

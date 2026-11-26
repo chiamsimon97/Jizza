@@ -37,7 +37,8 @@ class FinanceToolProviderTest {
     ObjectProvider<FinHealthUseCase> h = mock(ObjectProvider.class);
     when(h.getObject()).thenReturn(health);
     return new FinanceToolProvider(agents, h, mock(ObjectProvider.class), mock(ObjectProvider.class),
-        mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
+        mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
+        mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
   }
 
   @Test
@@ -45,7 +46,8 @@ class FinanceToolProviderTest {
     var p = provider(true);
     assertThat(p.toolsFor(kaiId)).extracting(t -> t.name()).containsExactly("finance_overview",
         "finance_cash_flow", "finance_loans", "finance_protection", "finance_goals", "finance_tax",
-        "finance_open_screen", "finance_update_action");
+        "finance_holdings", "finance_allocation", "finance_explain_value", "finance_open_screen",
+        "finance_update_action");
     assertThat(p.toolsFor(otherId)).isEmpty();
     assertThat(p.supports(otherId, "finance_overview")).isFalse();
     assertThat(provider(false).toolsFor(kaiId)).isEmpty();
