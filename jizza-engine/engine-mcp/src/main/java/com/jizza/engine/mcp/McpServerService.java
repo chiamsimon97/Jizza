@@ -133,7 +133,10 @@ public class McpServerService implements McpServers, StoredMcpServers {
     }
     if (s.redactArguments() != null) entity.setRedactArguments(s.redactArguments());
     if (s.oauthClientId() != null) {
-      entity.setOauthClientId(s.oauthClientId().isBlank() ? null : s.oauthClientId().strip());
+      String clientId = s.oauthClientId().isBlank() ? null : s.oauthClientId().strip();
+      // A client id typed in is the person's own: Jizza never re-registers over it.
+      if (!java.util.Objects.equals(clientId, entity.getOauthClientId())) entity.setOauthRegisteredRedirect(null);
+      entity.setOauthClientId(clientId);
     }
     if (s.oauthClientSecret() != null) {
       entity.setOauthClientSecret(s.oauthClientSecret().isBlank() ? null
