@@ -80,6 +80,37 @@ class McpOAuthTest {
   }
 
   @Test
+  void aClientRegisteredForAnotherReturnAddressIsRegisteredAgain() {
+    answer("GET", "https://mcp.notion.example/.well-known/oauth-protected-resource/mcp", 200, """
+        {"resource":"https://mcp.notion.example/mcp","authorization_servers":["https://auth.notion.example"]}""");
+    answer("GET", "https://auth.notion.example/.well-known/oauth-authorization-server", 200, """
+        {"authorization_endpoint":"https://auth.notion.example/authorize",
+         "token_endpoint":"https://auth.notion.example/token",
+         "registration_endpoint":"https://auth.notion.example/register"}""");
+    answer("POST", "https://auth.notion.example/register", 201, "{\"client_id\":\"jizza-new\"}");
+    server.setOauthAuthorizationUrl("https://auth.notion.example/authorize");
+    server.setOauthTokenUrl("https://auth.notion.example/token");
+    server.setOauthClientId("jizza-old");
+    server.setOauthRegisteredRedirect("http://localhost:8080/api/mcp/oauth/callback");
+
+    Map<String, String> params = query(oauth.start(server, UUID.randomUUID()));
+
+    assertThat(params).containsEntry("client_id", "jizza-new")
+        .containsEntry("redirect_uri", "https://jizza.example.app/api/mcp/oauth/callback");
+    assertThat(server.getOauthRegisteredRedirect()).isEqualTo("https://jizza.example.app/api/mcp/oauth/callback");
+  }
+
+  @Test
+  void aClientIdSomeoneTypedIsKept() {
+    server.setOauthAuthorizationUrl("https://auth.notion.example/authorize");
+    server.setOauthTokenUrl("https://auth.notion.example/token");
+    server.setOauthClientId("typed-in");
+
+    assertThat(query(oauth.start(server, UUID.randomUUID()))).containsEntry("client_id", "typed-in");
+    assertThat(server.getOauthRegisteredRedirect()).isNull();
+  }
+
+  @Test
   void aServerWithNoMetadataGetsTheDefaultPaths() {
     answer("POST", "https://mcp.notion.example/register", 201, "{\"client_id\":\"c\"}");
     URI url = oauth.start(server, UUID.randomUUID());

@@ -78,6 +78,10 @@ public class McpServerEntity {
 
   private byte[] oauthClientSecret;
 
+  /** The return address Jizza registered its own client with; null for a client id someone typed. */
+  @Column(columnDefinition = "text")
+  private String oauthRegisteredRedirect;
+
   @Column(columnDefinition = "text")
   private String oauthAuthorizationUrl;
 
@@ -158,6 +162,8 @@ public class McpServerEntity {
   public void setOauthClientId(String v) { this.oauthClientId = v; }
   public byte[] getOauthClientSecret() { return oauthClientSecret; }
   public void setOauthClientSecret(byte[] v) { this.oauthClientSecret = v; }
+  public String getOauthRegisteredRedirect() { return oauthRegisteredRedirect; }
+  public void setOauthRegisteredRedirect(String v) { this.oauthRegisteredRedirect = v; }
   public String getOauthAuthorizationUrl() { return oauthAuthorizationUrl; }
   public void setOauthAuthorizationUrl(String v) { this.oauthAuthorizationUrl = v; }
   public String getOauthTokenUrl() { return oauthTokenUrl; }

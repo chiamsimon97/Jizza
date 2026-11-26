@@ -58,6 +58,14 @@ public class McpOAuth {
 
   /** Discovers and registers when needed, records a fresh state, and returns where to sign in. */
   public URI start(McpServerEntity server, UUID sessionId) {
+    // A client Jizza registered for another return address (the callback base URL changed, say a
+    // different port) would send the browser back to the old address: register again.
+    String registered = server.getOauthRegisteredRedirect();
+    if (registered != null && !registered.equals(redirectUri())) {
+      server.setOauthClientId(null);
+      server.setOauthClientSecret(null);
+      server.setOauthRegisteredRedirect(null);
+    }
     if (server.getOauthAuthorizationUrl() == null || server.getOauthTokenUrl() == null
         || server.getOauthClientId() == null) {
       String registration = discover(server);
@@ -218,6 +226,8 @@ public class McpOAuth {
           + "sign in again.");
     }
     server.setOauthClientId(response.json().path("client_id").asText());
+    server.setOauthRegisteredRedirect(redirectUri());
+    server.setOauthClientSecret(null);
     String secret = response.json().path("client_secret").asText(null);
     if (secret != null) server.setOauthClientSecret(encryption.encryptString(secret));
   }
