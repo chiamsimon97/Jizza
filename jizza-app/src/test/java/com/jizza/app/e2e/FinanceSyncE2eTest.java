@@ -125,4 +125,62 @@ class FinanceSyncE2eTest extends E2eSupport {
     assertThat(api.delete("/api/finance/sources/" + source).status()).isEqualTo(204);
     assertThat(ok(api.get("/api/finance/sources")).path("sources")).isEmpty();
   }
+
+  @Test
+  void anOrderIsPreparedWithItsTaxEffectAndPlacedOnlyWithThePassword() {
+    Map<String, Object> body = new HashMap<>();
+    body.put("name", "Kite");
+    body.put("url", kite.url());
+    body.put("authType", "NONE");
+    String serverId = ok(api.post("/api/mcp-servers", body)).path("id").asText();
+    String demat = ok(api.post("/api/finance/accounts", Map.of("kind", "demat", "provider", "Example Broker")))
+        .path("id").asText();
+    String source = ok(api.post("/api/finance/sources", Map.of("serverId", serverId, "accountId", demat))).path("id").asText();
+    ok(api.post("/api/mcp-servers/" + serverId + "/tools/login/test", Json.obj()));
+    String batchId = ok(api.post("/api/finance/sources/" + source + "/sync", Map.of())).path("batchId").asText();
+    ok(api.post("/api/finance/imports/" + batchId + "/commit", Map.of()));
+
+    JsonNode holdings = ok(api.get("/api/finance/holdings"));
+    String share = null;
+    String fund = null;
+    for (JsonNode h : holdings.path("rows")) {
+      if ("INE000A01011".equals(h.path("isin").asText())) share = h.path("instrumentId").asText();
+      if ("INF000X01AA1".equals(h.path("isin").asText())) fund = h.path("instrumentId").asText();
+    }
+    assertThat(share).as(holdings.toString()).isNotNull();
+
+    Map<String, Object> sell = new HashMap<>(Map.of("accountId", demat, "instrumentId", share, "side", "sell",
+        "quantity", 5, "orderType", "market"));
+    JsonNode preview = ok(api.post("/api/finance/orders/prepare", sell));
+    assertThat(preview.path("symbol").asText()).isEqualTo("EXAMPLECO");
+    assertThat(preview.path("held").decimalValue()).isEqualByComparingTo("12");
+    assertThat(preview.path("lots")).isNotEmpty();
+    assertThat(preview.path("canPlace").asBoolean()).as(preview.toString()).isTrue();
+    assertThat(preview.path("placeVia").asText()).isEqualTo("Kite");
+    sell.put("quantity", 50);
+    assertThat(api.post("/api/finance/orders/prepare", sell).status()).isEqualTo(400);
+    sell.put("quantity", 5);
+
+    if (fund != null) {
+      JsonNode mf = ok(api.post("/api/finance/orders/prepare", Map.of("accountId", demat, "instrumentId", fund,
+          "side", "buy", "quantity", 1, "orderType", "market")));
+      assertThat(mf.path("canPlace").asBoolean()).isFalse();
+    }
+
+    // No password, or a wrong one: nothing reaches the broker.
+    assertThat(api.post("/api/finance/orders/place", sell).status()).isEqualTo(400);
+    sell.put("password", "wrong-password-1");
+    assertThat(api.post("/api/finance/orders/place", sell).ok()).isFalse();
+    assertThat(kite.calls).noneMatch(c -> c.startsWith("place_order"));
+
+    sell.put("password", PASSWORD);
+    JsonNode placed = ok(api.post("/api/finance/orders/place", sell));
+    assertThat(placed.path("status").asText()).isEqualTo("sent");
+    assertThat(placed.path("brokerOrderId").asText()).isEqualTo("151220000000000");
+    assertThat(kite.calls).anyMatch(c -> c.startsWith("place_order") && c.contains("\"transaction_type\":\"SELL\"")
+        && c.contains("\"tradingsymbol\":\"EXAMPLECO\"") && c.contains("\"quantity\":5"));
+    // The lots wait for the next sync.
+    assertThat(ok(api.post("/api/finance/orders/prepare", sell)).path("held").decimalValue()).isEqualByComparingTo("12");
+    assertThat(ok(api.get("/api/finance/orders")).get(0).path("status").asText()).isEqualTo("sent");
+  }
 }

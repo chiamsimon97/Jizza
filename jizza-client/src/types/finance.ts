@@ -796,6 +796,49 @@ export interface SourcesView { sources: SyncSource[]; servers: SyncCandidate[] }
 
 export interface SyncResult { status: SyncStatus; batchId: string | null; holdings: number; message: string }
 
+export type OrderSide = 'buy' | 'sell'
+export type OrderType = 'market' | 'limit'
+
+export interface OrderInput {
+  accountId: string
+  instrumentId: string
+  side: OrderSide
+  quantity: number
+  orderType: OrderType
+  limitPrice?: number | null
+  goalId?: string | null
+}
+
+/** A lot a sale would use, in sale order, with its gain at today's price. */
+export interface OrderLotUse { acquiredOn: string | null; quantity: number; cost: number | null; gain: number | null; term: 'st' | 'lt' | null }
+
+export interface OrderPreview {
+  accountId: string
+  instrumentId: string
+  instrumentName: string
+  symbol: string | null
+  exchange: string
+  side: OrderSide
+  quantity: number
+  orderType: OrderType
+  limitPrice: number | null
+  price: number | null
+  priceDate: string | null
+  estimate: number | null
+  held: number
+  lots: OrderLotUse[]
+  shortTermGain: number | null
+  longTermGain: number | null
+  unknownTermGain: number | null
+  /** A connected broker can place it; otherwise whyNot says why. */
+  canPlace: boolean
+  placeVia: string | null
+  whyNot: string | null
+  brokerUrl: string
+}
+
+export interface OrderPlaced { orderId: string; status: 'sent' | 'rejected'; brokerOrderId: string | null; message: string }
+
 export interface ImportBatch {
   id: string
   personId: string

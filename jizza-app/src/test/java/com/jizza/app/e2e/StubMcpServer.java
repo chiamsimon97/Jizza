@@ -131,6 +131,10 @@ public final class StubMcpServer implements AutoCloseable {
         JsonNode params = request.path("params");
         calls.add(params.path("name").asText() + " " + params.path("arguments"));
         String name = params.path("name").asText();
+        if (kiteShares != null && name.equals("place_order")) {
+          result.putArray("content").addObject().put("type", "text").put("text", "{\"order_id\":\"151220000000000\"}");
+          break;
+        }
         if (kiteShares != null && (name.equals("get_holdings") || name.equals("get_mf_holdings"))) {
           result.putArray("content").addObject().put("type", "text")
               .put("text", name.equals("get_holdings") ? kiteShares : kiteFunds);

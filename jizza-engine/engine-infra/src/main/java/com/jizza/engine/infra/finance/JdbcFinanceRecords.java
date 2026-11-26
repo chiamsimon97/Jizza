@@ -42,7 +42,7 @@ public class JdbcFinanceRecords implements FinanceRecords {
       "fin_holding_lot", "fin_earmark", "fin_earmark_event", "fin_realized_gain", "fin_node",
       "fin_rule", "fin_rule_template", "fin_list_item",
       // Connected sources
-      "fin_sync_source");
+      "fin_sync_source", "fin_order");
   static final Set<String> TABLES = Set.copyOf(TABLES_IN_ORDER);
 
   private static final Set<String> NOT_WRITABLE = Set.of("id", "user_id", "created_at", "updated_at");

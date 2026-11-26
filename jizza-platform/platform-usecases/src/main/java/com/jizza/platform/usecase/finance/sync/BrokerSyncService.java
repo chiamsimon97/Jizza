@@ -225,6 +225,49 @@ public class BrokerSyncService {
         "New holdings from " + serverName + " are ready to review.", detail, null, null, null, null));
   }
 
+  // ── Orders (part D) ─────────────────────────────────────────────────────────
+
+  /**
+   * Where an order for this account can go: the connected server linked to it that offers order
+   * placing and is signed in. {@code serverId} is null when there is none, and {@code reason} says
+   * why in words for the screen. Zerodha's hosted Kite server offers no order placing.
+   */
+  public record OrderRoute(UUID serverId, String serverName, String tool, String reason) {
+    public boolean available() { return serverId != null; }
+  }
+
+  public OrderRoute orderRoute(UUID owner, UUID accountId) {
+    List<McpServerDto> mine = ownServers(owner);
+    String reason = "No broker is connected to this account. Link one under Connect.";
+    for (ObjectNode row : records.list("fin_sync_source", owner, Map.of("accountId", accountId.toString()))) {
+      UUID serverId = UUID.fromString(row.path("serverId").asText());
+      McpServerDto s = mine.stream().filter(x -> x.id().equals(serverId)).findFirst().orElse(null);
+      if (s == null || !s.enabled()) continue;
+      Optional<McpToolDto> place = tool(s, "place_order");
+      if (place.isEmpty()) {
+        reason = s.name() + " doesn't offer order placing here. Zerodha's hosted server only reads; placing needs your own Kite Connect key.";
+        continue;
+      }
+      if (!signedIn(s)) {
+        reason = "Sign in to " + s.name() + " on Connectors first.";
+        continue;
+      }
+      return new OrderRoute(s.id(), s.name(), place.get().name(), null);
+    }
+    return new OrderRoute(null, null, null, reason);
+  }
+
+  /** Sends one order the person confirmed; only {@code place_order}, never another tool. */
+  public ToolResult placeOrder(UUID owner, OrderRoute route, ObjectNode arguments) {
+    if (route == null || !route.available() || !"place_order".equals(route.tool())) {
+      throw new ValidationException("No connected broker can place this order.");
+    }
+    if (ownServers(owner).stream().noneMatch(s -> s.id().equals(route.serverId()))) {
+      throw new NotFoundException("Connected server", route.serverId());
+    }
+    return servers.call(route.serverId(), route.tool(), arguments);
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   /** The person's own servers in their personal workspace; never someone else's broker. */

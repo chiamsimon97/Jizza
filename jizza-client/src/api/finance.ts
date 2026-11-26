@@ -4,7 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
-  BuilderInput, BuilderView, GoalCheck, GoalInput, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  BuilderInput, BuilderView, GoalCheck, GoalInput, OrderInput, OrderPlaced, OrderPreview, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
   AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
   ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
@@ -98,6 +98,10 @@ export const financeApi = {
   unlinkSource: (id: string) => api.delete<void>(`/api/finance/sources/${id}`),
   /** Reads the holdings now; a change comes back as a batch to review, never saved on its own. */
   syncSource: (id: string) => api.post<SyncResult>(`/api/finance/sources/${id}/sync`),
+  // ── Orders the person places (part D) ───────────────────────────────────────
+  prepareOrder: (body: OrderInput) => api.post<OrderPreview>('/api/finance/orders/prepare', body),
+  /** Asks for the password every time; Kai never places an order on its own. */
+  placeOrder: (body: OrderInput & { password: string }) => api.post<OrderPlaced>('/api/finance/orders/place', body),
   achieveGoal: (id: string) => api.post<GoalView>(`/api/finance/goals/${id}/achieve`),
   /** Does each goal meet its target: worked out now, stores nothing. */
   goalChecks: () => api.get<GoalCheck[]>('/api/finance/goal-checks'),
