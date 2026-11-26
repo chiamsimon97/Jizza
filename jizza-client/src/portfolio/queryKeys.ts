@@ -22,6 +22,7 @@ export const financeKeys = {
   goalLibrary: ['finance', 'goal-library'] as const,
   goals: ['finance', 'goals'] as const,
   goal: (id: string) => ['finance', 'goals', id] as const,
+  goalChecks: (sample = false) => ['finance', 'goal-checks', sample ? 'sample' : 'mine'] as const,
   builder: ['finance', 'builder'] as const,
   risk: (personId: string) => ['finance', 'risk', personId] as const,
   tax: (personId: string, year: string) => ['finance', 'tax', personId, year] as const,

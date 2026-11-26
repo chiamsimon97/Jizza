@@ -43,6 +43,12 @@ export function useAssets() {
   return useQuery({ queryKey: financeKeys.assets(sample), queryFn: sample ? async () => SAMPLE_ASSETS : financeApi.assets })
 }
 
+/** Does each goal meet its target. The sample household has none, so sample mode asks nothing. */
+export function useGoalChecks() {
+  const sample = useSample()
+  return useQuery({ queryKey: financeKeys.goalChecks(sample), queryFn: financeApi.goalChecks, enabled: !sample })
+}
+
 export function useLoans() {
   const sample = useSample()
   return useQuery({ queryKey: financeKeys.loans(sample), queryFn: sample ? async () => SAMPLE_LOANS : financeApi.loans })

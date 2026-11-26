@@ -4,7 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
-  BuilderInput, BuilderView, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  BuilderInput, BuilderView, GoalCheck, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
   AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
   ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
@@ -92,6 +92,10 @@ export const financeApi = {
   addGoal: (body: GoalInput) => api.post<GoalView>('/api/finance/goals', body),
   updateGoal: (id: string, body: GoalInput) => api.patch<GoalView>(`/api/finance/goals/${id}`, body),
   achieveGoal: (id: string) => api.post<GoalView>(`/api/finance/goals/${id}/achieve`),
+  /** Does each goal meet its target: worked out now, stores nothing. */
+  goalChecks: () => api.get<GoalCheck[]>('/api/finance/goal-checks'),
+  /** Runs the goal checks and keeps the result, as the nightly job does. */
+  runGoalChecks: () => api.post<GoalCheck[]>('/api/finance/goal-checks/run'),
 
   builder: () => api.get<BuilderView>('/api/finance/builder'),
   /** Keeps the inputs as a draft without writing the plan lines. */

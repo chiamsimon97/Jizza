@@ -1,6 +1,7 @@
 package com.jizza.platform.api.jobs;
 
 import com.jizza.engine.api.finance.FinanceRecords;
+import com.jizza.platform.usecase.finance.goal.GoalCheckService;
 import com.jizza.platform.usecase.finance.health.FinHealthUseCase;
 import com.jizza.platform.usecase.finance.ledger.EarmarkService;
 import com.jizza.platform.usecase.finance.market.PriceService;
@@ -15,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Kai Portfolio's jobs (5.15), in India time, one user at a time, each safe to run twice: fund
- * prices from AMFI at 23:30 (shared, not per user), the nightly earmark check and health check at
+ * prices from AMFI at 23:30 (shared, not per user), the nightly earmark check, health check and goal check at
  * 00:30, the daily alerts at 08:00 and the monthly snapshot, health check and review on the 1st
  * at 06:00. One user's failure never stops the others, and the log names only the user id.
  */
@@ -30,14 +31,16 @@ public class FinanceJobs {
   private final PriceService prices;
   private final EarmarkService earmarks;
   private final FinHealthUseCase health;
+  private final GoalCheckService goalChecks;
 
   public FinanceJobs(FinanceRecords records, AlertService alerts, PriceService prices, EarmarkService earmarks,
-                     FinHealthUseCase health) {
+                     FinHealthUseCase health, GoalCheckService goalChecks) {
     this.records = records;
     this.alerts = alerts;
     this.prices = prices;
     this.earmarks = earmarks;
     this.health = health;
+    this.goalChecks = goalChecks;
   }
 
   @Scheduled(cron = "0 30 23 * * *", zone = "Asia/Kolkata")
@@ -51,7 +54,7 @@ public class FinanceJobs {
     }
   }
 
-  /** Every holding's earmarks brought back to its lots (units sold outside Kai), then the health check. */
+  /** Every holding's earmarks brought back to its lots (units sold outside Kai), then the health and goal checks. */
   @Scheduled(cron = "0 30 0 * * *", zone = "Asia/Kolkata")
   @SchedulerLock(name = "jizza-fin-nightly", lockAtMostFor = "PT2H", lockAtLeastFor = "PT1M")
   public void nightly() {
@@ -61,6 +64,7 @@ public class FinanceJobs {
       try {
         changed += earmarks.reconcileAll(owner);
         health.runFor(owner);
+        goalChecks.runFor(owner);
         users++;
       } catch (RuntimeException e) {
         log.warn("Finance nightly run failed for user {}: {}", owner, e.getClass().getSimpleName());

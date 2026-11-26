@@ -57,12 +57,17 @@ public final class GoalMath {
 
   public static Funding funding(JsonNode goal, Map<String, Person> people, Map<String, String> latest,
                                 String selfId, LocalDate asOf, PlanConfig cfg) {
+    return FundingStatusService.fund(input(goal, people, latest, selfId, asOf), asOf, cfg);
+  }
+
+  /** The goal as the funding and simulation engines take it. */
+  public static GoalInput input(JsonNode goal, Map<String, Person> people, Map<String, String> latest,
+                                String selfId, LocalDate asOf) {
     RiskUsed risk = riskFor(goal, latest, selfId);
-    GoalInput in = new GoalInput(LocalDate.parse(goal.path("targetDate").asText()),
+    return new GoalInput(LocalDate.parse(goal.path("targetDate").asText()),
         HouseholdLoader.dec(goal, "targetAmountToday"), goal.path("inflationKey").asText("cpi"),
         HouseholdLoader.dec(goal, "currentValue"), HouseholdLoader.dec(goal, "monthlyContribution"),
         HouseholdLoader.dec(goal, "stepupPct"), ageFor(goal, people, selfId, asOf), risk.profile());
-    return FundingStatusService.fund(in, asOf, cfg);
   }
 
   /** Weighted funded % of the live Important goals; null when there are none. */

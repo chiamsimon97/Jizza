@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarClock, ChevronRight, Coins, Compass, FileWarning, Gauge, ListChecks, PartyPopper, PiggyBank,
-  RefreshCw, ShieldAlert, Sparkles, UserX, Wallet, Zap, type LucideIcon,
+  RefreshCw, ShieldAlert, Sparkles, Target, UserX, Wallet, Zap, type LucideIcon,
 } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { financeApi } from '@/api/finance'
@@ -17,7 +17,8 @@ import { stagger, useMounted } from '../components/motion'
 import { SkeletonRows } from '../components/SkeletonRows'
 import { Sparkline } from '../components/Sparkline'
 import { POLICY_KINDS } from '../labels'
-import { errorText, useCashFlow, useHealth, useNetWorth, usePolicies, useSample } from '../data'
+import { errorText, useCashFlow, useGoalChecks, useHealth, useNetWorth, usePolicies, useSample } from '../data'
+import { VERDICTS, VerdictPill } from '../components/GoalVerdict'
 import { financeKeys } from '../queryKeys'
 import { QUICK_START_STEPS } from './QuickStart'
 import { SetupCard, type SetupStep } from './SetupGuide'
@@ -39,18 +40,20 @@ export function scoreSummary(h: HealthView): string {
  * Money Health home (7.14): the score with its trend, six check tiles, net worth and surplus,
  * the top three actions, and what needs attention. Before Quick start it is the way in.
  */
-export function Home({ profile, onOpen, onAnswer, onSample, onSetupStep = () => onOpen('setup') }: {
+export function Home({ profile, onOpen, onAnswer, onSample, onSetupStep = () => onOpen('setup'), onOpenGoal = () => onOpen('goals') }: {
   profile: FinProfileView
   onOpen: (view: string) => void
   onAnswer: (step: QuickStartStep) => void
   onSample: () => void
   /** Opens a setup guide step with the guide bar. */
   onSetupStep?: (step: SetupStep) => void
+  /** Opens one goal's page. */
+  onOpenGoal?: (id: string) => void
 }) {
   const sample = useSample()
   const fresh = !sample && profile.setupProgress.quickStart === 'not_started'
   if (fresh) return <FirstRun profile={profile} onOpen={onOpen} onSample={onSample} />
-  return <MoneyHealth profile={profile} onOpen={onOpen} onAnswer={onAnswer} onSetupStep={onSetupStep} />
+  return <MoneyHealth profile={profile} onOpen={onOpen} onAnswer={onAnswer} onSetupStep={onSetupStep} onOpenGoal={onOpenGoal} />
 }
 
 const FIRST_RUN_POINTS: { icon: LucideIcon; title: string; text: string; tone: string }[] = [
@@ -115,11 +118,12 @@ const HERO_TINT = {
   none: 'from-gray-50 via-white to-gray-50 dark:from-gray-800/40 dark:via-gray-900 dark:to-gray-900',
 }
 
-function MoneyHealth({ profile, onOpen, onAnswer, onSetupStep }: {
+function MoneyHealth({ profile, onOpen, onAnswer, onSetupStep, onOpenGoal }: {
   profile: FinProfileView
   onOpen: (view: string) => void
   onAnswer: (step: QuickStartStep) => void
   onSetupStep: (step: SetupStep) => void
+  onOpenGoal: (id: string) => void
 }) {
   const qc = useQueryClient()
   const sample = useSample()
@@ -253,6 +257,7 @@ function MoneyHealth({ profile, onOpen, onAnswer, onSetupStep }: {
 
         <div className="flex min-w-0 flex-col gap-4">
           {!sample && <div className="motion-safe:animate-fade-in-up"><SetupCard profile={profile} onGuide={() => onOpen('setup')} onGo={onSetupStep} /></div>}
+          {!sample && <div className="motion-safe:animate-fade-in-up" style={stagger(1, 90)}><GoalChecksCard onOpen={onOpen} onOpenGoal={onOpenGoal} /></div>}
           <div className="motion-safe:animate-fade-in-up" style={stagger(1, 90)}><NetWorthCard onOpen={onOpen} /></div>
           <div className="motion-safe:animate-fade-in-up" style={stagger(2, 90)}><SurplusCard surplus={h.surplus} onOpen={onOpen} /></div>
           <div className="motion-safe:animate-fade-in-up" style={stagger(3, 90)}><NeedsAttention h={h} onOpen={onOpen} /></div>
@@ -410,6 +415,34 @@ function SurplusCard({ surplus, onOpen }: { surplus: number; onOpen: (view: stri
 }
 
 /** Unscored flags, renewals in the next 30 days, and figures nobody has verified. */
+/** Do the goals meet their targets: each goal's verdict and chance, worst first. */
+function GoalChecksCard({ onOpen, onOpenGoal }: { onOpen: (view: string) => void; onOpenGoal: (id: string) => void }) {
+  const { data } = useGoalChecks()
+  if (!data || !data.length) return null
+  const meeting = data.filter(c => c.verdict === 'on_track').length
+  const worst = data[0].verdict
+  return (
+    <Card title="Your goals" icon={Target} iconTone="bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200"
+      badge={<span className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${meeting === data.length ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{meeting} of {data.length} on track</span>}>
+      <ul className="-mx-2 flex flex-col" aria-label="Goal checks">
+        {data.slice(0, 5).map(c => (
+          <li key={c.goalId}>
+            <button type="button" onClick={() => onOpenGoal(c.goalId)}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800/60">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${VERDICTS[c.verdict].bar}`} aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{c.name}</span>
+              {c.successPct != null && <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">{Math.round(c.successPct)}%</span>}
+              <VerdictPill check={c} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {worst !== 'on_track' && worst !== 'not_enough_data' && <p className="text-xs text-gray-600 dark:text-gray-300"><span className="font-medium">{data[0].name}:</span> {data[0].fix}</p>}
+      <LinkOut onClick={() => onOpen('goals')}>See every goal</LinkOut>
+    </Card>
+  )
+}
+
 function NeedsAttention({ h, onOpen }: { h: HealthView; onOpen: (view: string) => void }) {
   const { data: policies } = usePolicies()
   const renewals = (policies ?? []).filter(p => p.renewalDate && daysUntil(p.renewalDate) >= 0 && daysUntil(p.renewalDate) <= 30)

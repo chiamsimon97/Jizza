@@ -477,6 +477,38 @@ export interface GoalFunding {
   nextBucket: Bucket | null
 }
 
+/** Does a goal meet its target (spec 5.6): the simulated chance against the bar for its priority. */
+export type GoalVerdict = 'on_track' | 'at_risk' | 'off_track' | 'not_enough_data'
+
+export interface GoalCheck {
+  goalId: string
+  name: string
+  priority: string
+  targetDate: string | null
+  verdict: GoalVerdict
+  /** Paths that reach the target, in percent. */
+  successPct: number | null
+  /** The bar for the goal's priority, in percent. */
+  requiredPct: number | null
+  fundedPct: number | null
+  currentValue: number
+  monthly: number
+  futureTarget: number | null
+  projected: number | null
+  p10: number | null
+  p50: number | null
+  shortfall: number | null
+  /** What more a month would close the gap; zero when none is needed. */
+  extraMonthly: number | null
+  requiredMonthly: number | null
+  partsOutsideBand: number
+  shortGoalShares: number
+  earmarked: boolean
+  headline: string
+  fix: string
+  previousVerdict: GoalVerdict | null
+}
+
 export interface GoalView {
   goal: FinGoal
   ownerName: string

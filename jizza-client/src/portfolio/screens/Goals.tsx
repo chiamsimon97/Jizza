@@ -4,12 +4,13 @@ import { ArrowLeft, Flag, Pencil, Plus, Trophy } from 'lucide-react'
 import { financeApi } from '@/api/finance'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import type { FinPerson, GoalStatus, GoalView } from '@/types/finance'
+import type { FinPerson, GoalCheck, GoalStatus, GoalVerdict, GoalView } from '@/types/finance'
+import { ChanceMeter, GoalCheckPanel, RunChecksButton, VERDICTS, VerdictPill } from '../components/GoalVerdict'
 import { formatDay } from '../components/AsOf'
 import { Money } from '../components/Money'
 import { LoadFailed, Meter, Panel, Pill, Row } from '../components/Panel'
 import { SkeletonRows } from '../components/SkeletonRows'
-import { errorText } from '../data'
+import { errorText, useGoalChecks } from '../data'
 import { BUCKETS, BUCKET_COLOURS, BUCKET_SHORT, GOAL_STATUS, GOAL_TIERS, INFLATION_KEYS, RISK_PROFILES } from '../labels'
 import { financeKeys } from '../queryKeys'
 
@@ -43,7 +44,9 @@ export function Goals({ person, onOpenGoal, onNew }: {
   onNew: () => void
 }) {
   const { data, isLoading, error, refetch } = useGoals()
+  const { data: checks } = useGoalChecks()
   const [showDone, setShowDone] = useState(false)
+  const checkOf = new Map((checks ?? []).map(c => [c.goalId, c]))
   if (isLoading) return <SkeletonRows rows={5} />
   if (error || !data) return <LoadFailed text="Could not load your goals." onRetry={() => refetch()} />
   const mine = data.filter(g => person === 'all' || g.goal.ownerPersonId === person)
@@ -62,9 +65,10 @@ export function Goals({ person, onOpenGoal, onNew }: {
         <span className="flex-1" />
         <Button size="sm" onClick={onNew}><Plus className="h-4 w-4" /> New goal</Button>
       </div>
+      {checks && checks.length > 0 && <CheckSummary checks={checks.filter(c => live.some(g => g.goal.id === c.goalId))} />}
       {live.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No live goals for this person.</p>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {live.map(g => <GoalCard key={g.goal.id} view={g} onOpen={() => onOpenGoal(g.goal.id)} />)}
+        {live.map(g => <GoalCard key={g.goal.id} view={g} check={checkOf.get(g.goal.id)} onOpen={() => onOpenGoal(g.goal.id)} />)}
       </div>
       {done.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -80,13 +84,35 @@ export function Goals({ person, onOpenGoal, onNew }: {
         </div>
       )}
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Funded % compares what you have and put in each month with the target grown by inflation. Until holdings are added, Kai assumes its default returns for each bucket.
+        The verdict compares the chance of reaching each target, over thousands of simulated markets that rise and fall, with the bar for its priority. Kai checks every night and tells you when a verdict changes.
+        {' '}Funded % compares what you have and put in each month with the target grown by inflation. Until holdings are added, Kai assumes its default returns for each bucket.
       </p>
     </div>
   )
 }
 
-function GoalCard({ view, onOpen }: { view: GoalView; onOpen: () => void }) {
+const SUMMARY_ORDER: GoalVerdict[] = ['off_track', 'at_risk', 'on_track', 'not_enough_data']
+
+/** How many goals meet their target, as a strip of counts with the run button. */
+function CheckSummary({ checks }: { checks: GoalCheck[] }) {
+  if (!checks.length) return null
+  const counts = SUMMARY_ORDER.map(v => [v, checks.filter(c => c.verdict === v).length] as const).filter(([, n]) => n > 0)
+  const meeting = checks.filter(c => c.verdict === 'on_track').length
+  return (
+    <section aria-label="Do your goals meet their targets" className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-gradient-to-r from-brand-50 to-white p-3 dark:border-gray-800 dark:from-brand-900/20 dark:to-gray-900">
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        {meeting === checks.length ? 'Every goal meets its target.' : `${meeting} of ${checks.length} goals meet their target.`}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {counts.map(([v, n]) => <Pill key={v} tone={VERDICTS[v].tone}>{n} {VERDICTS[v].label.toLowerCase()}</Pill>)}
+      </div>
+      <span className="flex-1" />
+      <RunChecksButton />
+    </section>
+  )
+}
+
+function GoalCard({ view, check, onOpen }: { view: GoalView; check?: GoalCheck; onOpen: () => void }) {
   const { goal, funding: f } = view
   const done = goal.status === 'achieved' || goal.status === 'archived'
   return (
@@ -98,9 +124,19 @@ function GoalCard({ view, onOpen }: { view: GoalView; onOpen: () => void }) {
         {f && <Pill tone={f.bucket === 'short' ? 'warn' : 'info'}>{BUCKET_SHORT[f.bucket]}</Pill>}
         <Pill tone={goal.priorityTier === 'survival' ? 'bad' : goal.priorityTier === 'important' ? 'brand' : 'neutral'}>{GOAL_TIERS[goal.priorityTier]}</Pill>
         {goal.status !== 'active' && <Pill tone={goal.status === 'achieved' ? 'ok' : 'neutral'}>{GOAL_STATUS[goal.status]}</Pill>}
+        {check && !done && <VerdictPill check={check} />}
       </h3>
       {f && !done ? (
         <>
+          {check && check.successPct != null && (
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span>Chance of reaching it</span>
+                <span className="font-semibold tabular-nums text-gray-800 dark:text-gray-200">{Math.round(check.successPct)}% · bar {Math.round(check.requiredPct ?? 0)}%</span>
+              </div>
+              <ChanceMeter check={check} />
+            </div>
+          )}
           <div className="flex justify-between gap-2 text-sm">
             <span className="text-gray-500 dark:text-gray-400">Target {year(goal.targetDate)} · <Money amount={f.futureTarget} short /> then</span>
             <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{Math.round(f.fundedPct)}% funded</span>
@@ -109,6 +145,7 @@ function GoalCard({ view, onOpen }: { view: GoalView; onOpen: () => void }) {
           <Row label="Going in each month"><Money amount={goal.monthlyContribution} /></Row>
           <Row label="Needed for 100%"><Money amount={f.requiredSip} /></Row>
           {view.moveNote && <p className="text-xs text-gray-500 dark:text-gray-400">{view.moveNote}</p>}
+          {check && check.verdict !== 'on_track' && <p className="text-xs text-gray-600 dark:text-gray-300">{check.fix}</p>}
         </>
       ) : (
         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -132,6 +169,8 @@ export function GoalDetail({ id, people, onBack, onEdit }: {
 }) {
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: financeKeys.goal(id), queryFn: () => financeApi.goal(id) })
+  const { data: checks } = useGoalChecks()
+  const check = checks?.find(c => c.goalId === id)
   const refresh = () => qc.invalidateQueries({ queryKey: financeKeys.all })
   const achieve = useMutation({ mutationFn: () => financeApi.achieveGoal(id), onSuccess: refresh })
   const status = useMutation({ mutationFn: (s: GoalStatus) => financeApi.updateGoal(id, { status: s }), onSuccess: refresh })
@@ -151,6 +190,12 @@ export function GoalDetail({ id, people, onBack, onEdit }: {
         <span className="flex-1" />
         {live && <Button size="sm" variant="secondary" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /> Edit</Button>}
       </div>
+
+      {check && live && (
+        <Panel title={<>Does it meet the target? <VerdictPill check={check} /></>}>
+          <GoalCheckPanel check={check} />
+        </Panel>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Funding">
