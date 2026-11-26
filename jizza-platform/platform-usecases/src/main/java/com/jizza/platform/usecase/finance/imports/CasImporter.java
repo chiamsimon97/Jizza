@@ -97,7 +97,7 @@ final class CasImporter {
           continue;
         }
         holdings.add(new Holding("folio:" + folio, Parsing.clip(scheme, 120), isin, assetClass(scheme),
-            subCategory(scheme), units, worth.abs(), asOf));
+            subCategory(scheme), units, worth.abs(), asOf, null));
         continue;
       }
       if ((m = TXN.matcher(line)).matches()) {

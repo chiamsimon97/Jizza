@@ -37,7 +37,10 @@ public class JdbcFinanceRecords implements FinanceRecords {
       "fin_review_run",
       // Phase 1b
       "fin_risk_assessment", "fin_tax_profile", "fin_plan", "fin_investment_budget",
-      "fin_allocation_line", "fin_projection_run");
+      "fin_allocation_line", "fin_projection_run",
+      // Phase 2
+      "fin_holding_lot", "fin_earmark", "fin_earmark_event", "fin_realized_gain", "fin_node",
+      "fin_rule", "fin_rule_template", "fin_list_item");
   static final Set<String> TABLES = Set.copyOf(TABLES_IN_ORDER);
 
   private static final Set<String> NOT_WRITABLE = Set.of("id", "user_id", "created_at", "updated_at");

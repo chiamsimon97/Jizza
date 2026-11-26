@@ -38,14 +38,19 @@ public class FinRecordsUseCase {
   private final FinanceStore store;
   private final FinScopeResolver scopes;
   private final AuditLog audit;
+  private final org.springframework.context.ApplicationEventPublisher events;
 
   public FinRecordsUseCase(FinanceRecords records, FinanceStore store, FinScopeResolver scopes,
-                           AuditLog audit) {
+                           AuditLog audit, org.springframework.context.ApplicationEventPublisher events) {
     this.records = records;
     this.store = store;
     this.scopes = scopes;
     this.audit = audit;
+    this.events = events;
   }
+
+  /** An asset's value changed: its goal earmarks are brought back to it (Phase 2, invariant 1). */
+  public record AssetValueChanged(UUID owner, UUID assetId) {}
 
   public List<ObjectNode> list(UUID caller, FinTable t, Map<String, Object> where) {
     var scope = scopes.own(caller);
@@ -82,6 +87,7 @@ public class FinRecordsUseCase {
     ObjectNode values = clean(owner, t, body, false);
     ObjectNode row = values.isEmpty() ? get(caller, t, id)
         : records.update(t.table, owner, id, values).orElseThrow(() -> new NotFoundException(t.label, id));
+    if (t == FinTable.ASSET && values.has("value")) events.publishEvent(new AssetValueChanged(owner, id));
     audit.record(owner, ActorType.USER, caller, "finance." + t.name().toLowerCase() + ".updated",
         id.toString(), null);
     return row;

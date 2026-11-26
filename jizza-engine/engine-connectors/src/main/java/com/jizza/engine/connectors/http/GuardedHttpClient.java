@@ -56,10 +56,19 @@ public class GuardedHttpClient {
 
   public Response send(String method, URI uri, Map<String, String> headers, String body,
                        String declaredHost) {
+    return send(method, uri, headers, body, declaredHost, props.getHttp().getMaxResponseBytes());
+  }
+
+  /**
+   * As {@link #send(String, URI, Map, String, String)} with a response cap of its own, for a known
+   * public file larger than a connector's answer (a daily price file, say).
+   */
+  public Response send(String method, URI uri, Map<String, String> headers, String body,
+                       String declaredHost, long maxResponseBytes) {
     URI target = uri;
     for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
       guard.check(target, declaredHost);
-      Response response = exchange(method, target, headers, body);
+      Response response = exchange(method, target, headers, body, maxResponseBytes);
       if (response.status() / 100 != 3) return response;
 
       String location = response.headers().get("location");
@@ -74,7 +83,8 @@ public class GuardedHttpClient {
     throw new EgressBlockedException("Refused " + uri + ": too many redirects");
   }
 
-  private Response exchange(String method, URI uri, Map<String, String> headers, String body) {
+  private Response exchange(String method, URI uri, Map<String, String> headers, String body,
+                            long maxResponseBytes) {
     HttpRequest.Builder request = HttpRequest.newBuilder(uri)
         .timeout(props.getHttp().getReadTimeout())
         .method(method, body == null
@@ -85,7 +95,7 @@ public class GuardedHttpClient {
     try {
       HttpResponse<InputStream> response =
           client.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
-      String payload = readCapped(response.body());
+      String payload = readCapped(response.body(), maxResponseBytes);
       return new Response(response.statusCode(), payload,
           response.headers().map().entrySet().stream()
               .collect(java.util.stream.Collectors.toMap(
@@ -105,8 +115,7 @@ public class GuardedHttpClient {
   }
 
   /** Reads at most the configured cap, so a hostile or broken endpoint cannot exhaust memory. */
-  private String readCapped(InputStream stream) throws IOException {
-    long limit = props.getHttp().getMaxResponseBytes();
+  private String readCapped(InputStream stream, long limit) throws IOException {
     var buffer = new java.io.ByteArrayOutputStream();
     byte[] chunk = new byte[8192];
     long total = 0;

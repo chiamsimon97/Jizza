@@ -54,11 +54,14 @@ public class HouseholdLoader {
   private final FinanceRecords records;
   private final FinanceStore store;
   private final FinConfigService config;
+  private final com.jizza.platform.usecase.finance.ledger.HoldingsReader holdings;
 
-  public HouseholdLoader(FinanceRecords records, FinanceStore store, FinConfigService config) {
+  public HouseholdLoader(FinanceRecords records, FinanceStore store, FinConfigService config,
+                         com.jizza.platform.usecase.finance.ledger.HoldingsReader holdings) {
     this.records = records;
     this.store = store;
     this.config = config;
+    this.holdings = holdings;
   }
 
   /**
@@ -67,7 +70,27 @@ public class HouseholdLoader {
    */
   public record Loaded(Household household, KaiConfig config, Map<String, JsonNode> configValues,
                        Map<String, Boolean> verification, PlanConfig plan, List<ObjectNode> goals,
-                       Map<String, String> latestRisk, String selfId) {}
+                       Map<String, String> latestRisk, String selfId, Map<String, BigDecimal> earmarked) {
+
+    /**
+     * The goal as the engines see it: once holdings are earmarked to it (Phase 2), what it is
+     * worth is their value, not the figure typed in the wizard.
+     */
+    public ObjectNode withEarmarks(ObjectNode goal) {
+      BigDecimal v = earmarked == null ? null : earmarked.get(goal.path("id").asText());
+      if (v == null) return goal;
+      ObjectNode g = goal.deepCopy();
+      g.put("typedValue", goal.path("currentValue").decimalValue());
+      g.put("currentValue", v.setScale(0, java.math.RoundingMode.HALF_UP));
+      g.put("earmarkedValue", v);
+      return g;
+    }
+  }
+
+  /** The system's own goal that holds whatever no goal claims; never shown as a goal. */
+  public static boolean isUnassigned(JsonNode goal) {
+    return "unassigned".equals(goal.path("type").asText());
+  }
 
   public static LocalDate today() {
     return LocalDate.now(ZONE);
@@ -133,6 +156,18 @@ public class HouseholdLoader {
           r.path("pledged").asBoolean(),
           !closed && (account == null || account.path("countInNetWorth").asBoolean(true))));
     }
+    // Phase 2: shares, funds and the rest held in lots, at their latest dated price.
+    var positions = holdings.positions(owner, asOf);
+    for (var p : positions) {
+      if (!active.contains(p.personId()) || p.value() == null) continue;
+      ObjectNode account = accounts.get(p.accountId());
+      boolean closed = account != null && "closed".equals(account.path("status").asText());
+      assets.add(new Asset("holding:" + p.key(), p.personId(), "holding",
+          p.instrument() == null ? "other" : p.instrument().path("assetClass").asText("other"), share(p.value(), account),
+          account != null && account.path("isEmergency").asBoolean(), false,
+          !closed && (account == null || account.path("countInNetWorth").asBoolean(true))));
+    }
+    Map<String, BigDecimal> earmarked = holdings.goalValues(owner, positions);
 
     List<LoanGiven> given = records.list("fin_loan_given", owner, Map.of()).stream()
         .filter(r -> active.contains(r.path("personId").asText()))
@@ -173,7 +208,14 @@ public class HouseholdLoader {
     PlanConfig plan = PlanConfig.from(planValues);
 
     // Phase 1b: the Goal funding check is computed from the goals, not given.
-    List<ObjectNode> goals = records.list("fin_plan", owner, Map.of());
+    List<ObjectNode> goals = records.list("fin_plan", owner, Map.of()).stream()
+        .filter(g -> !isUnassigned(g)).map(g -> {
+          BigDecimal v = earmarked.get(g.path("id").asText());
+          if (v == null) return g;
+          ObjectNode c = g.deepCopy();
+          c.put("currentValue", v.setScale(0, java.math.RoundingMode.HALF_UP));
+          return c;
+        }).toList();
     Map<String, String> latestRisk = GoalMath.latestRisk(records.list("fin_risk_assessment", owner, Map.of()));
     Map<String, Person> byId = new HashMap<>();
     people.forEach(p -> byId.put(p.id(), p));
@@ -184,7 +226,7 @@ public class HouseholdLoader {
     Household household = new Household(asOf, people, incomes, budget, loans, policies,
         List.copyOf(assets), given, accountInfo, will, funded, Set.copyOf(known));
     return new Loaded(household, KaiConfig.from(values), values, verification, plan, ownGoals,
-        latestRisk, self);
+        latestRisk, self, earmarked);
   }
 
   /** The loan as the engines see it: the owner's share, the normalised rate. */

@@ -29,6 +29,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import com.jizza.platform.usecase.finance.ledger.EarmarkService;
+import com.jizza.platform.usecase.finance.ledger.TaxLotLedger;
+import com.jizza.platform.usecase.finance.market.InstrumentService;
+import com.jizza.platform.usecase.finance.market.PriceService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,7 +53,6 @@ public class ImportService {
   private static final Set<String> BANK_ACCOUNTS = Set.of("savings", "current", "credit_card", "wallet", "deposit", "other");
   private static final Set<String> BROKER_ACCOUNTS = Set.of("demat", "us_broker", "other");
   private static final Set<String> BALANCE_ACCOUNTS = Set.of("savings", "current");
-  private static final Set<String> BROKER_SUBS = Set.of("shares", "etf", "sgb");
 
   private final FinanceRecords records;
   private final FinRecordsUseCase forms;
@@ -57,15 +60,22 @@ public class ImportService {
   private final StatementFiles files;
   private final FinCashFlowUseCase cashFlow;
   private final AuditLog audit;
+  private final EarmarkService ledger;
+  private final InstrumentService instruments;
+  private final PriceService prices;
 
   public ImportService(FinanceRecords records, FinRecordsUseCase forms, FinScopeResolver scopes,
-                       StatementFiles files, FinCashFlowUseCase cashFlow, AuditLog audit) {
+                       StatementFiles files, FinCashFlowUseCase cashFlow, AuditLog audit,
+                       EarmarkService ledger, InstrumentService instruments, PriceService prices) {
     this.records = records;
     this.forms = forms;
     this.scopes = scopes;
     this.files = files;
     this.cashFlow = cashFlow;
     this.audit = audit;
+    this.ledger = ledger;
+    this.instruments = instruments;
+    this.prices = prices;
   }
 
   /** One upload. {@code password} is for a locked PDF and is never kept. */
@@ -208,6 +218,11 @@ public class ImportService {
           .put("kind", txnKind).put("needsLook", needsLook).put("duplicate", duplicate).put("key", key);
       if (t.units() != null) r.put("units", t.units());
       if (t.price() != null) r.put("price", t.price());
+      if (t.units() != null && (kind.equals("cas_pdf") || kind.equals("broker_tradebook"))) {
+        String ref = t.ref() == null ? "" : t.ref().split("#")[0];
+        if (ref.matches("[A-Z]{2}[A-Z0-9]{9}\\d")) r.put("isin", ref);
+        if (kind.equals("broker_tradebook")) r.put("symbol", Parsing.clip(t.description(), 60));
+      }
       if (t.group() != null) r.put("group", t.group());
       if (category != null) r.put("categoryId", category.toString());
       if (duplicate) dupes++;
@@ -226,6 +241,7 @@ public class ImportService {
       n.put("group", h.group());
       n.put("isin", h.isin());
       n.put("asOf", h.asOf() == null ? null : h.asOf().toString());
+      if (h.avgCost() != null) n.put("avgCost", h.avgCost());
     }
     if (st.balance() != null && account != null && BALANCE_ACCOUNTS.contains(account.path("kind").asText())) {
       stats.putObject("balance").put("amount", st.balance().amount()).put("date", st.balance().date().toString());
@@ -332,6 +348,7 @@ public class ImportService {
     ArrayNode createdAccounts = undo.putArray("createdAccounts");
     ArrayNode createdAssets = undo.putArray("createdAssets");
     ArrayNode changedAssets = undo.putArray("changedAssets");
+    ArrayNode pricesSet = Json.obj().arrayNode();
 
     ObjectNode account = b.hasNonNull("accountId")
         ? records.get("fin_account", owner, UUID.fromString(b.path("accountId").asText()))
@@ -376,6 +393,7 @@ public class ImportService {
 
     Map<String, Set<String>> known = new HashMap<>();
     int imported = 0;
+    List<Object[]> unitRows = new ArrayList<>();
     for (JsonNode r : rows) {
       String accountId = account != null ? account.path("id").asText() : groupAccount.get(r.path("group").asText());
       if (accountId == null) continue;
@@ -402,13 +420,32 @@ public class ImportService {
       if (category != null) t.put("categoryId", category.toString());
       if (r.hasNonNull("units")) t.put("units", r.path("units").decimalValue());
       if (r.hasNonNull("price")) t.put("price", r.path("price").decimalValue());
-      records.insert("fin_transaction", owner, t);
+      ObjectNode savedTxn = records.insert("fin_transaction", owner, t);
+      if (r.hasNonNull("units") && r.get("units").decimalValue().signum() != 0 && !kind.equals("bank_csv")) {
+        unitRows.add(new Object[] {r, accountId, savedTxn.path("id").asText()});
+      }
       imported++;
     }
 
     // Balances and holdings, each previous figure kept for undo.
     if (stats.has("balance") && account != null) {
       balance(owner, account, stats.path("balance"), createdAssets, changedAssets);
+    }
+    // Phase 2: units go into the tax ledger (lots, FIFO sales) and the goals' earmarks.
+    EarmarkService.Log log = new EarmarkService.Log();
+    Map<String, String> instrumentOf = new HashMap<>();
+    for (JsonNode h : stats.path("holdings")) {
+      if (h.hasNonNull("isin") && h.hasNonNull("name")) instrumentOf.putIfAbsent("isin:" + h.get("isin").asText(), h.get("name").asText());
+    }
+    unitRows.sort(Comparator.comparing((Object[] x) -> ((JsonNode) x[0]).path("date").asText())
+        .thenComparing(x -> ((JsonNode) x[0]).path("units").decimalValue().signum() > 0 ? 0 : 1)
+        .thenComparing(x -> ((JsonNode) x[0]).path("line").asInt()));
+    for (Object[] x : unitRows) {
+      JsonNode r = (JsonNode) x[0];
+      String isin = r.path("isin").asText(null);
+      String name = isin != null ? instrumentOf.getOrDefault("isin:" + isin, isin) : r.path("symbol").asText(r.path("description").asText());
+      ObjectNode ins = instruments.resolve(isin, name, kind.equals("cas_pdf") ? "mf" : null, null);
+      unitsTxn(owner, personId, (String) x[1], ins.path("id").asText(), r, (String) x[2], id.toString(), log);
     }
     if (stats.path("holdings").size() > 0) {
       Map<String, List<JsonNode>> byAccount = new HashMap<>();
@@ -417,8 +454,11 @@ public class ImportService {
         if (accountId != null) byAccount.computeIfAbsent(accountId, a -> new ArrayList<>()).add(h);
       }
       boolean snapshot = kind.equals("broker_holdings");
-      byAccount.forEach((accountId, hs) -> holdings(owner, personId, accountId, hs, snapshot, createdAssets, changedAssets));
+      byAccount.forEach((accountId, hs) -> holdingsToLedger(owner, personId, accountId, hs, snapshot,
+          kind.equals("cas_pdf") ? "mf" : null, id.toString(), log, changedAssets, pricesSet));
     }
+    if (!log.isEmpty()) undo.set("ledger", log.toJson());
+    if (!pricesSet.isEmpty()) undo.set("prices", pricesSet);
 
     stats.set("undo", undo);
     ((ObjectNode) stats.path("counts")).put("imported", imported);
@@ -451,35 +491,79 @@ public class ImportService {
     created.add(records.insert("fin_asset", owner, a).path("id").asText());
   }
 
+  static final Set<String> BUYS = Set.of("buy", "sip", "stp_in", "dividend");
+  static final Set<String> SELLS = Set.of("sell", "swp", "stp_out");
+
   /**
-   * Each holding updates the account's asset of the same name, or adds one. A broker's holdings
-   * file is the whole account, so shares it no longer lists are set to nothing.
+   * One transaction with units: a purchase becomes a lot, a sale consumes the oldest lots. A sale
+   * of units the earlier statements never showed being bought first gets an opening lot (date
+   * unknown) so the ledger stays whole; it shows in "Needs a look".
    */
-  private void holdings(UUID owner, UUID personId, String accountId, List<JsonNode> hs, boolean snapshot,
-                        ArrayNode created, ArrayNode changed) {
-    List<ObjectNode> existing = records.list("fin_asset", owner, Map.of("accountId", accountId));
+  private void unitsTxn(UUID owner, UUID personId, String accountId, String instrumentId, JsonNode r, String txnId,
+                        String batchId, EarmarkService.Log log) {
+    BigDecimal units = r.path("units").decimalValue().abs();
+    LocalDate date = LocalDate.parse(r.path("date").asText());
+    String kind = r.path("kind").asText();
+    boolean buy = BUYS.contains(kind) || (!SELLS.contains(kind) && r.path("units").decimalValue().signum() > 0);
+    if (buy) {
+      BigDecimal cost = r.hasNonNull("price") ? r.get("price").decimalValue()
+          : r.path("amount").decimalValue().divide(units, 4, java.math.RoundingMode.HALF_UP);
+      String source = switch (kind) {
+        case "sip" -> "sip";
+        case "stp_in" -> "stp_in";
+        case "dividend" -> "dividend_reinvest";
+        default -> "buy";
+      };
+      ledger.recordBuy(owner, personId.toString(), accountId, instrumentId, date, true, units, cost, source, batchId, null, log);
+    } else {
+      BigDecimal held = TaxLotLedger.remaining(EarmarkService.lots(ledger.lotRows(owner, UUID.fromString(accountId),
+          UUID.fromString(instrumentId))));
+      if (held.compareTo(units) < 0) {
+        ledger.recordBuy(owner, personId.toString(), accountId, instrumentId, null, false, units.subtract(held), null,
+            "opening_balance", batchId, null, log);
+      }
+      ledger.recordSell(owner, personId.toString(), accountId, instrumentId, date, units, r.path("amount").decimalValue(),
+          null, batchId, txnId, log);
+    }
+  }
+
+  /**
+   * A statement's holdings: each becomes (or matches) an instrument, the ledger is brought to the
+   * units the statement shows on its date, and its value gives a dated price. A broker's holdings
+   * file is the whole account, so instruments it no longer lists have been sold. Figures that
+   * Phase 1c kept as plain assets for the same holdings are set to nothing (kept for undo), so
+   * nothing counts twice.
+   */
+  private void holdingsToLedger(UUID owner, UUID personId, String accountId, List<JsonNode> hs, boolean snapshot,
+                                String typeHint, String batchId, EarmarkService.Log log, ArrayNode changed,
+                                ArrayNode pricesSet) {
     Set<String> listed = new HashSet<>();
+    List<ObjectNode> oldAssets = records.list("fin_asset", owner, Map.of("accountId", accountId, "kind", "other"));
     for (JsonNode h : hs) {
       String name = h.path("name").asText();
-      listed.add(name.toLowerCase(Locale.ROOT));
-      String asOf = h.hasNonNull("asOf") ? h.path("asOf").asText() : LocalDate.now().toString();
-      ObjectNode match = existing.stream().filter(a -> name.equalsIgnoreCase(a.path("name").asText()))
-          .findFirst().orElse(null);
-      if (match != null) {
-        change(owner, match, h.path("value").decimalValue(), asOf, changed);
-      } else {
-        ObjectNode a = Json.obj().put("personId", personId.toString()).put("accountId", accountId)
-            .put("kind", "other").put("name", name).put("assetClass", h.path("assetClass").asText())
-            .put("subCategory", h.path("subCategory").asText()).put("value", h.path("value").decimalValue())
-            .put("valueAsOf", asOf);
-        created.add(records.insert("fin_asset", owner, a).path("id").asText());
+      ObjectNode ins = instruments.resolve(h.path("isin").asText(null), name, typeHint, h.path("assetClass").asText(null));
+      String instrumentId = ins.path("id").asText();
+      listed.add(instrumentId);
+      LocalDate asOf = h.hasNonNull("asOf") ? LocalDate.parse(h.get("asOf").asText()) : LocalDate.now();
+      BigDecimal units = h.path("units").decimalValue();
+      ledger.snapshot(owner, personId.toString(), accountId, instrumentId, units,
+          h.hasNonNull("avgCost") ? h.get("avgCost").decimalValue() : null, asOf, batchId, log);
+      ObjectNode priceUndo = prices.fromImport(owner, UUID.fromString(instrumentId), asOf, units, h.path("value").decimalValue());
+      if (priceUndo != null) pricesSet.add(priceUndo);
+      for (ObjectNode a : oldAssets) {
+        if (name.equalsIgnoreCase(a.path("name").asText()) && a.path("value").decimalValue().signum() != 0) {
+          change(owner, a, BigDecimal.ZERO, asOf.toString(), changed);
+        }
       }
     }
     if (!snapshot) return;
-    for (ObjectNode a : existing) {
-      if (listed.contains(a.path("name").asText().toLowerCase(Locale.ROOT))) continue;
-      if (!BROKER_SUBS.contains(a.path("subCategory").asText()) || a.path("value").decimalValue().signum() == 0) continue;
-      change(owner, a, BigDecimal.ZERO, LocalDate.now().toString(), changed);
+    Set<String> inAccount = new HashSet<>();
+    for (ObjectNode lot : records.list("fin_holding_lot", owner, Map.of("accountId", accountId))) {
+      if (lot.path("remainingQty").decimalValue().signum() > 0) inAccount.add(lot.path("instrumentId").asText());
+    }
+    for (String gone : inAccount) {
+      if (listed.contains(gone)) continue;
+      ledger.snapshot(owner, personId.toString(), accountId, gone, BigDecimal.ZERO, null, LocalDate.now(), batchId, log);
     }
   }
 
@@ -516,10 +600,12 @@ public class ImportService {
       theirs.retainAll(mine);
       if (!theirs.isEmpty()) {
         throw new ConflictException("A later import (" + later.path("stats").path("fileName").asText("a file")
-            + ") changed the same balances. Undo that one first.");
+            + ") changed the same balances or holdings. Undo that one first.");
       }
     }
 
+    ledger.undo(owner, undo.path("ledger"));
+    prices.undoImport(owner, undo.path("prices"));
     records.deleteWhere("fin_transaction", owner, Map.of("importBatchId", id.toString()));
     for (JsonNode c : undo.path("changedAssets")) {
       ObjectNode v = Json.obj();
@@ -551,6 +637,8 @@ public class ImportService {
     undo.path("createdAssets").forEach(n -> out.add(n.asText()));
     undo.path("changedAssets").forEach(n -> out.add(n.path("id").asText()));
     undo.path("createdAccounts").forEach(n -> out.add(n.asText()));
+    undo.path("ledger").path("holdings").forEach(h -> out.add("holding:" + h.path("accountId").asText() + "|"
+        + h.path("instrumentId").asText()));
     return out;
   }
 

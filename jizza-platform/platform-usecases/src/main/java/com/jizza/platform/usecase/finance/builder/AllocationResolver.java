@@ -133,7 +133,7 @@ public final class AllocationResolver {
   static final Map<String, String> BUCKET_LABELS =
       Map.of(SHORT, "Short (under 3 years)", MID, "Mid (3–7 years)", LONG, "Long (7 years and more)");
 
-  static final Map<String, String> CLASS_LABELS = Map.of("cash", "Cash and liquid", "debt", "Debt",
+  public static final Map<String, String> CLASS_LABELS = Map.of("cash", "Cash and liquid", "debt", "Debt",
       "equity", "Equity", "gold", "Gold");
 
   /** Sub-category key → label. A sub-category is never a fund's name. */
@@ -214,6 +214,27 @@ public final class AllocationResolver {
       default -> "liquid";
     };
     return List.of(new Part(sub, SUB_LABELS.get(sub), HUNDRED, "system", "Kai default"));
+  }
+
+  /** A node of a goal's default tree: an asset class with its sub-categories (spec 2A.8). */
+  public record TemplateNode(String key, String label, BigDecimal pct, String source, String sourceLabel,
+                             List<TemplateNode> children) {}
+
+  /**
+   * The default tree of a goal in {@code bucket}: the bucket's asset classes, each with its
+   * sub-categories, as shares of their parent. A Short goal's holds no direct shares and no gold.
+   */
+  public static List<TemplateNode> template(String bucket, int age, String risk, PlanConfig cfg) {
+    String r = risk == null || !PlanConfig.RISKS.contains(risk) ? "moderate" : risk;
+    List<TemplateNode> out = new ArrayList<>();
+    for (Part c : classParts(bucket, age, r, cfg)) {
+      List<TemplateNode> subs = new ArrayList<>();
+      for (Part s : subParts(bucket, c.key(), r, cfg)) {
+        subs.add(new TemplateNode(s.key(), s.label(), s.weight(), s.source(), s.sourceLabel(), List.of()));
+      }
+      out.add(new TemplateNode(c.key(), c.label(), c.weight(), c.source(), c.sourceLabel(), subs));
+    }
+    return out;
   }
 
   // ── the engine ───────────────────────────────────────────────────────────────

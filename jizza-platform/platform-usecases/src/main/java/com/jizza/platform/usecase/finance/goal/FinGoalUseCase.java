@@ -50,14 +50,17 @@ public class FinGoalUseCase {
   private final HouseholdLoader loader;
   private final FinScopeResolver scopes;
   private final AuditLog audit;
+  private final com.jizza.platform.usecase.finance.ledger.HoldingsUseCase holdings;
 
   public FinGoalUseCase(FinanceRecords records, FinRecordsUseCase forms, HouseholdLoader loader,
-                        FinScopeResolver scopes, AuditLog audit) {
+                        FinScopeResolver scopes, AuditLog audit,
+                        com.jizza.platform.usecase.finance.ledger.HoldingsUseCase holdings) {
     this.records = records;
     this.forms = forms;
     this.loader = loader;
     this.scopes = scopes;
     this.audit = audit;
+    this.holdings = holdings;
   }
 
   /**
@@ -135,13 +138,16 @@ public class FinGoalUseCase {
     UUID owner = scopes.own(caller).ownerUserId();
     Loaded l = loader.load(owner);
     List<GoalView> out = new ArrayList<>();
-    for (ObjectNode g : records.list("fin_plan", owner, Map.of())) out.add(view(g, l));
+    for (ObjectNode g : records.list("fin_plan", owner, Map.of())) {
+      if (!HouseholdLoader.isUnassigned(g)) out.add(view(g, l));
+    }
     return out;
   }
 
   public GoalView get(UUID caller, UUID id) {
     UUID owner = scopes.own(caller).ownerUserId();
-    ObjectNode g = records.get("fin_plan", owner, id).orElseThrow(() -> new NotFoundException("Goal", id));
+    ObjectNode g = records.get("fin_plan", owner, id).filter(x -> !HouseholdLoader.isUnassigned(x))
+        .orElseThrow(() -> new NotFoundException("Goal", id));
     return view(g, loader.load(owner));
   }
 
@@ -150,7 +156,7 @@ public class FinGoalUseCase {
   public GoalView create(UUID caller, JsonNode body, String via) {
     UUID owner = scopes.own(caller).ownerUserId();
     if (body == null || !body.isObject()) throw new ValidationException("Send the goal as an object.");
-    if (records.list("fin_plan", owner, Map.of()).size() >= MAX_GOALS) {
+    if (records.list("fin_plan", owner, Map.of()).stream().filter(x -> !HouseholdLoader.isUnassigned(x)).count() >= MAX_GOALS) {
       throw new ValidationException("You have " + MAX_GOALS + " goals already. Archive one first.");
     }
     ObjectNode b = ((ObjectNode) body).deepCopy();
@@ -179,7 +185,8 @@ public class FinGoalUseCase {
   @Transactional
   public GoalView update(UUID caller, UUID id, JsonNode body) {
     UUID owner = scopes.own(caller).ownerUserId();
-    ObjectNode current = records.get("fin_plan", owner, id).orElseThrow(() -> new NotFoundException("Goal", id));
+    ObjectNode current = records.get("fin_plan", owner, id).filter(x -> !HouseholdLoader.isUnassigned(x))
+        .orElseThrow(() -> new NotFoundException("Goal", id));
     ObjectNode v = forms.clean(owner, FinTable.GOAL, body, false);
     if (v.has("type") && !v.path("type").asText().equals(current.path("type").asText())) {
       throw new ValidationException("A goal's type cannot change. Add a new goal instead.");
@@ -188,6 +195,11 @@ public class FinGoalUseCase {
     if (v.has("status") && "achieved".equals(v.path("status").asText())) v.put("achievedAt", Instant.now().toString());
     ObjectNode row = v.isEmpty() ? current
         : records.update("fin_plan", owner, id, v).orElseThrow(() -> new NotFoundException("Goal", id));
+    String status = v.path("status").asText("");
+    if (("achieved".equals(status) || "archived".equals(status)) && !status.equals(current.path("status").asText())) {
+      // Phase 2: an ended goal's earmarks go to its successor, else to Unassigned. Nothing is sold.
+      holdings.release(owner, id.toString(), current.hasNonNull("successorPlanId") ? current.get("successorPlanId").asText() : null);
+    }
     audit.record(owner, ActorType.USER, caller, "finance.goal.updated", id.toString(), null);
     return view(row, loader.load(owner));
   }
@@ -207,7 +219,8 @@ public class FinGoalUseCase {
     }
   }
 
-  GoalView view(ObjectNode g, Loaded l) {
+  GoalView view(ObjectNode stored, Loaded l) {
+    ObjectNode g = l.withEarmarks(stored);
     Map<String, Person> people = new HashMap<>();
     l.household().people().forEach(p -> people.put(p.id(), p));
     String ownerId = g.path("ownerPersonId").asText(l.selfId());
