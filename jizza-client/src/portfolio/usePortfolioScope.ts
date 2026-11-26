@@ -13,6 +13,8 @@ export interface PortfolioScope {
   sample: '1' | null
   /** The Quick start question to open on. */
   step: string | null
+  /** The setup guide step being followed, which shows the guide bar on every screen. */
+  guide: string | null
 }
 
 /** A change to the scope; null (or a default) removes the key from the URL. */
@@ -26,6 +28,7 @@ export function usePortfolioScope(): [PortfolioScope, (patch: ScopePatch) => voi
     goal: params.get('goal') ?? 'all',
     sample: params.get('sample') === '1' ? '1' : null,
     step: params.get('step'),
+    guide: params.get('guide'),
   }
   const update = useCallback((patch: ScopePatch) => {
     setParams(prev => {

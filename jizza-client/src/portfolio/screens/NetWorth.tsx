@@ -50,7 +50,7 @@ export function NetWorth({ people, onOpen }: { people: FinPerson[]; onOpen: (vie
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 lg:col-span-2">
+        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 lg:col-span-2">
           <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100"><Money amount={data.netWorth} short /></p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             You own <Money amount={data.assets} short />{data.pledged > 0 && <> (<Money amount={data.pledged} short /> of it pledged)</>} and owe <Money amount={data.liabilities} short />.
@@ -68,7 +68,7 @@ export function NetWorth({ people, onOpen }: { people: FinPerson[]; onOpen: (vie
           {data.byPerson.filter(s => s.assets > 0).length > 1 && (
             <Shares title="By person" slices={data.byPerson.filter(s => s.assets > 0)} total={data.assets} label={k => names[k] ?? 'Someone you manage'} />
           )}
-          <section className="flex flex-col gap-1 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <section className="flex flex-col gap-1 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Owed</h3>
             <p className="text-sm text-gray-700 dark:text-gray-300"><Money amount={data.liabilities} /></p>
             <button type="button" className="self-start text-sm text-brand-600 hover:underline dark:text-brand-300" onClick={() => onOpen('loans')}>Loans</button>
@@ -76,7 +76,7 @@ export function NetWorth({ people, onOpen }: { people: FinPerson[]; onOpen: (vie
         </div>
       </div>
 
-      <section className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Assets</h3>
         <DataTable<FinAsset> rows={assets ?? []} rowKey={a => a.id} caption="Assets" empty="No assets yet. Add one, or answer the savings question in Quick start."
           columns={[
@@ -101,7 +101,7 @@ export function NetWorth({ people, onOpen }: { people: FinPerson[]; onOpen: (vie
 
 function Shares({ title, slices, total, label }: { title: string; slices: NetWorthSlice[]; total: number; label: (key: string) => string }) {
   return (
-    <section className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <section className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
       {slices.length === 0 ? <p className="text-sm text-gray-500">Nothing yet.</p> : slices.map(s => {
         const pct = total > 0 ? Math.round((s.assets / total) * 100) : 0

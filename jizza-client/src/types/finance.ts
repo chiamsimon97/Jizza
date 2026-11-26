@@ -33,6 +33,10 @@ export interface FinSettings {
   hideAmounts: boolean
   /** Alert kinds Kai does not send (policy_renewal, loan_maturity, gold_ltv, …). */
   mutedAlerts?: string[]
+  /** Setup guide steps marked done or skipped by hand. */
+  setupMarks?: Record<string, 'done' | 'skipped'>
+  /** The setup guide card is put away on Home. */
+  setupGuideHidden?: boolean
 }
 
 export interface FinProfileView {
@@ -765,3 +769,327 @@ export interface FinTransaction {
   price: number | null
   needsMapping: boolean
 }
+
+// ── Phase 2: holdings, earmarks, asset tree, rules, lists ─────────────────────
+
+export type InstrumentType = 'stock' | 'etf' | 'mf' | 'bond' | 'sgb' | 'reit' | 'us_stock' | 'us_etf' | 'other'
+
+export interface Instrument {
+  id: string
+  name: string
+  type: InstrumentType
+  assetClass: AssetClass
+  subCategory: string | null
+  capBucket: 'large' | 'mid' | 'small' | null
+  isin: string | null
+  symbol: string | null
+  exchange: string | null
+  /** Whether this user added it (and so may correct it). */
+  yours?: boolean
+}
+
+export interface InstrumentInput {
+  name: string
+  type?: InstrumentType
+  assetClass?: AssetClass
+  isin?: string
+  symbol?: string
+  exchange?: string
+}
+
+export interface GoalSplit {
+  goalId: string
+  name: string
+  unassigned: boolean
+  units?: number
+  amount?: number
+  value?: number | null
+  colour?: string
+  shortGoal?: boolean
+  yourChoice?: boolean
+}
+
+export interface HoldingAccount {
+  accountId: string
+  label: string
+  personId: string
+  personName: string | null
+  units: number
+  value: number | null
+}
+
+export interface HoldingRow {
+  instrumentId: string
+  name: string
+  type: InstrumentType
+  assetClass: AssetClass
+  subCategory: string | null
+  symbol: string | null
+  isin: string | null
+  units: number
+  value: number | null
+  avgCost?: number
+  cost?: number
+  pnl?: number
+  pnlPct?: number
+  price?: number
+  priceDate?: string
+  priceSource?: string
+  valueSource: 'price' | 'cost' | 'none'
+  holdingDays?: number
+  pctOfTotal?: number
+  accounts: HoldingAccount[]
+  split: GoalSplit[]
+  unassignedUnits: number
+  goalUnits?: number
+  goalValue?: number
+  needsLook: string[]
+}
+
+export interface AssetHoldingRow {
+  assetId: string
+  name: string
+  kind: string
+  assetClass: AssetClass
+  value: number
+  valueAsOf?: string
+  personId: string
+  personName: string | null
+  split: GoalSplit[]
+  unassignedAmount: number
+}
+
+export interface HoldingsGoal {
+  id: string
+  name: string
+  type: string
+  unassigned: boolean
+  value: number
+  colour?: string
+  ownerPersonId?: string
+}
+
+export interface HoldingsView {
+  asOf: string
+  priceAsOf?: string
+  stalePrices?: boolean
+  value: number
+  cost: number | null
+  pnl?: number
+  rows: HoldingRow[]
+  assets: AssetHoldingRow[]
+  needsLook: { instrumentId: string; name: string; reason: string }[]
+  goals: HoldingsGoal[]
+}
+
+export interface HoldingLot {
+  id: string
+  acquiredOn: string | null
+  dateKnown: boolean
+  qty: number
+  remaining: number
+  costPerUnit: number | null
+  termToday: 'st' | 'lt' | null
+  gainToday?: number
+}
+
+export interface HoldingDetail {
+  accountId: string
+  accountLabel: string
+  personId: string
+  instrumentId: string
+  name: string
+  type: InstrumentType
+  assetClass: AssetClass
+  subCategory: string | null
+  symbol: string | null
+  isin: string | null
+  units: number
+  value: number | null
+  valueSource: 'price' | 'cost' | 'none'
+  avgCost?: number
+  price?: number
+  priceDate?: string
+  lots: HoldingLot[]
+  saleNote?: string
+  earmarks: GoalSplit[]
+  goals: { id: string; name: string; unassigned: boolean; short?: boolean; yourChoice?: boolean; colour?: string }[]
+  directShares: boolean
+  history: { kind: string; goal: string; deltaUnits: number; at: string; note: string | null }[]
+  needsLook: string[]
+}
+
+export interface EarmarkInput {
+  accountId?: string
+  instrumentId?: string
+  assetId?: string
+  split: { goalId: string; units?: number; amount?: number }[]
+  keepShares?: boolean
+}
+
+export interface TradeInput {
+  accountId: string
+  instrumentId: string
+  date: string
+  units: number
+  pricePerUnit?: number
+  proceeds?: number
+  goalId?: string | null
+  keepShares?: boolean
+}
+
+export interface SaleResult {
+  parts: { lotId: string; acquiredOn: string | null; qty: number; proceeds: number; cost: number | null; gain: number | null; term: 'st' | 'lt' | null }[]
+  gain: number | null
+  proceeds: number
+  holding: HoldingDetail
+}
+
+export interface RealisedGains {
+  taxYear: string
+  shortTerm: number
+  longTerm: number
+  rows: { id: string; instrumentId: string; name: string; soldOn: string; qty: number; proceeds: number; cost: number | null; gain: number | null; term: 'st' | 'lt' | null; taxClass: string; personId: string; goal: string | null }[]
+}
+
+export type TreeNodeKind = 'asset_class' | 'sub_category' | 'instrument'
+
+export interface TreeNode {
+  id: string
+  parentId: string | null
+  kind: TreeNodeKind
+  key?: string
+  name: string
+  targetPct: number | null
+  goalPct?: number
+  sortOrder?: number
+  source?: string
+  inRebalancePool?: boolean
+  instrumentId?: string
+  instrumentName?: string
+  userChoiceAckAt?: string
+  userChoiceNote?: string
+}
+
+export interface TreeView {
+  goalId: string
+  goalName: string
+  goalType: string
+  bucket: 'short' | 'mid' | 'long' | string
+  saved: boolean
+  neverRebalanced: boolean
+  nodes: TreeNode[]
+  problems: string[]
+}
+
+export type DriftStatus = 'inside' | 'above' | 'below' | 'no_target'
+
+export interface AllocationRow {
+  id: string
+  parentId: string | null
+  parentName: string | null
+  kind: TreeNodeKind
+  key: string
+  name: string
+  depth: number
+  actualPct: number
+  value: number
+  status: DriftStatus
+  targetPct?: number
+  bandLow?: number
+  bandHigh?: number
+  bandMode?: string
+  driftPts?: number
+  yourChoice?: boolean
+}
+
+export interface AllocationView {
+  goalId: string | null
+  goalName: string
+  total: number
+  priceAsOf: string | null
+  treeSaved: boolean
+  rows: AllocationRow[]
+  offTree: { instrumentId?: string; assetId?: string; name: string; value: number }[]
+  outsideBand: number
+  shortGoalShares: { instrumentId: string; name: string; units: number; confirmed: boolean }[]
+}
+
+export type RuleField = 'stop_loss' | 'profit_booking' | 'rebalance_band' | 'execution_mode' | 'concentration_cap' | 'accumulate' | 'exit'
+export type RuleState = 'inherit' | 'set' | 'off'
+export type RuleLevel = 'instrument' | 'sub_category' | 'asset_class' | 'goal' | 'user' | 'kai'
+
+export interface RuleEffective {
+  field: RuleField
+  state: 'set' | 'off'
+  value: Record<string, JsonValue> | null
+  sourceLevel: RuleLevel
+  sourceId: string | null
+  sourceName: string
+  locked: boolean
+  lockedBy: string | null
+}
+
+export interface RuleCell {
+  level: RuleLevel
+  levelId: string | null
+  state: RuleState
+  locked: boolean
+  params?: Record<string, JsonValue>
+}
+
+export interface RulesView {
+  goalId: string | null
+  goalName: string | null
+  instrumentId: string | null
+  instrumentName: string | null
+  nodeId: string | null
+  chain: { level: RuleLevel; id: string | null; name: string }[]
+  fields: { field: RuleField; label: string; cells: RuleCell[]; effective: RuleEffective | null }[]
+  hardConstraints: RuleEffective[]
+  plans: { id: string; name: string }[]
+}
+
+export interface RuleInput {
+  level: Exclude<RuleLevel, 'kai'>
+  goalId?: string | null
+  nodeId?: string | null
+  instrumentId?: string | null
+  field: RuleField
+  state: RuleState
+  locked?: boolean
+  params?: Record<string, JsonValue>
+}
+
+export interface RuleTemplate {
+  id: string
+  name: string
+  rules: { field: RuleField; state: RuleState; locked: boolean; params: Record<string, JsonValue> }[]
+}
+
+export type ListType = 'watch' | 'next'
+
+export interface ListItem {
+  id: string
+  listType: ListType
+  instrumentId: string
+  name?: string
+  type?: InstrumentType
+  symbol?: string | null
+  subCategory?: string | null
+  personId?: string | null
+  planId?: string | null
+  goalName?: string
+  nodeId?: string | null
+  nodeName?: string
+  notes?: string | null
+  priority?: number
+  targetEntry?: number | null
+  plannedAmount?: number | null
+  conviction?: number | null
+  price?: number
+  priceDate?: string
+  changePct?: number
+}
+
+export type ListItemInput = Partial<Pick<ListItem, 'listType' | 'instrumentId' | 'personId' | 'planId' | 'nodeId' | 'notes' | 'priority' | 'targetEntry' | 'plannedAmount' | 'conviction'>>

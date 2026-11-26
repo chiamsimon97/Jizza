@@ -11,16 +11,18 @@ import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText } from '../data'
 import { BUCKETS, GOAL_TIERS, RISK_PROFILES, bucketFor, monthsUntil } from '../labels'
 import { financeKeys } from '../queryKeys'
+import { TreeEditor } from './AssetTree'
+import { ruleWords } from './Rules'
 
 const STEPS = [
   { title: 'Pick a goal', why: 'Kai fills in every later step. You only correct what is wrong.' },
   { title: 'Whose goal is it?', why: 'You, or someone you manage.' },
   { title: 'How much, in today’s rupees?', why: 'Kai grows it by inflation so you don’t have to.' },
   { title: 'When, and how much risk?', why: 'The date decides the bucket.' },
-  { title: 'Starting mix', why: 'Comes from the plan builder’s tables.', later: true },
+  { title: 'Starting mix', why: 'Comes from the plan builder’s tables. Each part’s share of its parent adds up to 100%.' },
   { title: 'Money in', why: 'What is saved for it already, and what goes in each month.' },
   { title: 'Glide path', why: 'How the mix moves as the date gets closer.', later: true },
-  { title: 'Rules and review', why: 'Kai starts in Observe: it watches and flags, and proposes nothing.', later: true },
+  { title: 'Rules and review', why: 'Kai starts in Observe: it watches and flags, and proposes nothing.' },
 ]
 
 interface Draft {
@@ -203,6 +205,19 @@ export function GoalWizard({ people, editId, onDone, onCancel }: {
           </div>
         )}
 
+        {step === 4 && (editId ? <TreeEditor goalId={editId} /> : (
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {bucket === 'short' ? 'Debt and cash only: no direct shares, since the goal is under 3 years away.'
+              : 'Kai sets the mix from your age and risk. Once the goal is saved, open it again or go to Asset tree to change any part; Save stays off until each group adds up to 100%.'}
+          </p>
+        ))}
+
+        {step === 7 && (editId ? <RulesReview goalId={editId} /> : (
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Kai uses its default rules: the 5/25 rebalance band, and Observe. You can change them under Rules (Advanced) after saving.
+          </p>
+        ))}
+
         {step === 5 && (
           <div className="grid gap-3 sm:grid-cols-2">
             <AmountField label="Saved for it already" value={d.currentValue} onChange={v => set({ currentValue: v })} />
@@ -216,7 +231,7 @@ export function GoalWizard({ people, editId, onDone, onCancel }: {
         {meta.later && (
           <div className="flex items-start gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>Available after you add holdings. {step === 7 ? 'Save the goal now; Kai only watches it.' : 'Press Next to carry on.'}</span>
+            <span>Available in a later release. Press Next to carry on.</span>
           </div>
         )}
 
@@ -228,6 +243,26 @@ export function GoalWizard({ people, editId, onDone, onCancel }: {
           <Button loading={save.isPending} onClick={next}>{step === STEPS.length - 1 ? 'Save goal' : 'Next'}</Button>
         </div>
       </section>
+    </div>
+  )
+}
+
+/** Step 8 for a saved goal: the rules in force for it, and where each comes from. Saving keeps Observe. */
+function RulesReview({ goalId }: { goalId: string }) {
+  const { data, isLoading } = useQuery({ queryKey: financeKeys.rules(goalId, null), queryFn: () => financeApi.rules(goalId) })
+  if (isLoading || !data) return <SkeletonRows rows={4} />
+  return (
+    <div className="flex flex-col gap-1.5">
+      {data.fields.map(f => (
+        <div key={f.field} className="flex flex-wrap justify-between gap-2 text-sm">
+          <span className="text-gray-600 dark:text-gray-400">{f.label}</span>
+          <span className="text-gray-900 dark:text-gray-100">
+            {!f.effective || f.effective.state === 'off' ? 'Off' : ruleWords(f.field, f.effective.value as never)}
+            <span className="ml-2 text-xs text-gray-500">{!f.effective || f.effective.sourceLevel === 'kai' ? 'Kai default' : `From ${f.effective.sourceName}`}</span>
+          </span>
+        </div>
+      ))}
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Saving keeps the goal in Observe. Change rules under Rules with Advanced on.</p>
     </div>
   )
 }

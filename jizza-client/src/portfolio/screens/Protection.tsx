@@ -61,7 +61,7 @@ export function Protection({ people, onOpen, onAnswer }: {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {p.perPerson.filter(c => c.needsTerm || c.personalHealthCover + c.employerHealthCover + c.superTopUp > 0 || p.gaps.some(g => g.personIds.includes(c.personId)))
               .map(c => <PersonCard key={c.personId} cover={c} floor={p.healthFloor} gaps={p.gaps} isSelf={c.personId === self?.id} />)}
-            <section className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+            <section className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Premiums</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 <Money amount={p.premiumsYearly} /> a year, {p.premiumsPctOfIncome}% of income.
@@ -80,7 +80,7 @@ export function Protection({ people, onOpen, onAnswer }: {
         </>
       )}
 
-      <section className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Policies</h3>
         <DataTable<FinPolicy> rows={policies ?? []} rowKey={r => r.id} caption="Policies" empty="No policies recorded."
           columns={[
@@ -114,7 +114,7 @@ function PersonCard({ cover: c, floor, gaps, isSelf }: { cover: PersonCover; flo
   const name = isSelf ? 'You' : c.name
   const healthGap = gaps.some(g => g.kind === 'health' && g.personIds.includes(c.personId))
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <section className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</h3>
       {c.needsTerm && (
         <div className="flex flex-col gap-1.5">
@@ -165,7 +165,7 @@ function WillCard({ personId }: { personId: string }) {
   })
   if (!data) return null
   return (
-    <section className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <section className="flex flex-wrap items-end gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <div className="min-w-0 flex-1 basis-56">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Your will</h3>
         <p className="text-xs text-gray-500 dark:text-gray-400">Not scored, but Kai flags it until one is recorded.</p>

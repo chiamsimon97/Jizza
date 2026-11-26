@@ -59,6 +59,26 @@ class FinanceFoundationE2eTest extends E2eSupport {
   }
 
   @Test
+  void setupGuideMarksAreKeptStepByStep() {
+    api.get("/api/finance/profile");
+    assertThat(api.patch("/api/finance/profile/settings", Map.of("setupMarks", Map.of("tax", "done"))).ok()).isTrue();
+    var s = api.patch("/api/finance/profile/settings",
+        Map.of("setupMarks", Map.of("people", "skipped"), "setupGuideHidden", true)).json();
+    assertThat(s.path("setupMarks").path("tax").asText()).isEqualTo("done");
+    assertThat(s.path("setupMarks").path("people").asText()).isEqualTo("skipped");
+    assertThat(s.path("setupGuideHidden").asBoolean()).isTrue();
+
+    var cleared = api.patch("/api/finance/profile/settings", Map.of("setupMarks", Map.of("tax", ""))).json();
+    assertThat(cleared.path("setupMarks").has("tax")).isFalse();
+    assertThat(cleared.path("setupMarks").path("people").asText()).isEqualTo("skipped");
+
+    assertThat(api.patch("/api/finance/profile/settings", Map.of("setupMarks", Map.of("lottery", "done"))).status())
+        .isEqualTo(400);
+    assertThat(api.patch("/api/finance/profile/settings", Map.of("setupMarks", Map.of("tax", "maybe"))).status())
+        .isEqualTo(400);
+  }
+
+  @Test
   void peopleYouManageAreAddedEditedAndArchived() {
     var child = api.post("/api/finance/people", Map.of("displayName", "Riya", "kind", "child",
         "type", "minor", "dob", "2018-06-01", "isDependent", true));

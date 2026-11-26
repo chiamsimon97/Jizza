@@ -12,7 +12,7 @@ import { useCashFlow, useSample } from '../data'
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
         {action}

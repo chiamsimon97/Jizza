@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Lock, MessageSquare, Sparkles, X } from 'lucide-react'
+import {
+  ArrowLeftRight, BarChart3, Bookmark, CalendarRange, Compass, Eye, EyeOff, FolderInput, GitBranch, Home as HomeIcon, Landmark, LayoutGrid, Lock,
+  MessageSquare, PieChart, Receipt, Scale, Settings as SettingsIcon, Share2, Shield, SlidersHorizontal, Sparkles, Target, TrendingUp, Users,
+  Wallet, X, Zap, type LucideIcon,
+} from 'lucide-react'
 import { financeApi } from '@/api/finance'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { fieldClass } from '@/components/ui/SlideOver'
@@ -30,7 +34,21 @@ import { QUICK_START_STEPS, QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
 import { Tax } from './screens/Tax'
 import { Connect } from './screens/Connect'
+import { Allocation } from './screens/Allocation'
+import { AssetTree } from './screens/AssetTree'
+import { Holdings } from './screens/Holdings'
+import { Lists } from './screens/Lists'
+import { Rules } from './screens/Rules'
+import { SetupGuide, SetupGuideBar, type SetupStep } from './screens/SetupGuide'
 import { usePortfolioScope } from './usePortfolioScope'
+
+/** An icon beside each sub-navigation label. */
+const VIEW_ICONS: Record<string, LucideIcon> = {
+  home: HomeIcon, actions: Zap, goals: Target, 'plan-builder': LayoutGrid, investments: TrendingUp, holdings: Wallet, allocation: PieChart,
+  'asset-tree': GitBranch, proposals: Scale, lists: Bookmark, rules: SlidersHorizontal, 'cash-flow': ArrowLeftRight, loans: Landmark,
+  protection: Shield, tax: Receipt, 'net-worth': BarChart3, schedules: CalendarRange, people: Users, sharing: Share2, connect: FolderInput,
+  settings: SettingsIcon,
+}
 
 /** Views that work on the sample household; the rest are the user's own setup. */
 const SAMPLE_VIEWS = new Set(['home', 'actions', 'cash-flow', 'loans', 'protection', 'net-worth'])
@@ -63,9 +81,14 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   const investments = visible.filter(v => v.group === 'investments')
   const people = shown.people.filter(p => p.status === 'active')
   const inInvestments = view.group === 'investments'
-  const open = (id: string) => setScope({ view: id, step: null, goal: null })
+  // The investments views keep the chosen goal; the rest start from all goals.
+  const open = (id: string) => setScope({ view: id, step: null, goal: findView(id).group === 'investments' ? scope.goal : null })
+  const goalOrNull = scope.goal === 'all' ? null : scope.goal
+  const pickGoal = (id: string | null) => setScope({ goal: id })
   const answer = (step: QuickStartStep) => setScope({ view: 'quick-start', step, sample: null })
   const startStep = QUICK_START_STEPS.some(s => s.id === scope.step) ? scope.step as QuickStartStep : null
+  const goStep = (s: SetupStep) => setScope({ view: s.view, guide: s.id, step: null, sample: null, goal: null })
+  const toGuide = () => setScope({ view: 'setup', guide: null, step: null, sample: null })
   const askKai = () => {
     setChatDraft(`@${agent.name} ${view.ask ?? ''}`)
     useAssistantStore.getState().newConversation()
@@ -99,17 +122,26 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
               <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 Goal
                 <select aria-label="Goal" className={`${fieldClass} !w-auto !py-1 text-xs`} disabled={sample || !goals.data?.length}
-                  value={view.id === 'goal' ? scope.goal : 'all'}
-                  onChange={e => setScope(e.target.value === 'all' ? { view: 'goals', goal: null } : { view: 'goal', goal: e.target.value, step: null })}>
+                  value={view.id === 'goal' || inInvestments ? scope.goal : 'all'}
+                  onChange={e => setScope(inInvestments ? { goal: e.target.value === 'all' ? null : e.target.value }
+                    : e.target.value === 'all' ? { view: 'goals', goal: null } : { view: 'goal', goal: e.target.value, step: null })}>
                   <option value="all">All goals</option>
                   {!sample && goals.data?.filter(g => g.goal.status !== 'archived').map(g => <option key={g.goal.id} value={g.goal.id}>{g.goal.name}</option>)}
                 </select>
               </label>
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-900 px-2 py-0.5 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900"
+              <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-gray-900 to-gray-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm dark:from-gray-100 dark:to-gray-300 dark:text-gray-900"
                 title="Kai only tracks and flags; nothing is proposed or placed in this release">
                 <Lock className="h-3 w-3" aria-hidden /> Observe only
               </span>
               <span className="ml-auto flex items-center gap-1">
+                {!sample && (
+                  <button type="button" onClick={toGuide} aria-current={view.id === 'setup' ? 'page' : undefined}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${view.id === 'setup'
+                      ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'
+                      : 'text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-900/30'}`}>
+                    <Compass className="h-3.5 w-3.5" aria-hidden /> Setup guide
+                  </button>
+                )}
                 <button type="button" onClick={() => hide.mutate(!hidden)} aria-pressed={hidden}
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
                   {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -125,24 +157,26 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
               {visible.filter(v => !v.group).map((v, i) => (
                 <span key={v.id} className="contents">
                   {i === 4 && investments.length > 0 && (
-                    <NavButton label="Investments" active={inInvestments} onClick={() => open(investments[0].id)} />
+                    <NavButton label="Investments" icon={VIEW_ICONS.investments} active={inInvestments} onClick={() => open(investments[0].id)} />
                   )}
-                  <NavButton label={v.label} active={view.id === v.id} onClick={() => open(v.id)} />
+                  <NavButton label={v.label} icon={VIEW_ICONS[v.id]} active={view.id === v.id} onClick={() => open(v.id)} />
                 </span>
               ))}
             </nav>
             {inInvestments && (
-              <nav aria-label="Investments" className="flex gap-1 overflow-x-auto">
-                {investments.map(v => <NavButton key={v.id} small label={v.label} active={view.id === v.id} onClick={() => open(v.id)} />)}
+              <nav aria-label="Investments" className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100/70 p-1 motion-safe:animate-fade-in dark:bg-gray-900/70">
+                {investments.map(v => <NavButton key={v.id} small label={v.label} icon={VIEW_ICONS[v.id]} active={view.id === v.id} onClick={() => open(v.id)} />)}
               </nav>
             )}
           </div>
 
+          <div key={view.id} className="motion-safe:animate-fade-in-up">
           <ErrorBoundary>
             {sample && !SAMPLE_VIEWS.has(view.id) && BUILT_VIEWS.has(view.id)
               ? <p className="text-sm text-gray-500 dark:text-gray-400">This part is your own setup, so the sample household doesn't show it. Leave the sample to open it.</p>
               : <>
-                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} />}
+                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} onSetupStep={goStep} />}
+                {view.id === 'setup' && <SetupGuide profile={profile} onGo={goStep} />}
                 {view.id === 'quick-start' && <QuickStart profile={profile} startAt={startStep} onOpen={open} />}
                 {view.id === 'actions' && <ActionPlan onOpen={open} />}
                 {view.id === 'goals' && <Goals person={scope.person} onNew={() => open('goal-new')} onOpenGoal={id => setScope({ view: 'goal', goal: id })} />}
@@ -164,10 +198,20 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
                 {view.id === 'net-worth' && <NetWorth people={people} onOpen={open} />}
                 {view.id === 'people' && <People />}
                 {view.id === 'connect' && <Connect people={profile.people} />}
+                {view.id === 'holdings' && <Holdings person={scope.person === 'all' ? null : scope.person} goal={goalOrNull} onOpen={open} />}
+                {view.id === 'allocation' && <Allocation goal={goalOrNull} onOpen={open} />}
+                {view.id === 'asset-tree' && <AssetTree goal={goalOrNull} onGoal={pickGoal} />}
+                {view.id === 'rules' && <Rules goal={goalOrNull} onGoal={pickGoal} />}
+                {view.id === 'lists' && <Lists />}
                 {view.id === 'settings' && <Settings settings={profile.settings} />}
                 {!BUILT_VIEWS.has(view.id) && <NotYet view={view} />}
               </>}
           </ErrorBoundary>
+          </div>
+
+          {!sample && scope.guide && view.id !== 'setup' && (
+            <SetupGuideBar profile={profile} stepId={scope.guide} onGuide={toGuide} onGo={goStep} onClose={() => setScope({ guide: null })} />
+          )}
 
           <Disclaimer />
         </div>
@@ -176,12 +220,15 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   )
 }
 
-function NavButton({ label, active, onClick, small = false }: { label: string; active: boolean; onClick: () => void; small?: boolean }) {
+function NavButton({ label, active, onClick, small = false, icon: Icon }: { label: string; active: boolean; onClick: () => void; small?: boolean; icon?: LucideIcon }) {
   return (
     <button type="button" onClick={onClick} aria-current={active ? 'page' : undefined}
-      className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 ${small ? 'py-1 text-xs' : 'py-1.5 text-sm'} ${active
-        ? 'bg-brand-50 font-medium text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'
-        : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+      className={`group inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 transition-all duration-150 ${small ? 'py-1 text-xs' : 'py-1.5 text-sm'} ${active
+        ? small
+          ? 'bg-white font-medium text-brand-700 shadow-sm dark:bg-gray-800 dark:text-brand-200'
+          : 'bg-brand-50 font-medium text-brand-700 shadow-sm ring-1 ring-inset ring-brand-200/70 dark:bg-brand-900/30 dark:text-brand-200 dark:ring-brand-800/60'
+        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
+      {Icon && <Icon className={`${small ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${active ? '' : 'text-gray-400 transition-colors group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300'}`} aria-hidden />}
       {label}
     </button>
   )

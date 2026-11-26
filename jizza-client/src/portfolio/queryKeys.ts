@@ -30,5 +30,12 @@ export const financeKeys = {
   imports: ['finance', 'imports'] as const,
   importBatch: (id: string) => ['finance', 'imports', id] as const,
   transactions: (accountId: string, month: string) => ['finance', 'transactions', accountId, month] as const,
+  holdings: (person: string | null, goal: string | null) => ['finance', 'holdings', person ?? 'all', goal ?? 'all'] as const,
+  holding: (accountId: string, instrumentId: string) => ['finance', 'holdings', 'one', accountId, instrumentId] as const,
+  tree: (goalId: string) => ['finance', 'tree', goalId] as const,
+  allocation: (goalId: string | null) => ['finance', 'allocation', goalId ?? 'all'] as const,
+  rules: (goalId: string | null, instrumentId: string | null) => ['finance', 'rules', goalId ?? 'none', instrumentId ?? 'none'] as const,
+  lists: ['finance', 'lists'] as const,
+  instruments: (q: string) => ['finance', 'instruments', q] as const,
   estate: (sample: boolean, personId: string) => ['finance', 'estate', sample ? 'sample' : 'mine', personId] as const,
 }

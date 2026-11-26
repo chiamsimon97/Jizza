@@ -151,3 +151,62 @@ test('portfolio: a bank statement is imported, reviewed, saved and undone', asyn
   await expect(row.getByText('Undone')).toBeVisible()
   expect(problems).toEqual([])
 })
+
+/**
+ * Phase 2: one holding of 100 units bought in two lots, split between two goals in the earmark
+ * editor. A split that doesn't add up keeps Save off; moving units into a goal under three years
+ * away asks first and saves only on "Keep the shares". Every run uses its own account and
+ * instrument, so earlier runs never change what this one sees.
+ */
+test('portfolio: split a holding between goals in the earmark editor', async ({ page, request, problems }) => {
+  const agents = await (await apiCall(request, 'GET', '/api/agents')).json()
+  const kai = agents.find((a: { key: string }) => a.key === 'finance')
+  const run = Date.now().toString(36).toUpperCase()
+  const post = async (path: string, body: unknown) => {
+    const r = await apiCall(request, 'POST', path, body)
+    expect(r.ok(), `${path}: ${await r.text()}`).toBeTruthy()
+    return r.json()
+  }
+  const account = await post('/api/finance/accounts', { kind: 'demat', provider: 'Example Broker', nickname: `Demat ${run}` })
+  const isin = `INX${run.padStart(8, '0').slice(-8)}1`
+  const share = await post('/api/finance/instruments', { name: `Example Share ${run}`, isin, type: 'stock', assetClass: 'equity' })
+  const house = (await post('/api/finance/goals', { type: 'home', name: `House ${run}`, targetAmountToday: 2000000, targetDate: '2040-01-01' })).goal
+  const soon = new Date()
+  soon.setFullYear(soon.getFullYear() + 1)
+  const trip = (await post('/api/finance/goals', { type: 'travel', name: `Trip ${run}`, targetAmountToday: 150000, targetDate: soon.toISOString().slice(0, 10) })).goal
+  await post('/api/finance/holdings/purchases', { accountId: account.id, instrumentId: share.id, date: '2023-03-15', units: 60, pricePerUnit: 1600 })
+  await post('/api/finance/holdings/purchases', { accountId: account.id, instrumentId: share.id, date: '2024-08-15', units: 40, pricePerUnit: 1550, goalId: house.id })
+
+  await page.goto(`/agents/${kai.id}?tab=portfolio&view=holdings`)
+  await expect(page.getByRole('heading', { name: 'Holdings' })).toBeVisible()
+  await page.getByRole('button', { name: new RegExp(`Example Share ${run}`) }).click()
+
+  const total = page.getByTestId('earmark-total')
+  await expect(total).toHaveText('Total 100 / 100 units')
+  await expect(page.getByText('A sale here uses the March 2023 lot first.')).toBeVisible()
+
+  // 60 unassigned, 40 for the house: move 60 to the house, then the sum is wrong until Unassigned is emptied.
+  await page.getByLabel(`Units for House ${run}`).fill('100')
+  await expect(total).toHaveText('Total 160 / 100 units')
+  await expect(page.getByRole('button', { name: 'Save split' })).toBeDisabled()
+  await page.getByLabel('Units for Unassigned').fill('0')
+  await expect(total).toHaveText('Total 100 / 100 units')
+  await page.getByRole('button', { name: 'Save split' }).click()
+  await expect(page.getByRole('button', { name: 'Save split' })).toBeDisabled()
+
+  // 10 to the trip: shares in a goal under 3 years away need the user's choice.
+  await page.getByLabel(`Units for House ${run}`).fill('90')
+  await page.getByLabel(`Units for Trip ${run}`).fill('10')
+  await page.getByRole('button', { name: 'Save split' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Shares in a short goal' })
+  await expect(dialog).toContainText('under 3 years away')
+  await dialog.getByRole('button', { name: 'Keep the shares' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Kept by your choice')).toBeVisible()
+  await expect(total).toHaveText('Total 100 / 100 units')
+
+  const saved = await (await apiCall(request, 'GET', `/api/finance/holdings/${account.id}/${share.id}`)).json()
+  const units = Object.fromEntries(saved.earmarks.map((e: { goalId: string; units: number }) => [e.goalId, e.units]))
+  expect(units).toEqual({ [house.id]: 90, [trip.id]: 10 })
+  expect(problems).toEqual([])
+})
