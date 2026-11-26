@@ -40,7 +40,9 @@ public class JdbcFinanceRecords implements FinanceRecords {
       "fin_allocation_line", "fin_projection_run",
       // Phase 2
       "fin_holding_lot", "fin_earmark", "fin_earmark_event", "fin_realized_gain", "fin_node",
-      "fin_rule", "fin_rule_template", "fin_list_item");
+      "fin_rule", "fin_rule_template", "fin_list_item",
+      // Connected sources
+      "fin_sync_source", "fin_order", "fin_mail_source");
   static final Set<String> TABLES = Set.copyOf(TABLES_IN_ORDER);
 
   private static final Set<String> NOT_WRITABLE = Set.of("id", "user_id", "created_at", "updated_at");
@@ -61,7 +63,7 @@ public class JdbcFinanceRecords implements FinanceRecords {
   @Transactional(readOnly = true)
   public List<ObjectNode> list(String table, UUID userId, Map<String, Object> where) {
     var cols = columns(table);
-    var sql = new StringBuilder("select row_to_json(t)::text from " + table + " t where t.user_id = ?");
+    var sql = new StringBuilder("select " + json(cols) + " from " + table + " t where t.user_id = ?");
     List<Object> args = new ArrayList<>();
     args.add(userId);
     appendWhere(cols, where, sql, args);
@@ -73,8 +75,8 @@ public class JdbcFinanceRecords implements FinanceRecords {
   @Override
   @Transactional(readOnly = true)
   public Optional<ObjectNode> get(String table, UUID userId, UUID id) {
-    columns(table);
-    return jdbc.queryForList("select row_to_json(t)::text from " + table
+    var cols = columns(table);
+    return jdbc.queryForList("select " + json(cols) + " from " + table
             + " t where t.id = ? and t.user_id = ?", String.class, id, userId)
         .stream().findFirst().map(JdbcFinanceRecords::toRow);
   }
@@ -93,7 +95,7 @@ public class JdbcFinanceRecords implements FinanceRecords {
       args.add(param(e.getValue()));
     }
     String json = jdbc.queryForObject("insert into " + table + " as t (" + names + ") values ("
-        + marks + ") returning row_to_json(t)::text", String.class, args.toArray());
+        + marks + ") returning " + json(cols), String.class, args.toArray());
     return toRow(json);
   }
 
@@ -110,9 +112,45 @@ public class JdbcFinanceRecords implements FinanceRecords {
     args.add(id);
     args.add(userId);
     return jdbc.queryForList("update " + table + " as t set " + set
-            + " where t.id = ? and t.user_id = ? returning row_to_json(t)::text", String.class,
+            + " where t.id = ? and t.user_id = ? returning " + json(cols), String.class,
             args.toArray())
         .stream().findFirst().map(JdbcFinanceRecords::toRow);
+  }
+
+  @Override
+  @Transactional
+  public boolean writeSecret(String table, UUID userId, UUID id, String field, byte[] value) {
+    String col = secretColumn(table, field);
+    return jdbc.update("update " + table + " set " + col + " = ?, updated_at = now() where id = ? and user_id = ?",
+        value, id, userId) > 0;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<byte[]> readSecret(String table, UUID userId, UUID id, String field) {
+    String col = secretColumn(table, field);
+    return jdbc.queryForList("select " + col + " from " + table + " where id = ? and user_id = ?", byte[].class, id, userId)
+        .stream().filter(java.util.Objects::nonNull).findFirst();
+  }
+
+  /** A bytea column of the table: the only kind a secret goes in. */
+  private String secretColumn(String table, String field) {
+    var cols = columns(table);
+    String col = snake(field);
+    if (!"bytea".equals(cols.get(col))) throw new IllegalArgumentException("Field " + field + " is not a secret");
+    return col;
+  }
+
+  /**
+   * The row as JSON text. Secret (bytea) columns are left out, so encrypted values never reach a
+   * screen, an export or the agent; they are read only through {@link #readSecret}.
+   */
+  private static String json(Map<String, String> cols) {
+    var secrets = cols.entrySet().stream().filter(e -> "bytea".equals(e.getValue())).map(Map.Entry::getKey).sorted().toList();
+    if (secrets.isEmpty()) return "row_to_json(t)::text";
+    var sb = new StringBuilder("(to_jsonb(t)");
+    for (String c : secrets) sb.append(" - '").append(c).append('\'');
+    return sb.append(")::text").toString();
   }
 
   @Override

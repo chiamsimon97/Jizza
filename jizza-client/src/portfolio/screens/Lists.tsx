@@ -16,6 +16,7 @@ import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText, useSample } from '../data'
 import { financeKeys } from '../queryKeys'
 import { GoalPicker } from './GoalPicker'
+import { OrderDialog } from '../components/OrderDialog'
 
 const UNIT_ACCOUNTS = new Set(['demat', 'mf_folio', 'retirement'])
 
@@ -29,6 +30,7 @@ export function Lists() {
   const [type, setType] = useState<ListType>('watch')
   const [adding, setAdding] = useState(false)
   const [buying, setBuying] = useState<ListItem | null>(null)
+  const [ordering, setOrdering] = useState<ListItem | null>(null)
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: [...financeKeys.lists, type], queryFn: () => financeApi.lists(type), enabled: !sample })
   const done = () => qc.invalidateQueries({ queryKey: financeKeys.all })
@@ -65,7 +67,10 @@ export function Lists() {
                 <div className="flex flex-wrap justify-end gap-1">
                   {i.listType === 'watch'
                     ? <Button size="sm" variant="ghost" onClick={() => promote.mutate(i.id)}><ArrowRight className="h-4 w-4" /> Next to buy</Button>
-                    : <Button size="sm" variant="ghost" onClick={() => setBuying(i)}><ShoppingCart className="h-4 w-4" /> I bought it</Button>}
+                    : <>
+                        <Button size="sm" variant="ghost" onClick={() => setOrdering(i)}><ShoppingCart className="h-4 w-4" /> Prepare order</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setBuying(i)}>I bought it</Button>
+                      </>}
                   <Button size="sm" variant="ghost" aria-label={`Remove ${i.name}`} onClick={() => remove.mutate(i.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               ),
@@ -74,6 +79,8 @@ export function Lists() {
         </Panel>
       )}
       {adding && <AddDialog listType={type} onClose={() => setAdding(false)} onDone={done} />}
+      {ordering && <OrderDialog instrumentId={ordering.instrumentId} name={ordering.name ?? ordering.symbol ?? "this one"} side="buy" onClose={() => setOrdering(null)}
+        onBought={() => { setBuying(ordering); setOrdering(null) }} />}
       {buying && <BoughtDialog item={buying} onClose={() => setBuying(null)} onDone={done} />}
     </div>
   )

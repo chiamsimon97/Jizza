@@ -14,6 +14,20 @@ Press **New goal** to pick from the library: emergency fund, retirement, child e
 
 Steps 5, 7 and 8 of the wizard (starting mix, glide path, rules) open once you add holdings.
 
+## Does a goal meet its target?
+
+Kai checks every goal against its target and gives it a verdict: **On track**, **At risk**, **Off track** or **Not enough data**.
+
+Markets don't grow by the same amount every year. So Kai plays out thousands of possible markets, some good and some poor, and counts how often each goal gets there. That count is the goal's **chance**. Each priority has a bar: 90% for survival goals, 75% for important ones and 50% for aspirational ones. You can change the bars in **Settings**.
+
+- **On track**: the chance is at or above the bar, and the goal's mix is inside its bands.
+- **At risk**: the chance is up to 15 points below the bar, or the mix has drifted outside a band.
+- **Off track**: the chance is further below the bar, or nothing is set aside for the goal yet.
+
+Each goal card shows its chance against the bar. Open a goal to see what you'd have in a poor market (1 in 10) and in a typical one, and how much more a month would close any gap. When you've added holdings and said which goal each unit is for, the check uses what those units are worth.
+
+Kai runs the check every night and sends you a notification when a verdict changes. The notification names the goal, never an amount. Press **Check again** on the Goals screen to run it now. Kai only tells you whether a goal is on course. It never buys or sells for you.
+
 Open a goal to see the funding sum, the mix its bucket starts from, and when it moves to the next bucket. You can edit it, pause it, archive it or mark it achieved.
 
 Until you add holdings, Kai assumes its default yearly returns for each bucket. They are listed under **Settings**.

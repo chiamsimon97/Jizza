@@ -14,6 +14,7 @@ import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText, useSample } from '../data'
 import { financeKeys } from '../queryKeys'
 import { EarmarkEditor, fromMicro } from './EarmarkEditor'
+import { OrderDialog } from '../components/OrderDialog'
 
 const units = (n: number) => fromMicro(Math.round(n * 1_000_000))
 
@@ -38,6 +39,7 @@ export function Holdings({ person, goal, onOpen }: { person: string | null; goal
     enabled: !sample,
   })
   const [open, setOpen] = useState<{ accountId: string; instrumentId: string; name: string } | null>(null)
+  const [ordering, setOrdering] = useState<{ accountId: string; instrumentId: string; name: string } | null>(null)
   const refresh = useMutation({
     mutationFn: financeApi.refreshPrices,
     onSuccess: () => qc.invalidateQueries({ queryKey: financeKeys.all }),
@@ -151,8 +153,19 @@ export function Holdings({ person, goal, onOpen }: { person: string | null; goal
 
       <SlideOver open={!!open} title={open?.name ?? ''} description="Which goal each unit is for, and the lots a sale would use."
         onClose={() => setOpen(null)} wide>
-        {open && <EarmarkEditor accountId={open.accountId} instrumentId={open.instrumentId} />}
+        {open && (
+          <div className="flex flex-col gap-3">
+            {!sample && (
+              <div className="flex justify-end">
+                <Button size="sm" variant="secondary" onClick={() => setOrdering(open)}>Prepare order</Button>
+              </div>
+            )}
+            <EarmarkEditor accountId={open.accountId} instrumentId={open.instrumentId} />
+          </div>
+        )}
       </SlideOver>
+      {ordering && <OrderDialog accountId={ordering.accountId} instrumentId={ordering.instrumentId} name={ordering.name}
+        side="sell" onClose={() => setOrdering(null)} />}
     </div>
   )
 }

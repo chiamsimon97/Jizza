@@ -477,6 +477,38 @@ export interface GoalFunding {
   nextBucket: Bucket | null
 }
 
+/** Does a goal meet its target (spec 5.6): the simulated chance against the bar for its priority. */
+export type GoalVerdict = 'on_track' | 'at_risk' | 'off_track' | 'not_enough_data'
+
+export interface GoalCheck {
+  goalId: string
+  name: string
+  priority: string
+  targetDate: string | null
+  verdict: GoalVerdict
+  /** Paths that reach the target, in percent. */
+  successPct: number | null
+  /** The bar for the goal's priority, in percent. */
+  requiredPct: number | null
+  fundedPct: number | null
+  currentValue: number
+  monthly: number
+  futureTarget: number | null
+  projected: number | null
+  p10: number | null
+  p50: number | null
+  shortfall: number | null
+  /** What more a month would close the gap; zero when none is needed. */
+  extraMonthly: number | null
+  requiredMonthly: number | null
+  partsOutsideBand: number
+  shortGoalShares: number
+  earmarked: boolean
+  headline: string
+  fix: string
+  previousVerdict: GoalVerdict | null
+}
+
 export interface GoalView {
   goal: FinGoal
   ownerName: string
@@ -731,6 +763,120 @@ export interface ImportStats {
   balance?: { amount: number; date: string }
   columns?: { headerRow: number; sure: boolean; headers: string[]; sample: string[][] }
 }
+
+/** A broker's MCP server on Connectors that can be a source: it offers a holdings tool. */
+export interface SyncCandidate {
+  serverId: string
+  name: string
+  signedIn: boolean
+  enabled: boolean
+  /** It also offers mutual fund holdings. */
+  funds: boolean
+  /** It offers order placing (a self-hosted server with your own key; Zerodha's hosted one doesn't). */
+  placesOrders: boolean
+}
+
+export type SyncStatus = 'to_review' | 'no_change' | 'needs_sign_in' | 'failed'
+
+/** A connected server tied to one demat account; a sync lands as an import to review. */
+export interface SyncSource {
+  id: string
+  serverId: string
+  serverName: string
+  accountId: string
+  accountName: string
+  enabled: boolean
+  signedIn: boolean
+  lastStatus: SyncStatus | null
+  lastSyncedAt: string | null
+  lastBatchId: string | null
+}
+
+export interface SourcesView { sources: SyncSource[]; servers: SyncCandidate[] }
+
+export interface SyncResult { status: SyncStatus; batchId: string | null; holdings: number; message: string }
+
+export type MailStatus = 'to_review' | 'nothing_new' | 'needs_sign_in' | 'needs_password' | 'failed'
+export type MailKind = 'cas' | 'bank'
+
+/** A mail server that can search and read mail (Gmail on Connectors). */
+export interface MailCandidate { serverId: string; name: string; signedIn: boolean; enabled: boolean }
+
+/** Statements Kai pulls from email: a sender, and where its statement goes. The password never comes back. */
+export interface MailSource {
+  id: string
+  serverId: string
+  serverName: string
+  kind: MailKind
+  personId: string | null
+  accountId: string | null
+  accountName: string | null
+  sender: string
+  subject: string | null
+  hasPassword: boolean
+  enabled: boolean
+  signedIn: boolean
+  lastStatus: MailStatus | null
+  lastCheckedAt: string | null
+  lastBatchId: string | null
+}
+
+export interface MailSourcesView { sources: MailSource[]; servers: MailCandidate[]; casSenders: string }
+
+export interface MailSourceInput {
+  serverId: string
+  kind: MailKind
+  personId?: string
+  accountId?: string
+  sender?: string
+  subject?: string
+  password?: string
+}
+
+export interface MailCheckResult { status: MailStatus; batchId: string | null; found: number; message: string }
+
+export type OrderSide = 'buy' | 'sell'
+export type OrderType = 'market' | 'limit'
+
+export interface OrderInput {
+  accountId: string
+  instrumentId: string
+  side: OrderSide
+  quantity: number
+  orderType: OrderType
+  limitPrice?: number | null
+  goalId?: string | null
+}
+
+/** A lot a sale would use, in sale order, with its gain at today's price. */
+export interface OrderLotUse { acquiredOn: string | null; quantity: number; cost: number | null; gain: number | null; term: 'st' | 'lt' | null }
+
+export interface OrderPreview {
+  accountId: string
+  instrumentId: string
+  instrumentName: string
+  symbol: string | null
+  exchange: string
+  side: OrderSide
+  quantity: number
+  orderType: OrderType
+  limitPrice: number | null
+  price: number | null
+  priceDate: string | null
+  estimate: number | null
+  held: number
+  lots: OrderLotUse[]
+  shortTermGain: number | null
+  longTermGain: number | null
+  unknownTermGain: number | null
+  /** A connected broker can place it; otherwise whyNot says why. */
+  canPlace: boolean
+  placeVia: string | null
+  whyNot: string | null
+  brokerUrl: string
+}
+
+export interface OrderPlaced { orderId: string; status: 'sent' | 'rejected'; brokerOrderId: string | null; message: string }
 
 export interface ImportBatch {
   id: string

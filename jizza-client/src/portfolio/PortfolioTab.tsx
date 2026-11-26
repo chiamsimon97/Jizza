@@ -175,7 +175,7 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
             {sample && !SAMPLE_VIEWS.has(view.id) && BUILT_VIEWS.has(view.id)
               ? <p className="text-sm text-gray-500 dark:text-gray-400">This part is your own setup, so the sample household doesn't show it. Leave the sample to open it.</p>
               : <>
-                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} onSetupStep={goStep} />}
+                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} onSetupStep={goStep} onOpenGoal={id => setScope({ view: 'goal', goal: id })} />}
                 {view.id === 'setup' && <SetupGuide profile={profile} onGo={goStep} />}
                 {view.id === 'quick-start' && <QuickStart profile={profile} startAt={startStep} onOpen={open} />}
                 {view.id === 'actions' && <ActionPlan onOpen={open} />}

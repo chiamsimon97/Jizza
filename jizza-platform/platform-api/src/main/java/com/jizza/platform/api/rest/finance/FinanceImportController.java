@@ -7,6 +7,8 @@ import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.finance.imports.ImportService;
+import com.jizza.platform.usecase.finance.sync.BrokerSyncService;
+import com.jizza.platform.usecase.finance.sync.MailPullService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Kai Portfolio, Phase 1c: statement imports (bank CSV, CAS PDF, broker holdings and tradebook)
+ * Kai Portfolio, Phase 1c: statement imports (bank CSV or PDF, CAS PDF, broker holdings and tradebook)
  * with review before saving and undo, and the transactions they bring in. Every route is the
  * caller's own data only. Exists only while {@code jizza.finance.enabled} is on.
  */
@@ -38,9 +41,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class FinanceImportController {
 
   private final ImportService imports;
+  private final BrokerSyncService sync;
+  private final MailPullService mail;
 
-  public FinanceImportController(ImportService imports) {
+  public FinanceImportController(ImportService imports, BrokerSyncService sync, MailPullService mail) {
     this.imports = imports;
+    this.sync = sync;
+    this.mail = mail;
   }
 
   /** The file and what it is. {@code password} opens a locked PDF for this one read and is never kept. */
@@ -105,5 +112,81 @@ public class FinanceImportController {
   public ImportService.Recategorised recategorise(@PathVariable UUID id, @RequestBody CategoryBody body) {
     return imports.recategorise(CurrentUser.userId(), id, body == null ? null : body.categoryId(),
         body != null && Boolean.TRUE.equals(body.always()));
+  }
+
+  // ── Connected sources ───────────────────────────────────────────────────────
+
+  public record LinkBody(UUID serverId, UUID accountId) {}
+
+  public record EnabledBody(Boolean enabled) {}
+
+  /** Linked sources, and the servers on Connectors that could be one (they offer holdings). */
+  @GetMapping("/sources")
+  public BrokerSyncService.SourcesView sources() {
+    return sync.view(CurrentUser.userId());
+  }
+
+  @PostMapping("/sources")
+  public BrokerSyncService.Source link(@RequestBody LinkBody body) {
+    if (body == null || body.serverId() == null || body.accountId() == null) {
+      throw new ValidationException("Choose a connected server and an account.");
+    }
+    return sync.link(CurrentUser.userId(), body.serverId(), body.accountId());
+  }
+
+  @PatchMapping("/sources/{id}")
+  public BrokerSyncService.Source setEnabled(@PathVariable UUID id, @RequestBody EnabledBody body) {
+    if (body == null || body.enabled() == null) throw new ValidationException("Say whether the source is on.");
+    return sync.setEnabled(CurrentUser.userId(), id, body.enabled());
+  }
+
+  @DeleteMapping("/sources/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void unlink(@PathVariable UUID id) {
+    sync.unlink(CurrentUser.userId(), id);
+  }
+
+  /** Reads the holdings now; the result is a batch to review, never saved on its own. */
+  @PostMapping("/sources/{id}/sync")
+  public BrokerSyncService.SyncResult syncNow(@PathVariable UUID id) {
+    return sync.syncNow(CurrentUser.userId(), id);
+  }
+
+  // ── Statements from email ───────────────────────────────────────────────────
+
+  /** {@code password} is the PDF password; it is kept encrypted and never sent back. */
+  public record MailBody(UUID serverId, String kind, UUID personId, UUID accountId, String sender, String subject,
+                         String password) {}
+
+  public record MailChangeBody(String sender, String subject, String password, Boolean enabled) {}
+
+  /** Linked mail sources, and the servers on Connectors that can search and read mail. */
+  @GetMapping("/mail-sources")
+  public MailPullService.SourcesView mailSources() {
+    return mail.view(CurrentUser.userId());
+  }
+
+  @PostMapping("/mail-sources")
+  @ResponseStatus(HttpStatus.CREATED)
+  public MailPullService.Source linkMail(@RequestBody MailBody body) {
+    return mail.link(CurrentUser.userId(), new MailPullService.Link(body.serverId(), body.kind(), body.personId(),
+        body.accountId(), body.sender(), body.subject(), body.password()));
+  }
+
+  @PatchMapping("/mail-sources/{id}")
+  public MailPullService.Source changeMail(@PathVariable UUID id, @RequestBody MailChangeBody body) {
+    return mail.change(CurrentUser.userId(), id, body.sender(), body.subject(), body.password(), body.enabled());
+  }
+
+  @DeleteMapping("/mail-sources/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void unlinkMail(@PathVariable UUID id) {
+    mail.unlink(CurrentUser.userId(), id);
+  }
+
+  /** Looks for new statement mails now; each one found is a batch to review, never saved on its own. */
+  @PostMapping("/mail-sources/{id}/check")
+  public MailPullService.CheckResult checkMail(@PathVariable UUID id) {
+    return mail.checkNow(CurrentUser.userId(), id);
   }
 }

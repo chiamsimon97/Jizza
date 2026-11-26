@@ -33,6 +33,7 @@ const LABELS: Record<string, string> = {
   'inflation.profiles': 'Inflation by kind of goal (% a year)',
   'returns.expected': 'Expected returns (% a year)',
   'returns.monte_carlo': 'Volatility, correlation and simulation paths',
+  'goals.verdict_margin': 'Goal check: points below the bar that still count as at risk',
   'goals.library': 'Goal library defaults',
   'risk.questionnaire_v1': 'Risk questionnaire, version 1',
   'tax.new_regime': 'New tax regime: slabs, standard deduction, rebate',

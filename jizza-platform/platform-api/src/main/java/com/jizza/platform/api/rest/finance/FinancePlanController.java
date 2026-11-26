@@ -6,6 +6,7 @@ import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.finance.builder.FinBuilderUseCase;
 import com.jizza.platform.usecase.finance.goal.FinGoalUseCase;
+import com.jizza.platform.usecase.finance.goal.GoalCheckService;
 import com.jizza.platform.usecase.finance.risk.FinRiskUseCase;
 import com.jizza.platform.usecase.finance.tax.FinTaxUseCase;
 import java.util.List;
@@ -37,16 +38,30 @@ public class FinancePlanController {
   private final FinBuilderUseCase builder;
   private final FinRiskUseCase risk;
   private final FinTaxUseCase tax;
+  private final GoalCheckService checks;
 
   public FinancePlanController(FinGoalUseCase goals, FinBuilderUseCase builder, FinRiskUseCase risk,
-                               FinTaxUseCase tax) {
+                               FinTaxUseCase tax, GoalCheckService checks) {
     this.goals = goals;
     this.builder = builder;
     this.risk = risk;
     this.tax = tax;
+    this.checks = checks;
   }
 
   // ── Goals ───────────────────────────────────────────────────────────────────
+
+  /** Does each goal meet its target: a verdict, the chance, the gap and the fix. Worked out now. */
+  @GetMapping("/goal-checks")
+  public List<GoalCheckService.Check> goalChecks() {
+    return checks.list(CurrentUser.userId());
+  }
+
+  /** Runs the checks now and keeps the result, as the nightly job does. */
+  @PostMapping("/goal-checks/run")
+  public List<GoalCheckService.Check> runGoalChecks() {
+    return checks.runOwn(CurrentUser.userId());
+  }
 
   @GetMapping("/goal-library")
   public List<FinGoalUseCase.LibraryCard> library() {

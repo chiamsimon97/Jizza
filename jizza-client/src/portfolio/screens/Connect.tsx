@@ -15,6 +15,8 @@ import { LoadFailed, Panel, Pill, Row } from '../components/Panel'
 import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText } from '../data'
 import { financeKeys } from '../queryKeys'
+import { ConnectedSources } from './ConnectedSources'
+import { MailSources } from './MailSources'
 
 interface Source {
   kind: ImportKind
@@ -29,11 +31,12 @@ interface Source {
 
 export const SOURCES: Source[] = [
   {
-    kind: 'bank_csv', title: 'Bank statement', file: 'CSV from any bank',
+    kind: 'bank_csv', title: 'Bank statement', file: 'CSV or PDF from any bank',
     can: ['Each payment and credit, sorted into need, want and save', 'The closing balance of a savings or current account',
-      'Any bank: Kai finds the columns, or you pick them once and Kai remembers'],
-    cannot: ['Bank PDFs yet: download CSV, or save the Excel file as CSV', 'A card’s outstanding: only its spending comes in'],
-    accountKinds: ['savings', 'current', 'credit_card', 'wallet', 'deposit', 'other'], accept: '.csv,text/csv',
+      'Any bank: Kai finds the columns, or you pick them once and Kai remembers',
+      'The PDF your bank mails: Kai tells money in from out by the balance'],
+    cannot: ['Scanned (picture) PDFs: download CSV instead', 'A card’s outstanding: only its spending comes in'],
+    accountKinds: ['savings', 'current', 'credit_card', 'wallet', 'deposit', 'other'], accept: '.csv,text/csv,.pdf,application/pdf',
   },
   {
     kind: 'cas_pdf', title: 'Mutual funds (CAS)', file: 'CAMS or KFintech consolidated statement (PDF)',
@@ -87,7 +90,17 @@ export function mappingComplete(m: Partial<ColumnMapping>): boolean {
 }
 
 function kindTitle(kind: ImportKind) {
-  return SOURCES.find(s => s.kind === kind)?.title ?? 'Bank PDF'
+  return SOURCES.find(s => s.kind === kind)?.title ?? 'Bank statement'
+}
+
+/** A bank file is read as CSV or PDF by what it is. */
+export function bankKind(file: File | null): ImportKind {
+  return file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) ? 'bank_pdf' : 'bank_csv'
+}
+
+/** The source card an import kind belongs to: a bank PDF goes with the bank statement card. */
+export function sourceOf(kind: ImportKind): ImportKind {
+  return kind === 'bank_pdf' ? 'bank_csv' : kind
 }
 
 /**
@@ -131,9 +144,13 @@ export function Connect({ people }: { people: FinPerson[] }) {
         </p>
       </div>
 
+      <ConnectedSources accounts={accounts.data} onReview={id => { setSource('broker_holdings'); setOpen(id); setLast(null) }} />
+      <MailSources accounts={accounts.data} people={people}
+        onReview={(id, kind) => { setSource(kind === 'cas' ? 'cas_pdf' : 'bank_csv'); setOpen(id); setLast(null) }} />
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {SOURCES.map(s => {
-          const latest = history.find(b => b.kind === s.kind)
+          const latest = history.find(b => sourceOf(b.kind) === s.kind)
           return (
             <Panel key={s.kind} title={s.title} className={source === s.kind ? 'ring-2 ring-brand-400' : ''}>
               <p className="text-xs text-gray-500 dark:text-gray-400">{s.file}</p>
@@ -173,7 +190,7 @@ export function Connect({ people }: { people: FinPerson[] }) {
               header: 'Actions', cell: b => b.status === 'committed'
                 ? <Button size="sm" variant="secondary" loading={undo.isPending && undo.variables === b.id} onClick={() => undo.mutate(b.id)}><RotateCcw className="h-3.5 w-3.5" aria-hidden />Undo</Button>
                 : b.status === 'parsed' || b.status === 'needs_review'
-                  ? <Button size="sm" variant="ghost" onClick={() => { setSource(b.kind); setOpen(b.id); setLast(null) }}>Review</Button>
+                  ? <Button size="sm" variant="ghost" onClick={() => { setSource(sourceOf(b.kind)); setOpen(b.id); setLast(null) }}>Review</Button>
                   : null,
             },
           ]} />
@@ -215,7 +232,7 @@ function ImportForm({ source, people, accounts, onRead, onCancel }: {
         qc.invalidateQueries({ queryKey: financeKeys.accounts })
       }
       const input: ImportInput = source.accountKinds
-        ? { kind: source.kind, file: file!, accountId: account }
+        ? { kind: source.kind === 'bank_csv' ? bankKind(file) : source.kind, file: file!, accountId: account, password: password || undefined }
         : { kind: source.kind, file: file!, personId, password: password || undefined }
       const batch = await financeApi.upload(input)
       return { batch, input }
@@ -258,12 +275,14 @@ function ImportForm({ source, people, accounts, onRead, onCancel }: {
             hint={last4Bad ? 'Four digits only.' : 'Only the last four, to tell accounts apart.'} onChange={v => setDraft(d => ({ ...d, last4: v }))} />
         </div>
       )}
-      {source.kind === 'cas_pdf' && (
+      {(source.kind === 'cas_pdf' || (source.kind === 'bank_csv' && bankKind(file) === 'bank_pdf')) && (
         <label className="flex flex-col gap-1 text-sm sm:max-w-sm">
           <span className="font-medium text-gray-700 dark:text-gray-300">PDF password</span>
           <input type="password" aria-label="PDF password" autoComplete="off" maxLength={64} value={password} onChange={e => setPassword(e.target.value)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-          <span className="text-xs text-gray-500 dark:text-gray-400">The one you set when you asked for the statement. Kai uses it to open the file once and never keeps it.</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{source.kind === 'cas_pdf'
+            ? 'The one you set when you asked for the statement.' : 'Leave it empty if the PDF opens without one. Banks often use your customer ID or date of birth.'}{' '}
+            Kai uses it to open the file once and never keeps it.</span>
         </label>
       )}
       <div className="flex flex-wrap items-center gap-2">
@@ -316,7 +335,7 @@ function Review({ id, last, accounts, onReread, onDone }: {
   }
   if (b.status !== 'parsed') return null
 
-  const bank = b.kind === 'bank_csv'
+  const bank = b.kind === 'bank_csv' || b.kind === 'bank_pdf'
   const rows = b.stats.rows ?? []
   const cats = categories.data ?? []
   return (

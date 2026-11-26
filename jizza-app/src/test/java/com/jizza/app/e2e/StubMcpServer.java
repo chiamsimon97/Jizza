@@ -27,6 +27,14 @@ public final class StubMcpServer implements AutoCloseable {
   public final List<String> calls = java.util.Collections.synchronizedList(new ArrayList<>());
   /** The Authorization header of every request, so tests see what Jizza sent. */
   public final List<String> authorizations = java.util.Collections.synchronizedList(new ArrayList<>());
+  /**
+   * When set, the server answers as Zerodha's Kite MCP server does: {@code get_holdings} and
+   * {@code get_mf_holdings} return Kite Connect's JSON as text, and the funds tool is listed.
+   */
+  public volatile String kiteShares;
+  public volatile String kiteFunds = "[]";
+  /** When set, the server answers as a mail server (Gmail's tools) with this one raw message. */
+  public volatile String mailRaw;
 
   public StubMcpServer() {
     try {
@@ -113,16 +121,42 @@ public final class StubMcpServer implements AutoCloseable {
       }
       case "tools/list" -> {
         var tools = result.putArray("tools");
+        if (mailRaw != null) {
+          ObjectNode q = Json.obj();
+          q.putObject("query").put("type", "string");
+          tools.add(tool("search_threads", "Searches threads.", q));
+          tools.add(tool("get_thread", "Gets a thread.", Json.obj()));
+          tools.add(tool("trash_thread", "Moves a thread to the trash.", Json.obj()));
+          break;
+        }
         tools.add(tool("login", "Log in to Kite. Returns a link to open.", Json.obj()));
         tools.add(tool("get_holdings", "Your holdings.", Json.obj()));
         ObjectNode order = Json.obj();
         order.putObject("symbol").put("type", "string");
         order.putObject("quantity").put("type", "integer");
         tools.add(tool("place_order", "Places an order.", order));
+        if (kiteShares != null) tools.add(tool("get_mf_holdings", "Mutual fund holdings.", Json.obj()));
       }
       case "tools/call" -> {
         JsonNode params = request.path("params");
         calls.add(params.path("name").asText() + " " + params.path("arguments"));
+        String name = params.path("name").asText();
+        if (mailRaw != null) {
+          String text = name.equals("search_threads") ? "{\"threads\":[{\"id\":\"thread-1\",\"snippet\":\"Your statement\"}]}"
+              : Json.obj().put("id", "thread-1").set("messages", Json.mapper().createArrayNode()
+                  .add(Json.obj().put("id", "message-1").put("raw", mailRaw))).toString();
+          result.putArray("content").addObject().put("type", "text").put("text", text);
+          break;
+        }
+        if (kiteShares != null && name.equals("place_order")) {
+          result.putArray("content").addObject().put("type", "text").put("text", "{\"order_id\":\"151220000000000\"}");
+          break;
+        }
+        if (kiteShares != null && (name.equals("get_holdings") || name.equals("get_mf_holdings"))) {
+          result.putArray("content").addObject().put("type", "text")
+              .put("text", name.equals("get_holdings") ? kiteShares : kiteFunds);
+          break;
+        }
         result.putArray("content").addObject().put("type", "text").put("text", "INFY x 10");
         result.putObject("structuredContent").putArray("holdings").addObject()
             .put("symbol", "INFY").put("quantity", 10);

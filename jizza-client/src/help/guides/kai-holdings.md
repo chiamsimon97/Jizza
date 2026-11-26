@@ -1,6 +1,6 @@
 ---
 title: Holdings, goals and the asset tree in Kai
-summary: See what you hold with its tax lots, say which goal each unit is for, set each goal's mix and rebalance band, and keep a watchlist. Kai only watches; it never buys or sells.
+summary: See what you hold with its tax lots, say which goal each unit is for, set each goal's mix and rebalance band, keep a watchlist, and place orders yourself. Kai never buys or sells on its own.
 section: Kai Portfolio
 order: 40
 updated: 2026-11-26
@@ -14,7 +14,7 @@ Open **Kai**, then **Portfolio**, then **Investments**. Holdings come from the f
 - A broker's tradebook gives each buy and sell.
 - A broker's holdings file gives what you hold on the day you downloaded it.
 
-You can also record a purchase by hand from **Lists** with **I bought it**. Kai never places an order.
+You can also record a purchase by hand from **Lists** with **I bought it**. Kai never places an order on its own.
 
 ## Holdings
 
@@ -66,3 +66,13 @@ A **lock** at one level means levels below it can only be stricter. Before you s
 ## Lists
 
 **Watching** and **Next to buy** are your own lists; Kai never adds to them or names a fund. Move an item from Watching to Next to buy. Once you have bought it yourself, press **I bought it** and record the account, date, units and price.
+
+## Placing an order yourself
+
+Open a holding and press **Prepare order**, or press **Prepare order** next to something under **Next to buy** in **Lists**. Kai fills in the order: buy or sell, how many and the order type. For a sale it shows which tax lots go first and the short-term or long-term gain on each, at the last price. Change anything you like.
+
+When a connected broker can take the order, press **Place with** and the broker's name, then enter your Jizza password. Kai asks for it on every order. The order goes to your broker, and Kai keeps the broker's reply. Your holdings change only when the next sync shows the trade filled, so Kai never runs ahead of your broker.
+
+Zerodha's hosted Kite server only reads your account, so it can't place orders. Placing needs your own Kite Connect key and a copy of Zerodha's Kite server that you run yourself. Without that, Kai shows **Open in my broker** to place it there, and **I bought it** to record the trade afterwards. Mutual fund orders always go through your fund platform.
+
+Kai suggests what kind of investment fits a goal, such as a large-cap index fund. It never names a fund for you to buy.

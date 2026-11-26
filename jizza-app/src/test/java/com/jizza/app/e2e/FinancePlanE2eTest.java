@@ -141,6 +141,37 @@ class FinancePlanE2eTest extends E2eSupport {
   }
 
   @Test
+  void eachGoalGetsAVerdictAndTheRunIsKept() {
+    ok(api.post("/api/finance/quick-start", Map.of("step", "people", "answers", Map.of("me", Map.of("dob", "1992-06-01")))));
+    String target = LocalDate.now().plusYears(10).withDayOfMonth(1).toString();
+    String funded = ok(api.post("/api/finance/goals", Map.of("type", "home", "name", "House", "targetAmountToday", 1000000,
+        "targetDate", target, "monthlyContribution", 30000))).path("goal").path("id").asText();
+    String bare = ok(api.post("/api/finance/goals", Map.of("type", "travel", "name", "Car", "targetAmountToday", 3000000,
+        "targetDate", target))).path("goal").path("id").asText();
+
+    JsonNode checks = ok(api.get("/api/finance/goal-checks"));
+    assertThat(checks).hasSize(2);
+    Map<String, JsonNode> byName = new HashMap<>();
+    checks.forEach(c -> byName.put(c.path("name").asText(), c));
+    // Off track first.
+    assertThat(checks.get(0).path("goalId").asText()).isEqualTo(bare);
+    assertThat(byName.get("Car").path("verdict").asText()).isEqualTo("off_track");
+    // Each priority has its own bar from the config: aspirational goals need 50%.
+    assertThat(byName.get("Car").path("requiredPct").asDouble()).isEqualTo(50);
+    JsonNode house = byName.get("House");
+    assertThat(house.path("goalId").asText()).isEqualTo(funded);
+    assertThat(house.path("verdict").asText()).isEqualTo("on_track");
+    assertThat(house.path("successPct").asDouble()).isGreaterThan(90);
+    assertThat(house.path("requiredPct").asDouble()).isEqualTo(75);
+    assertThat(house.path("headline").asText()).startsWith("House: On track.");
+    assertThat(house.path("previousVerdict").isNull()).isTrue();
+
+    ok(api.post("/api/finance/goal-checks/run", Map.of()));
+    JsonNode again = ok(api.get("/api/finance/goal-checks"));
+    again.forEach(c -> assertThat(c.path("previousVerdict").asText()).isEqualTo(c.path("verdict").asText()));
+  }
+
+  @Test
   void taxComparesTheRegimesAndFlagsUnverifiedFigures() {
     ok(api.put("/api/finance/income", List.of(Map.of("personId", me, "takeHomeMonthly", 120000,
         "grossMonthly", 160000))));

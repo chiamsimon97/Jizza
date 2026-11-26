@@ -58,7 +58,7 @@ describe('Connect and imports', () => {
     render(<Connect people={people} />, { wrapper: wrap() })
     expect(await screen.findByText('Bank statement')).toBeInTheDocument()
     expect(screen.getByText('Mutual funds (CAS)')).toBeInTheDocument()
-    expect(screen.getByLabelText('What Bank statement can\'t do')).toHaveTextContent('Bank PDFs yet')
+    expect(screen.getByLabelText('What Bank statement can\'t do')).toHaveTextContent('Scanned (picture) PDFs')
     expect(screen.getByText('No imports yet.')).toBeInTheDocument()
     expect(screen.getByText(/Money Health check:/)).toBeInTheDocument()
   })
@@ -108,6 +108,23 @@ describe('Connect and imports', () => {
     await waitFor(() => expect(upload).toHaveBeenLastCalledWith({ kind: 'cas_pdf', file, personId: self.id, password: 'RIGHT1' }))
     expect(await screen.findByText('Example Fund')).toBeInTheDocument()
     expect(screen.getByText(/1 folio:/)).toHaveTextContent('Example Mutual Fund ••0001 (new)')
+  })
+
+  it('reads a bank PDF on the same card, with its password when it has one', async () => {
+    mockBasics()
+    const pdfBatch = batch({ kind: 'bank_pdf', stats: { ...batch().stats, fileName: 'april.pdf' } })
+    const upload = vi.spyOn(financeApi, 'upload').mockResolvedValue(pdfBatch)
+    vi.spyOn(financeApi, 'importBatch').mockResolvedValue(pdfBatch)
+    render(<Connect people={people} />, { wrapper: wrap() })
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Import a file' }))[0])
+    expect(screen.queryByLabelText('PDF password')).not.toBeInTheDocument()
+    const file = new File(['%PDF'], 'april.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('File'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('PDF password'), { target: { value: 'CUST01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Read the file' }))
+    await waitFor(() => expect(upload).toHaveBeenCalledWith({ kind: 'bank_pdf', file, accountId: 'acc1', password: 'CUST01' }))
+    // A bank PDF is reviewed like a bank CSV: categories on each row.
+    expect(await screen.findByLabelText('Category for CORNER BAKERY')).toBeInTheDocument()
   })
 
   it('lets the person choose the columns when Kai cannot tell', async () => {

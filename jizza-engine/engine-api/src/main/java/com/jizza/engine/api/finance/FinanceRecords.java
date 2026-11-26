@@ -37,4 +37,13 @@ public interface FinanceRecords {
 
   /** Owners who have a finance profile, for the scheduled jobs (one user at a time). */
   List<UUID> ownersWithProfile();
+
+  /**
+   * Sets a secret (bytea) column of one of the user's rows, such as an encrypted PDF password. The
+   * caller encrypts; secret columns never appear in the rows the other methods return.
+   */
+  boolean writeSecret(String table, UUID userId, UUID id, String field, byte[] value);
+
+  /** A secret column of one of the user's rows; empty when unset or not theirs. */
+  Optional<byte[]> readSecret(String table, UUID userId, UUID id, String field);
 }

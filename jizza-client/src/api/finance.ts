@@ -4,7 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
-  BuilderInput, BuilderView, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  BuilderInput, BuilderView, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, GoalCheck, GoalInput, OrderInput, OrderPlaced, OrderPreview, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
   AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
   ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
@@ -91,7 +91,31 @@ export const financeApi = {
   goal: (id: string) => api.get<GoalView>(`/api/finance/goals/${id}`),
   addGoal: (body: GoalInput) => api.post<GoalView>('/api/finance/goals', body),
   updateGoal: (id: string, body: GoalInput) => api.patch<GoalView>(`/api/finance/goals/${id}`, body),
+  // ── Connected sources (a broker's MCP server on Connectors) ─────────────────
+  sources: () => api.get<SourcesView>('/api/finance/sources'),
+  linkSource: (serverId: string, accountId: string) => api.post<SyncSource>('/api/finance/sources', { serverId, accountId }),
+  setSourceEnabled: (id: string, enabled: boolean) => api.patch<SyncSource>(`/api/finance/sources/${id}`, { enabled }),
+  unlinkSource: (id: string) => api.delete<void>(`/api/finance/sources/${id}`),
+  /** Reads the holdings now; a change comes back as a batch to review, never saved on its own. */
+  syncSource: (id: string) => api.post<SyncResult>(`/api/finance/sources/${id}/sync`),
+  // ── Statements from email (part B) ──────────────────────────────────────────
+  mailSources: () => api.get<MailSourcesView>('/api/finance/mail-sources'),
+  linkMailSource: (body: MailSourceInput) => api.post<MailSource>('/api/finance/mail-sources', body),
+  /** A blank password keeps the saved one; the saved one is never sent back. */
+  changeMailSource: (id: string, body: { sender?: string; subject?: string; password?: string; enabled?: boolean }) =>
+    api.patch<MailSource>(`/api/finance/mail-sources/${id}`, body),
+  unlinkMailSource: (id: string) => api.delete<void>(`/api/finance/mail-sources/${id}`),
+  /** Looks for new statement mails now; each one found is a batch to review. */
+  checkMailSource: (id: string) => api.post<MailCheckResult>(`/api/finance/mail-sources/${id}/check`),
+  // ── Orders the person places (part D) ───────────────────────────────────────
+  prepareOrder: (body: OrderInput) => api.post<OrderPreview>('/api/finance/orders/prepare', body),
+  /** Asks for the password every time; Kai never places an order on its own. */
+  placeOrder: (body: OrderInput & { password: string }) => api.post<OrderPlaced>('/api/finance/orders/place', body),
   achieveGoal: (id: string) => api.post<GoalView>(`/api/finance/goals/${id}/achieve`),
+  /** Does each goal meet its target: worked out now, stores nothing. */
+  goalChecks: () => api.get<GoalCheck[]>('/api/finance/goal-checks'),
+  /** Runs the goal checks and keeps the result, as the nightly job does. */
+  runGoalChecks: () => api.post<GoalCheck[]>('/api/finance/goal-checks/run'),
 
   builder: () => api.get<BuilderView>('/api/finance/builder'),
   /** Keeps the inputs as a draft without writing the plan lines. */
