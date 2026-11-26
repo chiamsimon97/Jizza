@@ -11,11 +11,31 @@ public class ChatProperties {
   private final Upkeep summaries = new Upkeep();
   private final Upkeep titles = new Upkeep();
   private final Threads threads = new Threads();
+  private final Specialists specialists = new Specialists();
 
   public Context getContext() { return context; }
   public Upkeep getSummaries() { return summaries; }
   public Upkeep getTitles() { return titles; }
   public Threads getThreads() { return threads; }
+  public Specialists getSpecialists() { return specialists; }
+
+  /**
+   * A main chat without threads: a message in one of these specialists' areas is answered by that
+   * specialist itself, with its own tools, as if the user had written "@Kai".
+   */
+  public static class Specialists {
+    private boolean enabled = true;
+    private ModelTier tier = ModelTier.ROUTING;
+    /** The agent keys that take their area's messages; the rest stay with Jizza. */
+    private java.util.List<String> keys = new java.util.ArrayList<>(java.util.List.of("finance"));
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public ModelTier getTier() { return tier; }
+    public void setTier(ModelTier tier) { this.tier = tier; }
+    public java.util.List<String> getKeys() { return keys; }
+    public void setKeys(java.util.List<String> keys) { this.keys = keys; }
+  }
 
   /** Threads: topics Jizza moves out of the main chat to a specialist, each with a guide. */
   public static class Threads {

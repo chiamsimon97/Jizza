@@ -94,6 +94,14 @@ public class TurnRunner implements ChatService {
   private final ObjectProvider<com.jizza.engine.chat.thread.ThreadCoordinator> coordinator;
   private ObjectProvider<ChatShortcut> shortcuts;
 
+  private ObjectProvider<com.jizza.engine.chat.thread.SpecialistRouter> specialists;
+
+  /** Hands a plain chat's money messages to Kai; optional for isolated tests. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setSpecialists(ObjectProvider<com.jizza.engine.chat.thread.SpecialistRouter> specialists) {
+    this.specialists = specialists;
+  }
+
   /** Slash commands the app answers itself, such as {@code /run}; optional for isolated tests. */
   @org.springframework.beans.factory.annotation.Autowired(required = false)
   public void setShortcuts(ObjectProvider<ChatShortcut> shortcuts) {
@@ -267,8 +275,12 @@ public class TurnRunner implements ChatService {
       List<Msg> told = framing == null || framing.preamble() == null ? history
           : prepend(Msg.system(framing.preamble()), history);
       // "@Kai …": the agent the user named answers this message itself, wherever it was typed.
-      com.jizza.engine.persistence.entity.AgentEntity mentioned = continuation == null && direct.isEmpty()
+      com.jizza.engine.persistence.entity.AgentEntity named = continuation == null && direct.isEmpty()
           ? mentioned(userId, s.text(), s.context()) : null;
+      // In a chat without threads, a message in Kai's area goes to Kai the same way.
+      com.jizza.engine.persistence.entity.AgentEntity mentioned = named != null
+          || continuation != null || direct.isPresent() || framing == null
+          ? named : specialistFor(framing, s.screen(), s.text(), history);
       // The model and depth this chat is set to, unless this message asked for its own.
       com.fasterxml.jackson.databind.JsonNode asked = withChoice(s.context(),
           ref.incognito() ? null : store.settings(ref.conversationId()));
@@ -536,6 +548,15 @@ public class TurnRunner implements ChatService {
    * agent or a switched-off one is answered the usual way. The client says which one it picked; a
    * message that starts with "@Name" says so too, so an edit or "Try again" keeps its addressee.
    */
+  /** The specialist who answers this message in a plain main chat, or null for Jizza. */
+  private com.jizza.engine.persistence.entity.AgentEntity specialistFor(ThreadService.Framing framing,
+                                                                        String screen, String text,
+                                                                        List<Msg> history) {
+    var router = specialists == null ? null : specialists.getIfAvailable();
+    if (router == null) return null;
+    return router.route(framing.scope(), screen, text, history).orElse(null);
+  }
+
   private com.jizza.engine.persistence.entity.AgentEntity mentioned(UUID userId, String text,
                                                                    com.fasterxml.jackson.databind.JsonNode context) {
     ThreadService service = threads.getIfAvailable();

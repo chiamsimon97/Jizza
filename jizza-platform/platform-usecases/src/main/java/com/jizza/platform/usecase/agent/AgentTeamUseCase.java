@@ -73,7 +73,8 @@ public class AgentTeamUseCase {
           however routine it looks. Tag anything you record about accounts, balances or transactions
           with the "financial" classification.
           """,
-          "Money: accounts, spending, budgets, bills, investments, tax."),
+          "Money: goals and savings, loans, insurance, investments and brokers, accounts, "
+              + "spending, budgets, bills, tax."),
 
       new AgentSpec(PROFESSIONAL, "Cato", "professional", false, """
           You are the professional specialist. You look after work: calendar, meetings, email

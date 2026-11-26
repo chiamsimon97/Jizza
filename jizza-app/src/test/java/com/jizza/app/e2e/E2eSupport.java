@@ -112,6 +112,9 @@ public abstract class E2eSupport {
     registry.add("jizza.memory.access.async", () -> "false");
     // Choosing the model for Jizza's turn is a model call of its own; off for the same reason.
     registry.add("jizza.agents.routing.enabled", () -> "false");
+    // Handing a plain chat's money messages to Kai is a model call too; the chat suite switches it
+    // on where it is tested.
+    registry.add("jizza.chat.specialists.enabled", () -> "false");
 
     registry.add("jizza.agents.models.routing", () -> "test-routing");
     registry.add("jizza.agents.models.standard", () -> "test-standard");
