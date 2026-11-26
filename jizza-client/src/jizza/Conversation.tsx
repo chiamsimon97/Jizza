@@ -1,6 +1,6 @@
 import { FormEvent, Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { takeChatDraft } from './chatDraft'
-import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Globe, Image, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, ThumbsDown, ThumbsUp, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, CornerUpLeft, FileText, Folder, FolderPlus, FolderSymlink, Globe, Image, Languages, Laptop, Loader2, Mic, MicOff, Paperclip, Pencil, Plus, Reply, RotateCcw, ScrollText, Send, ShieldQuestion, Sparkles, Split, Square, SquareSlash, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { notificationsApi } from '@/api/notifications'
 import { conversationsApi } from '@/api/conversations'
@@ -14,7 +14,7 @@ import type { ReplyFeedback, ThreadCard as ThreadCardData, WebSource } from '@/t
 import { JizzaOrb } from './JizzaOrb'
 import { WorkflowPlanCard } from './WorkflowPlanCard'
 import { AgentProposalCard } from './AgentProposalCard'
-import { useDictation } from './useSpeech'
+import { VOICE_LANGUAGES, useVoiceInput, type VoiceMode, type VoiceSettings } from './useSpeech'
 import { ContextChip, useCurrentContext } from './ContextChip'
 import { commandsFor, helpText, matchCommands, matchWorkflows, runQuery, runTemplate, type SlashCommand } from './commands'
 import { workflowsApi } from '@/api/workflows'
@@ -112,8 +112,17 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
   const [dragging, setDragging] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const onDictated = useCallback((text: string) => { void send(text) }, [send])
-  const dictation = useDictation(onDictated)
+  // What was said goes into the box (in English when wanted) for the person to check and send.
+  const onDictated = useCallback((text: string) => {
+    setInput(prev => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }, [])
+  const dictation = useVoiceInput(onDictated)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, thinking])
   useEffect(() => { if (autoFocus) inputRef.current?.focus() }, [autoFocus])
@@ -448,25 +457,27 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             onChange={e => { attach(Array.from(e.target.files ?? []).map(fileAttachment)); e.target.value = '' }} />
           <input ref={folderInputRef} type="file" hidden data-testid="attach-folder" {...{ webkitdirectory: '', directory: '' }}
             onChange={e => { attach([folderFromFiles(Array.from(e.target.files ?? []), linkFolderNext.current)]); e.target.value = '' }} />
-          {dictation.supported && (
-            <button
-              type="button"
-              onClick={dictation.listening ? dictation.stop : dictation.start}
-              aria-label={dictation.listening ? 'Stop listening' : 'Speak to Jizza'}
-              title={dictation.listening ? 'Stop listening' : 'Speak to Jizza'}
-              className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-all active:scale-90 ${
-                dictation.listening
-                  ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-brand-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-brand-300'
-              }`}
-            >
-              {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={dictation.listening ? dictation.stop : dictation.start}
+            disabled={dictation.phase === 'working'}
+            aria-label={dictation.listening ? 'Stop listening' : 'Speak to Jizza'}
+            title={dictation.listening ? 'Stop listening' : 'Speak to Jizza in any language'}
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-all active:scale-90 ${
+              dictation.listening
+                ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-brand-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-brand-300'
+            }`}
+          >
+            {dictation.phase === 'working' ? <Loader2 className="h-4 w-4 animate-spin" />
+              : dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
+          <VoiceLanguageMenu settings={dictation.settings} onChange={dictation.setSettings} mode={dictation.mode}
+            listenerName={dictation.listenerName} disabled={dictation.phase !== 'idle'} />
           <textarea
             ref={inputRef}
             rows={1}
-            value={dictation.listening ? dictation.interim : input}
+            value={dictation.listening && dictation.interim ? dictation.interim : input}
             onChange={e => setInput(e.target.value)}
             onPaste={e => {
               // Pasted files (a screenshot, a copied document) attach; pasted text stays text.
@@ -475,8 +486,8 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
               e.preventDefault()
               attach(files.map(fileAttachment))
             }}
-            placeholder={dictation.listening ? 'Listening…' : incognito ? 'Incognito — not saved…' : placeholder ?? (contextual ? 'Ask about this, or type / for shortcuts…' : 'Ask Jizza to do something… (/ for shortcuts)')}
-            readOnly={dictation.listening}
+            placeholder={dictation.listening ? 'Listening… press the microphone again when you\'re done' : dictation.phase === 'working' ? (dictation.settings.english ? 'Turning your words into English…' : 'Writing down what you said…') : incognito ? 'Incognito — not saved…' : placeholder ?? (contextual ? 'Ask about this, or type / for shortcuts…' : 'Ask Jizza to do something… (/ for shortcuts)')}
+            readOnly={dictation.phase !== 'idle'}
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-gray-100"
             onKeyDown={e => {
               if (mentionChoices.length > 0) {
@@ -519,6 +530,21 @@ export function Conversation({ compact = false, autoFocus = false, onOpenJob, in
             </Button>
           )}
         </div>
+        {dictation.error && (
+          <div role="alert" className={`${width} mt-1.5 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200`}>
+            <MicOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <p className="flex-1">
+              {dictation.error}
+              {/Settings, AI models/.test(dictation.error) && (
+                <> <Link to="/settings/ai-models" className="font-medium underline">Open AI models</Link></>
+              )}
+            </p>
+            <button type="button" aria-label="Dismiss" onClick={dictation.clearError}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <div className={`${width} mt-1.5 flex flex-wrap items-center gap-2 px-1`}>
           <ModelPicker value={choice.model ?? undefined} onChange={model => setChoice({ ...choice, model })}
             attached={{
@@ -1152,6 +1178,62 @@ function AttachmentIcon({ kind, linked, className }: { kind: AttachmentKind; lin
 }
 
 /** The "+" beside the message box: add files, open the shortcuts, or work with a folder on this computer. */
+/** The language the person speaks, and whether what they say goes into the box in English. */
+function VoiceLanguageMenu({ settings, onChange, mode, listenerName, disabled }: {
+  settings: VoiceSettings; onChange: (s: VoiceSettings) => void; mode: VoiceMode; listenerName: string | null; disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [open])
+  // "Detect it" needs a key that hears the recording; the browser has to be told the language.
+  const choices = VOICE_LANGUAGES.filter(l => l.tag !== 'auto' || mode === 'key')
+  const current = VOICE_LANGUAGES.find(l => l.tag === settings.language)
+  const shown = settings.language === 'auto' && mode !== 'key' ? 'Your browser\'s language' : current ? current.name : settings.language
+  return (
+    <div ref={ref} className="relative -ml-1.5 shrink-0">
+      <button type="button" aria-label="Voice language" title={`Speaking: ${shown}${settings.english ? ' · put into English' : ''}`}
+        aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => setOpen(o => !o)}
+        className={`grid h-9 w-6 place-items-center rounded-lg transition-all disabled:opacity-40 ${open
+          ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300'
+          : 'text-gray-400 hover:bg-gray-100 hover:text-brand-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-brand-300'}`}>
+        <Languages className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Voice settings"
+          className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-gray-200 bg-white p-3 text-sm shadow-lg animate-fade-in dark:border-gray-700 dark:bg-gray-900">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400" htmlFor="voice-language">I'll speak in</label>
+          <select id="voice-language" value={choices.some(c => c.tag === settings.language) ? settings.language : (navigator.language || 'en-US')}
+            onChange={e => onChange({ ...settings, language: e.target.value })}
+            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+            {!choices.some(c => c.tag === settings.language) && !choices.some(c => c.tag === navigator.language) && (
+              <option value={navigator.language || 'en-US'}>Your browser's language</option>
+            )}
+            {choices.map(l => <option key={l.tag} value={l.tag}>{l.native ? `${l.name} · ${l.native}` : l.name}</option>)}
+          </select>
+          <label className="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input type="checkbox" checked={settings.english} onChange={e => onChange({ ...settings, english: e.target.checked })} />
+            Put it in the chat box in English
+          </label>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {mode === 'key'
+              ? `Jizza hears you with your ${listenerName ?? 'own'} key, in any language, even if you mix it with English.`
+              : mode === 'browser'
+                ? <>Your browser writes down what you say, and Jizza translates it. For mixed languages or browsers like Ulaa, connect OpenAI, Gemini or OpenRouter in <Link to="/settings/ai-models" className="underline" onClick={() => setOpen(false)}>AI models</Link>.</>
+                : <>This browser can't hear speech by itself. Connect OpenAI, Gemini or OpenRouter in <Link to="/settings/ai-models" className="underline" onClick={() => setOpen(false)}>AI models</Link>.</>}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AttachMenu({ onFiles, onSlash, onAnyFolder, onLinkFolder }: {
   onFiles: () => void; onSlash: () => void; onAnyFolder: () => void; onLinkFolder: () => void
 }) {
