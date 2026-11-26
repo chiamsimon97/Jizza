@@ -109,6 +109,37 @@ public final class ApiClient {
     }
   }
 
+  /** Posts a multipart form with one file and some text fields, as the browser's file upload does. */
+  public Result upload(String path, java.util.Map<String, String> fields, String filename, String contentType,
+                       byte[] file) {
+    String boundary = "----jizza" + java.util.UUID.randomUUID();
+    var out = new java.io.ByteArrayOutputStream();
+    java.util.function.Consumer<String> text = t -> out.writeBytes(t.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    fields.forEach((name, value) -> {
+      if (value == null) return;
+      text.accept("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"\r\n\r\n" + value + "\r\n");
+    });
+    text.accept("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + filename
+        + "\"\r\nContent-Type: " + contentType + "\r\n\r\n");
+    out.writeBytes(file);
+    text.accept("\r\n--" + boundary + "--\r\n");
+    HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+        .timeout(Duration.ofSeconds(60)).header("accept", "application/json")
+        .header("content-type", "multipart/form-data; boundary=" + boundary)
+        .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()));
+    if (!cookies.isEmpty()) request.header("cookie", cookieHeader());
+    String csrf = cookies.get("XSRF-TOKEN");
+    if (csrf != null) request.header("X-XSRF-TOKEN", csrf);
+    try {
+      HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+      captureCookies(response);
+      lastHeaders = response.headers();
+      return new Result(response.statusCode(), response.body());
+    } catch (Exception e) {
+      throw new IllegalStateException("POST " + path + " failed", e);
+    }
+  }
+
   /** Primes the CSRF cookie, the way loading the app in a browser would. */
   public void prime() {
     get("/actuator/health");

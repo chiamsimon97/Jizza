@@ -121,6 +121,15 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     owned.put("/api/finance/goals/", goal.json().path("goal").path("id").asText());
     owned.put("/api/finance/risk/", person.json().path("id").asText());
     owned.put("/api/finance/tax/", person.json().path("id").asText());
+    var batch = owner.upload("/api/finance/imports", Map.of("kind", "bank_csv",
+        "accountId", owned.get("/api/finance/accounts/")), "statement.csv", "text/csv",
+        "Date,Description,Debit,Credit,Balance\n01/04/2025,Owner's rent,1000,,9000\n"
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    assertThat(batch.ok()).as(batch.body()).isTrue();
+    owned.put("/api/finance/imports/", batch.json().path("id").asText());
+    var committed = owner.post("/api/finance/imports/" + batch.json().path("id").asText() + "/commit", Map.of());
+    assertThat(committed.ok()).as(committed.body()).isTrue();
+    owned.put("/api/finance/transactions/", owner.get("/api/finance/transactions").json().get(0).path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
@@ -176,6 +185,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
+      if (e.getKey().equals("/api/finance/transactions/")) continue; // read through the list
       var still = owner.get(path);
       assertThat(still.ok()).as("owner still has %s: %s", path, still.body()).isTrue();
     }

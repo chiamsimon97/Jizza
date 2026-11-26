@@ -162,7 +162,7 @@ public class NamespacedMemoryFileStore implements MemoryFileStore {
   }
 
   /** Keeps only the last path segment and drops control characters; the name is display-only. */
-  static String cleanName(String filename) {
+  public static String cleanName(String filename) {
     String name = filename == null ? "" : filename;
     name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
     name = name.replaceAll("\\p{Cntrl}", "").strip();
