@@ -20,6 +20,8 @@ Choose the account the statement is for, or add one. For a new account you only 
 
 If Kai can't tell which column is which, it shows the first lines of the file and asks you. Pick the line with the column names, then the date, description and amount columns. Kai remembers your choice for that account's next statement.
 
+**Matching columns yourself (any CSV).** This works the same for a broker's holdings or tradebook CSV. For holdings you match your file's columns to Kai's fields: **Name or symbol**, **Quantity**, **Current value** or **Price now**, and if your file has them **Invested amount** (what you paid in all, so Kai can show your gain), **Average cost per unit** and **ISIN**. For a tradebook: name, trade date, buy or sell, quantity and price. Even when Kai found the columns itself, press **Change columns** on the review to fix a wrong guess. Kai remembers your choice for that account's next file.
+
 You can also upload the PDF statement your bank mails you. If it's locked, type its password (banks often use your customer ID or date of birth); Kai uses it once and never keeps it. A PDF has no columns, so Kai reads each row's date, words, amount and the balance after it, and tells money in from money out by how the balance moved. For the first row it needs the opening balance printed on the statement. Any row whose balance doesn't add up, or whose side Kai can't tell, is listed under "couldn't be read" and never guessed. A scanned (picture) PDF can't be read: download CSV instead.
 
 ## Mutual funds (CAS)
@@ -40,9 +42,11 @@ Instead of downloading a holdings file, you can let Kai read your holdings strai
 2. In Kai, open **Portfolio**, then **Connect**. Under **Connected brokers**, choose Kite and the demat account it holds, then press **Connect**.
 3. Press **Sync now**. Kai reads your shares and your mutual funds held with Zerodha and opens the review below, just like a holdings file.
 
+**Or just ask Kai in chat.** Once Kite is signed in, say "Sync my Zerodha" to Kai. Kai links Kite to your Zerodha demat account by itself (or makes one for you if you don't have one yet), reads your shares, your mutual funds and the cash left in your trading account, and tells you what it found. Nothing is saved until you say so; then it all lands in **Holdings** and **Net worth**, and you can undo it under **Connect**, **Import history**. Which goal each holding is for stays yours to set.
+
 Kai also syncs on weekdays at 4:30 PM, after the market closes, while your Kite sign-in is still valid. When something has changed, you get a notification to review it. If nothing has changed since your last saved sync, nothing happens.
 
-Kai uses only Kite's tools that read your holdings. It never places, changes or cancels an order. Zerodha's hosted server doesn't offer order placing anyway.
+Kai uses only Kite's tools that read your holdings and your cash balance. It never places, changes or cancels an order. Zerodha's hosted server doesn't offer order placing anyway.
 
 ## Statements from your email
 

@@ -170,5 +170,34 @@ describe('Connect and imports', () => {
   it('knows which column choices are enough', () => {
     expect(mappingComplete({ headerRow: 0, date: 'D', description: 'N', amount: 'A' })).toBe(true)
     expect(mappingComplete({ headerRow: 0, date: 'D', description: 'N', debit: 'Dr' })).toBe(false)
+    expect(mappingComplete({ headerRow: 0, name: 'Scrip', qty: 'Units', value: 'Mkt Val' }, 'broker_holdings')).toBe(true)
+    expect(mappingComplete({ headerRow: 0, name: 'Scrip', invested: 'Invested' }, 'broker_holdings')).toBe(false)
+    expect(mappingComplete({ headerRow: 0, name: 'S', date: 'D', type: 'T', qty: 'Q', price: 'P' }, 'broker_tradebook')).toBe(true)
+  })
+
+  it('lets the person change the columns of a holdings file Kai already read, with Kai’s own fields', async () => {
+    const holdings = batch({
+      id: 'b3', kind: 'broker_holdings', mapping: { headerRow: 0, name: 'Scrip Title', qty: 'Units Held', value: 'Mkt Val' },
+      stats: {
+        fileName: 'holdings.csv', counts: { rows: 0, new: 0, duplicates: 0, needsLook: 0, unreadable: 0, holdings: 1 },
+        holdings: [{ name: 'EXAMPLECO', assetClass: 'equity', units: 10, value: 16000, asOf: '2025-04-10', isin: null, subCategory: 'shares', group: null }],
+        columns: { headerRow: 0, sure: true, headers: ['Scrip Title', 'Units Held', 'Invested Amt', 'Mkt Val'],
+          sample: [['Scrip Title', 'Units Held', 'Invested Amt', 'Mkt Val'], ['EXAMPLECO', '10', '15000', '16000']] },
+      },
+    })
+    mockBasics([holdings])
+    vi.spyOn(financeApi, 'importBatch').mockResolvedValue(holdings)
+    render(<Connect people={people} />, { wrapper: wrap() })
+    const table = await screen.findByRole('table', { name: 'Import history' })
+    fireEvent.click(within(table).getByRole('button', { name: 'Review' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Change columns' }))
+    expect(await screen.findByText('Which column is which?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Name or symbol')).toHaveValue('Scrip Title')
+    expect(screen.getByLabelText('Invested amount (total paid)')).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Invested amount (total paid)'), { target: { value: 'Invested Amt' } })
+    expect(screen.getByLabelText('Invested amount (total paid)')).toHaveValue('Invested Amt')
+    expect(screen.queryByLabelText('Description')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Kai’s columns' }))
+    expect(await screen.findByText('Check before saving')).toBeInTheDocument()
   })
 })

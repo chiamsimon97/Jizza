@@ -732,6 +732,11 @@ export interface ImportHolding {
 }
 
 /** The column roles of a bank CSV, each naming a header of the file. */
+/**
+ * Which column of a CSV holds what, by its header: bank roles (date, description, debit, credit,
+ * amount, drCr, balance), holdings roles (name, isin, qty, value, price, avg, invested) or tradebook
+ * roles (name, isin, date, type, qty, price, tradeId).
+ */
 export interface ColumnMapping {
   headerRow: number
   date?: string
@@ -741,6 +746,15 @@ export interface ColumnMapping {
   amount?: string
   drCr?: string
   balance?: string
+  name?: string
+  isin?: string
+  qty?: string
+  value?: string
+  price?: string
+  avg?: string
+  invested?: string
+  type?: string
+  tradeId?: string
 }
 
 export interface ImportCounts {

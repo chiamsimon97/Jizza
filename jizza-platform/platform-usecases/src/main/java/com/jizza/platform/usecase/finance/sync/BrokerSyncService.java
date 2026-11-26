@@ -32,8 +32,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * Connected sources (Kai part A): a broker's MCP server the person added on Connectors, tied to one
- * of their demat accounts. A sync calls only the server's holdings tools ({@code get_holdings},
- * {@code get_mf_holdings}), never anything that changes the account, and lands as a holdings
+ * of their demat accounts. A sync calls only the server's read tools ({@code get_holdings},
+ * {@code get_mf_holdings}, and {@code get_margins} for the cash left in the account), never
+ * anything that changes the account, and lands as a holdings
  * import the person reviews before it is saved. The answers are never logged; the log names only
  * the user, the source and counts.
  */
@@ -45,7 +46,50 @@ public class BrokerSyncService {
   /** The only tools a sync may call: they read and never change the account. */
   static final String SHARES_TOOL = "get_holdings";
   static final String FUNDS_TOOL = "get_mf_holdings";
-  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL);
+  static final String CASH_TOOL = "get_margins";
+  /** Kite's server since late 2026: one tool per area, the part chosen by {@code mode}. */
+  static final String PORTFOLIO_TOOL = "portfolio";
+  static final String FUNDS_AREA_TOOL = "mutual_funds";
+  static final Set<String> READ_TOOLS = Set.of(SHARES_TOOL, FUNDS_TOOL, CASH_TOOL, PORTFOLIO_TOOL, FUNDS_AREA_TOOL);
+  /** The only modes a sync asks for: each reads, none changes the account. */
+  static final Set<String> READ_MODES = Set.of("holdings", "margins");
+  private static final int PAGE = 500;
+  private static final int MAX_PAGES = 20;
+
+  /** How to read one thing from a broker's server: which tool, with which arguments. */
+  record Reader(String tool, ObjectNode args, boolean paged) {}
+
+  /** The shares tool: {@code get_holdings}, or {@code portfolio} with mode holdings. */
+  static Optional<Reader> sharesReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, SHARES_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, PORTFOLIO_TOOL).filter(t -> hasMode(t, "holdings"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "holdings").put("type", "full").put("limit", PAGE), true));
+  }
+
+  /** The funds tool: {@code get_mf_holdings}, or {@code mutual_funds} with mode holdings. */
+  static Optional<Reader> fundsReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, FUNDS_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, FUNDS_AREA_TOOL).filter(t -> hasMode(t, "holdings"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "holdings"), false));
+  }
+
+  /** The cash tool: {@code get_margins}, or {@code portfolio} with mode margins. */
+  static Optional<Reader> cashReader(McpServerDto s) {
+    Optional<McpToolDto> old = tool(s, CASH_TOOL);
+    if (old.isPresent()) return Optional.of(new Reader(old.get().name(), Json.obj(), false));
+    return tool(s, PORTFOLIO_TOOL).filter(t -> hasMode(t, "margins"))
+        .map(t -> new Reader(t.name(), Json.obj().put("mode", "margins"), false));
+  }
+
+  /** True when the tool's {@code mode} argument offers this value. */
+  static boolean hasMode(McpToolDto t, String mode) {
+    JsonNode values = t.inputSchema() == null ? null : t.inputSchema().path("properties").path("mode").path("enum");
+    if (values == null || !values.isArray()) return false;
+    for (JsonNode v : values) if (mode.equals(v.asText())) return true;
+    return false;
+  }
   private static final Set<String> BROKER_ACCOUNTS = Set.of("demat", "us_broker", "other");
 
   private final FinanceRecords records;
@@ -55,10 +99,11 @@ public class BrokerSyncService {
   private final ImportService imports;
   private final NotificationBus bus;
   private final AgentDirectory agents;
+  private final com.jizza.platform.usecase.finance.records.FinRecordsUseCase people;
 
   public BrokerSyncService(FinanceRecords records, FinScopeResolver scopes, McpServers servers,
                            WorkspaceDirectory workspaces, ImportService imports, NotificationBus bus,
-                           AgentDirectory agents) {
+                           AgentDirectory agents, com.jizza.platform.usecase.finance.records.FinRecordsUseCase people) {
     this.records = records;
     this.scopes = scopes;
     this.servers = servers;
@@ -66,6 +111,7 @@ public class BrokerSyncService {
     this.imports = imports;
     this.bus = bus;
     this.agents = agents;
+    this.people = people;
   }
 
   /** A server on Connectors that can be a source: it offers a holdings tool. */
@@ -89,8 +135,8 @@ public class BrokerSyncService {
     List<McpServerDto> mine = ownServers(owner);
     List<Candidate> candidates = new ArrayList<>();
     for (McpServerDto s : mine) {
-      if (tool(s, SHARES_TOOL).isEmpty()) continue;
-      candidates.add(new Candidate(s.id(), s.name(), signedIn(s), s.enabled(), tool(s, FUNDS_TOOL).isPresent(),
+      if (sharesReader(s).isEmpty()) continue;
+      candidates.add(new Candidate(s.id(), s.name(), signedIn(s), s.enabled(), fundsReader(s).isPresent(),
           tool(s, "place_order").isPresent()));
     }
     List<Source> sources = new ArrayList<>();
@@ -104,7 +150,7 @@ public class BrokerSyncService {
     UUID owner = scopes.own(caller).ownerUserId();
     McpServerDto server = ownServers(owner).stream().filter(s -> s.id().equals(serverId)).findFirst()
         .orElseThrow(() -> new NotFoundException("Connected server", serverId));
-    if (tool(server, SHARES_TOOL).isEmpty()) {
+    if (sharesReader(server).isEmpty()) {
       throw new ValidationException(server.name() + " has no holdings tool, so Kai can't read holdings from it.");
     }
     ObjectNode account = records.get("fin_account", owner, accountId)
@@ -167,29 +213,66 @@ public class BrokerSyncService {
     if (!signedIn(server)) {
       return done(owner, id, "needs_sign_in", null, 0, "Sign in to " + server.name() + " on Connectors, then sync again.");
     }
-    Optional<McpToolDto> shares = tool(server, SHARES_TOOL);
+    Optional<Reader> shares = sharesReader(server);
     if (shares.isEmpty()) return done(owner, id, "failed", null, 0, server.name() + " no longer offers its holdings tool.");
 
-    ToolResult a = servers.call(serverId, shares.get().name(), Json.obj());
+    ToolResult a = read(serverId, shares.get());
     if (!a.ok()) return failed(owner, id, server, a.error());
     JsonNode funds = null;
-    Optional<McpToolDto> fundsTool = tool(server, FUNDS_TOOL);
+    Optional<Reader> fundsTool = fundsReader(server);
     if (fundsTool.isPresent()) {
-      ToolResult b = servers.call(serverId, fundsTool.get().name(), Json.obj());
+      ToolResult b = read(serverId, fundsTool.get());
       if (!b.ok()) return failed(owner, id, server, b.error());
       funds = b.output();
     }
     if (looksSignedOut(a.output()) || looksSignedOut(funds)) {
       return done(owner, id, "needs_sign_in", null, 0, "Sign in to " + server.name() + " on Connectors, then sync again.");
     }
+    // The cash is a nice-to-have: a server without the tool, or one that fails it, still syncs holdings.
+    JsonNode cash = cashReader(server).map(r -> read(serverId, r))
+        .filter(ToolResult::ok).map(ToolResult::output).filter(x -> !looksSignedOut(x)).orElse(null);
     try {
-      ImportService.Synced s = imports.fromSource(owner, accountId, server.name(), a.output(), funds);
+      ImportService.Synced s = imports.fromSource(owner, accountId, server.name(), a.output(), funds, cash);
       if (!s.changed()) return done(owner, id, "no_change", null, s.holdings(), "Nothing changed since the last saved sync.");
       String batchId = s.batch().path("id").asText();
       if (scheduled) notifyReview(owner, server.name(), batchId);
       return done(owner, id, "to_review", batchId, s.holdings(), "Review the holdings, then save them.");
     } catch (ValidationException | NotFoundException e) {
       return done(owner, id, "failed", null, 0, e.getMessage());
+    }
+  }
+
+  /**
+   * Calls one read tool. A paged one ({@code portfolio} holdings) is read page by page until the
+   * server says there is no more, and the rows come back as one {@code data} array.
+   */
+  private ToolResult read(UUID serverId, Reader r) {
+    if (!r.paged()) return servers.call(serverId, r.tool(), r.args());
+    com.fasterxml.jackson.databind.node.ArrayNode rows = Json.mapper().createArrayNode();
+    int from = 0;
+    for (int page = 0; page < MAX_PAGES; page++) {
+      ToolResult res = servers.call(serverId, r.tool(), r.args().deepCopy().put("from", from));
+      if (!res.ok()) return res;
+      JsonNode body = parsed(res.output());
+      if (body == null) return res; // not JSON: a sign-in sentence or a plain error, handled by the caller
+      JsonNode data = body.isArray() ? body : body.path("data");
+      if (!data.isArray()) return res;
+      data.forEach(rows::add);
+      JsonNode more = body.path("pagination");
+      boolean hasMore = more.path("has_more").asBoolean(more.path("hasMore").asBoolean(false));
+      if (!hasMore || data.isEmpty()) break;
+      from += data.size();
+    }
+    return ToolResult.ok(Json.obj().set("data", rows));
+  }
+
+  private static JsonNode parsed(JsonNode answer) {
+    if (answer == null) return null;
+    if (!answer.isTextual()) return answer;
+    try {
+      return Json.mapper().readTree(answer.asText());
+    } catch (Exception notJson) {
+      return null;
     }
   }
 
@@ -223,6 +306,99 @@ public class BrokerSyncService {
         .put("batchId", batchId);
     bus.raise(NotificationKind.INFO, kai, new NotificationContext(owner,
         "New holdings from " + serverName + " are ready to review.", detail, null, null, null, null));
+  }
+
+  // ── From chat ───────────────────────────────────────────────────────────────
+
+  /** What a sync asked for in chat did for one connected broker. */
+  public record ChatSync(String server, UUID accountId, String accountName, boolean linkedNow,
+                         boolean accountCreated, SyncResult result) {}
+
+  /**
+   * "Sync my Zerodha" in chat: every connected broker server (or the one whose name matches
+   * {@code serverHint}) is synced into its account with no mapping by hand. A server not linked
+   * yet is linked to the person's own demat account at the same broker, and when there is none,
+   * a demat account is created for them at that broker. Each sync lands as a batch to review,
+   * exactly as from the Connect screen; nothing is saved until the person says so.
+   */
+  public List<ChatSync> syncFromChat(UUID caller, String serverHint) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    String hint = serverHint == null ? "" : serverHint.strip().toLowerCase(java.util.Locale.ROOT);
+    List<McpServerDto> brokers = ownServers(owner).stream()
+        .filter(s -> sharesReader(s).isPresent())
+        .filter(s -> hint.isEmpty() || s.name().toLowerCase(java.util.Locale.ROOT).contains(hint)
+            || brand(s.name()).toLowerCase(java.util.Locale.ROOT).contains(hint))
+        .toList();
+    if (brokers.isEmpty()) {
+      throw new ValidationException(hint.isEmpty()
+          ? "No broker is connected yet. Add Zerodha Kite (or another broker) under Settings, Connectors, sign in, then ask again."
+          : "No connected broker matches \"" + serverHint.strip() + "\". Add it under Settings, Connectors first.");
+    }
+    List<ChatSync> out = new ArrayList<>();
+    for (McpServerDto server : brokers) {
+      List<ObjectNode> linked = records.list("fin_sync_source", owner, Map.of("serverId", server.id().toString()));
+      boolean linkedNow = false;
+      boolean created = false;
+      if (linked.isEmpty()) {
+        UUID[] account = {null};
+        created = pickOrCreateAccount(owner, server, account);
+        linked = List.of(records.insert("fin_sync_source", owner, Json.obj()
+            .put("serverId", server.id().toString()).put("accountId", account[0].toString()).put("enabled", true)));
+        linkedNow = true;
+        log.info("Linked broker source for user {} from chat (new account: {})", owner, created);
+      }
+      for (ObjectNode row : linked) {
+        UUID accountId = UUID.fromString(row.path("accountId").asText());
+        SyncResult r = row.path("enabled").asBoolean(true) ? sync(owner, row, false)
+            : new SyncResult("paused", null, 0, "Syncing from " + server.name() + " is paused under Connect.");
+        out.add(new ChatSync(server.name(), accountId, source(owner, row, List.of(server)).accountName(),
+            linkedNow, created, r));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The demat account a broker's holdings go into: the person's own active one at that broker (by
+   * the provider's name), else a single unlinked one with no provider named, else a new demat
+   * account at that broker. Returns true when it was created.
+   */
+  private boolean pickOrCreateAccount(UUID owner, McpServerDto server, UUID[] out) {
+    String brand = brand(server.name());
+    String b = brand.toLowerCase(java.util.Locale.ROOT);
+    java.util.Set<String> taken = new java.util.HashSet<>();
+    records.list("fin_sync_source", owner, Map.of()).forEach(r -> taken.add(r.path("accountId").asText()));
+    String self = people.selfId(owner).toString();
+    List<ObjectNode> mine = records.list("fin_account", owner, Map.of()).stream()
+        .filter(a -> "demat".equals(a.path("kind").asText()) || "us_broker".equals(a.path("kind").asText()))
+        .filter(a -> !"closed".equals(a.path("status").asText()))
+        .filter(a -> self.equals(a.path("personId").asText()))
+        .toList();
+    for (ObjectNode a : mine) {
+      String p = a.path("provider").asText("").toLowerCase(java.util.Locale.ROOT);
+      if (!p.isBlank() && (p.contains(b) || b.contains(p))) {
+        out[0] = UUID.fromString(a.path("id").asText());
+        return false;
+      }
+    }
+    List<ObjectNode> blank = mine.stream().filter(a -> a.path("provider").asText("").isBlank())
+        .filter(a -> !taken.contains(a.path("id").asText())).toList();
+    if (blank.size() == 1) {
+      out[0] = UUID.fromString(blank.get(0).path("id").asText());
+      return false;
+    }
+    ObjectNode a = records.insert("fin_account", owner, Json.obj().put("personId", self).put("kind", "demat")
+        .put("provider", brand.length() > 60 ? brand.substring(0, 60) : brand).put("source", "api"));
+    out[0] = UUID.fromString(a.path("id").asText());
+    return true;
+  }
+
+  /** The broker a server stands for: Zerodha for Kite, else the server's own name. */
+  static String brand(String serverName) {
+    String n = serverName == null ? "" : serverName.strip();
+    String l = n.toLowerCase(java.util.Locale.ROOT);
+    if (l.contains("kite") || l.contains("zerodha")) return "Zerodha";
+    return n.isEmpty() ? "Broker" : n;
   }
 
   // ── Orders (part D) ─────────────────────────────────────────────────────────

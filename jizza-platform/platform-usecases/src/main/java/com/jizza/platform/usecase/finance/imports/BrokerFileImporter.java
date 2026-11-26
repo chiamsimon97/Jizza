@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.finance.imports;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jizza.engine.api.error.ValidationException;
 import com.jizza.platform.usecase.finance.imports.HeaderFinder.Found;
 import com.jizza.platform.usecase.finance.imports.HeaderFinder.Role;
@@ -38,7 +39,54 @@ final class BrokerFileImporter {
       Role.of("price", List.of("ltp", "last price", "last traded price", "close price", "closing price",
           "previous closing price", "current price", "market price", "cmp"), List.of("ltp", "closing price", "close price")),
       Role.of("avg", List.of("avg cost", "avg price", "average price", "average cost", "buy avg",
-          "avg buy price", "buy average"), List.of("avg", "average")));
+          "avg buy price", "buy average"), List.of("avg", "average")),
+      Role.of("invested", List.of("invested", "invested value", "invested amount", "investment",
+          "amount invested", "buy value", "total cost", "cost value", "cost"), List.of("invested", "buy value")));
+
+  /** The column roles a person may choose for a holdings file. */
+  static final Set<String> HOLDING_ROLES = Set.of("isin", "name", "qty", "value", "price", "avg", "invested");
+  /** The column roles a person may choose for a tradebook. */
+  static final Set<String> TRADE_ROLES = Set.of("isin", "name", "date", "type", "qty", "price", "tradeId");
+  private static final Set<String> TRADE_NEEDS = Set.of("name", "date", "type", "qty", "price");
+
+  private static boolean holdingsEnough(Set<String> r) {
+    return r.contains("name") && r.contains("qty") && (r.contains("value") || r.contains("price"));
+  }
+
+  /**
+   * The columns to read with: the person's choice for this file, else the ones Kai finds by their
+   * header words, else the choice they made for this account before. Null when none is enough;
+   * the caller then asks the person, showing the first lines.
+   */
+  private static Found columns(List<List<String>> rows, List<Role> find, Set<String> roles,
+                               java.util.function.Predicate<Set<String>> enough, JsonNode chosen, JsonNode remembered) {
+    if (chosen != null && chosen.isObject() && chosen.has("headerRow")) return HeaderFinder.chosen(rows, chosen, roles);
+    Found f = HeaderFinder.find(rows, find, enough);
+    if ((f == null || !enough.test(f.index().keySet())) && remembered != null) {
+      var again = HeaderFinder.locate(rows, remembered);
+      if (again != null) {
+        try {
+          f = HeaderFinder.chosen(rows, again, roles);
+        } catch (ValidationException stale) {
+          // The remembered choice names roles this kind doesn't have: ask instead.
+        }
+      }
+    }
+    return f;
+  }
+
+  private static Statement askForColumns(List<List<String>> rows, Found f) {
+    int from = f == null ? 0 : f.headerRow();
+    var columns = new Columns(from, f == null ? List.of() : f.headers(), f == null ? null : f.mapping(), false,
+        HeaderFinder.sample(rows, 0, Math.max(8, from + 6)));
+    return Statement.of(List.of(), List.of(), null, columns);
+  }
+
+  /** The columns as read, with the first lines kept so the person can change them on review. */
+  private static Columns readWith(List<List<String>> rows, Found f) {
+    return new Columns(f.headerRow(), f.headers(), f.mapping(), true,
+        HeaderFinder.sample(rows, 0, Math.max(8, f.headerRow() + 6)));
+  }
 
   private static final List<Role> TRADES = List.of(
       Role.of("isin", List.of("isin", "isin code"), List.of("isin")),
@@ -54,12 +102,18 @@ final class BrokerFileImporter {
           List.of("trade id", "trade no")));
 
   static Statement holdings(byte[] bytes, LocalDate today, int maxRows) {
+    return holdings(bytes, null, null, today, maxRows);
+  }
+
+  static Statement holdings(byte[] bytes, JsonNode chosen, JsonNode remembered, LocalDate today, int maxRows) {
     List<List<String>> rows = Csv.read(bytes, maxRows + HeaderFinder.SEARCH_ROWS);
-    Found f = HeaderFinder.find(rows, HOLDINGS, r -> r.contains("name") && r.contains("qty")
-        && (r.contains("value") || r.contains("price")));
-    if (f == null || !(f.index().containsKey("name") && f.index().containsKey("qty")
-        && (f.index().containsKey("value") || f.index().containsKey("price")))) {
-      throw new ValidationException("Kai could not find the name, quantity and value columns of this holdings file.");
+    if (rows.isEmpty()) throw new ValidationException("The file is empty.");
+    Found f = columns(rows, HOLDINGS, HOLDING_ROLES, BrokerFileImporter::holdingsEnough, chosen, remembered);
+    if (f == null || !holdingsEnough(f.index().keySet())) {
+      if (chosen != null && chosen.has("headerRow")) {
+        throw new ValidationException("Choose at least the name, quantity, and either the current value or the price.");
+      }
+      return askForColumns(rows, f);
     }
     List<Holding> out = new ArrayList<>();
     List<Unreadable> unreadable = new ArrayList<>();
@@ -84,23 +138,36 @@ final class BrokerFileImporter {
         }
         String isin = isin(f.cell(row, "isin"));
         Parsing.Amount avg = f.index().containsKey("avg") ? Parsing.amount(f.cell(row, "avg")) : null;
-        out.add(new Holding(null, name, isin, assetClass(name), subCategory(name), qty.value(), worth, today,
-            avg == null || avg.value().signum() <= 0 ? null : avg.value().abs()));
+        BigDecimal avgCost = avg == null || avg.value().signum() <= 0 ? null : avg.value().abs();
+        if (avgCost == null && f.index().containsKey("invested")) {
+          // What was paid in all, over the units: the average cost per unit.
+          Parsing.Amount invested = Parsing.amount(f.cell(row, "invested"));
+          if (invested != null && invested.value().signum() > 0) {
+            avgCost = invested.value().abs().divide(qty.value(), 4, RoundingMode.HALF_UP);
+          }
+        }
+        out.add(new Holding(null, name, isin, assetClass(name), subCategory(name), qty.value(), worth, today, avgCost));
       } catch (NumberFormatException bad) {
         unreadable.add(new Unreadable(r + 1, "A figure Kai can't read"));
       }
     }
     if (out.isEmpty() && unreadable.isEmpty()) throw new ValidationException("This holdings file has no rows.");
-    return new Statement(List.of(), out, unreadable, List.of(), null,
-        new Columns(f.headerRow(), f.headers(), f.mapping(), true, List.of()));
+    return new Statement(List.of(), out, unreadable, List.of(), null, readWith(rows, f));
   }
 
   static Statement tradebook(byte[] bytes, int maxRows) {
+    return tradebook(bytes, null, null, maxRows);
+  }
+
+  static Statement tradebook(byte[] bytes, JsonNode chosen, JsonNode remembered, int maxRows) {
     List<List<String>> rows = Csv.read(bytes, maxRows + HeaderFinder.SEARCH_ROWS);
-    Set<String> need = Set.of("name", "date", "type", "qty", "price");
-    Found f = HeaderFinder.find(rows, TRADES, r -> r.containsAll(need));
-    if (f == null || !f.index().keySet().containsAll(need)) {
-      throw new ValidationException("Kai could not find the symbol, date, buy or sell, quantity and price columns of this tradebook.");
+    if (rows.isEmpty()) throw new ValidationException("The file is empty.");
+    Found f = columns(rows, TRADES, TRADE_ROLES, r -> r.containsAll(TRADE_NEEDS), chosen, remembered);
+    if (f == null || !f.index().keySet().containsAll(TRADE_NEEDS)) {
+      if (chosen != null && chosen.has("headerRow")) {
+        throw new ValidationException("Choose the name, date, buy or sell, quantity and price columns.");
+      }
+      return askForColumns(rows, f);
     }
     List<Txn> txns = new ArrayList<>();
     List<Unreadable> unreadable = new ArrayList<>();
@@ -141,7 +208,7 @@ final class BrokerFileImporter {
       }
     }
     if (txns.isEmpty() && unreadable.isEmpty()) throw new ValidationException("This tradebook has no trades.");
-    return Statement.of(txns, unreadable, null, new Columns(f.headerRow(), f.headers(), f.mapping(), true, List.of()));
+    return Statement.of(txns, unreadable, null, readWith(rows, f));
   }
 
   private static String isin(String raw) {

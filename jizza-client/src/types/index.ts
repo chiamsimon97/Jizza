@@ -385,6 +385,19 @@ export type UiAction =
   | { type: 'thread_handback'; payload: { conversationId: string; threadId: string; reason?: string } }
   /** Steps only the user can take, with buttons: open a sign-in page, then carry on. */
   | { type: 'show_steps'; payload: UserSteps }
+  /** A short Portfolio form Kai filled in, to check and save right in the chat. */
+  | { type: 'finance_form'; payload: KaiForm }
+
+export type KaiFormKind = 'goal' | 'loan' | 'money_lent' | 'policy' | 'asset' | 'account'
+
+/** A Portfolio form Kai put in the chat with what the person told it; saved only by them. */
+export interface KaiForm {
+  id: string
+  form: KaiFormKind
+  title?: string
+  intro?: string
+  values?: Record<string, unknown>
+}
 
 /** One input on a start card, with the value Jizza read from the message (if any). */
 export interface StartRunField {

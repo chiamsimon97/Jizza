@@ -184,6 +184,17 @@ public class ImportService {
    */
   @Transactional
   public Synced fromSource(UUID owner, UUID accountId, String sourceLabel, JsonNode shares, JsonNode funds) {
+    return fromSource(owner, accountId, sourceLabel, shares, funds, null);
+  }
+
+  /**
+   * As above, with the broker's {@code get_margins} answer: the cash left in the trading account
+   * comes along as the account's balance, saved with the holdings. A sync whose holdings match the
+   * last saved one still lands when that cash differs from the balance saved for the account.
+   */
+  @Transactional
+  public Synced fromSource(UUID owner, UUID accountId, String sourceLabel, JsonNode shares, JsonNode funds,
+                           JsonNode margins) {
     ObjectNode account = records.get("fin_account", owner, accountId)
         .orElseThrow(() -> new NotFoundException("Account", accountId));
     if (!BROKER_ACCOUNTS.contains(account.path("kind").asText())) {
@@ -211,12 +222,19 @@ public class ImportService {
         lastKey = b.path("stats").path("syncKey").asText();
       }
     }
-    if (syncKey.equals(lastKey) && st.unreadable().isEmpty()) return new Synced(null, false, st.holdings().size());
+    Statement.Balance cash = SourceHoldings.kiteCash(margins, LocalDate.now());
+    boolean cashMoved = cash != null && records.list("fin_asset", owner,
+            Map.of("accountId", accountId.toString(), "kind", "savings_balance")).stream()
+        .noneMatch(a -> a.path("value").decimalValue().compareTo(cash.amount()) == 0);
+    if (syncKey.equals(lastKey) && st.unreadable().isEmpty() && !cashMoved) {
+      return new Synced(null, false, st.holdings().size());
+    }
 
     UUID personId = UUID.fromString(account.path("personId").asText());
     ObjectNode stats = preview(owner, "broker_holdings", account, personId, st);
     stats.put("fileName", Parsing.clip(sourceLabel, 80) + " sync").put("source", Parsing.clip(sourceLabel, 80))
         .put("syncKey", syncKey);
+    if (cash != null) stats.putObject("balance").put("amount", cash.amount()).put("date", cash.date().toString());
     ObjectNode batch = Json.obj()
         .put("personId", personId.toString())
         .put("kind", "broker_holdings")
@@ -238,11 +256,12 @@ public class ImportService {
   private Statement parse(UUID owner, String kind, ObjectNode account, Upload u) {
     try {
       return switch (kind) {
-        case "bank_csv" -> BankCsvImporter.parse(u.bytes(), u.mapping(), remembered(owner, account), MAX_ROWS);
+        case "bank_csv" -> BankCsvImporter.parse(u.bytes(), u.mapping(), remembered(owner, account, kind), MAX_ROWS);
         case "bank_pdf" -> BankPdfImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
         case "cas_pdf" -> CasImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
-        case "broker_holdings" -> BrokerFileImporter.holdings(u.bytes(), LocalDate.now(), MAX_ROWS);
-        case "broker_tradebook" -> BrokerFileImporter.tradebook(u.bytes(), MAX_ROWS);
+        case "broker_holdings" -> BrokerFileImporter.holdings(u.bytes(), u.mapping(), remembered(owner, account, kind),
+            LocalDate.now(), MAX_ROWS);
+        case "broker_tradebook" -> BrokerFileImporter.tradebook(u.bytes(), u.mapping(), remembered(owner, account, kind), MAX_ROWS);
         default -> throw new ValidationException("Choose what kind of file this is.");
       };
     } catch (Csv.TooLong tooLong) {
@@ -250,9 +269,10 @@ public class ImportService {
     }
   }
 
-  /** The columns used for this account's last saved bank statement, if any. */
-  private JsonNode remembered(UUID owner, ObjectNode account) {
-    return records.list("fin_import_batch", owner, Map.of("accountId", account.path("id").asText(), "kind", "bank_csv"))
+  /** The columns used for this account's last saved file of this kind, if any. */
+  private JsonNode remembered(UUID owner, ObjectNode account, String kind) {
+    if (account == null) return null;
+    return records.list("fin_import_batch", owner, Map.of("accountId", account.path("id").asText(), "kind", kind))
         .stream().filter(b -> "committed".equals(b.path("status").asText()))
         .reduce((a, b) -> b).map(b -> b.path("mapping")).filter(m -> m.has("headerRow")).orElse(null);
   }

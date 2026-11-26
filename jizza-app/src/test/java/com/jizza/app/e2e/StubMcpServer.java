@@ -33,6 +33,14 @@ public final class StubMcpServer implements AutoCloseable {
    */
   public volatile String kiteShares;
   public volatile String kiteFunds = "[]";
+  /** When set with {@link #kiteShares}, {@code get_margins} is listed and answers this text. */
+  public volatile String kiteMargins;
+  /**
+   * When true with {@link #kiteShares}, the server answers as Kite's does since late 2026: one tool
+   * per area ({@code portfolio}, {@code mutual_funds}, {@code session}) with the part picked by
+   * {@code mode}, holdings one row a page so paging is exercised, and no login tool.
+   */
+  public volatile boolean kiteAreas;
   /** When set, the server answers as a mail server (Gmail's tools) with this one raw message. */
   public volatile String mailRaw;
 
@@ -129,6 +137,13 @@ public final class StubMcpServer implements AutoCloseable {
           tools.add(tool("trash_thread", "Moves a thread to the trash.", Json.obj()));
           break;
         }
+        if (kiteAreas) {
+          tools.add(tool("portfolio", "Profile, margins, holdings and positions.", modes("profile", "margins", "holdings", "positions")));
+          tools.add(tool("mutual_funds", "Mutual fund holdings via Coin.", modes("holdings")));
+          tools.add(tool("session", "Sign-in status or logout.", modes("status", "logout")));
+          tools.add(tool("orders", "Place, modify or cancel orders.", modes("place", "modify", "cancel")));
+          break;
+        }
         tools.add(tool("login", "Log in to Kite. Returns a link to open.", Json.obj()));
         tools.add(tool("get_holdings", "Your holdings.", Json.obj()));
         ObjectNode order = Json.obj();
@@ -136,6 +151,7 @@ public final class StubMcpServer implements AutoCloseable {
         order.putObject("quantity").put("type", "integer");
         tools.add(tool("place_order", "Places an order.", order));
         if (kiteShares != null) tools.add(tool("get_mf_holdings", "Mutual fund holdings.", Json.obj()));
+        if (kiteShares != null && kiteMargins != null) tools.add(tool("get_margins", "Funds and margins.", Json.obj()));
       }
       case "tools/call" -> {
         JsonNode params = request.path("params");
@@ -150,6 +166,32 @@ public final class StubMcpServer implements AutoCloseable {
         }
         if (kiteShares != null && name.equals("place_order")) {
           result.putArray("content").addObject().put("type", "text").put("text", "{\"order_id\":\"151220000000000\"}");
+          break;
+        }
+        if (kiteAreas && name.equals("portfolio")) {
+          JsonNode a = params.path("arguments");
+          String text;
+          if ("margins".equals(a.path("mode").asText())) {
+            text = kiteMargins == null ? "{\"data\":{}}" : "{\"data\":" + kiteMargins + "}";
+          } else {
+            JsonNode all = Json.read(kiteShares);
+            int from = a.path("from").asInt(0);
+            var page = Json.mapper().createArrayNode();
+            if (from < all.size()) page.add(all.get(from));
+            ObjectNode body = Json.obj();
+            body.set("data", page);
+            body.putObject("pagination").put("from", from).put("total", all.size()).put("has_more", from + 1 < all.size());
+            text = body.toString();
+          }
+          result.putArray("content").addObject().put("type", "text").put("text", text);
+          break;
+        }
+        if (kiteAreas && name.equals("mutual_funds")) {
+          result.putArray("content").addObject().put("type", "text").put("text", "{\"data\":" + kiteFunds + "}");
+          break;
+        }
+        if (kiteMargins != null && name.equals("get_margins")) {
+          result.putArray("content").addObject().put("type", "text").put("text", kiteMargins);
           break;
         }
         if (kiteShares != null && (name.equals("get_holdings") || name.equals("get_mf_holdings"))) {
@@ -167,6 +209,13 @@ public final class StubMcpServer implements AutoCloseable {
       }
     }
     return reply;
+  }
+
+  private static ObjectNode modes(String... values) {
+    ObjectNode props = Json.obj();
+    var e = props.putObject("mode").put("type", "string").putArray("enum");
+    for (String v : values) e.add(v);
+    return props;
   }
 
   private static ObjectNode tool(String name, String description, ObjectNode properties) {

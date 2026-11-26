@@ -140,7 +140,8 @@ final class BankCsvImporter {
       }
     }
     return Statement.of(txns, unreadable, closing(withBalance, balances),
-        new Columns(f.headerRow(), f.headers(), f.mapping(), true, List.of()));
+        new Columns(f.headerRow(), f.headers(), f.mapping(), true,
+            HeaderFinder.sample(rows, 0, Math.max(8, f.headerRow() + 6))));
   }
 
   private static boolean enough(Set<String> roles) {
