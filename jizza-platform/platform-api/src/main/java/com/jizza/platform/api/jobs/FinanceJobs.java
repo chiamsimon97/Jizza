@@ -6,6 +6,7 @@ import com.jizza.platform.usecase.finance.health.FinHealthUseCase;
 import com.jizza.platform.usecase.finance.ledger.EarmarkService;
 import com.jizza.platform.usecase.finance.market.PriceService;
 import com.jizza.platform.usecase.finance.review.AlertService;
+import com.jizza.platform.usecase.finance.sync.BrokerSyncService;
 import java.util.UUID;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Component;
 /**
  * Kai Portfolio's jobs (5.15), in India time, one user at a time, each safe to run twice: fund
  * prices from AMFI at 23:30 (shared, not per user), the nightly earmark check, health check and goal check at
- * 00:30, the daily alerts at 08:00 and the monthly snapshot, health check and review on the 1st
+ * 00:30, the broker sync at 16:30 on weekdays, the daily alerts at 08:00 and the monthly snapshot, health check and review on the 1st
  * at 06:00. One user's failure never stops the others, and the log names only the user id.
  */
 @Component
@@ -32,15 +33,38 @@ public class FinanceJobs {
   private final EarmarkService earmarks;
   private final FinHealthUseCase health;
   private final GoalCheckService goalChecks;
+  private final BrokerSyncService sync;
 
   public FinanceJobs(FinanceRecords records, AlertService alerts, PriceService prices, EarmarkService earmarks,
-                     FinHealthUseCase health, GoalCheckService goalChecks) {
+                     FinHealthUseCase health, GoalCheckService goalChecks, BrokerSyncService sync) {
     this.records = records;
     this.alerts = alerts;
     this.prices = prices;
     this.earmarks = earmarks;
     this.health = health;
     this.goalChecks = goalChecks;
+    this.sync = sync;
+  }
+
+  /**
+   * Connected brokers after the market closes, while the day's sign-in usually still holds: each
+   * source's holdings become a batch to review (never saved on their own). A source that needs
+   * signing in is skipped.
+   */
+  @Scheduled(cron = "0 30 16 * * MON-FRI", zone = "Asia/Kolkata")
+  @SchedulerLock(name = "jizza-fin-sync", lockAtMostFor = "PT1H", lockAtLeastFor = "PT1M")
+  public void brokerSync() {
+    int users = 0;
+    int toReview = 0;
+    for (UUID owner : records.ownersWithProfile()) {
+      try {
+        toReview += sync.syncAll(owner);
+        users++;
+      } catch (RuntimeException e) {
+        log.warn("Broker sync failed for user {}: {}", owner, e.getClass().getSimpleName());
+      }
+    }
+    log.info("Broker sync: {} users, {} batches to review", users, toReview);
   }
 
   @Scheduled(cron = "0 30 23 * * *", zone = "Asia/Kolkata")

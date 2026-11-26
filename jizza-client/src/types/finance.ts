@@ -764,6 +764,38 @@ export interface ImportStats {
   columns?: { headerRow: number; sure: boolean; headers: string[]; sample: string[][] }
 }
 
+/** A broker's MCP server on Connectors that can be a source: it offers a holdings tool. */
+export interface SyncCandidate {
+  serverId: string
+  name: string
+  signedIn: boolean
+  enabled: boolean
+  /** It also offers mutual fund holdings. */
+  funds: boolean
+  /** It offers order placing (a self-hosted server with your own key; Zerodha's hosted one doesn't). */
+  placesOrders: boolean
+}
+
+export type SyncStatus = 'to_review' | 'no_change' | 'needs_sign_in' | 'failed'
+
+/** A connected server tied to one demat account; a sync lands as an import to review. */
+export interface SyncSource {
+  id: string
+  serverId: string
+  serverName: string
+  accountId: string
+  accountName: string
+  enabled: boolean
+  signedIn: boolean
+  lastStatus: SyncStatus | null
+  lastSyncedAt: string | null
+  lastBatchId: string | null
+}
+
+export interface SourcesView { sources: SyncSource[]; servers: SyncCandidate[] }
+
+export interface SyncResult { status: SyncStatus; batchId: string | null; holdings: number; message: string }
+
 export interface ImportBatch {
   id: string
   personId: string

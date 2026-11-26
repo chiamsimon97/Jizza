@@ -152,6 +152,67 @@ public class ImportService {
     return saved;
   }
 
+  // ── From a connected source ─────────────────────────────────────────────────
+
+  /**
+   * What a sync from a connected source made: the batch to review, or none when the holdings are
+   * the same as the last saved sync for this account.
+   */
+  public record Synced(ObjectNode batch, boolean changed, int holdings) {}
+
+  /**
+   * Holdings read from a connected broker (its own tools' answers), as a holdings batch the person
+   * reviews and saves like an uploaded holdings file. {@code owner} has been resolved by the caller.
+   * An earlier unsaved sync for the account is replaced. Nothing is logged but counts.
+   */
+  @Transactional
+  public Synced fromSource(UUID owner, UUID accountId, String sourceLabel, JsonNode shares, JsonNode funds) {
+    ObjectNode account = records.get("fin_account", owner, accountId)
+        .orElseThrow(() -> new NotFoundException("Account", accountId));
+    if (!BROKER_ACCOUNTS.contains(account.path("kind").asText())) {
+      throw new ValidationException("A broker sync goes with a demat or broker account.");
+    }
+    Statement st = SourceHoldings.kite(shares, funds, LocalDate.now());
+    if (st.holdings().isEmpty() && st.unreadable().isEmpty()) {
+      throw new ValidationException(sourceLabel + " sent no holdings, so nothing was changed.");
+    }
+    List<String> lines = new ArrayList<>();
+    for (Holding h : st.holdings()) {
+      lines.add((h.isin() == null ? h.name() : h.isin()) + "|" + h.units().stripTrailingZeros().toPlainString());
+    }
+    lines.sort(null);
+    String syncKey = Parsing.sha256(accountId + "|" + String.join(";", lines));
+
+    String lastAt = "";
+    String lastKey = null;
+    for (ObjectNode b : records.list("fin_import_batch", owner, Map.of("accountId", accountId.toString(), "kind", "broker_holdings"))) {
+      String status = b.path("status").asText();
+      if (!b.path("stats").has("syncKey")) continue;
+      if ("parsed".equals(status)) discard(owner, b);
+      else if ("committed".equals(status) && b.path("createdAt").asText().compareTo(lastAt) > 0) {
+        lastAt = b.path("createdAt").asText();
+        lastKey = b.path("stats").path("syncKey").asText();
+      }
+    }
+    if (syncKey.equals(lastKey) && st.unreadable().isEmpty()) return new Synced(null, false, st.holdings().size());
+
+    UUID personId = UUID.fromString(account.path("personId").asText());
+    ObjectNode stats = preview(owner, "broker_holdings", account, personId, st);
+    stats.put("fileName", Parsing.clip(sourceLabel, 80) + " sync").put("source", Parsing.clip(sourceLabel, 80))
+        .put("syncKey", syncKey);
+    ObjectNode batch = Json.obj()
+        .put("personId", personId.toString())
+        .put("kind", "broker_holdings")
+        .put("accountId", accountId.toString())
+        .put("contentHash", Parsing.sha256(syncKey + "|" + OffsetDateTime.now()))
+        .put("status", "parsed");
+    batch.set("stats", stats);
+    ObjectNode saved = records.insert("fin_import_batch", owner, batch);
+    audit.record(owner, ActorType.SYSTEM, null, "finance.import.synced", saved.path("id").asText(),
+        Json.obj().put("kind", "broker_holdings").put("holdings", st.holdings().size()));
+    return new Synced(saved, true, st.holdings().size());
+  }
+
   private Statement parse(UUID owner, String kind, ObjectNode account, Upload u) {
     try {
       return switch (kind) {

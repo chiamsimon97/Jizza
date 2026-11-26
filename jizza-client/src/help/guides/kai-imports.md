@@ -3,7 +3,7 @@ title: Import bank statements and fund statements into Kai
 summary: Bring in a bank CSV from any bank, your mutual fund CAS, or your broker's holdings and tradebook. Check every row before saving, and undo an import later.
 section: Kai Portfolio
 order: 30
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 ## Where to start
@@ -31,6 +31,18 @@ Each folio becomes an account in Kai, and each scheme's value on the statement d
 ## Broker holdings and tradebook (CSV)
 
 Download your holdings and your tradebook from your broker's website as CSV, and choose your demat account. A holdings file is the whole account on the day you downloaded it: shares no longer listed are set to nothing. A tradebook brings in each buy and sell.
+
+## Connected brokers (Zerodha's Kite)
+
+Instead of downloading a holdings file, you can let Kai read your holdings straight from your broker.
+
+1. Open **Connectors** and add Zerodha's Kite server at `https://mcp.kite.trade/mcp`. Sign in to Kite when it asks; the sign-in lasts for the day.
+2. In Kai, open **Portfolio**, then **Connect**. Under **Connected brokers**, choose Kite and the demat account it holds, then press **Connect**.
+3. Press **Sync now**. Kai reads your shares and your mutual funds held with Zerodha and opens the review below, just like a holdings file.
+
+Kai also syncs on weekdays at 4:30 PM, after the market closes, if you've signed in to Kite that day. When something has changed, you get a notification to review it. If nothing has changed since your last saved sync, nothing happens.
+
+Kai uses only Kite's tools that read your holdings. It never places, changes or cancels an order. Zerodha's hosted server doesn't offer order placing anyway.
 
 ## Checking before you save
 

@@ -15,6 +15,7 @@ import { LoadFailed, Panel, Pill, Row } from '../components/Panel'
 import { SkeletonRows } from '../components/SkeletonRows'
 import { errorText } from '../data'
 import { financeKeys } from '../queryKeys'
+import { ConnectedSources } from './ConnectedSources'
 
 interface Source {
   kind: ImportKind
@@ -130,6 +131,8 @@ export function Connect({ people }: { people: FinPerson[] }) {
           Files stay in your account; nothing is sent anywhere.
         </p>
       </div>
+
+      <ConnectedSources accounts={accounts.data} onReview={id => { setSource('broker_holdings'); setOpen(id); setLast(null) }} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {SOURCES.map(s => {

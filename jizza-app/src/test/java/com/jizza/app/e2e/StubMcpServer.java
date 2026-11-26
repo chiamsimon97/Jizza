@@ -27,6 +27,12 @@ public final class StubMcpServer implements AutoCloseable {
   public final List<String> calls = java.util.Collections.synchronizedList(new ArrayList<>());
   /** The Authorization header of every request, so tests see what Jizza sent. */
   public final List<String> authorizations = java.util.Collections.synchronizedList(new ArrayList<>());
+  /**
+   * When set, the server answers as Zerodha's Kite MCP server does: {@code get_holdings} and
+   * {@code get_mf_holdings} return Kite Connect's JSON as text, and the funds tool is listed.
+   */
+  public volatile String kiteShares;
+  public volatile String kiteFunds = "[]";
 
   public StubMcpServer() {
     try {
@@ -119,10 +125,17 @@ public final class StubMcpServer implements AutoCloseable {
         order.putObject("symbol").put("type", "string");
         order.putObject("quantity").put("type", "integer");
         tools.add(tool("place_order", "Places an order.", order));
+        if (kiteShares != null) tools.add(tool("get_mf_holdings", "Mutual fund holdings.", Json.obj()));
       }
       case "tools/call" -> {
         JsonNode params = request.path("params");
         calls.add(params.path("name").asText() + " " + params.path("arguments"));
+        String name = params.path("name").asText();
+        if (kiteShares != null && (name.equals("get_holdings") || name.equals("get_mf_holdings"))) {
+          result.putArray("content").addObject().put("type", "text")
+              .put("text", name.equals("get_holdings") ? kiteShares : kiteFunds);
+          break;
+        }
         result.putArray("content").addObject().put("type", "text").put("text", "INFY x 10");
         result.putObject("structuredContent").putArray("holdings").addObject()
             .put("symbol", "INFY").put("quantity", 10);

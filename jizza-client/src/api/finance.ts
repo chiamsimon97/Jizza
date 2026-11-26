@@ -4,7 +4,7 @@ import type {
   FinLoanGiven, FinLoanGivenInput, FinLoanInput, FinPerson, FinPersonInput, FinPolicy, FinPolicyInput,
   FinProfileView, FinSettings, HealthView, JsonValue, LoanPlanView, NetWorthView, ProtectionView,
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
-  BuilderInput, BuilderView, GoalCheck, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
+  BuilderInput, BuilderView, GoalCheck, GoalInput, SourcesView, SyncResult, SyncSource, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
   AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
   ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
@@ -91,6 +91,13 @@ export const financeApi = {
   goal: (id: string) => api.get<GoalView>(`/api/finance/goals/${id}`),
   addGoal: (body: GoalInput) => api.post<GoalView>('/api/finance/goals', body),
   updateGoal: (id: string, body: GoalInput) => api.patch<GoalView>(`/api/finance/goals/${id}`, body),
+  // ── Connected sources (a broker's MCP server on Connectors) ─────────────────
+  sources: () => api.get<SourcesView>('/api/finance/sources'),
+  linkSource: (serverId: string, accountId: string) => api.post<SyncSource>('/api/finance/sources', { serverId, accountId }),
+  setSourceEnabled: (id: string, enabled: boolean) => api.patch<SyncSource>(`/api/finance/sources/${id}`, { enabled }),
+  unlinkSource: (id: string) => api.delete<void>(`/api/finance/sources/${id}`),
+  /** Reads the holdings now; a change comes back as a batch to review, never saved on its own. */
+  syncSource: (id: string) => api.post<SyncResult>(`/api/finance/sources/${id}/sync`),
   achieveGoal: (id: string) => api.post<GoalView>(`/api/finance/goals/${id}/achieve`),
   /** Does each goal meet its target: worked out now, stores nothing. */
   goalChecks: () => api.get<GoalCheck[]>('/api/finance/goal-checks'),

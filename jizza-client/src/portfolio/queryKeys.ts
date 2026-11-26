@@ -29,6 +29,7 @@ export const financeKeys = {
   accounts: ['finance', 'accounts'] as const,
   categories: ['finance', 'categories'] as const,
   imports: ['finance', 'imports'] as const,
+  sources: ['finance', 'sources'] as const,
   importBatch: (id: string) => ['finance', 'imports', id] as const,
   transactions: (accountId: string, month: string) => ['finance', 'transactions', accountId, month] as const,
   holdings: (person: string | null, goal: string | null) => ['finance', 'holdings', person ?? 'all', goal ?? 'all'] as const,

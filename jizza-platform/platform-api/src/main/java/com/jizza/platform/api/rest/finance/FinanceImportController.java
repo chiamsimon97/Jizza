@@ -7,6 +7,7 @@ import com.jizza.engine.api.util.AuthenticatedOnly;
 import com.jizza.engine.api.util.Json;
 import com.jizza.engine.security.session.CurrentUser;
 import com.jizza.platform.usecase.finance.imports.ImportService;
+import com.jizza.platform.usecase.finance.sync.BrokerSyncService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,9 +40,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class FinanceImportController {
 
   private final ImportService imports;
+  private final BrokerSyncService sync;
 
-  public FinanceImportController(ImportService imports) {
+  public FinanceImportController(ImportService imports, BrokerSyncService sync) {
     this.imports = imports;
+    this.sync = sync;
   }
 
   /** The file and what it is. {@code password} opens a locked PDF for this one read and is never kept. */
@@ -105,5 +109,43 @@ public class FinanceImportController {
   public ImportService.Recategorised recategorise(@PathVariable UUID id, @RequestBody CategoryBody body) {
     return imports.recategorise(CurrentUser.userId(), id, body == null ? null : body.categoryId(),
         body != null && Boolean.TRUE.equals(body.always()));
+  }
+
+  // ── Connected sources ───────────────────────────────────────────────────────
+
+  public record LinkBody(UUID serverId, UUID accountId) {}
+
+  public record EnabledBody(Boolean enabled) {}
+
+  /** Linked sources, and the servers on Connectors that could be one (they offer holdings). */
+  @GetMapping("/sources")
+  public BrokerSyncService.SourcesView sources() {
+    return sync.view(CurrentUser.userId());
+  }
+
+  @PostMapping("/sources")
+  public BrokerSyncService.Source link(@RequestBody LinkBody body) {
+    if (body == null || body.serverId() == null || body.accountId() == null) {
+      throw new ValidationException("Choose a connected server and an account.");
+    }
+    return sync.link(CurrentUser.userId(), body.serverId(), body.accountId());
+  }
+
+  @PatchMapping("/sources/{id}")
+  public BrokerSyncService.Source setEnabled(@PathVariable UUID id, @RequestBody EnabledBody body) {
+    if (body == null || body.enabled() == null) throw new ValidationException("Say whether the source is on.");
+    return sync.setEnabled(CurrentUser.userId(), id, body.enabled());
+  }
+
+  @DeleteMapping("/sources/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void unlink(@PathVariable UUID id) {
+    sync.unlink(CurrentUser.userId(), id);
+  }
+
+  /** Reads the holdings now; the result is a batch to review, never saved on its own. */
+  @PostMapping("/sources/{id}/sync")
+  public BrokerSyncService.SyncResult syncNow(@PathVariable UUID id) {
+    return sync.syncNow(CurrentUser.userId(), id);
   }
 }
