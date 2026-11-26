@@ -69,8 +69,8 @@ describe('PortfolioTab', () => {
 
   it('shows what a later view will hold', async () => {
     vi.spyOn(financeApi, 'profile').mockResolvedValue(profile())
-    renderTab('/agents/a1?tab=portfolio&view=holdings')
-    expect(await screen.findByText('Holdings comes later')).toBeInTheDocument()
+    renderTab('/agents/a1?tab=portfolio&view=schedules')
+    expect(await screen.findByText('Schedules comes later')).toBeInTheDocument()
   })
 
   it('shows Rules under Investments only with Advanced on', async () => {

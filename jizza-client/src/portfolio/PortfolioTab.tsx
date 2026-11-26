@@ -30,6 +30,11 @@ import { QUICK_START_STEPS, QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
 import { Tax } from './screens/Tax'
 import { Connect } from './screens/Connect'
+import { Allocation } from './screens/Allocation'
+import { AssetTree } from './screens/AssetTree'
+import { Holdings } from './screens/Holdings'
+import { Lists } from './screens/Lists'
+import { Rules } from './screens/Rules'
 import { usePortfolioScope } from './usePortfolioScope'
 
 /** Views that work on the sample household; the rest are the user's own setup. */
@@ -63,7 +68,10 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   const investments = visible.filter(v => v.group === 'investments')
   const people = shown.people.filter(p => p.status === 'active')
   const inInvestments = view.group === 'investments'
-  const open = (id: string) => setScope({ view: id, step: null, goal: null })
+  // The investments views keep the chosen goal; the rest start from all goals.
+  const open = (id: string) => setScope({ view: id, step: null, goal: findView(id).group === 'investments' ? scope.goal : null })
+  const goalOrNull = scope.goal === 'all' ? null : scope.goal
+  const pickGoal = (id: string | null) => setScope({ goal: id })
   const answer = (step: QuickStartStep) => setScope({ view: 'quick-start', step, sample: null })
   const startStep = QUICK_START_STEPS.some(s => s.id === scope.step) ? scope.step as QuickStartStep : null
   const askKai = () => {
@@ -99,8 +107,9 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
               <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 Goal
                 <select aria-label="Goal" className={`${fieldClass} !w-auto !py-1 text-xs`} disabled={sample || !goals.data?.length}
-                  value={view.id === 'goal' ? scope.goal : 'all'}
-                  onChange={e => setScope(e.target.value === 'all' ? { view: 'goals', goal: null } : { view: 'goal', goal: e.target.value, step: null })}>
+                  value={view.id === 'goal' || inInvestments ? scope.goal : 'all'}
+                  onChange={e => setScope(inInvestments ? { goal: e.target.value === 'all' ? null : e.target.value }
+                    : e.target.value === 'all' ? { view: 'goals', goal: null } : { view: 'goal', goal: e.target.value, step: null })}>
                   <option value="all">All goals</option>
                   {!sample && goals.data?.filter(g => g.goal.status !== 'archived').map(g => <option key={g.goal.id} value={g.goal.id}>{g.goal.name}</option>)}
                 </select>
@@ -164,6 +173,11 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
                 {view.id === 'net-worth' && <NetWorth people={people} onOpen={open} />}
                 {view.id === 'people' && <People />}
                 {view.id === 'connect' && <Connect people={profile.people} />}
+                {view.id === 'holdings' && <Holdings person={scope.person === 'all' ? null : scope.person} goal={goalOrNull} onOpen={open} />}
+                {view.id === 'allocation' && <Allocation goal={goalOrNull} onOpen={open} />}
+                {view.id === 'asset-tree' && <AssetTree goal={goalOrNull} onGoal={pickGoal} />}
+                {view.id === 'rules' && <Rules goal={goalOrNull} onGoal={pickGoal} />}
+                {view.id === 'lists' && <Lists />}
                 {view.id === 'settings' && <Settings settings={profile.settings} />}
                 {!BUILT_VIEWS.has(view.id) && <NotYet view={view} />}
               </>}

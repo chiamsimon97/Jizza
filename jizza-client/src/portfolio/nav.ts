@@ -26,8 +26,8 @@ export const PORTFOLIO_VIEWS: PortfolioView[] = [
   { id: 'goal', label: 'Goal', phase: '1b', hidden: true, about: 'One goal: its funding, starting mix and details.', ask: 'About this goal: ' },
   { id: 'goal-new', label: 'New goal', phase: '1b', hidden: true, about: 'Pick a goal and correct what Kai fills in.' },
   { id: 'plan-builder', label: 'Plan builder', phase: '1b', about: 'How much goes in, split across short, mid and long term down to each sleeve.', ask: 'About my plan builder split: ' },
-  { id: 'holdings', label: 'Holdings', phase: '2', group: 'investments', about: 'What you hold, in which account, and which goal each unit is for.' },
-  { id: 'allocation', label: 'Allocation', phase: '2', group: 'investments', about: 'Each goal’s mix against its target and rebalance band.' },
+  { id: 'holdings', label: 'Holdings', phase: '2', group: 'investments', about: 'What you hold, in which account, and which goal each unit is for.', ask: 'About my holdings: ' },
+  { id: 'allocation', label: 'Allocation', phase: '2', group: 'investments', about: 'Each goal’s mix against its target and rebalance band.', ask: 'About this goal’s allocation: ' },
   { id: 'asset-tree', label: 'Asset tree', phase: '2', group: 'investments', about: 'Goal, asset class, sub-category and instrument targets in one tree.' },
   { id: 'proposals', label: 'Proposals', phase: '4', group: 'investments', about: 'Rebalance proposals with options and their tax effect, for you to approve.' },
   { id: 'lists', label: 'Lists', phase: '2', group: 'investments', about: 'Watchlists and shortlists you can promote into a goal.' },
@@ -52,4 +52,4 @@ export function findView(id: string | null | undefined): PortfolioView {
 
 /** Views built in this release; the rest show a placeholder. */
 export const BUILT_VIEWS = new Set(['home', 'quick-start', 'actions', 'goals', 'goal', 'goal-new', 'plan-builder', 'cash-flow', 'loans', 'protection',
-  'tax', 'net-worth', 'people', 'connect', 'settings'])
+  'tax', 'net-worth', 'people', 'connect', 'settings', 'holdings', 'allocation', 'asset-tree', 'lists', 'rules'])

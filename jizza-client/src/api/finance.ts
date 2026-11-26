@@ -6,7 +6,16 @@ import type {
   QuickStartAnswers, QuickStartProgress, QuickStartStep, QuickStartView,
   BuilderInput, BuilderView, GoalInput, GoalLibraryCard, GoalView, RiskAssessment, RiskView, TaxInput, TaxView,
   FinAccount, FinAccountInput, FinCategory, FinTransaction, ImportBatch, ImportInput,
+  AllocationView, EarmarkInput, HoldingDetail, HoldingsView, Instrument, InstrumentInput, ListItem, ListItemInput,
+  ListType, RealisedGains, RuleInput, RulesView, RuleTemplate, SaleResult, TradeInput, TreeNode, TreeView,
 } from '@/types/finance'
+
+function query(params: Record<string, string | null | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
 
 /** Kai's Portfolio (spec 5.15). Every path answers 404 while the server's finance switch is off. */
 export const financeApi = {
@@ -130,4 +139,40 @@ export const financeApi = {
   },
   recategorise: (id: string, categoryId: string, always = false) =>
     api.patch<{ transaction: FinTransaction; alsoChanged: number }>(`/api/finance/transactions/${id}`, { categoryId, always }),
+
+  // ── Phase 2: holdings, earmarks, asset tree, rules, lists ────────────────────
+
+  searchInstruments: (q: string) => api.get<Instrument[]>(`/api/finance/instruments${query({ q })}`),
+  addInstrument: (body: InstrumentInput) => api.post<Instrument>('/api/finance/instruments', body),
+  /** Refetches today's fund NAVs; refused within 15 minutes of the last refresh. */
+  refreshPrices: () => api.post<{ fetched: number; matched: number; saved: number; navDate: string | null }>('/api/finance/prices/refresh'),
+  /** A price you type in; it values only your own holdings. */
+  putPrice: (body: { instrumentId: string; date?: string; price: number }) => api.post('/api/finance/prices', body),
+
+  holdings: (person?: string | null, goal?: string | null) => api.get<HoldingsView>(`/api/finance/holdings${query({ person, goal })}`),
+  holding: (accountId: string, instrumentId: string) => api.get<HoldingDetail>(`/api/finance/holdings/${accountId}/${instrumentId}`),
+  /** Splits units (or an asset's amount) between goals; 409 "finance-short-goal-shares" asks first. */
+  putEarmarks: (body: EarmarkInput) => api.put<HoldingDetail>('/api/finance/earmarks', body),
+  recordPurchase: (body: TradeInput) => api.post<HoldingDetail>('/api/finance/holdings/purchases', body),
+  recordSale: (body: TradeInput) => api.post<SaleResult>('/api/finance/holdings/sales', body),
+  realisedGains: (taxYear?: string) => api.get<RealisedGains>(`/api/finance/realized-gains${query({ taxYear })}`),
+
+  tree: (goalId: string) => api.get<TreeView>(`/api/finance/tree?goal=${goalId}`),
+  saveTree: (goalId: string, nodes: TreeNode[], keepShares = false) =>
+    api.put<TreeView>(`/api/finance/tree/${goalId}`, { nodes, keepShares }),
+  allocation: (goalId?: string | null) => api.get<AllocationView>(`/api/finance/allocation${query({ goal: goalId })}`),
+
+  rules: (goalId?: string | null, instrumentId?: string | null, nodeId?: string | null) =>
+    api.get<RulesView>(`/api/finance/rules/effective${query({ goal: goalId, instrument: instrumentId, node: nodeId })}`),
+  previewRule: (body: RuleInput) => api.post<{ affectedEarmarks: number }>('/api/finance/rules/preview', body),
+  saveRule: (body: RuleInput) => api.put<{ rule: unknown; affectedEarmarks: number }>('/api/finance/rules', body),
+  ruleTemplates: () => api.get<RuleTemplate[]>('/api/finance/rule-templates'),
+
+  lists: (type?: ListType) => api.get<ListItem[]>(`/api/finance/lists${query({ type })}`),
+  addListItem: (body: ListItemInput) => api.post<ListItem>('/api/finance/lists', body),
+  updateListItem: (id: string, body: ListItemInput) => api.patch<ListItem>(`/api/finance/lists/${id}`, body),
+  deleteListItem: (id: string) => api.delete<void>(`/api/finance/lists/${id}`),
+  /** Watch → Next; Next → a holding, with the purchase you made. */
+  promoteListItem: (id: string, purchase?: Omit<TradeInput, 'instrumentId'>) =>
+    api.post<{ to: 'next' | 'holding' }>(`/api/finance/lists/${id}/promote`, purchase ?? {}),
 }

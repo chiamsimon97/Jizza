@@ -147,7 +147,7 @@ describe('Goal wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByText('Mid · 3–7 years')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByText(/Available after you add holdings/)).toBeInTheDocument()
+    expect(screen.getByText(/Once the goal is saved/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     fireEvent.change(screen.getByLabelText('Going in each month'), { target: { value: '5000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
