@@ -61,8 +61,46 @@ class BrokerFileImporterTest {
   }
 
   @Test
-  void saysWhichColumnsItCouldNotFind() {
-    assertThatThrownBy(() -> BrokerFileImporter.tradebook("a,b,c\n1,2,3\n".getBytes(StandardCharsets.UTF_8), 5000))
-        .isInstanceOf(ValidationException.class).hasMessageContaining("tradebook");
+  void asksForTheColumnsWhenItCannotFindThem() {
+    Statement st = BrokerFileImporter.tradebook("a,b,c\n1,2,3\n".getBytes(StandardCharsets.UTF_8), 5000);
+    assertThat(st.columns().sure()).isFalse();
+    assertThat(st.columns().sample()).hasSize(2);
+    assertThat(st.txns()).isEmpty();
+  }
+
+  /** Made-up export whose headers Kai doesn't know: the person says which column is which. */
+  static final String ODD = """
+      Report for <redacted>
+      Scrip Title,Units Held,Invested Amt,Mkt Val,Code
+      EXAMPLECO,10,15000,16000,INE000A01011
+      OTHERCO,4,800,1000,
+      """;
+
+  @Test
+  void readsHoldingsWithTheColumnsThePersonChose() {
+    Statement asked = BrokerFileImporter.holdings(ODD.getBytes(StandardCharsets.UTF_8), null, null, TODAY, 5000);
+    assertThat(asked.columns().sure()).isFalse();
+    assertThat(asked.holdings()).isEmpty();
+
+    var chosen = com.jizza.engine.api.util.Json.obj().put("headerRow", 1).put("name", "Scrip Title")
+        .put("qty", "Units Held").put("invested", "Invested Amt").put("value", "Mkt Val").put("isin", "Code");
+    Statement st = BrokerFileImporter.holdings(ODD.getBytes(StandardCharsets.UTF_8), chosen, null, TODAY, 5000);
+    assertThat(st.columns().sure()).isTrue();
+    assertThat(st.columns().sample()).isNotEmpty();
+    assertThat(st.holdings()).hasSize(2);
+    assertThat(st.holdings().get(0).value()).isEqualByComparingTo("16000");
+    assertThat(st.holdings().get(0).avgCost()).isEqualByComparingTo("1500");
+    assertThat(st.holdings().get(0).isin()).isEqualTo("INE000A01011");
+    assertThat(st.holdings().get(1).avgCost()).isEqualByComparingTo("200");
+
+    // The same choice is used again for this account's next file, found by its column names.
+    Statement next = BrokerFileImporter.holdings(ODD.replace("Report for <redacted>\n", "").getBytes(StandardCharsets.UTF_8),
+        null, chosen, TODAY, 5000);
+    assertThat(next.holdings()).hasSize(2);
+
+    // A choice that leaves out what Kai needs is refused with what to pick.
+    var thin = com.jizza.engine.api.util.Json.obj().put("headerRow", 1).put("name", "Scrip Title");
+    assertThatThrownBy(() -> BrokerFileImporter.holdings(ODD.getBytes(StandardCharsets.UTF_8), thin, null, TODAY, 5000))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("quantity");
   }
 }

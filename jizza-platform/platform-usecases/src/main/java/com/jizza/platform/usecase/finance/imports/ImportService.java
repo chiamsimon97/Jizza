@@ -256,11 +256,12 @@ public class ImportService {
   private Statement parse(UUID owner, String kind, ObjectNode account, Upload u) {
     try {
       return switch (kind) {
-        case "bank_csv" -> BankCsvImporter.parse(u.bytes(), u.mapping(), remembered(owner, account), MAX_ROWS);
+        case "bank_csv" -> BankCsvImporter.parse(u.bytes(), u.mapping(), remembered(owner, account, kind), MAX_ROWS);
         case "bank_pdf" -> BankPdfImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
         case "cas_pdf" -> CasImporter.parse(files.pdfText(u.bytes(), u.password()), MAX_ROWS);
-        case "broker_holdings" -> BrokerFileImporter.holdings(u.bytes(), LocalDate.now(), MAX_ROWS);
-        case "broker_tradebook" -> BrokerFileImporter.tradebook(u.bytes(), MAX_ROWS);
+        case "broker_holdings" -> BrokerFileImporter.holdings(u.bytes(), u.mapping(), remembered(owner, account, kind),
+            LocalDate.now(), MAX_ROWS);
+        case "broker_tradebook" -> BrokerFileImporter.tradebook(u.bytes(), u.mapping(), remembered(owner, account, kind), MAX_ROWS);
         default -> throw new ValidationException("Choose what kind of file this is.");
       };
     } catch (Csv.TooLong tooLong) {
@@ -268,9 +269,10 @@ public class ImportService {
     }
   }
 
-  /** The columns used for this account's last saved bank statement, if any. */
-  private JsonNode remembered(UUID owner, ObjectNode account) {
-    return records.list("fin_import_batch", owner, Map.of("accountId", account.path("id").asText(), "kind", "bank_csv"))
+  /** The columns used for this account's last saved file of this kind, if any. */
+  private JsonNode remembered(UUID owner, ObjectNode account, String kind) {
+    if (account == null) return null;
+    return records.list("fin_import_batch", owner, Map.of("accountId", account.path("id").asText(), "kind", kind))
         .stream().filter(b -> "committed".equals(b.path("status").asText()))
         .reduce((a, b) -> b).map(b -> b.path("mapping")).filter(m -> m.has("headerRow")).orElse(null);
   }

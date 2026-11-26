@@ -71,11 +71,37 @@ const STATUS: Record<ImportStatus, { label: string; tone: 'ok' | 'warn' | 'neutr
   undone: { label: 'Undone', tone: 'neutral' },
 }
 
-const ROLES: { key: keyof Omit<ColumnMapping, 'headerRow'>; label: string }[] = [
-  { key: 'date', label: 'Date' }, { key: 'description', label: 'Description' }, { key: 'debit', label: 'Money out (debit)' },
-  { key: 'credit', label: 'Money in (credit)' }, { key: 'amount', label: 'One amount column' },
-  { key: 'drCr', label: 'Dr / Cr column' }, { key: 'balance', label: 'Balance' },
-]
+type Role = { key: keyof Omit<ColumnMapping, 'headerRow'>; label: string }
+
+/** The fields of Kai's own each kind of CSV can fill, and what the person sees them called. */
+export const ROLES: Record<'bank' | 'holdings' | 'trades', Role[]> = {
+  bank: [
+    { key: 'date', label: 'Date' }, { key: 'description', label: 'Description' }, { key: 'debit', label: 'Money out (debit)' },
+    { key: 'credit', label: 'Money in (credit)' }, { key: 'amount', label: 'One amount column' },
+    { key: 'drCr', label: 'Dr / Cr column' }, { key: 'balance', label: 'Balance' },
+  ],
+  holdings: [
+    { key: 'name', label: 'Name or symbol' }, { key: 'qty', label: 'Quantity' },
+    { key: 'value', label: 'Current value' }, { key: 'price', label: 'Price now (LTP)' },
+    { key: 'invested', label: 'Invested amount (total paid)' }, { key: 'avg', label: 'Average cost per unit' },
+    { key: 'isin', label: 'ISIN' },
+  ],
+  trades: [
+    { key: 'name', label: 'Name or symbol' }, { key: 'date', label: 'Trade date' }, { key: 'type', label: 'Buy or sell' },
+    { key: 'qty', label: 'Quantity' }, { key: 'price', label: 'Price' }, { key: 'isin', label: 'ISIN' },
+    { key: 'tradeId', label: 'Trade ID' },
+  ],
+}
+
+const NEEDS: Record<keyof typeof ROLES, string> = {
+  bank: 'Kai needs a date, a description, and either money out and money in, or one amount column.',
+  holdings: 'Kai needs the name, the quantity, and either the current value or the price. Invested amount or average cost lets Kai show your gain.',
+  trades: 'Kai needs the name, trade date, buy or sell, quantity and price.',
+}
+
+export function rolesFor(kind: ImportKind): keyof typeof ROLES {
+  return kind === 'broker_holdings' ? 'holdings' : kind === 'broker_tradebook' ? 'trades' : 'bank'
+}
 
 /** The most rows the review shows; the counts cover them all. */
 const SHOWN_ROWS = 200
@@ -84,8 +110,11 @@ export function accountLabel(a: FinAccount): string {
   return [a.provider || ACCOUNT_KIND_LABELS[a.kind], a.nickname, a.last4 ? `••${a.last4}` : null].filter(Boolean).join(' · ')
 }
 
-/** Columns that are enough to read a bank CSV: a date, a description, and debit and credit or one amount. */
-export function mappingComplete(m: Partial<ColumnMapping>): boolean {
+/** Columns that are enough to read the file: for a bank CSV a date, a description, and debit and credit or one amount. */
+export function mappingComplete(m: Partial<ColumnMapping>, kind: ImportKind = 'bank_csv'): boolean {
+  const roles = rolesFor(kind)
+  if (roles === 'holdings') return !!m.name && !!m.qty && (!!m.value || !!m.price)
+  if (roles === 'trades') return !!m.name && !!m.date && !!m.type && !!m.qty && !!m.price
   return !!m.date && !!m.description && ((!!m.debit && !!m.credit) || !!m.amount)
 }
 
@@ -306,6 +335,7 @@ function Review({ id, last, accounts, onReread, onDone }: {
   const categories = useQuery({ queryKey: financeKeys.categories, queryFn: financeApi.categories })
   const [chosen, setChosen] = useState<Record<string, string>>({})
   const [always, setAlways] = useState<Set<number>>(new Set())
+  const [changing, setChanging] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey: financeKeys.all })
   const commit = useMutation({
     mutationFn: () => financeApi.commitImport(id, { categories: chosen, always: [...always] }),
@@ -319,8 +349,10 @@ function Review({ id, last, accounts, onReread, onDone }: {
   const counts = b.stats.counts
   const account = b.accountId ? accounts.find(a => a.id === b.accountId) : undefined
 
-  if (b.status === 'needs_review') {
-    return <ColumnChooser batch={b} last={last} onRead={onReread} onCancel={() => discard.mutate()} discarding={discard.isPending} />
+  if (b.status === 'needs_review' || (changing && b.status === 'parsed')) {
+    return <ColumnChooser batch={b} last={last} onRead={(nb, input) => { setChanging(false); onReread(nb, input) }}
+      onCancel={() => (changing ? setChanging(false) : discard.mutate())} cancelLabel={changing ? 'Keep Kai’s columns' : undefined}
+      discarding={discard.isPending} />
   }
   if (b.status === 'committed') {
     return (
@@ -399,6 +431,9 @@ function Review({ id, last, accounts, onReread, onDone }: {
       <div className="flex flex-wrap items-center gap-2">
         <Button loading={commit.isPending} disabled={!counts?.new && !counts?.holdings && !b.stats.balance} onClick={() => commit.mutate()}>Save</Button>
         <Button variant="secondary" loading={discard.isPending} onClick={() => discard.mutate()}>Discard</Button>
+        {!!b.stats.columns?.sample?.length && (
+          <Button variant="ghost" onClick={() => setChanging(true)}>Change columns</Button>
+        )}
         {bank && !!counts?.needsLook && <span className="text-xs text-gray-500 dark:text-gray-400">Rows left without a category are saved as “Needs a look”; you can place them later.</span>}
       </div>
       {(commit.error || discard.error) && (
@@ -437,13 +472,15 @@ function CategoryPick({ row, categories, value, always, onChange, onAlways }: {
   )
 }
 
-function ColumnChooser({ batch, last, onRead, onCancel, discarding }: {
+function ColumnChooser({ batch, last, onRead, onCancel, discarding, cancelLabel }: {
   batch: ImportBatch
   last: ImportInput | null
   onRead: (batch: ImportBatch, input: ImportInput) => void
   onCancel: () => void
   discarding: boolean
+  cancelLabel?: string
 }) {
+  const kind = rolesFor(batch.kind)
   const qc = useQueryClient()
   const sample = batch.stats.columns?.sample ?? []
   const [mapping, setMapping] = useState<Partial<ColumnMapping>>(() => ({ headerRow: batch.stats.columns?.headerRow ?? 0, ...batch.mapping }))
@@ -458,7 +495,9 @@ function ColumnChooser({ batch, last, onRead, onCancel, discarding }: {
   return (
     <Panel title={<>Which column is which? <span className="text-xs font-normal text-gray-500">{batch.stats.fileName}</span></>}>
       <p className="text-sm text-gray-700 dark:text-gray-300">
-        {batch.error ?? 'Kai couldn’t tell which column is which.'} Kai remembers your choice for this account’s next statement.
+        {batch.status === 'parsed'
+          ? 'Match each of Kai’s fields to a column of your file.'
+          : batch.error ?? 'Kai couldn’t tell which column is which.'} Kai remembers your choice for this account’s next file.
       </p>
       <div className="overflow-x-auto">
         <table className="min-w-[28rem] text-left text-xs">
@@ -476,17 +515,17 @@ function ColumnChooser({ batch, last, onRead, onCancel, discarding }: {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SelectField label="Line with the column names" value={String(headerRow)} onChange={v => setMapping({ headerRow: Number(v) })}
           options={sample.map((r, i) => ({ value: String(i), label: `Line ${i + 1}: ${r.filter(Boolean).slice(0, 3).join(', ') || '(blank)'}` }))} />
-        {ROLES.map(role => (
+        {ROLES[kind].map(role => (
           <SelectField key={role.key} label={role.label} value={(mapping[role.key] as string | undefined) ?? ''} onChange={v => set(role.key, v)}
             options={[{ value: '', label: '—' }, ...headers.map(h => ({ value: h, label: h }))]} />
         ))}
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400">Kai needs a date, a description, and either money out and money in, or one amount column.</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{NEEDS[kind]}</p>
       <div className="flex flex-wrap items-center gap-2">
         {last
-          ? <Button loading={read.isPending} disabled={!mappingComplete(mapping)} onClick={() => read.mutate()}>Read with these columns</Button>
+          ? <Button loading={read.isPending} disabled={!mappingComplete(mapping, batch.kind)} onClick={() => read.mutate()}>Read with these columns</Button>
           : <span className="text-sm text-gray-600 dark:text-gray-300">Choose the file again above to read it with these columns.</span>}
-        <Button variant="secondary" loading={discarding} onClick={onCancel}>Discard</Button>
+        <Button variant="secondary" loading={discarding} onClick={onCancel}>{cancelLabel ?? 'Discard'}</Button>
       </div>
       {read.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(read.error, 'Kai could not read the file with these columns.')}</p>}
     </Panel>

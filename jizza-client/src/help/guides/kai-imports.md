@@ -20,6 +20,8 @@ Choose the account the statement is for, or add one. For a new account you only 
 
 If Kai can't tell which column is which, it shows the first lines of the file and asks you. Pick the line with the column names, then the date, description and amount columns. Kai remembers your choice for that account's next statement.
 
+**Matching columns yourself (any CSV).** This works the same for a broker's holdings or tradebook CSV. For holdings you match your file's columns to Kai's fields: **Name or symbol**, **Quantity**, **Current value** or **Price now**, and if your file has them **Invested amount** (what you paid in all, so Kai can show your gain), **Average cost per unit** and **ISIN**. For a tradebook: name, trade date, buy or sell, quantity and price. Even when Kai found the columns itself, press **Change columns** on the review to fix a wrong guess. Kai remembers your choice for that account's next file.
+
 You can also upload the PDF statement your bank mails you. If it's locked, type its password (banks often use your customer ID or date of birth); Kai uses it once and never keeps it. A PDF has no columns, so Kai reads each row's date, words, amount and the balance after it, and tells money in from money out by how the balance moved. For the first row it needs the opening balance printed on the statement. Any row whose balance doesn't add up, or whose side Kai can't tell, is listed under "couldn't be read" and never guessed. A scanned (picture) PDF can't be read: download CSV instead.
 
 ## Mutual funds (CAS)
