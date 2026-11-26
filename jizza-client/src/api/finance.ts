@@ -22,7 +22,7 @@ export const financeApi = {
   status: () => api.get<{ enabled: boolean }>('/api/finance/status'),
 
   profile: () => api.get<FinProfileView>('/api/finance/profile'),
-  updateSettings: (patch: Partial<FinSettings>) => api.patch<FinSettings>('/api/finance/profile/settings', patch),
+  updateSettings: (patch: Omit<Partial<FinSettings>, 'setupMarks'> & { setupMarks?: Record<string, 'done' | 'skipped' | ''> }) => api.patch<FinSettings>('/api/finance/profile/settings', patch),
 
   people: () => api.get<FinPerson[]>('/api/finance/people'),
   addPerson: (body: FinPersonInput) => api.post<FinPerson>('/api/finance/people', body),

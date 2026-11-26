@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarClock, ChevronRight, Coins, FileWarning, Gauge, ListChecks, PartyPopper, PiggyBank,
+  ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarClock, ChevronRight, Coins, Compass, FileWarning, Gauge, ListChecks, PartyPopper, PiggyBank,
   RefreshCw, ShieldAlert, Sparkles, UserX, Wallet, Zap, type LucideIcon,
 } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
@@ -20,6 +20,7 @@ import { POLICY_KINDS } from '../labels'
 import { errorText, useCashFlow, useHealth, useNetWorth, usePolicies, useSample } from '../data'
 import { financeKeys } from '../queryKeys'
 import { QUICK_START_STEPS } from './QuickStart'
+import { SetupCard, type SetupStep } from './SetupGuide'
 
 /** One sentence under the score: what to look at first. */
 export function scoreSummary(h: HealthView): string {
@@ -38,16 +39,18 @@ export function scoreSummary(h: HealthView): string {
  * Money Health home (7.14): the score with its trend, six check tiles, net worth and surplus,
  * the top three actions, and what needs attention. Before Quick start it is the way in.
  */
-export function Home({ profile, onOpen, onAnswer, onSample }: {
+export function Home({ profile, onOpen, onAnswer, onSample, onSetupStep = () => onOpen('setup') }: {
   profile: FinProfileView
   onOpen: (view: string) => void
   onAnswer: (step: QuickStartStep) => void
   onSample: () => void
+  /** Opens a setup guide step with the guide bar. */
+  onSetupStep?: (step: SetupStep) => void
 }) {
   const sample = useSample()
   const fresh = !sample && profile.setupProgress.quickStart === 'not_started'
   if (fresh) return <FirstRun profile={profile} onOpen={onOpen} onSample={onSample} />
-  return <MoneyHealth profile={profile} onOpen={onOpen} onAnswer={onAnswer} />
+  return <MoneyHealth profile={profile} onOpen={onOpen} onAnswer={onAnswer} onSetupStep={onSetupStep} />
 }
 
 const FIRST_RUN_POINTS: { icon: LucideIcon; title: string; text: string; tone: string }[] = [
@@ -72,7 +75,8 @@ function FirstRun({ profile, onOpen, onSample }: { profile: FinProfileView; onOp
           </p>
           <div className="mt-1 flex flex-wrap gap-2">
             <Button onClick={() => onOpen('quick-start')}>Start Quick start <ArrowRight className="h-4 w-4" aria-hidden /></Button>
-            <Button variant="secondary" onClick={onSample}><Sparkles className="h-4 w-4" /> Look around with sample data</Button>
+            <Button variant="secondary" onClick={() => onOpen('setup')}><Compass className="h-4 w-4" aria-hidden /> See every setup step</Button>
+            <Button variant="ghost" onClick={onSample}><Sparkles className="h-4 w-4" /> Look around with sample data</Button>
           </div>
         </div>
       </section>
@@ -111,7 +115,12 @@ const HERO_TINT = {
   none: 'from-gray-50 via-white to-gray-50 dark:from-gray-800/40 dark:via-gray-900 dark:to-gray-900',
 }
 
-function MoneyHealth({ profile, onOpen, onAnswer }: { profile: FinProfileView; onOpen: (view: string) => void; onAnswer: (step: QuickStartStep) => void }) {
+function MoneyHealth({ profile, onOpen, onAnswer, onSetupStep }: {
+  profile: FinProfileView
+  onOpen: (view: string) => void
+  onAnswer: (step: QuickStartStep) => void
+  onSetupStep: (step: SetupStep) => void
+}) {
   const qc = useQueryClient()
   const sample = useSample()
   const health = useHealth()
@@ -243,6 +252,7 @@ function MoneyHealth({ profile, onOpen, onAnswer }: { profile: FinProfileView; o
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
+          {!sample && <div className="motion-safe:animate-fade-in-up"><SetupCard profile={profile} onGuide={() => onOpen('setup')} onGo={onSetupStep} /></div>}
           <div className="motion-safe:animate-fade-in-up" style={stagger(1, 90)}><NetWorthCard onOpen={onOpen} /></div>
           <div className="motion-safe:animate-fade-in-up" style={stagger(2, 90)}><SurplusCard surplus={h.surplus} onOpen={onOpen} /></div>
           <div className="motion-safe:animate-fade-in-up" style={stagger(3, 90)}><NeedsAttention h={h} onOpen={onOpen} /></div>

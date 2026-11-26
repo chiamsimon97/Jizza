@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeftRight, BarChart3, Bookmark, CalendarRange, Eye, EyeOff, FolderInput, GitBranch, Home as HomeIcon, Landmark, LayoutGrid, Lock,
+  ArrowLeftRight, BarChart3, Bookmark, CalendarRange, Compass, Eye, EyeOff, FolderInput, GitBranch, Home as HomeIcon, Landmark, LayoutGrid, Lock,
   MessageSquare, PieChart, Receipt, Scale, Settings as SettingsIcon, Share2, Shield, SlidersHorizontal, Sparkles, Target, TrendingUp, Users,
   Wallet, X, Zap, type LucideIcon,
 } from 'lucide-react'
@@ -39,6 +39,7 @@ import { AssetTree } from './screens/AssetTree'
 import { Holdings } from './screens/Holdings'
 import { Lists } from './screens/Lists'
 import { Rules } from './screens/Rules'
+import { SetupGuide, SetupGuideBar, type SetupStep } from './screens/SetupGuide'
 import { usePortfolioScope } from './usePortfolioScope'
 
 /** An icon beside each sub-navigation label. */
@@ -86,6 +87,8 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
   const pickGoal = (id: string | null) => setScope({ goal: id })
   const answer = (step: QuickStartStep) => setScope({ view: 'quick-start', step, sample: null })
   const startStep = QUICK_START_STEPS.some(s => s.id === scope.step) ? scope.step as QuickStartStep : null
+  const goStep = (s: SetupStep) => setScope({ view: s.view, guide: s.id, step: null, sample: null, goal: null })
+  const toGuide = () => setScope({ view: 'setup', guide: null, step: null, sample: null })
   const askKai = () => {
     setChatDraft(`@${agent.name} ${view.ask ?? ''}`)
     useAssistantStore.getState().newConversation()
@@ -131,6 +134,14 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
                 <Lock className="h-3 w-3" aria-hidden /> Observe only
               </span>
               <span className="ml-auto flex items-center gap-1">
+                {!sample && (
+                  <button type="button" onClick={toGuide} aria-current={view.id === 'setup' ? 'page' : undefined}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${view.id === 'setup'
+                      ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'
+                      : 'text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-900/30'}`}>
+                    <Compass className="h-3.5 w-3.5" aria-hidden /> Setup guide
+                  </button>
+                )}
                 <button type="button" onClick={() => hide.mutate(!hidden)} aria-pressed={hidden}
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
                   {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -164,7 +175,8 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
             {sample && !SAMPLE_VIEWS.has(view.id) && BUILT_VIEWS.has(view.id)
               ? <p className="text-sm text-gray-500 dark:text-gray-400">This part is your own setup, so the sample household doesn't show it. Leave the sample to open it.</p>
               : <>
-                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} />}
+                {view.id === 'home' && <Home profile={shown} onOpen={open} onAnswer={answer} onSample={() => setScope({ sample: '1', view: 'home' })} onSetupStep={goStep} />}
+                {view.id === 'setup' && <SetupGuide profile={profile} onGo={goStep} />}
                 {view.id === 'quick-start' && <QuickStart profile={profile} startAt={startStep} onOpen={open} />}
                 {view.id === 'actions' && <ActionPlan onOpen={open} />}
                 {view.id === 'goals' && <Goals person={scope.person} onNew={() => open('goal-new')} onOpenGoal={id => setScope({ view: 'goal', goal: id })} />}
@@ -196,6 +208,10 @@ export function PortfolioTab({ agent }: { agent: AgentDto }) {
               </>}
           </ErrorBoundary>
           </div>
+
+          {!sample && scope.guide && view.id !== 'setup' && (
+            <SetupGuideBar profile={profile} stepId={scope.guide} onGuide={toGuide} onGo={goStep} onClose={() => setScope({ guide: null })} />
+          )}
 
           <Disclaimer />
         </div>

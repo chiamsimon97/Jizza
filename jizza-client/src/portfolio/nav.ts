@@ -20,6 +20,7 @@ export interface PortfolioView {
 
 export const PORTFOLIO_VIEWS: PortfolioView[] = [
   { id: 'home', label: 'Home', phase: '0', about: 'Your Money Health, the next actions and what changed.', ask: 'About my Money Health score: ' },
+  { id: 'setup', label: 'Setup guide', phase: '2', hidden: true, about: 'Every step to set Kai up, in order, with what each one needs.', ask: 'Helping me set up my Portfolio: ' },
   { id: 'quick-start', label: 'Quick start', phase: '1a', hidden: true, about: 'Eight questions that give your first Money Health score.', ask: 'Helping me through Quick start: ' },
   { id: 'actions', label: 'Actions', phase: '1a', about: 'The action plan, in the order Kai suggests funding it.', ask: 'About my action plan: ' },
   { id: 'goals', label: 'Goals', phase: '1b', about: 'Each goal with its target, date, funding and required SIP.', ask: 'About my goals: ' },
@@ -51,5 +52,5 @@ export function findView(id: string | null | undefined): PortfolioView {
 }
 
 /** Views built in this release; the rest show a placeholder. */
-export const BUILT_VIEWS = new Set(['home', 'quick-start', 'actions', 'goals', 'goal', 'goal-new', 'plan-builder', 'cash-flow', 'loans', 'protection',
+export const BUILT_VIEWS = new Set(['home', 'setup', 'quick-start', 'actions', 'goals', 'goal', 'goal-new', 'plan-builder', 'cash-flow', 'loans', 'protection',
   'tax', 'net-worth', 'people', 'connect', 'settings', 'holdings', 'allocation', 'asset-tree', 'lists', 'rules'])

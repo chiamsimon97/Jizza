@@ -31,15 +31,31 @@ public class FinProfileUseCase {
     this.audit = audit;
   }
 
-  /** {@code mutedAlerts}: the kinds of Kai alert the person turned off. */
-  public record Settings(boolean advanced, boolean hideAmounts, List<String> mutedAlerts) {
+  /**
+   * {@code mutedAlerts}: the kinds of Kai alert the person turned off. {@code setupMarks}: setup
+   * guide steps the person marked {@code done} or {@code skipped} by hand (steps Kai can see in
+   * the data are worked out on the screen). {@code setupGuideHidden}: the guide card is put away.
+   */
+  public record Settings(boolean advanced, boolean hideAmounts, List<String> mutedAlerts,
+                         java.util.Map<String, String> setupMarks, boolean setupGuideHidden) {
     static Settings of(JsonNode json) {
       List<String> muted = new java.util.ArrayList<>();
       json.path("mutedAlerts").forEach(n -> muted.add(n.asText()));
+      var marks = new java.util.TreeMap<String, String>();
+      json.path("setupMarks").fields().forEachRemaining(e -> marks.put(e.getKey(), e.getValue().asText()));
       return new Settings(json.path("advanced").asBoolean(false),
-          json.path("hideAmounts").asBoolean(false), List.copyOf(muted));
+          json.path("hideAmounts").asBoolean(false), List.copyOf(muted),
+          java.util.Collections.unmodifiableMap(marks), json.path("setupGuideHidden").asBoolean(false));
     }
   }
+
+  /** The setup guide's steps, as the screen names them. */
+  public static final java.util.Set<String> SETUP_STEPS = java.util.Set.of("quick-start", "people",
+      "goals", "plan-builder", "bank-files", "investment-files", "holdings", "asset-tree",
+      "protection", "tax", "settings");
+
+  /** How a step can be marked by hand. */
+  public static final java.util.Set<String> SETUP_MARKS = java.util.Set.of("done", "skipped");
 
   /** The alert kinds that can be muted (5.11). */
   public static final java.util.Set<String> ALERT_KINDS = java.util.Set.of("policy_renewal",
@@ -72,6 +88,27 @@ public class FinProfileUseCase {
   /** As above, plus the alert kinds to mute (the whole list; null leaves it as it is). */
   public Settings updateSettings(UUID callerUserId, Boolean advanced, Boolean hideAmounts,
                                  List<String> mutedAlerts) {
+    return updateSettings(callerUserId, advanced, hideAmounts, mutedAlerts, null, null);
+  }
+
+  /**
+   * As above, plus setup guide marks: each named step is set to {@code done} or {@code skipped},
+   * or cleared with an empty value; steps not named keep their mark. Null leaves them all.
+   */
+  public Settings updateSettings(UUID callerUserId, Boolean advanced, Boolean hideAmounts,
+                                 List<String> mutedAlerts, java.util.Map<String, String> setupMarks,
+                                 Boolean setupGuideHidden) {
+    if (setupMarks != null) {
+      for (var e : setupMarks.entrySet()) {
+        if (!SETUP_STEPS.contains(e.getKey())) {
+          throw new com.jizza.engine.api.error.ValidationException("Unknown setup step " + e.getKey() + ".");
+        }
+        String v = e.getValue();
+        if (v != null && !v.isEmpty() && !SETUP_MARKS.contains(v)) {
+          throw new com.jizza.engine.api.error.ValidationException("A setup step is done, skipped or cleared.");
+        }
+      }
+    }
     if (mutedAlerts != null) {
       for (String k : mutedAlerts) {
         if (!ALERT_KINDS.contains(k)) {
@@ -88,6 +125,14 @@ public class FinProfileUseCase {
       var arr = settings.putArray("mutedAlerts");
       new java.util.TreeSet<>(mutedAlerts).forEach(arr::add);
     }
+    if (setupMarks != null) {
+      ObjectNode marks = settings.path("setupMarks") instanceof ObjectNode m ? m : settings.putObject("setupMarks");
+      setupMarks.forEach((k, v) -> {
+        if (v == null || v.isEmpty()) marks.remove(k);
+        else marks.put(k, v);
+      });
+    }
+    if (setupGuideHidden != null) settings.put("setupGuideHidden", setupGuideHidden);
     var saved = store.saveSettings(scope.ownerUserId(), settings);
     return Settings.of(saved.settings());
   }

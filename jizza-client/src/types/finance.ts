@@ -33,6 +33,10 @@ export interface FinSettings {
   hideAmounts: boolean
   /** Alert kinds Kai does not send (policy_renewal, loan_maturity, gold_ltv, …). */
   mutedAlerts?: string[]
+  /** Setup guide steps marked done or skipped by hand. */
+  setupMarks?: Record<string, 'done' | 'skipped'>
+  /** The setup guide card is put away on Home. */
+  setupGuideHidden?: boolean
 }
 
 export interface FinProfileView {
