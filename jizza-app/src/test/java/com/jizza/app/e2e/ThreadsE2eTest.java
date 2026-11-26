@@ -33,6 +33,7 @@ class ThreadsE2eTest extends E2eSupport {
 
   @LocalServerPort private int port;
   @Autowired private E2eSupport.ScriptedLlmClient model;
+  @Autowired private com.jizza.engine.chat.config.ChatProperties chat;
 
   private ApiClient api;
 
@@ -207,6 +208,33 @@ class ThreadsE2eTest extends E2eSupport {
     assertThat(followUp.json().path("text").asText()).contains("Kai is picking this up");
     assertThat(awaitReply(mine, 2).toString()).contains("What did we decide for me?");
     assertThat(api.get("/api/conversations/" + mainId + "/threads").json()).hasSize(2);
+  }
+
+  @Test
+  void aMoneyMessageInAPlainChatIsAnsweredByKai() {
+    chat.getSpecialists().setEnabled(true);
+    try {
+      var created = api.post("/api/conversations", Map.of("threads", false));
+      assertThat(created.ok()).as(created.body()).isTrue();
+      String chatId = created.json().path("id").asText();
+      model.scriptFor("Jizza Specialist Router", LlmResponse.text("{\"answer\":\"finance\"}"),
+          LlmResponse.text("{\"answer\":\"jizza\"}"));
+      model.scriptFor("Kai", LlmResponse.text("Check the goal below and press Save."));
+      model.scriptFor("Jizza", LlmResponse.text("You're welcome!"));
+
+      var goal = api.post("/api/chat", Map.of("message",
+          "Want a goal to buy 1L of silver by end of next year", "conversationId", chatId));
+      assertThat(goal.ok()).as(goal.body()).isTrue();
+      assertThat(goal.json().path("text").asText()).isEqualTo("Check the goal below and press Save.");
+      assertThat(awaitReply(chatId, 1).toString()).contains("\"key\":\"finance\"");
+      // Kai answered with its own tools; Jizza was never asked.
+      assertThat(toolsOfferedTo("Jizza")).isEmpty();
+
+      var thanks = api.post("/api/chat", Map.of("message", "Thanks!", "conversationId", chatId));
+      assertThat(thanks.json().path("text").asText()).isEqualTo("You're welcome!");
+    } finally {
+      chat.getSpecialists().setEnabled(false);
+    }
   }
 
   @Test
