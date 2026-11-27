@@ -16,4 +16,11 @@ export const vitaKeys = {
   conditions: (personId: string) => ['vita', personId, 'conditions'] as const,
   allergies: (personId: string) => ['vita', personId, 'allergies'] as const,
   measurements: (personId: string, kind: string) => ['vita', personId, 'measurements', kind] as const,
+  trend: (personId: string, kind: string, days: number, context?: string | null) => ['vita', personId, 'measurements', kind, 'trend', days, context ?? ''] as const,
+  home: (personId: string) => ['vita', personId, 'home'] as const,
+  ranges: (personId: string) => ['vita', personId, 'ranges'] as const,
+  summary: (personId: string, conditionId: string) => ['vita', personId, 'conditions', conditionId, 'summary'] as const,
+  visits: (personId: string) => ['vita', personId, 'visits'] as const,
+  /** Doctors belong to the household; any change also touches each person's targets and visits. */
+  doctors: ['vita', '_', 'doctors'] as const,
 }

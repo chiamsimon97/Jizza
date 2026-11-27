@@ -2,7 +2,8 @@ import { api } from '@/lib/api'
 import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
-  MeasurementInput, QuickStartStep, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
+  ReadingKind, RedFlagAnswer, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -55,4 +56,36 @@ export const vitaApi = {
   removeMeasurement: (personId: string, id: string) => api.delete<void>(`${person(personId)}/measurements/${id}`),
   moveMeasurement: (personId: string, id: string, toPersonId: string) =>
     api.post<Measurement>(`${person(personId)}/measurements/${id}/move`, { toPersonId }),
+
+  /** Any kind of reading. A 409 says "Already saved. Add anyway?"; `confirmDuplicate` adds it anyway. */
+  readings: (personId: string, kind: ReadingKind) => api.get<Reading[]>(`${person(personId)}/measurements?kind=${kind}`),
+  addReading: (personId: string, body: ReadingInput, opts: { secondOf?: string; confirmDuplicate?: boolean } = {}) => {
+    const q = new URLSearchParams()
+    if (opts.secondOf) q.set('secondOf', opts.secondOf)
+    if (opts.confirmDuplicate) q.set('confirmDuplicate', 'true')
+    const qs = q.toString()
+    return api.post<Reading>(`${person(personId)}/measurements${qs ? `?${qs}` : ''}`, body)
+  },
+  updateReading: (personId: string, id: string, body: Partial<ReadingInput>) => api.put<Reading>(`${person(personId)}/measurements/${id}`, body),
+  /** "Is 182/112 right?" and the rule's question; a yes alerts the manager. */
+  answerRedFlag: (personId: string, id: string, right: boolean, signsNow?: boolean | null) =>
+    api.post<RedFlagAnswer>(`${person(personId)}/measurements/${id}/red-flag`, { right, signsNow: signsNow ?? null }),
+  trend: (personId: string, kind: ReadingKind, days: number, context?: string | null) =>
+    api.get<TrendView>(`${person(personId)}/measurements/trend?kind=${kind}&days=${days}${context ? `&context=${context}` : ''}`),
+
+  home: (personId: string) => api.get<HomeView>(`${person(personId)}/home`),
+  ranges: (personId: string) => api.get<RangeView[]>(`${person(personId)}/ranges`),
+  putRange: (personId: string, body: RangeInput) => api.put<UsualRange>(`${person(personId)}/ranges`, body),
+  removeRange: (personId: string, id: string) => api.delete<void>(`${person(personId)}/ranges/${id}`),
+  conditionSummary: (personId: string, id: string) => api.get<ConditionSummary>(`${person(personId)}/conditions/${id}/summary`),
+
+  doctors: () => api.get<Doctor[]>('/api/vita/doctors'),
+  addDoctor: (body: DoctorInput) => api.post<Doctor>('/api/vita/doctors', body),
+  updateDoctor: (id: string, body: DoctorInput) => api.put<Doctor>(`/api/vita/doctors/${id}`, body),
+  removeDoctor: (id: string) => api.delete<void>(`/api/vita/doctors/${id}`),
+
+  visits: (personId: string) => api.get<Visit[]>(`${person(personId)}/visits`),
+  addVisit: (personId: string, body: VisitInput) => api.post<Visit>(`${person(personId)}/visits`, body),
+  updateVisit: (personId: string, id: string, body: VisitInput) => api.put<Visit>(`${person(personId)}/visits/${id}`, body),
+  removeVisit: (personId: string, id: string) => api.delete<void>(`${person(personId)}/visits/${id}`),
 }

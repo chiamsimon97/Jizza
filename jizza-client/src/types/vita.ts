@@ -73,6 +73,8 @@ export interface Condition {
   advice: string | null
   private: boolean | null
   notes: string | null
+  /** The doctor who looks after it (Phase 1a). */
+  doctorId?: string | null
 }
 export type ConditionInput = Partial<Omit<Condition, 'id'>> & { name?: string }
 
@@ -185,4 +187,229 @@ export interface VitaForm {
   title?: string
   intro?: string
   values?: Record<string, unknown>
+}
+
+// ── Readings, targets, doctors and visits (Phase 1a) ─────────────────────────
+
+export type ReadingKind = 'bp' | 'glucose' | 'weight' | 'heart_rate' | 'spo2' | 'temperature'
+export type ReadingContext = 'fasting' | 'before_meal' | 'after_meal' | 'random' | 'bedtime'
+export type Meal = 'breakfast' | 'lunch' | 'dinner'
+export type TargetStatus = 'in_range' | 'outside_range' | 'red_flag' | 'not_set'
+
+/** A red flag the evaluator raised, in the server's words. */
+export interface RedFlagHit {
+  ruleId: string
+  level: 'urgent' | 'emergency'
+  advice: string | null
+  question: string | null
+  signs: string[]
+  veryLow: boolean
+  needsVerification: boolean
+}
+
+/** Target status of one reading: the range used and who set it (spec 5.1). */
+export interface Evaluation {
+  status: TargetStatus
+  outside: string[]
+  range: string | null
+  rangeSource: string | null
+  doctorId: string | null
+  doctorName: string | null
+  setOn: string | null
+  needsVerification: boolean
+  label: string
+  redFlag: RedFlagHit | null
+}
+
+/** Any reading, in canonical units (mmHg, mg/dL, kg, °C, bpm, %). */
+export interface Reading {
+  id: string
+  personId: string
+  kind: ReadingKind
+  value: number
+  value2: number | null
+  value3: number | null
+  unit: string
+  context: ReadingContext | null
+  meal: Meal | null
+  setting: 'home' | 'clinic' | null
+  takenAt: string
+  note: string | null
+  source: string
+  pairId: string | null
+  createdByUserId?: string | null
+  detail?: { redFlag?: { level: string; rule: string; confirmedAt?: string } } | null
+  evaluation?: Evaluation | null
+  /** A typed red flag: ask "Is 182/112 right?" before anyone is alerted. */
+  confirmNeeded?: boolean
+  confirmQuestion?: string
+  alerted?: boolean
+}
+
+export interface ReadingInput {
+  kind: ReadingKind
+  value: number | string
+  value2?: number | string | null
+  value3?: number | string | null
+  unit?: string
+  context?: ReadingContext | null
+  meal?: Meal | null
+  setting?: 'home' | 'clinic' | null
+  takenAt?: string
+  note?: string | null
+}
+
+/** The answer to a red flag's confirmation: whether anyone was alerted, and the help to show. */
+export interface RedFlagAnswer extends Omit<Reading, 'note'> {
+  alerted: boolean
+  /** "Nobody was alerted. Correct the reading or delete it." after a no. */
+  note?: string | null
+  help?: RedFlag
+}
+
+export interface TrendStat { sum: number; count: number; mean: number; shown: number; min: number; max: number }
+export interface TrendSide { value: TrendStat | null; value2: TrendStat | null; count: number; outside: number }
+export interface TrendPoint { id: string; takenAt: string; value: number; value2: number | null; pairId: string | null; status: TargetStatus | null }
+export interface TrendDay { date: string; morning: TrendPoint[]; evening: TrendPoint[] }
+
+export interface RangeSummary {
+  status: 'set' | 'not_set'
+  range?: string
+  source?: string
+  label: string
+  needsVerification?: boolean
+}
+
+export interface TrendView {
+  kind: ReadingKind
+  days: number
+  zone: string
+  context?: ReadingContext
+  range: RangeSummary
+  trend: { kind: ReadingKind; count: number; last: TrendPoint | null; all: TrendSide; morning: TrendSide; evening: TrendSide; days: TrendDay[] }
+}
+
+/** One measure's range slot, with the person's own row and the doctor's target where set. */
+export interface RangeView {
+  kind: ReadingKind
+  context: string | null
+  setting: string | null
+  status: 'set' | 'not_set'
+  range: string | null
+  source: string | null
+  label: string
+  needsVerification: boolean
+  doctorId: string | null
+  doctorName: string | null
+  setOn: string | null
+  own: UsualRange | null
+  doctorTarget: UsualRange | null
+}
+
+export interface UsualRange {
+  id: string
+  kind: ReadingKind
+  context: string | null
+  setting: string | null
+  low: number | null
+  high: number | null
+  low2: number | null
+  high2: number | null
+  setBy: 'user' | 'doctor'
+  doctorId: string | null
+  setOn: string | null
+  note: string | null
+}
+
+export interface RangeInput {
+  kind: ReadingKind
+  context?: string | null
+  setting?: string | null
+  low?: number | string | null
+  high?: number | string | null
+  low2?: number | string | null
+  high2?: number | string | null
+  setBy: 'user' | 'doctor'
+  doctorId?: string | null
+  setOn?: string | null
+  note?: string | null
+}
+
+/** A red-flag banner on Home: the latest reading of a kind, inside the recent window. */
+export interface HomeRedFlag {
+  measurementId: string
+  kind: ReadingKind
+  level: 'urgent' | 'emergency'
+  rule: string
+  confirmed: boolean
+  advice: string | null
+  question: string | null
+  needsVerification: boolean
+  wording: string
+}
+
+export interface HomeView {
+  person: { id: string; name: string; recordOpen: boolean; status: string }
+  quickStart: VitaQuickStartView['progress']
+  latest: Reading[]
+  redFlags: HomeRedFlag[]
+  conditions: { id: string; name: string; template: string }[]
+  nextVisit: Visit | null
+  slots: unknown[]
+  reminders: unknown[]
+}
+
+export type DoctorKind = 'doctor' | 'hospital' | 'clinic' | 'lab' | 'pharmacy'
+export interface Doctor {
+  id: string
+  kind: DoctorKind
+  name: string
+  speciality: string | null
+  clinic: string | null
+  phone: string | null
+  address: string | null
+  notes: string | null
+  nextVisit?: { visitId: string; scheduledAt: string; personId: string; personName: string | null } | null
+  targets?: (UsualRange & { personId: string; personName: string | null })[]
+}
+export type DoctorInput = Partial<Omit<Doctor, 'id' | 'nextVisit' | 'targets'>> & { name?: string }
+
+export type VisitStatus = 'planned' | 'done' | 'cancelled'
+export interface Visit {
+  id: string
+  personId: string
+  doctorId: string | null
+  scheduledAt: string
+  status: VisitStatus
+  reason: string | null
+  notes: string | null
+  followUpOn: string | null
+}
+export type VisitInput = Partial<Omit<Visit, 'id' | 'personId'>>
+
+export interface ConditionMeasure {
+  kind: ReadingKind
+  context?: ReadingContext
+  last7?: TrendView
+  last30?: TrendView
+  last90?: TrendView
+}
+
+export interface ConditionCheck {
+  check: string
+  state: ConfigState
+  label: string
+  interval?: JsonValue
+}
+
+/** A condition page's data (spec 5.6, 7.5). */
+export interface ConditionSummary {
+  condition: Condition
+  template: ConditionTemplate
+  doctor?: Doctor
+  measures: ConditionMeasure[]
+  lowReadings?: Reading[]
+  labs?: string
+  checks: ConditionCheck[]
+  medicines: unknown[]
 }

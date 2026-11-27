@@ -7,11 +7,15 @@ export interface HealthScope {
   view: string
   /** A person's id, or null for "You". */
   person: string | null
+  /** The condition whose page is open. */
+  condition?: string | null
+  /** A kind of reading to open Vitals on. */
+  kind?: string | null
 }
 
 export function useHealthScope(): [HealthScope, (patch: Partial<HealthScope>) => void] {
   const [params, setParams] = useSearchParams()
-  const scope: HealthScope = { view: findView(params.get('view')).id, person: params.get('person') }
+  const scope: HealthScope = { view: findView(params.get('view')).id, person: params.get('person'), condition: params.get('condition'), kind: params.get('kind') }
   const update = useCallback((patch: Partial<HealthScope>) => {
     setParams(prev => {
       const next = new URLSearchParams(prev)

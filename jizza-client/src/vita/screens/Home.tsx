@@ -1,49 +1,66 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, ClipboardCheck, IdCard, Pill as PillIcon, Plus, Scale, Trash2 } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardCheck, IdCard, Pill as PillIcon, Plus } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
-import { TextField } from '@/portfolio/components/Fields'
 import { LoadFailed, Meter, Panel } from '@/portfolio/components/Panel'
 import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
 import { Sparkline } from '@/portfolio/components/Sparkline'
-import type { Measurement } from '@/types/vita'
+import type { EmergencyCard, HomeRedFlag, Reading, ReadingKind, RedFlag, VitaConfigItem } from '@/types/vita'
 import { ViewTitle } from '../components/Common'
-import { errorText, formatWhen, showWeight, useUnits } from '../data'
+import { ReadingEntry } from '../components/ReadingEntry'
+import { RedFlagBanner } from '../components/RedFlagBanner'
+import { StatusBadge, TargetLabel } from '../components/Readings'
+import { errorText, formatWhen, useUnits, useVitaConfig, type Units } from '../data'
 import { BLOOD_GROUPS } from '../labels'
+import { kindLabel, readingContext, showReading, showValue } from '../readings'
 import { vitaKeys } from '../queryKeys'
-import { StatusChip } from './Conditions'
 
 /**
- * Home (7.2) for one person. Red flags and today's medicine slots arrive with the medicines and
- * readings update; until then Home says so, keeps Quick start in reach, and shows weight.
+ * Home (7.2) for one person, from one server call: red flags first and full width, today's
+ * medicines, the latest readings with their target labels, what is coming up, conditions and the
+ * emergency card.
  */
-export function Home({ personId, personName, readOnly, onOpen, addWeight, onAddWeightDone }: {
+export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, addReading, onAddReadingDone }: {
   personId: string
   personName: string
   readOnly: boolean
   onOpen: (view: string) => void
-  /** The Add menu asked for a weight. */
-  addWeight: boolean
-  onAddWeightDone: () => void
+  onOpenCondition: (id: string) => void
+  /** The Add menu asked for a reading of this kind. */
+  addReading: ReadingKind | null
+  onAddReadingDone: () => void
 }) {
-  const qs = useQuery({ queryKey: vitaKeys.quickStart(personId), queryFn: () => vitaApi.quickStart(personId) })
-  const conditions = useQuery({ queryKey: vitaKeys.conditions(personId), queryFn: () => vitaApi.conditions(personId) })
+  const home = useQuery({ queryKey: vitaKeys.home(personId), queryFn: () => vitaApi.home(personId) })
   const card = useQuery({ queryKey: vitaKeys.card(personId), queryFn: () => vitaApi.emergencyCard(personId) })
-  const progress = qs.data?.progress
+  const config = useVitaConfig()
+  const units = useUnits()
+  const [adding, setAdding] = useState(false)
+  const entryKind = addReading ?? (adding ? 'bp' : null)
+  const closeEntry = () => { setAdding(false); onAddReadingDone() }
+  const h = home.data
+  const progress = h?.quickStart
   const started = progress && (progress.completed.length + progress.skipped.length) > 0
+  const you = personName === 'You'
+
+  if (home.isLoading) return <SkeletonRows rows={5} />
+  if (home.error || !h) return <LoadFailed text="Could not load Home." onRetry={() => home.refetch()} />
 
   return (
     <div className="flex flex-col gap-4">
-      <ViewTitle title={`Today for ${personName === 'You' ? 'you' : personName}`} sub="Medicines, readings and what is coming up" />
+      <ViewTitle title={`Today for ${you ? 'you' : personName}`} sub="Medicines, readings and what is coming up" />
 
-      {qs.isLoading && <SkeletonRows rows={2} />}
+      {h.redFlags.map(f => (
+        <HomeFlag key={f.measurementId} personId={personId} personName={you ? undefined : personName} flag={f} reading={h.latest.find(r => r.id === f.measurementId)}
+          card={card.data} config={config.data} units={units} readOnly={readOnly} onOpenCard={() => onOpen('emergency')} />
+      ))}
+
       {progress && !progress.done && !readOnly && (
         <Panel title={<><ClipboardCheck className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />{started ? 'Carry on with Quick start' : 'Get started'}</>}>
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {started
               ? `${progress.completed.length + progress.skipped.length} of ${progress.total} steps done. Pick up where you left off.`
-              : `Answer eight short questions and Vita sets up ${personName === 'You' ? 'your' : `${personName}’s`} emergency card and record. You can skip any step and come back later.`}
+              : `Answer eight short questions and Vita sets up ${you ? 'your' : `${personName}’s`} emergency card and record. You can skip any step and come back later.`}
           </p>
           {started && <Meter pct={((progress.completed.length + progress.skipped.length) / progress.total) * 100} label="Quick start progress" className="bg-[rgb(var(--agent-health))]" />}
           <div className="flex flex-wrap gap-2">
@@ -56,23 +73,35 @@ export function Home({ personId, personName, readOnly, onOpen, addWeight, onAddW
         <p className="text-sm text-gray-500 dark:text-gray-400">Medicines come with the next update: one card per time slot with “All taken”, and a reminder on the phone.</p>
       </Panel>
 
+      <Panel title={<><Activity className="h-4 w-4 text-gray-400" aria-hidden />Latest readings</>}
+        action={!readOnly && !entryKind && <Button size="sm" variant="secondary" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" aria-hidden />Add reading</Button>}>
+        {entryKind && <ReadingEntry key={entryKind} personId={personId} kind={entryKind} onDone={closeEntry} onOpenCard={() => onOpen('emergency')} />}
+        {!h.latest.length && !entryKind && <p className="text-sm text-gray-500 dark:text-gray-400">No readings yet. Add blood pressure, sugar, weight, pulse, oxygen or temperature.</p>}
+        {h.latest.length > 0 && (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {h.latest.map(r => <Tile key={r.id} personId={personId} r={r} units={units} />)}
+          </div>
+        )}
+        {h.latest.length > 0 && <div><Button size="sm" variant="ghost" onClick={() => onOpen('vitals')}>All readings and charts</Button></div>}
+      </Panel>
+
       <div className="grid gap-4 md:grid-cols-2">
-        <Weight personId={personId} readOnly={readOnly} adding={addWeight} onAddDone={onAddWeightDone} />
-        <Panel title={<><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden />Coming up</>}>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Visits, refills, renewals and checks that are due show here once doctors, medicines and reports are added.</p>
+        <Panel title={<><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden />Coming up</>} action={<Button size="sm" variant="secondary" onClick={() => onOpen('visits')}>Visits</Button>}>
+          {h.nextVisit
+            ? <p className="text-sm text-gray-800 dark:text-gray-100">Visit on <b>{formatWhen(h.nextVisit.scheduledAt)}</b>{h.nextVisit.reason ? ` · ${h.nextVisit.reason}` : ''}</p>
+            : <p className="text-sm text-gray-500 dark:text-gray-400">No visit planned. Refills, renewals and checks that are due show here once medicines and reports are added.</p>}
+        </Panel>
+        <Panel title="Conditions" action={<Button size="sm" variant="secondary" onClick={() => onOpen('conditions')}>Open</Button>}>
+          {!h.conditions.length && <p className="text-sm text-gray-500 dark:text-gray-400">No active conditions recorded.</p>}
+          {h.conditions.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {h.conditions.map(c => (
+                <li key={c.id}><button type="button" onClick={() => onOpenCondition(c.id)} className="text-left text-sm text-gray-800 underline-offset-2 hover:underline dark:text-gray-200">{c.name}</button></li>
+              ))}
+            </ul>
+          )}
         </Panel>
       </div>
-
-      <Panel title="Conditions" action={<Button size="sm" variant="secondary" onClick={() => onOpen('conditions')}>Open</Button>}>
-        {conditions.isLoading && <SkeletonRows rows={1} />}
-        {conditions.error && <LoadFailed text="Could not load the conditions." onRetry={() => conditions.refetch()} />}
-        {conditions.data && !conditions.data.length && <p className="text-sm text-gray-500 dark:text-gray-400">None recorded yet.</p>}
-        {conditions.data && conditions.data.length > 0 && (
-          <ul className="flex flex-col gap-1.5">
-            {conditions.data.map(c => <li key={c.id} className="flex flex-wrap items-center gap-2 text-sm text-gray-800 dark:text-gray-200">{c.name}<StatusChip status={c.status} /></li>)}
-          </ul>
-        )}
-      </Panel>
 
       <Panel title={<><IdCard className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Emergency card</>}
         action={<Button size="sm" variant="secondary" onClick={() => onOpen('emergency')}>Open card</Button>}>
@@ -90,83 +119,105 @@ export function Home({ personId, personName, readOnly, onOpen, addWeight, onAddW
   )
 }
 
-function Weight({ personId, readOnly, adding, onAddDone }: { personId: string; readOnly: boolean; adding: boolean; onAddDone: () => void }) {
-  const qc = useQueryClient()
-  const units = useUnits()
-  const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.measurements(personId, 'weight'), queryFn: () => vitaApi.measurements(personId, 'weight') })
-  const [open, setOpen] = useState(false)
-  const show = open || adding
-  const close = () => { setOpen(false); onAddDone() }
-  const refresh = () => qc.invalidateQueries({ queryKey: vitaKeys.person(personId) })
-  const remove = useMutation({ mutationFn: (id: string) => vitaApi.removeMeasurement(personId, id), onSuccess: refresh })
-  const latest = data?.[0]
-  const series = [...(data ?? [])].reverse().slice(-12)
-
+/** One latest reading: value, time, status in words, who set the target, and the last month. */
+function Tile({ personId, r, units }: { personId: string; r: Reading; units: Units }) {
+  const trend = useQuery({ queryKey: vitaKeys.trend(personId, r.kind, 30, null), queryFn: () => vitaApi.trend(personId, r.kind, 30) })
+  const series = (trend.data?.trend.days ?? []).flatMap(d => [...d.morning, ...d.evening]).sort((a, b) => a.takenAt.localeCompare(b.takenAt))
+  const e = r.evaluation
   return (
-    <Panel title={<><Scale className="h-4 w-4 text-gray-400" aria-hidden />Latest readings</>}
-      action={!readOnly && !show && <Button size="sm" variant="secondary" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" aria-hidden />Add weight</Button>}>
-      {isLoading && <SkeletonRows rows={2} />}
-      {error && <LoadFailed text="Could not load the readings." onRetry={() => refetch()} />}
-      {data && !latest && !show && <p className="text-sm text-gray-500 dark:text-gray-400">No readings yet. Add a weight now; blood pressure, sugar and pulse come with the next update.</p>}
-      {latest && (
-        <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Weight</p>
-            <p className="font-mono text-2xl font-semibold text-gray-900 dark:text-gray-100">{showWeight(latest.value, units.weight)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{formatWhen(latest.takenAt)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">No target: weight has no range in Vita</p>
-          </div>
-          <Sparkline values={series.map(m => m.value)} label={`Weight, last ${series.length} readings`} dates={series.map(m => formatWhen(m.takenAt))}
-            format={v => showWeight(v, units.weight)} />
+    <div className="flex flex-col gap-1 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{kindLabel(r.kind)}</p>
+          <p className="font-mono text-xl font-semibold text-gray-900 dark:text-gray-100">{showReading(r, units)}</p>
         </div>
-      )}
-      {show && <WeightForm personId={personId} unit={units.weight} onDone={() => { close(); refresh() }} />}
-      {data && data.length > 1 && <WeightTable rows={data.slice(0, 7)} unit={units.weight} readOnly={readOnly} onRemove={id => remove.mutate(id)} />}
-      {remove.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(remove.error, 'Could not remove the reading.')}</p>}
-    </Panel>
+        <Sparkline values={series.map(p => p.value)} label={`${kindLabel(r.kind)}, last ${series.length} readings`} width={88} height={28}
+          dates={series.map(p => formatWhen(p.takenAt))} format={v => showValue(r.kind, v, null, units).replace(/\/–/, '')} />
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{[formatWhen(r.takenAt), readingContext(r)].filter(Boolean).join(' · ')}</p>
+      {r.kind === 'weight'
+        ? <p className="text-xs text-gray-500 dark:text-gray-400">No target: weight has no range in Vita</p>
+        : e && (
+          <div className="flex flex-col items-start gap-1">
+            <StatusBadge status={e.status} outside={e.outside} />
+            {e.status !== 'not_set' && <TargetLabel source={e.rangeSource} label={e.label} needsVerification={e.needsVerification} range={e.range} />}
+            {e.status === 'not_set' && <TargetLabel source={null} label={e.label} />}
+          </div>
+        )}
+    </div>
   )
 }
 
-/** The chart's table view: every chart has one. */
-function WeightTable({ rows, unit, readOnly, onRemove }: { rows: Measurement[]; unit: 'kg' | 'lb'; readOnly: boolean; onRemove: (id: string) => void }) {
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-300">Show as a table</summary>
-      <table className="mt-2 w-full text-left">
-        <caption className="sr-only">Weight readings</caption>
-        <thead><tr className="text-xs text-gray-500 dark:text-gray-400"><th className="py-1 font-medium">When</th><th className="py-1 text-right font-medium">Weight</th><th /></tr></thead>
-        <tbody>
-          {rows.map(m => (
-            <tr key={m.id} className="border-t border-gray-100 dark:border-gray-800">
-              <td className="py-1.5 text-gray-700 dark:text-gray-300">{formatWhen(m.takenAt)}</td>
-              <td className="py-1.5 text-right font-mono">{showWeight(m.value, unit)}</td>
-              <td className="py-1.5 text-right">{!readOnly && <Button size="sm" variant="ghost" aria-label="Remove this reading" onClick={() => onRemove(m.id)}><Trash2 className="h-3.5 w-3.5" aria-hidden /></Button>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
-  )
-}
-
-function WeightForm({ personId, unit, onDone }: { personId: string; unit: 'kg' | 'lb'; onDone: () => void }) {
-  const [value, setValue] = useState('')
-  const [when, setWhen] = useState('')
-  const save = useMutation({
-    mutationFn: () => vitaApi.addMeasurement(personId, { kind: 'weight', value: value.trim(), unit, ...(when ? { takenAt: when } : {}) }),
-    onSuccess: onDone,
+/**
+ * A red flag on Home. A typed reading nobody has confirmed asks "Is 182/112 right?" first; once
+ * confirmed it shows the level's banner with the server's wording, the emergency number and the
+ * rule's question.
+ */
+function HomeFlag({ personId, personName, flag, reading, card, config, units, readOnly, onOpenCard }: {
+  personId: string
+  personName?: string
+  flag: HomeRedFlag
+  reading?: Reading
+  card?: EmergencyCard
+  config?: VitaConfigItem[]
+  units: Units
+  readOnly: boolean
+  onOpenCard: () => void
+}) {
+  const qc = useQueryClient()
+  const [help, setHelp] = useState<RedFlag | null>(null)
+  const [wrong, setWrong] = useState(false)
+  const answer = useMutation({
+    mutationFn: ({ right, signsNow }: { right: boolean; signsNow?: boolean }) => vitaApi.answerRedFlag(personId, flag.measurementId, right, signsNow ?? null),
+    onSuccess: (out, { right }) => {
+      if (!right) setWrong(true)
+      if (out.help) setHelp(out.help)
+      qc.invalidateQueries({ queryKey: vitaKeys.person(personId) })
+    },
   })
-  return (
-    <form className="flex flex-col gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50" onSubmit={e => { e.preventDefault(); save.mutate() }}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextField label={`Weight (${unit})`} value={value} maxLength={6} placeholder={unit === 'kg' ? '64.5' : '142'} onChange={setValue} />
-        <TextField label="When (leave empty for now)" type="datetime-local" value={when} onChange={setWhen} />
+  const shown = reading ? showReading(reading, units) : kindLabel(flag.kind)
+
+  if (wrong) {
+    return (
+      <div role="status" className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-800 dark:bg-gray-900">
+        Nobody was alerted. Correct the reading or delete it in Vitals.
       </div>
-      <div className="flex gap-2">
-        <Button size="sm" type="submit" loading={save.isPending} disabled={!value.trim()}>Save weight</Button>
-        <Button size="sm" variant="ghost" type="button" onClick={onDone}>Cancel</Button>
-      </div>
-      {save.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(save.error, 'Could not save the weight.')}</p>}
-    </form>
-  )
+    )
+  }
+
+  if (!flag.confirmed && !help) {
+    return (
+      <section role="alert" aria-label="Check the reading" className="flex flex-col gap-2 rounded-2xl border-2 border-red-500 bg-red-50 p-4 dark:bg-red-950/40">
+        <p className="text-base font-semibold text-red-950 dark:text-red-50">Is {shown} right?</p>
+        <p className="text-sm text-red-900 dark:text-red-100">{flag.wording} Nobody is alerted until you say it is right.</p>
+        {!readOnly && (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="danger" loading={answer.isPending && answer.variables?.right} onClick={() => answer.mutate({ right: true })}>Yes, it’s right</Button>
+            <Button size="sm" variant="secondary" loading={answer.isPending && !answer.variables?.right} onClick={() => answer.mutate({ right: false })}>No, I typed it wrong</Button>
+          </div>
+        )}
+        {answer.error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{errorText(answer.error, 'Could not send the answer.')}</p>}
+      </section>
+    )
+  }
+
+  const rule = config?.find(i => i.key === `clinical.redflags.${flag.rule}`)
+  const ruleValue = rule?.value && typeof rule.value === 'object' && !Array.isArray(rule.value) ? rule.value : null
+  const fromHome: RedFlag = {
+    level: flag.level,
+    personName,
+    wording: flag.wording,
+    advice: flag.advice ?? undefined,
+    question: flag.question ?? undefined,
+    signs: Array.isArray(ruleValue?.signs) ? ruleValue.signs.map(String) : undefined,
+    emergencyNumbers: card?.emergencyNumbers ?? null,
+    emergencyNumbersNeedVerification: card?.emergencyNumbersNeedVerification,
+    preferredHospital: card?.preferredHospital,
+    preferredHospitalPhone: card?.preferredHospitalPhone,
+    needsVerification: flag.needsVerification,
+    rule: rule ? { key: rule.key, state: rule.state, label: rule.label } : undefined,
+  }
+  const f: RedFlag = { ...fromHome, ...(help ?? {}), reading: shown, personName }
+  const raise = !readOnly && f.level === 'urgent' && f.question && f.signs?.length ? () => answer.mutate({ right: true, signsNow: true }) : undefined
+  return <RedFlagBanner flag={f} onRaise={raise} onOpenCard={onOpenCard} />
 }
