@@ -93,6 +93,14 @@ public class BaseAgent implements Agent {
     this.memory = memory;
   }
 
+  private ObjectProvider<com.jizza.engine.api.knowledge.WorkingNotesProvider> workingNotes;
+
+  /** The agent's note titles and the lessons that apply, when the knowledge module is present. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setWorkingNotes(ObjectProvider<com.jizza.engine.api.knowledge.WorkingNotesProvider> provider) {
+    this.workingNotes = provider;
+  }
+
   /** Tracing, when the application has it; runs untraced otherwise. */
   @org.springframework.beans.factory.annotation.Autowired(required = false)
   public void setObservations(ObjectProvider<ObservationRegistry> registry) {
@@ -170,6 +178,8 @@ public class BaseAgent implements Agent {
     List<Msg> messages = new ArrayList<>();
     messages.add(Msg.system(systemPrompt));
     if (!remembered.isEmpty()) messages.add(Msg.system(remembered.rendered()));
+    com.jizza.engine.api.knowledge.WorkingNotesProvider.WorkingNotes notes = workingNotes(req);
+    if (!notes.isEmpty()) messages.add(Msg.system(notes.rendered()));
     messages.addAll(req.history());
     messages.add(Msg.user(userTurn(req)));
 
@@ -381,6 +391,21 @@ public class BaseAgent implements Agent {
     } catch (RuntimeException e) {
       log.warn("Memory unavailable for this turn: {}", e.getMessage());
       return MemoryContextProvider.MemoryContext.EMPTY;
+    }
+  }
+
+  /** The agent's note titles and the lessons this request is about. Never fatal. */
+  private com.jizza.engine.api.knowledge.WorkingNotesProvider.WorkingNotes workingNotes(AgentRequest req) {
+    var provider = workingNotes == null ? null : workingNotes.getIfAvailable();
+    if (provider == null || req.instruction() == null || req.instruction().isBlank()) {
+      return com.jizza.engine.api.knowledge.WorkingNotesProvider.WorkingNotes.EMPTY;
+    }
+    try {
+      var notes = provider.contextFor(req.userId(), req.agentId(), req.instruction());
+      return notes == null ? com.jizza.engine.api.knowledge.WorkingNotesProvider.WorkingNotes.EMPTY : notes;
+    } catch (RuntimeException e) {
+      log.warn("Working notes unavailable for this turn: {}", e.getMessage());
+      return com.jizza.engine.api.knowledge.WorkingNotesProvider.WorkingNotes.EMPTY;
     }
   }
 

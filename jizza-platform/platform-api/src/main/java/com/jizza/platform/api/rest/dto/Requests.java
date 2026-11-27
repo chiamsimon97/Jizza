@@ -187,7 +187,8 @@ public final class Requests {
 
   public record SubjectRelation(@NotNull UUID toSubjectId, @NotBlank String relation) {}
 
-  public record MemorySettings(boolean autoLearn, Integer retentionDays) {}
+  /** {@code review}: the nightly memory review on or off; left out, it stays as it is. */
+  public record MemorySettings(boolean autoLearn, Integer retentionDays, Boolean review) {}
 
   /** Memory pasted from another assistant; read only as data, one fact per line. */
   public record MemoryImport(@NotBlank @jakarta.validation.constraints.Size(max = 200_000) String text,

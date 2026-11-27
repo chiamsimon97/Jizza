@@ -161,7 +161,8 @@ public class OutputMemoryLearner implements OutputLearner {
           confidence, fact.has("importance") ? Math.min(0.7, fact.path("importance").asDouble()) : null,
           MemorySource.TOOL, sourceRef, false, about, null, null);
       try {
-        store.remember(output.userId(), draft, Actor.system());
+        store.remember(output.userId(), draft, output.jobId() == null ? Actor.system()
+            : Actor.system().within("job:" + output.jobId()));
         stored++;
       } catch (RuntimeException e) {
         log.debug("Skipped a fact proposed from job output: {}", e.getMessage());

@@ -192,7 +192,7 @@ POST   /api/memory/{id}/restore       bring back a retired or superseded fact
 DELETE /api/memory/{id}               forget permanently (history and read stamps too; step-up)
 GET    /api/memory/subjects           POST /api/memory/subjects    PATCH/DELETE /api/memory/subjects/{id}
 POST   /api/memory/subjects/{id}/relations    DELETE /api/memory/relations/{relationId}
-GET    /api/memory/settings           PUT  /api/memory/settings     {autoLearn, retentionDays}
+GET    /api/memory/settings           PUT  /api/memory/settings     {autoLearn, retentionDays, review}
 POST   /api/memory/preview            {agentKey, request}: exactly what that agent would be given
 ```
 
@@ -293,6 +293,85 @@ Stars twinkle, the sun pulses and a hovered body swells. None of it runs under
 accounts, plans, facts, notes and read stamps at startup, through the stores, but only while the
 account remembers nothing. Off by default.
 
+## Memory review, lessons and working notes
+
+### Where a change came from
+Every `memory_history` and `knowledge_history` row carries `context_ref` (`kind:ref`, V65): the
+chat turn (`chat_turn:<messageId>`), task, workflow run, agent run, job (`job:<jobId>`) or memory
+review (`memory_review:<proposalId>`) it was made in. `Actor.within(...)` sets it explicitly; when
+it is not set, the current `AccessContext` is used. The passport shows it beside each stamp.
+
+### Lessons
+A lesson is an agent's note of kind `lesson` (`knowledge_entries.kind`, `about_key`, `about_label`,
+`occurrences`). It is advice like "on tickets.example.com, wait for the seat map before clicking
+a seat", about a tool (`tool:<name>`), a site (`site:<host>`), a workflow (`workflow:<id>`) or
+`general`. Only the user writes one, through `KnowledgeStore.teach` (in practice by approving a
+review suggestion). An agent can't create or rewrite a lesson with `knowledge_upsert`, so text it
+read on a web page can't turn into standing instructions. The same advice taught again adds to
+`occurrences` and doesn't make a second lesson. Lessons appear in the Sky View, the passport,
+export, reset and restrict like any other note.
+
+### What an agent sees (`DefaultWorkingNotesProvider`)
+After the memory block, each turn gets at most two short sections, within `max-chars`:
+
+* **Lessons from earlier work**: only the lessons this request is about. A lesson scores +1 when the
+  request names its site or tool, +1 when it shares a word with what the lesson is about, and up to
+  +0.5 for words shared with the advice; a `general` lesson starts at 0.5. Lessons scoring under 0.5
+  are left out. Reads are stamped.
+* **Your notes**: the titles and ids of the agent's notes, newest first, marked as data. The agent
+  opens one with `knowledge_get`.
+
+When a tool call fails, `DefaultCapabilityRegistry` adds up to three lessons about that tool, about
+a site named in its arguments or error, or about the workflow, to the error the agent sees. The
+activity timeline and the audit log keep the raw error.
+
+### The memory review (`MemoryReviewService`)
+Once a night (`review.cron`, 03:00 in `review.zone`) and when the user presses **Review now**, it
+reads, since the last review (at most `max-window`):
+
+* facts added or changed, plus older facts that read like them;
+* what the user said in chat;
+* failed tool calls in their jobs (`job_events`);
+* failed workflow steps (`workflow_run_steps`).
+
+Failures are grouped by agent, tool and error shape, and steps by workflow, node and error shape.
+One LLM call (`review.tier`, cost recorded as `memory:review`) suggests up to
+`max-proposals-per-run` changes:
+
+* `merge`: facts that say the same thing become one. The confirmed fact is kept and reworded, and
+  the others are retired.
+* `confirm`: a fact the user keeps repeating.
+* `retire`: a fact the user contradicted.
+* `update`: a fact the user corrected.
+* `lesson`: advice for an agent after a tool, site or workflow kept going wrong.
+
+`ProposalReader` checks each suggestion in code and drops it when:
+
+* it refers to a fact, message or failure the review never saw;
+* it is a confirm, retire or update with nothing the user said behind it;
+* it is a lesson with no failure behind it;
+* it names a site the review never saw;
+* it repeats a lesson the agent already has.
+
+A suggestion that is already open, or was dismissed within `dismissed-memory`, is not raised again.
+
+Nothing changes until the user approves. Approving goes through `MemoryStore` and
+`KnowledgeStore` as `Actor.user(...).within("memory_review:<id>")`, so history, the audit log
+and the passport record it. A suggestion whose facts changed since it was made is marked `stale`
+and nothing is applied. Open suggestions expire after `expire-after`. A review is skipped when
+`max-open` suggestions are waiting, when the user is over their AI budget, or when there is
+nothing new. `memory_settings.last_reviewed_at` is claimed atomically, so two reviews never run
+at once. When a review finds something, the user gets an INFO notification linking to
+`/memory?review=open`. On the Memory page, **Suggestions** opens the panel.
+
+```
+GET  /api/memory/review                          status: enabled, last review, open count, next run
+POST /api/memory/review/run                      review now (409 within manual-cooldown)
+GET  /api/memory/review/proposals?status=open    suggestions, newest first
+POST /api/memory/review/proposals/{id}/approve   {content?}: the user's edited wording
+POST /api/memory/review/proposals/{id}/dismiss
+```
+
 ## Configuration (`jizza.memory.*`)
 
 | Key | Default | Meaning |
@@ -310,6 +389,15 @@ account remembers nothing. Off by default.
 | `extraction.enabled` / `tier` / `min-confidence` | true / routing / 0.7 | Learning from chat (`JIZZA_MEMORY_LEARNING=false` to switch off) |
 | `retention.inactive` | 180d | How long superseded/retired facts are kept |
 | `access.async` | `true` | Write read stamps off the request thread |
+| `review.enabled` / `cron` / `zone` | true / `0 0 3 * * *` / Asia/Kolkata | Nightly memory review (users can turn it off for themselves) |
+| `review.tier` | STANDARD | Model tier for the review |
+| `review.max-window` / `min-gap` / `manual-cooldown` | 7d / 20h / 10m | What it reads, and how often it may run |
+| `review.max-open` / `max-proposals-per-run` | 20 / 8 | Waiting suggestions before it pauses; suggestions per review |
+| `review.max-messages` / `max-message-chars` / `max-failures` / `max-facts` | 60 / 400 / 60 / 80 | Size of what it reads |
+| `review.neighbour-similarity` | 0.75 | How alike an older fact must be to be shown beside a new one |
+| `review.expire-after` / `dismissed-memory` | 30d / 90d | When open suggestions lapse; how long a dismissal is remembered |
+
+Working notes use `jizza.knowledge.context.note-titles` (25), `lessons` (6) and `max-chars` (2400).
 
 ## Limitations and next steps
 

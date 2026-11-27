@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownUp, Brain, List, Maximize2, Minus, Orbit, Pause, Play, Plus, RotateCcw, X, ZoomIn } from 'lucide-react'
+import { ArrowDownUp, Brain, Lightbulb, List, Maximize2, Minus, Orbit, Pause, Play, Plus, RotateCcw, X, ZoomIn } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -15,6 +15,8 @@ import { CosmosFilters, filterCount, matchesFilters, type CosmosAgentOption } fr
 import { CosmosListView } from '@/components/cosmos/CosmosListView'
 import { MemoryPassportDrawer } from '@/components/cosmos/MemoryPassportDrawer'
 import { MemoryTransferPanel } from '@/components/cosmos/MemoryTransferPanel'
+import { MemoryReviewPanel } from '@/components/cosmos/MemoryReviewPanel'
+import { memoryReviewApi } from '@/api/memoryReview'
 import { useCosmosLayout, type CosmosLayout, type PlacedBody } from '@/components/cosmos/useCosmosLayout'
 
 const ITEMS_PER_BODY = 200
@@ -50,6 +52,15 @@ export function CosmosView() {
   const [drift, setDrift] = useState(true)
   const [speed, setSpeed] = useState(1)
   const [transferOpen, setTransferOpen] = useState(false)
+  const reviewOpen = params.get('review') === 'open'
+  const setReviewOpen = (on: boolean) => {
+    const next = new URLSearchParams(params)
+    if (on) next.set('review', 'open')
+    else next.delete('review')
+    setParams(next, { replace: true })
+  }
+  const reviewStatus = useQuery({ queryKey: ['memory', 'review', 'status'], queryFn: memoryReviewApi.status })
+  const openSuggestions = reviewStatus.data?.open ?? 0
 
   const snapshot = useQuery({ queryKey: ['cosmos', 'snapshot'], queryFn: cosmosApi.snapshot })
   const layout = useCosmosLayout(snapshot.data)
@@ -180,6 +191,12 @@ export function CosmosView() {
         description="Everything Jizza remembers about you, which agents can use it, and when they did."
  actions={
           <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setReviewOpen(true)}>
+            <Lightbulb className="h-4 w-4" /> Suggestions
+            {openSuggestions > 0 && (
+              <span className="ml-1 rounded-full bg-brand-600 px-1.5 text-xs font-semibold text-white">{openSuggestions}</span>
+            )}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setTransferOpen(true)}>
             <ArrowDownUp className="h-4 w-4" /> Import / export
           </Button>
@@ -287,6 +304,7 @@ export function CosmosView() {
         onClose={() => setSelected(null)}
         onLocate={selected ? () => { const n = selected; setSelected(null); locate(n) } : undefined} />
       <MemoryTransferPanel open={transferOpen} onClose={() => setTransferOpen(false)} />
+      <MemoryReviewPanel open={reviewOpen} onClose={() => setReviewOpen(false)} />
     </div>
   )
 }

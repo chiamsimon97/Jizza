@@ -54,7 +54,8 @@ public class KnowledgeToolProvider implements ToolProvider {
 
     specs.put(UPSERT, new ToolSpec(UPSERT,
         "Record or update something in your own knowledge. Tag health, financial or personal "
-            + "details with the matching classification.",
+            + "details with the matching classification. Lessons the user approved cannot be "
+            + "changed here.",
         JsonSchemas.object(new LinkedHashMap<>(Map.of(
             "id", JsonSchemas.string("Entry id to update; omit to create a new entry"),
             "title", JsonSchemas.string("Short title"),
@@ -131,7 +132,12 @@ public class KnowledgeToolProvider implements ToolProvider {
         args.path("title").asText(), args.path("content").asText(null),
         args.hasNonNull("data") ? args.get("data") : null, classification, null, null, null);
 
-    KnowledgeEntry saved = store.upsert(agentId, entry);
+    KnowledgeEntry saved;
+    try {
+      saved = store.upsert(agentId, entry);
+    } catch (com.jizza.engine.api.error.ValidationException e) {
+      return ToolResult.error(e.getMessage());
+    }
     return ToolResult.ok(Json.obj()
         .put("id", saved.id().toString())
         .put("title", saved.title())
@@ -143,6 +149,7 @@ public class KnowledgeToolProvider implements ToolProvider {
     node.put("id", entry.id().toString());
     node.put("title", entry.title());
     node.put("excerpt", excerpt(entry.content()));
+    if (entry.isLesson()) node.put("kind", "lesson");
     if (entry.score() != null) node.put("relevance", Math.round(entry.score() * 1000) / 1000.0);
     return node;
   }
@@ -154,6 +161,10 @@ public class KnowledgeToolProvider implements ToolProvider {
     node.put("content", entry.content());
     node.put("classification", String.valueOf(entry.classification()).toLowerCase(Locale.ROOT));
     if (entry.data() != null) node.set("data", entry.data());
+    if (entry.isLesson()) {
+      node.put("kind", "lesson");
+      if (entry.lesson().aboutLabel() != null) node.put("about", entry.lesson().aboutLabel());
+    }
     return node;
   }
 

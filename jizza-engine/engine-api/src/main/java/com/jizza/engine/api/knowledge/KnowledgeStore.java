@@ -36,4 +36,25 @@ public interface KnowledgeStore {
   KnowledgeEntry move(UUID fromAgentId, UUID entryId, UUID toAgentId, Actor actor);
 
   KnowledgeEntry restrict(UUID agentId, UUID entryId, boolean restricted, Actor actor);
+
+  /**
+   * The user teaching an agent a lesson (usually by approving a memory-review suggestion). A
+   * lesson lives in the agent's own namespace like a note, but only the user writes one: an agent
+   * cannot create or change it. A lesson with the same subject and wording is reinforced instead
+   * of copied.
+   */
+  default KnowledgeEntry teach(UUID agentId, KnowledgeEntry.Lesson about, String content,
+                               com.jizza.engine.api.memory.Actor actor) {
+    throw new UnsupportedOperationException("Lessons are not supported by this knowledge store");
+  }
+
+  /** The agent's lessons it may use (restricted ones left out), most recently learned first. */
+  default List<KnowledgeEntry> lessons(UUID agentId) {
+    return List.of();
+  }
+
+  /** Titles of the agent's own notes it may open (no lessons, nothing restricted), newest first. */
+  default List<KnowledgeEntry> noteIndex(UUID agentId, int limit) {
+    return List.of();
+  }
 }

@@ -14,6 +14,11 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntryEn
 
   long countByAgentId(UUID agentId);
 
+  List<KnowledgeEntryEntity> findByAgentIdAndKindOrderByUpdatedAtDesc(UUID agentId, String kind);
+
+  List<KnowledgeEntryEntity> findByAgentIdAndKindAndRestrictedFalseOrderByUpdatedAtDesc(
+      UUID agentId, String kind, Pageable pageable);
+
   /**
    * Lexical fallback used when no embedding is available for the query. Always scoped to a single
    * agent id — the namespace is part of the query, never a filter applied afterwards.

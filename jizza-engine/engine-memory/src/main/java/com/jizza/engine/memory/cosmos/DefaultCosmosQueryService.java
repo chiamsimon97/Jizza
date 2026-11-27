@@ -359,8 +359,8 @@ public class DefaultCosmosQueryService implements CosmosQueryService {
     for (var h : history.findByMemoryIdOrderByCreatedAtAsc(id)) {
       if (h.getChange().equals("created")) createdBy = h.getActorId();
       stamps.add(new Passport.Stamp(h.getChange(), lower(h.getActorType()), h.getActorId(),
-          actorLabel(layout, h.getActorType(), h.getActorId()), null, null, h.getCreatedAt(),
-          h.getNote()));
+          actorLabel(layout, h.getActorType(), h.getActorId()), contextKind(h.getContextRef()),
+          contextRef(h.getContextRef()), h.getCreatedAt(), h.getNote()));
     }
     stamps.addAll(reads(layout, MemoryNode.FACT, id));
     stamps.sort(Comparator.comparing(Passport.Stamp::at, Comparator.nullsLast(Comparator.reverseOrder())));
@@ -381,20 +381,31 @@ public class DefaultCosmosQueryService implements CosmosQueryService {
     AgentEntity owner = layout.agentsById.get(row.getAgentId());
 
     List<Passport.Stamp> stamps = new ArrayList<>();
-    stamps.add(new Passport.Stamp("created", "agent", row.getAgentId(),
-        owner == null ? "An agent" : owner.getName(), null, null, row.getCreatedAt(), null));
-    for (var h : noteHistory.findByEntryIdOrderByCreatedAtAsc(id)) {
+    var changes = noteHistory.findByEntryIdOrderByCreatedAtAsc(id);
+    // Notes saved before their creation was recorded in history get a line from the row itself.
+    if (changes.stream().noneMatch(h -> h.getChange().equals("created"))) {
+      stamps.add(new Passport.Stamp("created", "agent", row.getAgentId(),
+          owner == null ? "An agent" : owner.getName(), null, null, row.getCreatedAt(), null));
+    }
+    for (var h : changes) {
       String note = h.getChange().equals("moved") && h.getPreviousAgentId() != null
           ? "from " + agentName(layout, h.getPreviousAgentId()) : null;
       stamps.add(new Passport.Stamp(h.getChange(), lower(h.getActorType()), h.getActorId(),
-          actorLabel(layout, h.getActorType(), h.getActorId()), null, null, h.getCreatedAt(), note));
+          actorLabel(layout, h.getActorType(), h.getActorId()), contextKind(h.getContextRef()),
+          contextRef(h.getContextRef()), h.getCreatedAt(), note));
     }
     stamps.addAll(reads(layout, MemoryNode.NOTE, id));
     stamps.sort(Comparator.comparing(Passport.Stamp::at, Comparator.nullsLast(Comparator.reverseOrder())));
 
     Passport.Origin origin;
     FileEntity file = ref == null || ref.fileId() == null ? null : files.findById(ref.fileId()).orElse(null);
-    if (file != null) {
+    if (row.isLesson()) {
+      String about = row.getAboutLabel() == null ? "" : " about " + row.getAboutLabel();
+      String times = row.getOccurrences() > 1 ? ", after it went wrong " + row.getOccurrences() + " times" : "";
+      origin = new Passport.Origin("lesson", "A lesson you approved for "
+          + (owner == null ? "an agent" : owner.getName()) + about + times, row.getAboutKey(), null,
+          null, row.getAgentId());
+    } else if (file != null) {
       origin = new Passport.Origin("file", file.getFilename(), "file:" + file.getId(), null,
           file.getId(), row.getAgentId());
     } else {
@@ -406,6 +417,19 @@ public class DefaultCosmosQueryService implements CosmosQueryService {
     return new Passport(node, node.redacted() ? null : row.getTitle(),
         node.redacted() ? null : row.getContent(), new Passport.Visibility(false, List.of(), seeing),
         origin, page(stamps, offset), nextCursor(stamps, offset));
+  }
+
+  /** {@code chat_turn} from {@code chat_turn:<id>}; null when the change named no run. */
+  static String contextKind(String contextRef) {
+    if (contextRef == null) return null;
+    int colon = contextRef.indexOf(':');
+    return colon > 0 ? contextRef.substring(0, colon) : null;
+  }
+
+  static String contextRef(String contextRef) {
+    if (contextRef == null) return null;
+    int colon = contextRef.indexOf(':');
+    return colon > 0 ? contextRef.substring(colon + 1) : contextRef;
   }
 
   private List<Passport.Stamp> reads(CosmosLayout layout, String kind, UUID id) {

@@ -19,6 +19,12 @@ public class MemorySettingsEntity {
 
   private Integer retentionDays;
 
+  /** Whether the nightly memory review runs for this user. */
+  private boolean reviewEnabled = true;
+
+  /** When the memory review last looked at this user's activity; the next one starts here. */
+  private Instant lastReviewedAt;
+
   private Instant updatedAt;
 
   public UUID getUserId() { return userId; }
@@ -29,6 +35,12 @@ public class MemorySettingsEntity {
 
   public Integer getRetentionDays() { return retentionDays; }
   public void setRetentionDays(Integer retentionDays) { this.retentionDays = retentionDays; }
+
+  public boolean isReviewEnabled() { return reviewEnabled; }
+  public void setReviewEnabled(boolean reviewEnabled) { this.reviewEnabled = reviewEnabled; }
+
+  public Instant getLastReviewedAt() { return lastReviewedAt; }
+  public void setLastReviewedAt(Instant lastReviewedAt) { this.lastReviewedAt = lastReviewedAt; }
 
   public Instant getUpdatedAt() { return updatedAt; }
 

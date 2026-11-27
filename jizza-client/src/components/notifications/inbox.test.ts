@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NotificationDto } from '@/types'
-import { CHECKED_RETRY, NO_FILTERS, buildInbox, runChoicesFor, countsByView, defaultChoiceOf, fixLinkOf, signInLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
+import { CHECKED_RETRY, NO_FILTERS, buildInbox, runChoicesFor, countsByView, defaultChoiceOf, fixLinkOf, signInLinkOf, memoryReviewLinkOf, isFailedStep, matches, outcomeOf, snoozeOptions, timeLeft, viewOf } from './inbox'
 
 const NOW = Date.parse('2026-10-23T10:00:00Z')
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString()
@@ -84,6 +84,13 @@ describe('inbox', () => {
     expect(signInLinkOf(lost('https://evil.test/connectors/x'))).toBeNull()
     expect(signInLinkOf(lost('/settings/security'))).toBeNull()
     expect(signInLinkOf(n({ kind: 'INFO', context: { source: 'webauto', kind: 'sign_in', link: `/connectors/${id}` } }))).toBeNull()
+  })
+
+  it('links a finished memory review to its suggestions, and nothing else', () => {
+    const done = (link: unknown) => n({ kind: 'INFO', context: { source: 'memory', kind: 'memory_review', link } })
+    expect(memoryReviewLinkOf(done('/memory?review=open'))).toBe('/memory?review=open')
+    expect(memoryReviewLinkOf(done('https://evil.test/memory?review=open'))).toBeNull()
+    expect(memoryReviewLinkOf(n({ kind: 'INFO', context: { source: 'connector', kind: 'memory_review', link: '/memory?review=open' } }))).toBeNull()
   })
 
   it('offers the run choices only on questions about a failed workflow step', () => {
