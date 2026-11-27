@@ -18,6 +18,7 @@ import com.jizza.engine.api.tool.ToolResult;
 import com.jizza.engine.api.tool.ToolSpec;
 import com.jizza.engine.api.util.Json;
 import com.jizza.platform.usecase.vita.config.VitaConfigService;
+import com.jizza.platform.usecase.vita.home.VitaHomeUseCase;
 import com.jizza.platform.usecase.vita.measure.VitaMeasurementUseCase;
 import com.jizza.platform.usecase.vita.profile.VitaProfileUseCase;
 import com.jizza.platform.usecase.vita.quickstart.VitaQuickStartUseCase;
@@ -55,17 +56,24 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   public static final String RED_FLAG_HELP = "vita_red_flag_help";
   public static final String OPEN_SCREEN = "vita_open_screen";
   public static final String SHOW_FORM = "vita_show_form";
+  public static final String TREND = "vita_trend";
+  public static final String CONDITION_SUMMARY = "vita_condition_summary";
   /** The chat card a form goes out as. */
   public static final String FORM_CARD = "vita_form";
 
-  public static final List<String> FORMS = List.of("profile", "emergency_contact");
+  public static final List<String> FORMS = List.of("profile", "emergency_contact", "reading", "condition",
+      "allergy", "doctor");
   static final List<String> SECTIONS = List.of("people", "profile", "emergency_card", "conditions",
-      "allergies", "emergency_contacts", "weight", "settings");
+      "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "settings");
   static final List<String> SCREENS = List.of("home", "conditions", "allergies", "emergency-card",
-      "profile", "quick-start", "settings");
+      "profile", "quick-start", "vitals", "doctors", "visits", "settings");
+  /** Fields a reading form may carry, as the user typed them (Save posts them unchanged). */
+  static final List<String> READING_FORM = List.of("kind", "value", "value2", "value3", "unit", "context",
+      "meal", "setting", "takenAt", "note");
 
   static final Map<String, ActionType> TYPES = Map.of(
       OVERVIEW, ActionType.READ, READ, ActionType.READ, RED_FLAG_HELP, ActionType.READ,
+      TREND, ActionType.READ, CONDITION_SUMMARY, ActionType.READ,
       OPEN_SCREEN, ActionType.DRAFT, SHOW_FORM, ActionType.DRAFT);
 
   private final AgentDirectory agents;
@@ -76,6 +84,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<VitaQuickStartUseCase> quickStart;
   private final ObjectProvider<VitaConfigService> config;
   private final ObjectProvider<VitaSafetyService> safety;
+  private final ObjectProvider<VitaHomeUseCase> home;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -86,6 +95,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                           ObjectProvider<VitaQuickStartUseCase> quickStart,
                           ObjectProvider<VitaConfigService> config,
                           ObjectProvider<VitaSafetyService> safety,
+                          ObjectProvider<VitaHomeUseCase> home,
                           @Value("${jizza.health.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.scopes = scopes;
@@ -95,16 +105,21 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     this.quickStart = quickStart;
     this.config = config;
     this.safety = safety;
+    this.home = home;
     this.enabled = enabled;
     ObjectNode person = JsonSchemas.string("A person's id from vita_overview; leave out for the user themself");
     this.specs = List.of(
         new ToolSpec(OVERVIEW, "Today's picture of the household's health records: each person "
-            + "(with their id), how far their Quick start is, their latest weight, active "
-            + "conditions, allergies and emergency contacts on file. Read only.",
+            + "(with their id), how far their Quick start is, their latest readings with the "
+            + "evaluator's status (in range, outside range, red flag or not set, the range used and "
+            + "who set it), active conditions with ids, allergies, the next visit and emergency "
+            + "contacts on file. Quote the status as given; never work one out yourself. Read only.",
             JsonSchemas.object(props("personId", person), List.of()), false, false),
         new ToolSpec(READ, "One section of one person's health record, exactly as stored. "
             + "Sections: people, profile, emergency_card, conditions, allergies, "
-            + "emergency_contacts, weight, settings (Vita's defaults with their state: "
+            + "emergency_contacts, readings (every reading with its status), weight, ranges (the "
+            + "range in use per measure and who set it), doctors (household-wide, with next visits "
+            + "and the targets each set), visits, settings (Vita's defaults with their state: "
             + "needs_verification, verified or not_set). Quote it; do not add figures of your own.",
             JsonSchemas.object(props("personId", person, "section", enumOf("Which section", SECTIONS)),
                 List.of("section")), false, false),
@@ -120,12 +135,30 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
         new ToolSpec(OPEN_SCREEN, "Give the user a link card into a view of the Health tab. Changes nothing.",
             JsonSchemas.object(props("personId", person, "screen", enumOf("The view to open", SCREENS)),
                 List.of("screen")), false, false),
+        new ToolSpec(TREND, "The trend of one kind of reading over the last days: last value, "
+            + "averages (unrounded and as shown), min and max, how many were outside range, and for "
+            + "blood pressure morning versus evening, with the range used and who set it. Quote "
+            + "these numbers; never compute your own.",
+            JsonSchemas.object(props("personId", person,
+                "kind", enumOf("Which reading", List.of("bp", "glucose", "weight", "heart_rate", "spo2", "temperature")),
+                "days", JsonSchemas.integer("How many days back, 1 to 365 (default 30)"),
+                "context", enumOf("Optional, for sugar: before_meal or after_meal", List.of("before_meal", "after_meal", "fasting"))),
+                List.of("kind")), false, false),
+        new ToolSpec(CONDITION_SUMMARY, "The condition page for one active condition: latest key "
+            + "measures with status, trends, low sugar readings, checks with their intervals (or "
+            + "not set), the doctor and their standing advice. Read only.",
+            JsonSchemas.object(props("personId", person,
+                "conditionId", JsonSchemas.string("The condition's id from vita_overview")),
+                List.of("conditionId")), false, false),
         new ToolSpec(SHOW_FORM, "Put a short form in the chat for the user to check and save: "
             + "profile (blood group, height, sex at birth, date of birth, organ donor, preferred "
-            + "hospital and its phone) or emergency_contact (name, relation, phone). Use it whenever "
-            + "the user tells you one of these: fill in what they said and leave the rest. Say in a "
-            + "sentence what to check, then end your turn. Nothing is saved until the user presses "
-            + "Save on the card; you never save it yourself.",
+            + "hospital and its phone), emergency_contact (name, relation, phone), reading (a "
+            + "blood pressure, sugar, weight, heart rate, SpO2 or temperature reading), condition, "
+            + "allergy or doctor. Use it whenever the user tells you one of these: fill in what "
+            + "they said, exactly as they said it, and leave the rest. Say in a sentence what to "
+            + "check, then end your turn. Nothing is saved until the user presses Save on the "
+            + "card; you never save it yourself. A reading that is a red flag is answered with "
+            + "vita_red_flag_help first.",
             JsonSchemas.object(props("personId", person,
                 "form", enumOf("Which form", FORMS),
                 "title", JsonSchemas.string("Optional heading"),
@@ -134,7 +167,16 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                     + "(a_pos, a_neg, b_pos, b_neg, ab_pos, ab_neg, o_pos, o_neg, unknown), heightCm, "
                     + "sexAtBirth (female, male, intersex, unknown), dob (yyyy-mm-dd), organDonor "
                     + "(true/false), preferredHospital, preferredHospitalPhone. emergency_contact: "
-                    + "name, relation, phone.")),
+                    + "name, relation, phone. reading: kind (bp, glucose, weight, heart_rate, spo2, "
+                    + "temperature), value (systolic for bp), value2 (diastolic), value3 (pulse), "
+                    + "unit (mmHg, mg/dL, kg or lb, bpm, %, C or F), context for sugar (fasting, "
+                    + "before_meal, after_meal, random, bedtime), meal (breakfast, lunch, dinner), "
+                    + "setting for bp (home, clinic), takenAt (yyyy-mm-ddThh:mm, India time), note. "
+                    + "condition: name, template (diabetes_t2, hypertension, generic), status "
+                    + "(active, resolved), since. allergy: substance, category (drug, food, "
+                    + "environment, other), reaction, severity (mild, moderate, severe, unknown). "
+                    + "doctor: kind (doctor, hospital, clinic, lab, pharmacy), name, speciality, "
+                    + "clinic, phone, address.")),
                 List.of("form")), false, false));
   }
 
@@ -172,6 +214,11 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
             args.path("level").asText(null), args.hasNonNull("rule") ? args.get("rule").asText() : null));
         case OPEN_SCREEN -> ToolResult.ok(openScreen(vita.get(), uuid(args, "personId"), args.path("screen").asText("home")));
         case SHOW_FORM -> showForm(user, args);
+        case TREND -> ToolResult.ok(home.getObject().trend(user, personOrSelf(user, args),
+            args.path("kind").asText(), args.hasNonNull("days") ? args.get("days").asInt() : null,
+            args.hasNonNull("context") ? args.get("context").asText() : null));
+        case CONDITION_SUMMARY -> ToolResult.ok(home.getObject().conditionSummary(user, personOrSelf(user, args),
+            uuid(args, "conditionId")));
         default -> ToolResult.error("Unknown health tool " + call.name());
       };
     } catch (ValidationException | NotFoundException e) {
@@ -189,18 +236,23 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
           .put("kind", p.person().kind()).put("recordOpen", p.open());
       var qs = quickStart.getObject().get(user, id).progress();
       n.put("quickStartDone", qs.done()).put("quickStartNext", qs.next());
-      readings.getObject().latest(p, "weight").ifPresent(w -> n.putObject("latestWeight")
-          .put("kg", w.path("value").decimalValue()).put("takenAt", w.path("takenAt").asText()));
+      ObjectNode h = home.getObject().home(user, id);
+      ArrayNode latest = n.putArray("latestReadings");
+      h.path("latest").forEach(r -> latest.add(Json.toNode(VitaMeasurementUseCase.brief((ObjectNode) r))));
+      n.set("redFlags", h.path("redFlags"));
+      n.set("nextVisit", h.path("nextVisit"));
       ArrayNode conditions = n.putArray("activeConditions");
       forms.getObject().live(p, VitaTable.CONDITION).stream()
           .filter(c -> "active".equals(c.path("status").asText()))
-          .forEach(c -> conditions.add(c.path("name").asText()));
+          .forEach(c -> conditions.addObject().put("id", c.path("id").asText()).put("name", c.path("name").asText())
+              .put("template", c.path("template").asText()));
+      if (h.has("slots")) n.set("slots", h.get("slots"));
       ArrayNode allergies = n.putArray("allergies");
       forms.getObject().live(p, VitaTable.ALLERGY).forEach(a -> allergies.add(a.path("substance").asText()));
       n.put("emergencyContacts", forms.getObject().live(p, VitaTable.CONTACT).size());
     }
-    out.put("note", "Medicines, blood pressure, sugar and other readings arrive in the next update. "
-        + "Never diagnose; never suggest starting, stopping or changing a medicine.");
+    out.put("note", "Quote each status exactly as given. Never diagnose; never suggest starting, "
+        + "stopping or changing a medicine.");
     return out;
   }
 
@@ -218,8 +270,20 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       case "allergies" -> Json.toNode(forms.getObject().list(user, id, VitaTable.ALLERGY));
       case "emergency_contacts" -> Json.toNode(forms.getObject().list(user, id, VitaTable.CONTACT));
       case "weight" -> Json.toNode(readings.getObject().list(user, id, "weight"));
+      case "readings" -> Json.toNode(readings.getObject().list(user, id, null));
+      case "ranges" -> Json.toNode(targetRanges(user, id));
+      case "doctors" -> Json.toNode(home.getObject().doctors(user));
+      case "visits" -> Json.toNode(forms.getObject().list(user, id, VitaTable.VISIT));
       default -> throw new IllegalStateException(section);
     };
+  }
+
+  private Object targetRanges(UUID user, UUID personId) {
+    return home.getObject().ranges(user, personId);
+  }
+
+  private UUID personOrSelf(UUID user, JsonNode args) {
+    return scopes.getObject().personOrSelf(user, uuid(args, "personId")).personId();
   }
 
   private JsonNode openScreen(AgentDto vita, UUID personId, String screen) {
@@ -243,7 +307,22 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     PersonScope p = scopes.getObject().personOrSelf(user, uuid(args, "personId"));
     ObjectNode values = Json.obj();
     ArrayNode dropped = Json.mapper().createArrayNode();
-    var it = args.path("values").fields();
+    if ("reading".equals(form)) {
+      ObjectNode typed = Json.obj();
+      args.path("values").fields().forEachRemaining(e -> {
+        if (READING_FORM.contains(e.getKey()) && !e.getValue().isNull()) typed.set(e.getKey(), e.getValue());
+        else dropped.add(e.getKey() + ": not on this form");
+      });
+      try {
+        VitaMeasurementUseCase.check(typed);
+      } catch (ValidationException bad) {
+        return ToolResult.error("The reading would not save: " + bad.getMessage()
+            + " Ask the user for it again; do not guess.");
+      }
+      values.setAll(typed);
+    }
+    var it = "reading".equals(form) ? java.util.Collections.<Map.Entry<String, JsonNode>>emptyIterator()
+        : args.path("values").fields();
     while (it.hasNext()) {
       var e = it.next();
       String field = e.getKey();
@@ -277,13 +356,26 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       "organDonor", "preferredHospital", "preferredHospitalPhone");
 
   static boolean allowed(String form, String field) {
-    return "profile".equals(form) ? PROFILE_FORM.contains(field) : VitaTable.CONTACT.fields.containsKey(field)
-        && !"sortOrder".equals(field);
+    if ("profile".equals(form)) return PROFILE_FORM.contains(field);
+    VitaTable t = table(form);
+    return t != null && t.fields.containsKey(field) && !"sortOrder".equals(field)
+        && !"private".equals(field) && !"doctorId".equals(field);
+  }
+
+  static VitaTable table(String form) {
+    return switch (form) {
+      case "emergency_contact" -> VitaTable.CONTACT;
+      case "condition" -> VitaTable.CONDITION;
+      case "allergy" -> VitaTable.ALLERGY;
+      case "doctor" -> VitaTable.DOCTOR;
+      default -> null;
+    };
   }
 
   static JsonNode checked(String form, String field, JsonNode v) {
-    if ("emergency_contact".equals(form)) {
-      return VitaRecordsUseCase.clean(VitaTable.CONTACT.fields, Json.obj().set(field, v), false).get(field);
+    VitaTable t = table(form);
+    if (t != null) {
+      return VitaRecordsUseCase.clean(t.fields, Json.obj().set(field, v), false).get(field);
     }
     return switch (field) {
       case "heightCm" -> VitaProfileUseCase.checkHeight(v);

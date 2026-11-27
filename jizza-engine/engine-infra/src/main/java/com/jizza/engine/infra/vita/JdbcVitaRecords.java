@@ -14,7 +14,8 @@ public class JdbcVitaRecords extends JdbcOwnedRecords implements VitaRecords {
 
   /** Vita's person-owned tables, in export order. Later phases add theirs here. */
   public static final List<String> TABLES_IN_ORDER = List.of(
-      "vita_profile", "vita_emergency_contact", "vita_condition", "vita_allergy", "vita_measurement");
+      "vita_profile", "vita_emergency_contact", "vita_doctor", "vita_condition", "vita_allergy",
+      "vita_measurement", "vita_visit", "vita_usual_range");
 
   public JdbcVitaRecords(JdbcTemplate jdbc) {
     super(jdbc, TABLES_IN_ORDER, "Vita");

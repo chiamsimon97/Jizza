@@ -59,6 +59,8 @@ public class VitaRecordsUseCase {
     List<ObjectNode> rows = records.list(t.table, p.owner(), livePerson(p.personId()));
     if (t == VitaTable.CONTACT) {
       rows = rows.stream().sorted(java.util.Comparator.comparingInt(r -> r.path("sortOrder").asInt())).toList();
+    } else if (t == VitaTable.VISIT) {
+      rows = rows.stream().sorted(java.util.Comparator.comparing((ObjectNode r) -> r.path("scheduledAt").asText("")).reversed()).toList();
     }
     return rows;
   }
@@ -87,6 +89,7 @@ public class VitaRecordsUseCase {
       throw new ValidationException("A record can hold at most " + t.maxPerPerson + " of these.");
     }
     ObjectNode values = clean(t.fields, body, true);
+    checkRefs(p.owner(), t.fields, values);
     values.put("personId", p.personId().toString());
     values.put("source", SOURCES.contains(source) ? source : "manual");
     values.put("createdByUserId", p.caller().toString());
@@ -104,6 +107,7 @@ public class VitaRecordsUseCase {
     PersonScope p = scopes.person(caller, personId).requireOpen();
     get(p, t, id);
     ObjectNode values = clean(t.fields, body, false);
+    checkRefs(p.owner(), t.fields, values);
     ObjectNode row = values.isEmpty() ? get(p, t, id)
         : records.update(t.table, p.owner(), id, values).orElseThrow(() -> new NotFoundException(t.label, id));
     audit.record(p.owner(), ActorType.USER, caller, "vita." + t.name().toLowerCase() + ".updated",
@@ -208,8 +212,115 @@ public class VitaRecordsUseCase {
         }
         return nodes.numberNode(v.asInt());
       }
+      case DATE -> {
+        return nodes.textNode(anyDate(name, v).toString());
+      }
+      case DATETIME -> {
+        return nodes.textNode(dateTime(name, v).toString());
+      }
+      case REF -> {
+        try {
+          return nodes.textNode(UUID.fromString(v.asText()).toString());
+        } catch (IllegalArgumentException e) {
+          throw new ValidationException(name + " must be an id.");
+        }
+      }
       default -> throw new IllegalStateException("Unhandled field type " + f.type());
     }
+  }
+
+  /** Any date from 1900 to 2100 (a follow-up, a next visit). */
+  public static LocalDate anyDate(String name, JsonNode v) {
+    LocalDate d;
+    try {
+      d = LocalDate.parse(v.asText());
+    } catch (DateTimeParseException e) {
+      throw new ValidationException(name + " must be a date (yyyy-mm-dd).");
+    }
+    if (d.isBefore(EARLIEST) || d.getYear() > 2100) throw new ValidationException(name + " is out of range.");
+    return d;
+  }
+
+  /** An instant, an offset date-time, or a local date-time in India. */
+  public static Instant dateTime(String name, JsonNode v) {
+    String s = v.asText().strip();
+    Instant at;
+    try {
+      at = java.time.OffsetDateTime.parse(s).toInstant();
+    } catch (DateTimeParseException e) {
+      try {
+        at = Instant.parse(s);
+      } catch (DateTimeParseException e2) {
+        try {
+          at = java.time.LocalDateTime.parse(s).atZone(ZONE).toInstant();
+        } catch (DateTimeParseException e3) {
+          throw new ValidationException(name + " must be a date and time, such as 2026-12-05T10:30.");
+        }
+      }
+    }
+    if (at.isBefore(EARLIEST.atStartOfDay(ZONE).toInstant()) || at.isAfter(Instant.parse("2100-12-31T00:00:00Z"))) {
+      throw new ValidationException(name + " is out of range.");
+    }
+    return at;
+  }
+
+  /** Every id field must name one of the owner's own live rows of its table, or it reads as missing. */
+  public void checkRefs(UUID owner, Map<String, VitaField> fields, ObjectNode values) {
+    for (VitaField f : fields.values()) {
+      if (f.type() != VitaField.Type.REF || !values.hasNonNull(f.name())) continue;
+      String table = f.values().iterator().next();
+      UUID id = UUID.fromString(values.get(f.name()).asText());
+      records.get(table, owner, id).filter(r -> r.path("deletedAt").isNull())
+          .orElseThrow(() -> new NotFoundException(table.equals("vita_doctor") ? "Doctor" : "Record", id));
+    }
+  }
+
+  // ── Household rows (doctors): the owner's, with no person ───────────────────
+
+  public List<ObjectNode> listHousehold(UUID caller, VitaTable t) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    Map<String, Object> where = new java.util.LinkedHashMap<>();
+    where.put("deletedAt", null);
+    return records.list(t.table, owner, where);
+  }
+
+  public ObjectNode getHousehold(UUID caller, VitaTable t, UUID id) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    return records.get(t.table, owner, id).filter(r -> r.path("deletedAt").isNull())
+        .orElseThrow(() -> new NotFoundException(t.label, id));
+  }
+
+  @Transactional
+  public ObjectNode createHousehold(UUID caller, VitaTable t, JsonNode body, String source) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    if (listHousehold(caller, t).size() >= t.maxPerPerson) {
+      throw new ValidationException("You can keep at most " + t.maxPerPerson + " of these.");
+    }
+    ObjectNode values = clean(t.fields, body, true);
+    values.put("source", SOURCES.contains(source) ? source : "manual");
+    values.put("createdByUserId", caller.toString());
+    ObjectNode row = records.insert(t.table, owner, values);
+    audit.record(owner, ActorType.USER, caller, "vita." + t.name().toLowerCase() + ".added", row.path("id").asText(), null);
+    return row;
+  }
+
+  @Transactional
+  public ObjectNode updateHousehold(UUID caller, VitaTable t, UUID id, JsonNode body) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    getHousehold(caller, t, id);
+    ObjectNode values = clean(t.fields, body, false);
+    ObjectNode row = values.isEmpty() ? getHousehold(caller, t, id)
+        : records.update(t.table, owner, id, values).orElseThrow(() -> new NotFoundException(t.label, id));
+    audit.record(owner, ActorType.USER, caller, "vita." + t.name().toLowerCase() + ".updated", id.toString(), null);
+    return row;
+  }
+
+  @Transactional
+  public void deleteHousehold(UUID caller, VitaTable t, UUID id) {
+    UUID owner = scopes.own(caller).ownerUserId();
+    getHousehold(caller, t, id);
+    records.update(t.table, owner, id, JsonNodeFactory.instance.objectNode().put("deletedAt", Instant.now().toString()));
+    audit.record(owner, ActorType.USER, caller, "vita." + t.name().toLowerCase() + ".removed", id.toString(), null);
   }
 
   /** A date on or before today in India, from 1900 on. */

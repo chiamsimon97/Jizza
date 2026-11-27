@@ -43,14 +43,14 @@ class VitaToolProviderTest {
     when(scopes.getObject()).thenReturn(new VitaScopeResolver(people));
     return new VitaToolProvider(agents, scopes, mock(ObjectProvider.class), mock(ObjectProvider.class),
         mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
-        mock(ObjectProvider.class), enabled);
+        mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
   }
 
   @Test
   void onlyVitaGetsTheToolsAndOnlyWhileHealthIsOn() {
     var p = provider(true);
     assertThat(p.toolsFor(vitaId)).extracting(t -> t.name()).containsExactly("vita_overview", "vita_read",
-        "vita_red_flag_help", "vita_open_screen", "vita_show_form");
+        "vita_red_flag_help", "vita_open_screen", "vita_trend", "vita_condition_summary", "vita_show_form");
     assertThat(p.toolsFor(kaiId)).isEmpty();
     assertThat(p.supports(kaiId, "vita_read")).isFalse();
     assertThat(provider(false).toolsFor(vitaId)).isEmpty();
