@@ -1,3 +1,4 @@
+import type { VitaForm } from './vita'
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export interface LoginResult {
   mfaRequired: boolean
@@ -387,6 +388,8 @@ export type UiAction =
   | { type: 'show_steps'; payload: UserSteps }
   /** A short Portfolio form Kai filled in, to check and save right in the chat. */
   | { type: 'finance_form'; payload: KaiForm }
+  /** A short Health form Vita filled in, to check and save right in the chat. */
+  | { type: 'vita_form'; payload: VitaForm }
 
 export type KaiFormKind = 'goal' | 'loan' | 'money_lent' | 'policy' | 'asset' | 'account'
 

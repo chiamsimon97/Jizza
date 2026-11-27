@@ -25,6 +25,7 @@ import { earlierMarker, took } from './replyMeta'
 import { UserStepsCard, cardLinks } from './UserStepsCard'
 import { StartRunCard } from './StartRunCard'
 import { KaiFormCard } from './KaiFormCard'
+import { VitaFormCard } from './VitaFormCard'
 import { RunInChat } from './RunInChat'
 import { matchAgents, mentionOf, mentionQuery } from './mentions'
 import { AnsweredByLabel, AskAnotherModel, CompareAnswers, DepthSwitch, ModelPicker, TeamStrip } from './ModelControls'
@@ -718,6 +719,7 @@ function MessageBubble({ msg, compact, onChoose, onOpenJob, inlineDiscussion, on
         {msg.question && <QuestionCard question={msg.question} onChoose={onChoose} onSendMany={onSendMany} />}
         {!msg.streaming && msg.startRun && <StartRunCard card={msg.startRun} />}
         {!msg.streaming && msg.kaiForms?.map(card => <KaiFormCard key={card.id} card={card} />)}
+        {!msg.streaming && msg.vitaForms?.map(card => <VitaFormCard key={card.id} card={card} />)}
         {!msg.streaming && msg.runs?.map(r => <RunInChat key={r.runId} runId={r.runId} name={r.name} />)}
         {!msg.streaming && msg.userSteps?.map((card, i) => (
           <UserStepsCard key={i} card={card} onSend={onSendMany} disabled={busy}

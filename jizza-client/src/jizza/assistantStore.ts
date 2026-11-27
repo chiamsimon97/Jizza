@@ -5,6 +5,7 @@ import { conversationsApi } from '@/api/conversations'
 import { ApiError } from '@/lib/api'
 import { useThemeStore, THEMES, type Theme } from '@/store/themeStore'
 import type { AnsweredBy, TeamMember, AgentProposal, ChatSocketEvent, Contribution, JizzaForm, JobDto, JobEvent, JobStatus, MessageDto, ReplyFeedback, ReplyVersion, StartRunCard, WebSource, ThreadCard, UiAction, UserSteps, WorkflowPlan, KaiForm } from '@/types'
+import type { VitaForm } from '@/types/vita'
 import { FORM_PAGE, PAGES, canOpenPage } from './pages'
 import { getCachedSnapshot } from '@/auth/useAuthorization'
 import { useFormStore } from './formStore'
@@ -49,6 +50,7 @@ export interface AssistantMessage {
   startRun?: StartRunCard
   /** Portfolio forms Kai filled in, to check and save in the chat. */
   kaiForms?: KaiForm[]
+  vitaForms?: VitaForm[]
   /** Runs this reply started or is about, followed live under it with their cards. */
   runs?: { runId: string; name: string }[]
   /** Specialists who worked on this reply, shown by their logos. */
@@ -225,6 +227,7 @@ function describe(action: UiAction): string {
     case 'thread_handback': return 'Passed back to Jizza'
     case 'show_steps': return action.payload.title
     case 'finance_form': return 'Kai put a form in the chat'
+    case 'vita_form': return 'Vita put a form in the chat'
   }
 }
 
@@ -239,6 +242,7 @@ interface Executed {
   userSteps?: UserSteps[]
   startRun?: StartRunCard
   kaiForms?: KaiForm[]
+  vitaForms?: VitaForm[]
   runs?: { runId: string; name: string }[]
 }
 
@@ -251,6 +255,7 @@ export function execute(actions: UiAction[], run = true): Executed {
   let handback: AssistantMessage['handback']
   const userSteps: UserSteps[] = []
   const kaiForms: KaiForm[] = []
+  const vitaForms: VitaForm[] = []
   let startRun: StartRunCard | undefined
   const runs: { runId: string; name: string }[] = []
   for (const action of actions) {
@@ -318,6 +323,10 @@ export function execute(actions: UiAction[], run = true): Executed {
         if (!action.payload?.id || !action.payload.form) continue
         kaiForms.push(action.payload)
         continue
+      case 'vita_form':
+        if (!action.payload?.id || !action.payload.form || !action.payload.personId) continue
+        vitaForms.push(action.payload)
+        continue
       case 'start_run':
         if (!action.payload?.planId || !action.payload.workflowId || !Array.isArray(action.payload.fields)) continue
         startRun = action.payload
@@ -335,7 +344,7 @@ export function execute(actions: UiAction[], run = true): Executed {
   }
   return {
     steps, question, plan, proposal, thread, handback, ...(userSteps.length ? { userSteps } : {}),
-    ...(startRun ? { startRun } : {}), ...(runs.length ? { runs } : {}), ...(kaiForms.length ? { kaiForms } : {}),
+    ...(startRun ? { startRun } : {}), ...(runs.length ? { runs } : {}), ...(kaiForms.length ? { kaiForms } : {}), ...(vitaForms.length ? { vitaForms } : {}),
   }
 }
 
@@ -478,11 +487,11 @@ export const useAssistantStore = create<AssistantState>()(
             break
           case 'job.completed': {
             const actions = (e.payload.actions ?? []) as UiAction[]
-            const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms } = execute(actions)
+            const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms, vitaForms } = execute(actions)
             const id = nextId++
             set(s => ({
               messages: s.messages.map(m => (m.role === 'assistant' && m.jobId === e.jobId
-                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors), ...(e.payload.sources?.length ? { sources: e.payload.sources as WebSource[] } : {}), ...(e.payload.model?.ref ? { model: e.payload.model as AnsweredBy } : {}), ...(e.payload.team?.length ? { team: e.payload.team as TeamMember[] } : {}) }
+                ? { ...m, id, text: e.payload.text, streaming: false, steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms, vitaForms, lead: e.payload.lead ?? m.lead, helpers: helpersOf(e.payload.contributors), ...(e.payload.sources?.length ? { sources: e.payload.sources as WebSource[] } : {}), ...(e.payload.model?.ref ? { model: e.payload.model as AnsweredBy } : {}), ...(e.payload.team?.length ? { team: e.payload.team as TeamMember[] } : {}) }
                 : m)),
               lastReplyId: id,
               // A new thread belongs in the list straight away.
@@ -799,7 +808,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     return { id: nextId++, role: 'event', text: m.content, jobId: m.jobId, notificationId: m.metadata?.notificationId, createdAt: m.createdAt }
   }
   const actions = m.metadata?.actions ?? []
-  const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms } = execute(actions, false)
+  const { steps, question, plan, proposal, thread, handback, userSteps, startRun, runs, kaiForms, vitaForms } = execute(actions, false)
   return {
     id: nextId++,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -820,6 +829,7 @@ function messageFromDto(m: MessageDto): AssistantMessage {
     startRun,
     runs,
     kaiForms,
+    vitaForms,
     lead: m.metadata?.lead,
     helpers: m.metadata?.contributors?.length ? helpersOf(m.metadata.contributors) : undefined,
     ...(m.metadata?.versions?.length ? { versions: m.metadata.versions } : {}),
