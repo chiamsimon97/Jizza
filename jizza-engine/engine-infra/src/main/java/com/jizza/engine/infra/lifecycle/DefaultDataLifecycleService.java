@@ -65,6 +65,8 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
   private final com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess;
   private final com.jizza.engine.api.finance.FinanceStore finance;
   private final com.jizza.engine.api.finance.FinanceRecords financeRecords;
+  private final com.jizza.engine.api.vita.VitaRecords vitaRecords;
+  private final com.jizza.engine.api.vita.VitaStore vita;
 
   public DefaultDataLifecycleService(UserRepository users, AgentRepository agents,
                               KnowledgeEntryRepository knowledge,
@@ -78,8 +80,12 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
                               MemorySubjectRelationRepository memoryRelations,
                               com.jizza.engine.persistence.repository.MemoryAccessRepository memoryAccess,
                               com.jizza.engine.api.finance.FinanceStore finance,
-                              com.jizza.engine.api.finance.FinanceRecords financeRecords) {
+                              com.jizza.engine.api.finance.FinanceRecords financeRecords,
+                              com.jizza.engine.api.vita.VitaRecords vitaRecords,
+                              com.jizza.engine.api.vita.VitaStore vita) {
     this.financeRecords = financeRecords;
+    this.vitaRecords = vitaRecords;
+    this.vita = vita;
     this.users = users;
     this.agents = agents;
     this.knowledge = knowledge;
@@ -253,6 +259,7 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
     });
 
     exportFinance(userId, root);
+    exportVita(userId, root);
 
     audit.record(userId, ActorType.USER, userId, "data.exported", null,
         Json.obj().put("agents", agentArray.size()).put("workflows", workflowArray.size()));
@@ -266,10 +273,13 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
    */
   private void exportFinance(UUID userId, ObjectNode root) {
     var profile = finance.profile(userId);
-    if (profile.isEmpty()) return;
+    // The people list is shared with Vita and no longer needs a finance profile (Vita spec 4.1).
+    if (profile.isEmpty() && finance.people(userId).isEmpty()) return;
     ObjectNode node = root.putObject("finance");
-    node.put("baseCurrency", profile.get().baseCurrency());
-    node.set("settings", profile.get().settings());
+    profile.ifPresent(p -> {
+      node.put("baseCurrency", p.baseCurrency());
+      node.set("settings", p.settings());
+    });
     ArrayNode peopleArray = node.putArray("people");
     finance.people(userId).forEach(p -> peopleArray.addObject()
         .put("id", p.id().toString())
@@ -300,6 +310,39 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
       ArrayNode rows = tables.putArray(table);
       financeRecords.list(table, userId, java.util.Map.of()).forEach(rows::add);
     }
+  }
+
+  /**
+   * Vita Health rows, when the person has any. The ABHA number is never exported, only its last
+   * four digits (the encrypted column never leaves the store). Hard delete needs nothing extra:
+   * every Vita table cascades from {@code users}.
+   */
+  private void exportVita(UUID userId, ObjectNode root) {
+    var overrides = vita.config(userId).stream().filter(c -> c.userId() != null).toList();
+    java.util.Map<String, java.util.List<com.fasterxml.jackson.databind.node.ObjectNode>> rows = new java.util.LinkedHashMap<>();
+    for (String table : vitaRecords.tables()) rows.put(table, vitaRecords.list(table, userId, java.util.Map.of()));
+    if (overrides.isEmpty() && rows.values().stream().allMatch(java.util.List::isEmpty)) return;
+    ObjectNode node = root.putObject("vita");
+    ArrayNode peopleArray = node.putArray("people");
+    finance.people(userId).stream().filter(p -> !"huf".equals(p.kind())).forEach(p -> peopleArray.addObject()
+        .put("id", p.id().toString())
+        .put("displayName", p.displayName())
+        .put("kind", p.kind())
+        .put("dob", p.dob() == null ? null : p.dob().toString())
+        .put("status", p.status())
+        .put("statusOn", p.statusOn() == null ? null : p.statusOn().toString()));
+    ArrayNode overrideArray = node.putArray("settingsOverrides");
+    overrides.forEach(c -> {
+      ObjectNode o = overrideArray.addObject();
+      o.put("key", c.key());
+      o.put("effectiveFrom", c.effectiveFrom().toString());
+      o.set("value", c.value());
+    });
+    ObjectNode tables = node.putObject("records");
+    rows.forEach((table, list) -> {
+      ArrayNode out = tables.putArray(table);
+      list.forEach(out::add);
+    });
   }
 
   /** "Forget everything": irreversible, and audited immediately before the row disappears. */

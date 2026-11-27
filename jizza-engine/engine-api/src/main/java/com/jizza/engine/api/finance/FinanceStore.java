@@ -20,7 +20,7 @@ public interface FinanceStore {
 
   record PersonRow(UUID id, UUID userId, String displayName, String kind, String type,
                    LocalDate dob, boolean earning, boolean dependent, String status,
-                   int sortOrder, UUID handedOverToUserId) {}
+                   int sortOrder, UUID handedOverToUserId, LocalDate statusOn) {}
 
   /** What a person's add or edit form carries. */
   record PersonFields(String displayName, String kind, String type, LocalDate dob,
@@ -37,6 +37,12 @@ public interface FinanceStore {
   /** The owner's profile and their "Me" person, created when missing; safe to call concurrently. */
   ProfileRow ensureProfile(UUID userId, String selfName);
 
+  /**
+   * Only the owner's "Me" person, created when missing, without a finance profile: what Vita (and
+   * the shared people list) needs while the finance switch is off. Safe to call concurrently.
+   */
+  void ensureSelf(UUID userId, String selfName);
+
   Optional<ProfileRow> profile(UUID userId);
 
   ProfileRow saveSettings(UUID userId, JsonNode settings);
@@ -50,6 +56,9 @@ public interface FinanceStore {
   PersonRow updatePerson(UUID userId, UUID personId, PersonFields fields);
 
   PersonRow setPersonStatus(UUID userId, UUID personId, String status);
+
+  /** Sets the status and the date it took effect ("Record closed on ..."). */
+  PersonRow setPersonStatus(UUID userId, UUID personId, String status, LocalDate on);
 
   List<ConsentRow> consents(UUID userId, UUID personId);
 

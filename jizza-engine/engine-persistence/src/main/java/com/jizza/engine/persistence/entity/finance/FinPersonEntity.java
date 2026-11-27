@@ -45,6 +45,8 @@ public class FinPersonEntity {
   private String status = "active";
 
   private UUID handedOverToUserId;
+
+  private java.time.LocalDate statusOn;
   private int sortOrder;
 
   @Column(nullable = false)
@@ -85,6 +87,8 @@ public class FinPersonEntity {
   public void setPanLast4(String v) { this.panLast4 = v; }
   public String getStatus() { return status; }
   public void setStatus(String v) { this.status = v; }
+  public java.time.LocalDate getStatusOn() { return statusOn; }
+  public void setStatusOn(java.time.LocalDate v) { this.statusOn = v; }
   public UUID getHandedOverToUserId() { return handedOverToUserId; }
   public void setHandedOverToUserId(UUID v) { this.handedOverToUserId = v; }
   public int getSortOrder() { return sortOrder; }

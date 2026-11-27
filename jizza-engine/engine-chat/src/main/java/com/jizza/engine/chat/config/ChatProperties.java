@@ -27,7 +27,7 @@ public class ChatProperties {
     private boolean enabled = true;
     private ModelTier tier = ModelTier.ROUTING;
     /** The agent keys that take their area's messages; the rest stay with Jizza. */
-    private java.util.List<String> keys = new java.util.ArrayList<>(java.util.List.of("finance"));
+    private java.util.List<String> keys = new java.util.ArrayList<>(java.util.List.of("finance", "health"));
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }

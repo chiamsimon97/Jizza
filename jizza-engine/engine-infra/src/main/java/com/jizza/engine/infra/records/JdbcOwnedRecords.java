@@ -1,0 +1,274 @@
+package com.jizza.engine.infra.records;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jizza.engine.api.records.OwnedRecords;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * {@link OwnedRecords} on plain SQL, for a fixed list of tables. Table names come from that list
+ * and column names are checked against the live schema, so no caller text ever reaches the SQL
+ * itself; every value is a bound parameter cast to its column's type. Kai's and Vita's stores are
+ * this class with their own table lists.
+ */
+public abstract class JdbcOwnedRecords implements OwnedRecords {
+
+  private final Set<String> tables;
+  private final String area;
+
+  private static final Set<String> NOT_WRITABLE = Set.of("id", "user_id", "created_at", "updated_at");
+
+  private static final ObjectMapper READER = new ObjectMapper()
+      .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+      .setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
+
+  private final JdbcTemplate jdbc;
+  /** table → (column → SQL type to cast to). */
+  private final Map<String, Map<String, String>> columns = new ConcurrentHashMap<>();
+
+  protected JdbcOwnedRecords(JdbcTemplate jdbc, java.util.Collection<String> tables, String area) {
+    this.jdbc = jdbc;
+    this.tables = Set.copyOf(tables);
+    this.area = area;
+  }
+
+  protected JdbcTemplate jdbc() {
+    return jdbc;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ObjectNode> list(String table, UUID userId, Map<String, Object> where) {
+    var cols = columns(table);
+    var sql = new StringBuilder("select " + json(cols) + " from " + table + " t where t.user_id = ?");
+    List<Object> args = new ArrayList<>();
+    args.add(userId);
+    appendWhere(cols, where, sql, args);
+    sql.append(" order by t.created_at, t.id");
+    return jdbc.queryForList(sql.toString(), String.class, args.toArray()).stream()
+        .map(JdbcOwnedRecords::toRow).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<ObjectNode> get(String table, UUID userId, UUID id) {
+    var cols = columns(table);
+    return jdbc.queryForList("select " + json(cols) + " from " + table
+            + " t where t.id = ? and t.user_id = ?", String.class, id, userId)
+        .stream().findFirst().map(JdbcOwnedRecords::toRow);
+  }
+
+  @Override
+  @Transactional
+  public ObjectNode insert(String table, UUID userId, ObjectNode values) {
+    var cols = columns(table);
+    var names = new StringBuilder("user_id");
+    var marks = new StringBuilder("?");
+    List<Object> args = new ArrayList<>();
+    args.add(userId);
+    for (var e : writable(cols, values).entrySet()) {
+      names.append(", ").append(e.getKey());
+      marks.append(", cast(? as ").append(cols.get(e.getKey())).append(')');
+      args.add(param(e.getValue()));
+    }
+    String json = jdbc.queryForObject("insert into " + table + " as t (" + names + ") values ("
+        + marks + ") returning " + json(cols), String.class, args.toArray());
+    return toRow(json);
+  }
+
+  @Override
+  @Transactional
+  public Optional<ObjectNode> update(String table, UUID userId, UUID id, ObjectNode values) {
+    var cols = columns(table);
+    var set = new StringBuilder("updated_at = now()");
+    List<Object> args = new ArrayList<>();
+    for (var e : writable(cols, values).entrySet()) {
+      set.append(", ").append(e.getKey()).append(" = cast(? as ").append(cols.get(e.getKey())).append(')');
+      args.add(param(e.getValue()));
+    }
+    args.add(id);
+    args.add(userId);
+    return jdbc.queryForList("update " + table + " as t set " + set
+            + " where t.id = ? and t.user_id = ? returning " + json(cols), String.class,
+            args.toArray())
+        .stream().findFirst().map(JdbcOwnedRecords::toRow);
+  }
+
+  @Override
+  @Transactional
+  public boolean writeSecret(String table, UUID userId, UUID id, String field, byte[] value) {
+    String col = secretColumn(table, field);
+    return jdbc.update("update " + table + " set " + col + " = ?, updated_at = now() where id = ? and user_id = ?",
+        value, id, userId) > 0;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<byte[]> readSecret(String table, UUID userId, UUID id, String field) {
+    String col = secretColumn(table, field);
+    return jdbc.queryForList("select " + col + " from " + table + " where id = ? and user_id = ?", byte[].class, id, userId)
+        .stream().filter(java.util.Objects::nonNull).findFirst();
+  }
+
+  /** A bytea column of the table: the only kind a secret goes in. */
+  private String secretColumn(String table, String field) {
+    var cols = columns(table);
+    String col = snake(field);
+    if (!"bytea".equals(cols.get(col))) throw new IllegalArgumentException("Field " + field + " is not a secret");
+    return col;
+  }
+
+  /**
+   * The row as JSON text. Secret (bytea) columns are left out, so encrypted values never reach a
+   * screen, an export or the agent; they are read only through {@link #readSecret}.
+   */
+  private static String json(Map<String, String> cols) {
+    var secrets = cols.entrySet().stream().filter(e -> "bytea".equals(e.getValue())).map(Map.Entry::getKey).sorted().toList();
+    if (secrets.isEmpty()) return "row_to_json(t)::text";
+    var sb = new StringBuilder("(to_jsonb(t)");
+    for (String c : secrets) sb.append(" - '").append(c).append('\'');
+    return sb.append(")::text").toString();
+  }
+
+  @Override
+  @Transactional
+  public boolean delete(String table, UUID userId, UUID id) {
+    columns(table);
+    return jdbc.update("delete from " + table + " where id = ? and user_id = ?", id, userId) > 0;
+  }
+
+  @Override
+  @Transactional
+  public int deleteWhere(String table, UUID userId, Map<String, Object> where) {
+    var cols = columns(table);
+    var sql = new StringBuilder("delete from " + table + " t where t.user_id = ?");
+    List<Object> args = new ArrayList<>();
+    args.add(userId);
+    appendWhere(cols, where, sql, args);
+    return jdbc.update(sql.toString(), args.toArray());
+  }
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+
+  private Map<String, String> columns(String table) {
+    if (!tables.contains(table)) throw new IllegalArgumentException("Not a " + area + " table: " + table);
+    return columns.computeIfAbsent(table, t -> {
+      Map<String, String> out = new LinkedHashMap<>();
+      jdbc.query("""
+          select column_name, udt_name from information_schema.columns
+           where table_schema = current_schema() and table_name = ? order by ordinal_position
+          """, rs -> {
+            String udt = rs.getString(2);
+            out.put(rs.getString(1), udt.startsWith("_") ? udt.substring(1) + "[]" : udt);
+          }, t);
+      if (out.isEmpty()) throw new IllegalStateException("Table " + t + " is missing");
+      return out;
+    });
+  }
+
+  private static void appendWhere(Map<String, String> cols, Map<String, Object> where,
+                                  StringBuilder sql, List<Object> args) {
+    if (where == null) return;
+    for (var e : where.entrySet()) {
+      String col = snake(e.getKey());
+      if (!cols.containsKey(col)) throw new IllegalArgumentException("Unknown field " + e.getKey());
+      if (e.getValue() == null) {
+        sql.append(" and t.").append(col).append(" is null");
+      } else {
+        sql.append(" and t.").append(col).append(" = cast(? as ").append(cols.get(col)).append(')');
+        args.add(String.valueOf(e.getValue()));
+      }
+    }
+  }
+
+  private static Map<String, JsonNode> writable(Map<String, String> cols, ObjectNode values) {
+    Map<String, JsonNode> out = new LinkedHashMap<>();
+    Iterator<Map.Entry<String, JsonNode>> it = values.fields();
+    while (it.hasNext()) {
+      var e = it.next();
+      String col = snake(e.getKey());
+      if (!cols.containsKey(col) || NOT_WRITABLE.contains(col) || "bytea".equals(cols.get(col))) {
+        throw new IllegalArgumentException("Field " + e.getKey() + " cannot be written");
+      }
+      out.put(col, e.getValue());
+    }
+    return out;
+  }
+
+  /** A JSON value as the text Postgres casts to the column type. */
+  public static String param(JsonNode v) {
+    if (v == null || v.isNull() || v.isMissingNode()) return null;
+    if (v.isTextual()) return v.asText();
+    if (v.isBigDecimal()) return v.decimalValue().toPlainString();
+    if (v.isNumber() || v.isBoolean()) return v.asText();
+    if (v.isArray() && allScalar(v)) {
+      var sb = new StringBuilder("{");
+      for (int i = 0; i < v.size(); i++) {
+        if (i > 0) sb.append(',');
+        sb.append('"').append(v.get(i).asText().replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+      }
+      return sb.append('}').toString();
+    }
+    return v.toString();
+  }
+
+  private static boolean allScalar(JsonNode array) {
+    for (JsonNode n : array) if (n.isContainerNode()) return false;
+    return true;
+  }
+
+  public static ObjectNode toRow(String json) {
+    try {
+      JsonNode raw = READER.readTree(json);
+      ObjectNode out = JsonNodeFactory.instance.objectNode();
+      raw.fields().forEachRemaining(e -> out.set(camel(e.getKey()), tidy(e.getValue())));
+      return out;
+    } catch (Exception e) {
+      throw new IllegalStateException("Unreadable " + "stored row", e);
+    }
+  }
+
+  /** 250000.00 reads as 250000 and 14.000000 as 14; nested JSON is left as stored. */
+  private static JsonNode tidy(JsonNode v) {
+    if (v.isBigDecimal()) {
+      BigDecimal d = v.decimalValue().stripTrailingZeros();
+      if (d.scale() < 0) d = d.setScale(0);
+      return JsonNodeFactory.instance.numberNode(d);
+    }
+    return v;
+  }
+
+  public static String snake(String camel) {
+    var sb = new StringBuilder();
+    for (char c : camel.toCharArray()) {
+      if (Character.isUpperCase(c)) sb.append('_').append(Character.toLowerCase(c));
+      else sb.append(c);
+    }
+    return sb.toString();
+  }
+
+  public static String camel(String snake) {
+    var sb = new StringBuilder();
+    boolean up = false;
+    for (char c : snake.toCharArray()) {
+      if (c == '_') { up = true; continue; }
+      sb.append(up ? Character.toUpperCase(c) : c);
+      up = false;
+    }
+    return sb.toString();
+  }
+}

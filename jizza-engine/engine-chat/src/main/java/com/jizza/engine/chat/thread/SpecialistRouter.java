@@ -47,7 +47,10 @@ public class SpecialistRouter {
       follow-up to an exchange about it (a correction, an answer to a question it asked, "yes, do
       that"). For example, saving towards something, a goal with an amount or date, a loan, an
       insurance policy, investments, a budget, a broker or a bank statement are the finance
-      specialist's, and so is a reminder about one of those.
+      specialist's, and so is a reminder about one of those. A health reading (blood pressure,
+      sugar, weight), a medicine or a dose taken, a lab report, a doctor's visit, an allergy, a
+      blood group, an emergency contact, or how someone in the family is feeling are the health
+      specialist's.%s
 
       Pick "jizza" for small talk, thanks, questions about the Jizza app itself, workflows and
       automations, anything outside the listed areas, a request that spans several areas, or
@@ -55,17 +58,35 @@ public class SpecialistRouter {
 
       Reply with JSON only, no prose: {"answer": "<specialist key or jizza>", "reason": "a few words"}""";
 
+  /** Added while Vita's Health tab is on: Vita then owns health cover and claims (Vita spec 4.3). */
+  static final String HEALTH_COVER = """
+       Health insurance cover, a cashless card and a hospital claim are the health specialist's.""";
+
   private final ThreadService threads;
   private final LlmClient llm;
   private final CostAccountant costs;
   private final ChatProperties props;
+  private final String systemPrompt;
 
   public SpecialistRouter(ThreadService threads, LlmClient llm, CostAccountant costs,
                           ChatProperties props) {
+    this(threads, llm, costs, props, false);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public SpecialistRouter(ThreadService threads, LlmClient llm, CostAccountant costs,
+                          ChatProperties props,
+                          @org.springframework.beans.factory.annotation.Value("${jizza.health.enabled:false}") boolean healthOn) {
     this.threads = threads;
     this.llm = llm;
     this.costs = costs;
     this.props = props;
+    this.systemPrompt = prompt(healthOn);
+  }
+
+  /** The router's instructions; health cover goes to Vita only while the Health tab is on. */
+  static String prompt(boolean healthOn) {
+    return PROMPT.formatted(healthOn ? " " + HEALTH_COVER.strip() : "");
   }
 
   /**
@@ -81,7 +102,7 @@ public class SpecialistRouter {
     try {
       String model = llm.modelFor(props.getSpecialists().getTier());
       LlmResponse response = llm.complete(model,
-          List.of(Msg.system(PROMPT), Msg.user(prompt(candidates, message, history))), List.of());
+          List.of(Msg.system(systemPrompt), Msg.user(prompt(candidates, message, history))), List.of());
       costs.record(scope.userId(), response.model() == null ? model : response.model(),
           response.inputTokens(), response.outputTokens(), "chat:specialist-route");
       return pick(response.text(), candidates);

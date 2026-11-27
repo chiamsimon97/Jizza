@@ -371,6 +371,12 @@ jizza:
   finance:
     enabled: ${JIZZA_FINANCE_ENABLED:false}
 
+  # Vita's Health tab (the family health record). Off until the feature is ready: while off,
+  # /api/vita/** does not exist, Vita has no health tools and the tab stays hidden.
+  # See docs/vita-handoff/.
+  health:
+    enabled: ${JIZZA_HEALTH_ENABLED:false}
+
   platform:
     queue:
       enabled: true

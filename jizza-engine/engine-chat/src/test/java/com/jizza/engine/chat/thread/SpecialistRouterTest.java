@@ -82,9 +82,25 @@ class SpecialistRouterTest {
 
   @Test
   void onlyTheConfiguredSpecialistsTakeMessages() {
-    // Vita is not in jizza.chat.specialists.keys, so her name leaves the message with Jizza.
+    // With Vita left out of jizza.chat.specialists.keys, the name leaves the message with Jizza.
+    props.getSpecialists().setKeys(new java.util.ArrayList<>(List.of("finance")));
     modelSays("{\"answer\":\"health\"}");
     assertThat(router.route(plain(), "chat", "I slept badly", List.of())).isEmpty();
+  }
+
+  @Test
+  void aHealthReadingGoesToVitaByDefault() {
+    assertThat(props.getSpecialists().getKeys()).contains("finance", "health");
+    modelSays("{\"answer\":\"health\"}");
+    assertThat(router.route(plain(), "chat", "My blood group is O+", List.of())).contains(vita);
+  }
+
+  @Test
+  void healthCoverGoesToVitaOnlyWhileTheHealthTabIsOn() {
+    assertThat(SpecialistRouter.prompt(false)).contains("blood group").doesNotContain("cashless card")
+        .doesNotContain("%s");
+    assertThat(SpecialistRouter.prompt(true)).contains("specialist's. Health insurance cover")
+        .contains("cashless card");
   }
 
   @Test

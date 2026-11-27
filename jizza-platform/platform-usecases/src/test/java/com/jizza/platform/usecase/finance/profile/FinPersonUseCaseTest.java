@@ -41,7 +41,8 @@ class FinPersonUseCaseTest {
     assertThat(child.displayName()).isEqualTo("Riya");
     assertThat(child.kind()).isEqualTo("child");
     assertThat(child.dependent()).isTrue();
-    verify(store).ensureProfile(me, "Me");
+    verify(store).ensureSelf(me, "Me");
+    verify(store, org.mockito.Mockito.never()).ensureProfile(any(), any());
   }
 
   @Test
@@ -113,6 +114,6 @@ class FinPersonUseCaseTest {
 
   private PersonRow row(UUID id, PersonFields f) {
     return new PersonRow(id, me, f.displayName(), f.kind(), f.type(), f.dob(), f.earning(),
-        f.dependent(), "active", 1, null);
+        f.dependent(), "active", 1, null, null);
   }
 }
