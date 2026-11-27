@@ -32,11 +32,19 @@ public class FinPersonUseCase {
   private final FinanceStore store;
   private final FinScopeResolver scopes;
   private final AuditLog audit;
+  private final java.util.List<PersonStatusListener> listeners;
 
   public FinPersonUseCase(FinanceStore store, FinScopeResolver scopes, AuditLog audit) {
+    this(store, scopes, audit, java.util.List.of());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public FinPersonUseCase(FinanceStore store, FinScopeResolver scopes, AuditLog audit,
+                          java.util.List<PersonStatusListener> listeners) {
     this.store = store;
     this.scopes = scopes;
     this.audit = audit;
+    this.listeners = java.util.List.copyOf(listeners);
   }
 
   /** A form as sent; {@code kind} and {@code type} are lowercase words. */
@@ -119,6 +127,7 @@ public class FinPersonUseCase {
     PersonRow saved = store.setPersonStatus(current.userId(), personId, s, "active".equals(s) ? null : day);
     audit.record(current.userId(), ActorType.USER, callerUserId, "person.status_changed",
         personId.toString(), null);
+    for (PersonStatusListener l : listeners) l.statusChanged(current.userId(), personId, s);
     return saved;
   }
 

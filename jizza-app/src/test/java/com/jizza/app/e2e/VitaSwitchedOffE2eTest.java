@@ -23,6 +23,7 @@ class VitaSwitchedOffE2eTest extends E2eSupport {
   }
 
   @LocalServerPort private int port;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private VitaToolProvider tools;
 
   @Test
@@ -34,6 +35,8 @@ class VitaSwitchedOffE2eTest extends E2eSupport {
     assertThat(api.post("/api/auth/login", Map.of("email", email, "password", "Correct-Horse-92")).ok()).isTrue();
 
     assertThat(api.get("/api/vita/status").status()).isEqualTo(404);
+    assertThat(context.getBeansOfType(com.jizza.platform.api.jobs.VitaJobs.class))
+        .as("neither Vita job runs while the switch is off").isEmpty();
     assertThat(api.get("/api/vita/config").status()).isEqualTo(404);
     assertThat(api.get("/api/people").ok()).as("the shared people list does not depend on Vita").isTrue();
 

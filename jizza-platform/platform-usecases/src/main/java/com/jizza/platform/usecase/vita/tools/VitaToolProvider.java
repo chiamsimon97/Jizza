@@ -20,6 +20,7 @@ import com.jizza.engine.api.util.Json;
 import com.jizza.platform.usecase.vita.config.VitaConfigService;
 import com.jizza.platform.usecase.vita.home.VitaHomeUseCase;
 import com.jizza.platform.usecase.vita.measure.VitaMeasurementUseCase;
+import com.jizza.platform.usecase.vita.medicine.VitaMedicineUseCase;
 import com.jizza.platform.usecase.vita.profile.VitaProfileUseCase;
 import com.jizza.platform.usecase.vita.quickstart.VitaQuickStartUseCase;
 import com.jizza.platform.usecase.vita.records.VitaRecordsUseCase;
@@ -62,9 +63,9 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   public static final String FORM_CARD = "vita_form";
 
   public static final List<String> FORMS = List.of("profile", "emergency_contact", "reading", "condition",
-      "allergy", "doctor");
+      "allergy", "doctor", "medicine", "dose");
   static final List<String> SECTIONS = List.of("people", "profile", "emergency_card", "conditions",
-      "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "settings");
+      "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "medicines", "settings");
   static final List<String> SCREENS = List.of("home", "conditions", "allergies", "emergency-card",
       "profile", "quick-start", "vitals", "doctors", "visits", "settings");
   /** Fields a reading form may carry, as the user typed them (Save posts them unchanged). */
@@ -85,6 +86,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<VitaConfigService> config;
   private final ObjectProvider<VitaSafetyService> safety;
   private final ObjectProvider<VitaHomeUseCase> home;
+  private final ObjectProvider<VitaMedicineUseCase> medicines;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -96,6 +98,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                           ObjectProvider<VitaConfigService> config,
                           ObjectProvider<VitaSafetyService> safety,
                           ObjectProvider<VitaHomeUseCase> home,
+                          ObjectProvider<VitaMedicineUseCase> medicines,
                           @Value("${jizza.health.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.scopes = scopes;
@@ -106,6 +109,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     this.config = config;
     this.safety = safety;
     this.home = home;
+    this.medicines = medicines;
     this.enabled = enabled;
     ObjectNode person = JsonSchemas.string("A person's id from vita_overview; leave out for the user themself");
     this.specs = List.of(
@@ -154,7 +158,8 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
             + "profile (blood group, height, sex at birth, date of birth, organ donor, preferred "
             + "hospital and its phone), emergency_contact (name, relation, phone), reading (a "
             + "blood pressure, sugar, weight, heart rate, SpO2 or temperature reading), condition, "
-            + "allergy or doctor. Use it whenever the user tells you one of these: fill in what "
+            + "allergy, doctor, medicine (one the user or their doctor named) or dose (marking a "
+            + "time slot taken or skipped). Use it whenever the user tells you one of these: fill in what "
             + "they said, exactly as they said it, and leave the rest. Say in a sentence what to "
             + "check, then end your turn. Nothing is saved until the user presses Save on the "
             + "card; you never save it yourself. A reading that is a red flag is answered with "
@@ -176,7 +181,13 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                     + "(active, resolved), since. allergy: substance, category (drug, food, "
                     + "environment, other), reaction, severity (mild, moderate, severe, unknown). "
                     + "doctor: kind (doctor, hospital, clinic, lab, pharmacy), name, speciality, "
-                    + "clinic, phone, address.")),
+                    + "clinic, phone, address. medicine: name (exactly as the user said it; never "
+                    + "complete or correct it), strength, form (tablet, capsule, syrup, injection, "
+                    + "inhaler, drops, cream, supply, other), startDate, endDate, asNeeded, "
+                    + "trackStock, stockUnits, unitsPerPack, refillLeadDays, times (list of HH:mm), "
+                    + "doseUnits, doseUnit (tablet, ml, units, puffs, drops, other), withFood "
+                    + "(before, with, after, any): only what the user or their doctor said. dose: "
+                    + "dueAt (the slot's time from vita_overview), action (taken, skipped), takenAt.")),
                 List.of("form")), false, false));
   }
 
@@ -247,6 +258,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
           .forEach(c -> conditions.addObject().put("id", c.path("id").asText()).put("name", c.path("name").asText())
               .put("template", c.path("template").asText()));
       if (h.has("slots")) n.set("slots", h.get("slots"));
+      if (h.has("reminders")) n.set("reminders", h.get("reminders"));
       ArrayNode allergies = n.putArray("allergies");
       forms.getObject().live(p, VitaTable.ALLERGY).forEach(a -> allergies.add(a.path("substance").asText()));
       n.put("emergencyContacts", forms.getObject().live(p, VitaTable.CONTACT).size());
@@ -274,6 +286,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       case "ranges" -> Json.toNode(targetRanges(user, id));
       case "doctors" -> Json.toNode(home.getObject().doctors(user));
       case "visits" -> Json.toNode(forms.getObject().list(user, id, VitaTable.VISIT));
+      case "medicines" -> Json.toNode(medicines.getObject().list(user, id));
       default -> throw new IllegalStateException(section);
     };
   }
@@ -355,8 +368,16 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   static final List<String> PROFILE_FORM = List.of("bloodGroup", "heightCm", "sexAtBirth", "dob",
       "organDonor", "preferredHospital", "preferredHospitalPhone");
 
+  /** A medicine form also carries its schedule, flat: times, doseUnits, doseUnit, withFood. */
+  static final List<String> SCHEDULE_FORM = List.of("times", "doseUnits", "doseUnit", "withFood");
+  /** A dose form marks one time slot: its due time, the action and when it was taken. */
+  static final List<String> DOSE_FORM = List.of("dueAt", "action", "takenAt", "note");
+
   static boolean allowed(String form, String field) {
     if ("profile".equals(form)) return PROFILE_FORM.contains(field);
+    if ("dose".equals(form)) return DOSE_FORM.contains(field);
+    if ("medicine".equals(form) && SCHEDULE_FORM.contains(field)) return true;
+    if ("medicine".equals(form) && ("conditionId".equals(field) || "prescribedBy".equals(field))) return false;
     VitaTable t = table(form);
     return t != null && t.fields.containsKey(field) && !"sortOrder".equals(field)
         && !"private".equals(field) && !"doctorId".equals(field);
@@ -368,11 +389,26 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       case "condition" -> VitaTable.CONDITION;
       case "allergy" -> VitaTable.ALLERGY;
       case "doctor" -> VitaTable.DOCTOR;
+      case "medicine" -> VitaTable.MEDICINE;
       default -> null;
     };
   }
 
   static JsonNode checked(String form, String field, JsonNode v) {
+    if ("medicine".equals(form) && SCHEDULE_FORM.contains(field)) return VitaMedicineUseCase.checkScheduleField(field, v);
+    if ("dose".equals(form)) {
+      return switch (field) {
+        case "dueAt", "takenAt" -> Json.mapper().getNodeFactory().textNode(VitaRecordsUseCase.dateTime(field, v).toString());
+        case "action" -> {
+          if (!v.isTextual() || !List.of("taken", "skipped").contains(v.asText())) {
+            throw new ValidationException("action must be taken or skipped.");
+          }
+          yield v;
+        }
+        default -> VitaRecordsUseCase.clean(java.util.Map.of("note", com.jizza.platform.usecase.vita.records.VitaField.text("note", 500)),
+            Json.obj().set("note", v), false).get("note");
+      };
+    }
     VitaTable t = table(form);
     if (t != null) {
       return VitaRecordsUseCase.clean(t.fields, Json.obj().set(field, v), false).get(field);

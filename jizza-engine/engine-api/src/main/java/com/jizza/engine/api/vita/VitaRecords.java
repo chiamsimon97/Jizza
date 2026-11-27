@@ -14,6 +14,6 @@ public interface VitaRecords extends com.jizza.engine.api.records.OwnedRecords {
   /** Every Vita table, in export order. */
   List<String> tables();
 
-  /** Owners who have any Vita profile, for later phases' scheduled jobs. */
+  /** Owners with any Vita profile, medicine, visit or reminder, for the scheduled jobs. */
   List<UUID> ownersWithRecords();
 }
