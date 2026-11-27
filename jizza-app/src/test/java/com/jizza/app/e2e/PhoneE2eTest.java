@@ -335,6 +335,102 @@ class PhoneE2eTest extends E2eSupport {
     assertThat(Json.read(read.body()).path("status").asText()).isEqualTo("READ");
   }
 
+  // ---- Vita medicine reminders (plan step 6d-1) -------------------------------------------------
+
+  /** A person with a medicine every two hours, so today always has slots; returns the person id. */
+  private String personWithMedicine(ApiClient account, String name) {
+    String person = account.post("/api/people", Map.of("displayName", name, "kind", "parent", "type", "individual"))
+        .json().path("id").asText();
+    var made = account.post("/api/vita/people/" + person + "/medicines", Map.of("name", "metformin",
+        "schedule", Map.of("times", java.util.List.of("00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00",
+            "14:00", "16:00", "18:00", "20:00", "22:00"))));
+    assertThat(made.ok()).as(made.body()).isTrue();
+    return person;
+  }
+
+  @Test
+  void thePhoneListsTodaysMedicineSlotsWithoutNamesAndMarksThemOnce() throws Exception {
+    pairPhone();
+    String father = personWithMedicine(web, "Father");
+    var today = get("/agent/v1/me/vita/today?tz=Asia/Kolkata&hours=48");
+    assertThat(today.statusCode()).as(today.body()).isEqualTo(200);
+    JsonNode t = Json.read(today.body());
+    assertThat(t.path("showNames").asBoolean()).isFalse();
+    JsonNode slots = t.path("slots");
+    assertThat(slots.size()).isGreaterThan(0);
+    JsonNode first = slots.get(0);
+    assertThat(first.path("personId").asText()).isEqualTo(father);
+    assertThat(first.path("personName").asText()).isEqualTo("Father");
+    assertThat(first.path("zone").asText()).isEqualTo("Asia/Kolkata");
+    assertThat(first.path("doses").get(0).path("medicineName").isNull()).isTrue();
+    assertThat(today.body()).doesNotContain("metformin");
+
+    String body = Json.write(Map.of("personId", father, "dueAt", first.path("dueAt").asText(), "action", "taken"));
+    String path = "/agent/v1/me/vita/slots/act";
+    var marked = post(path, body, signedHeaders("POST", path, body));
+    assertThat(marked.statusCode()).as(marked.body()).isEqualTo(200);
+    JsonNode slot = Json.read(marked.body());
+    assertThat(slot.path("status").asText()).isEqualTo("taken");
+    String markedAt = slot.path("markedAt").asText();
+    assertThat(markedAt).isNotBlank();
+
+    // The same action sent again (a new signature, as a retry would carry) changes nothing.
+    var again = post(path, body, signedHeaders("POST", path, body));
+    assertThat(again.statusCode()).as(again.body()).isEqualTo(200);
+    assertThat(Json.read(again.body()).path("markedAt").asText()).isEqualTo(markedAt);
+    // Skipping a slot already taken leaves the first mark.
+    String skip = Json.write(Map.of("personId", father, "dueAt", first.path("dueAt").asText(), "action", "skipped"));
+    assertThat(Json.read(post(path, skip, signedHeaders("POST", path, skip)).body()).path("status").asText()).isEqualTo("taken");
+
+    // One dose of the next slot, snoozed twice: the second press is a no-op.
+    String dose = slots.get(1).path("doses").get(0).path("id").asText();
+    String dosePath = "/agent/v1/me/vita/doses/" + dose + "/act";
+    String snooze = Json.write(Map.of("action", "snoozed", "snoozeMinutes", 15));
+    var s1 = post(dosePath, snooze, signedHeaders("POST", dosePath, snooze));
+    assertThat(s1.statusCode()).as(s1.body()).isEqualTo(200);
+    var s2 = post(dosePath, snooze, signedHeaders("POST", dosePath, snooze));
+    assertThat(s2.statusCode()).as(s2.body()).isEqualTo(200);
+    assertThat(Json.read(s2.body()).path("doses").get(0).path("version").asLong())
+        .isEqualTo(Json.read(s1.body()).path("doses").get(0).path("version").asLong());
+    // The web sees the same marks.
+    assertThat(web.get("/api/vita/people/" + father + "/doses?from=" + first.path("localDate").asText()
+        + "&to=" + first.path("localDate").asText()).body()).contains("\"status\":\"taken\"");
+  }
+
+  @Test
+  void markingAMedicineNeedsASignatureApproveAccessAndOnesOwnDose() throws Exception {
+    UUID deviceId = pairPhone();
+    String father = personWithMedicine(web, "Father");
+    JsonNode slot = Json.read(get("/agent/v1/me/vita/today?tz=Asia/Kolkata&hours=48").body()).path("slots").get(0);
+    String body = Json.write(Map.of("personId", father, "dueAt", slot.path("dueAt").asText(), "action", "taken"));
+    String path = "/agent/v1/me/vita/slots/act";
+    assertThat(post(path, body, null).statusCode()).as("unsigned").isEqualTo(401);
+
+    // Another account's dose and person read as missing.
+    ApiClient other = new ApiClient(port);
+    other.prime();
+    String otherEmail = "phone-other-" + UUID.randomUUID() + "@jizza.local";
+    assertThat(other.post("/api/auth/register", Map.of("email", otherEmail, "password", PASSWORD)).ok()).isTrue();
+    assertThat(other.post("/api/auth/login", Map.of("email", otherEmail, "password", PASSWORD)).ok()).isTrue();
+    String theirs = personWithMedicine(other, "Their mother");
+    var date = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+    JsonNode theirSlot = other.get("/api/vita/people/" + theirs + "/doses?from=" + date + "&to=" + date.plusDays(1))
+        .json().path("slots").get(0);
+    String theirDose = "/agent/v1/me/vita/doses/" + theirSlot.path("doses").get(0).path("id").asText() + "/act";
+    String taken = Json.write(Map.of("action", "taken"));
+    assertThat(post(theirDose, taken, signedHeaders("POST", theirDose, taken)).statusCode()).isEqualTo(404);
+    String theirBody = Json.write(Map.of("personId", theirs, "dueAt", theirSlot.path("dueAt").asText(), "action", "taken"));
+    assertThat(post(path, theirBody, signedHeaders("POST", path, theirBody)).statusCode()).isEqualTo(404);
+    assertThat(other.get("/api/vita/people/" + theirs + "/doses?from=" + date + "&to=" + date.plusDays(1)).body())
+        .doesNotContain("\"status\":\"taken\"");
+
+    // Read only: marking is refused, reading still works.
+    stepUp();
+    assertThat(web.put("/api/devices/" + deviceId + "/phone-access", Map.of("access", "READ")).ok()).isTrue();
+    assertThat(post(path, body, signedHeaders("POST", path, body)).statusCode()).isEqualTo(403);
+    assertThat(get("/agent/v1/me/vita/today?tz=Asia/Kolkata").statusCode()).isEqualTo(200);
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------
 
   private UUID pairPhone() {

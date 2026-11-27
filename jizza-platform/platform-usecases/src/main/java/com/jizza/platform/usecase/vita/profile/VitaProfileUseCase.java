@@ -206,9 +206,12 @@ public class VitaProfileUseCase {
         .forEach(r -> c.addObject().put("name", r.path("name").asText()).set("since", r.get("since")));
     card.put("conditionsNoneKnown", profile.path("conditionsNoneKnown").asBoolean(false) && c.isEmpty());
 
-    // Medicines arrive in Phase 1a; until then the card says so rather than showing an empty list.
-    card.putArray("medicines");
-    card.put("medicinesAvailable", false);
+    // Current medicines (spec 7.4): active and not private, name and strength as written.
+    ArrayNode m = card.putArray("medicines");
+    forms.live(p, VitaTable.MEDICINE).stream()
+        .filter(r -> "active".equals(r.path("status").asText()) && !r.path("private").asBoolean(false))
+        .forEach(r -> m.addObject().put("name", r.path("name").asText()).set("strength", r.get("strength")));
+    card.put("medicinesAvailable", true);
 
     ArrayNode contacts = card.putArray("emergencyContacts");
     List<ObjectNode> contactRows = forms.live(p, VitaTable.CONTACT);

@@ -37,6 +37,9 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>{@code inbox}: a visible alert "Jizza needs your answer", collapsed per notification;
  *   <li>{@code run_failed}: a visible alert "A run failed", collapsed per run;
+ *   <li>{@code vita_slot}, {@code vita_missed}, {@code vita_daily_check}: a visible alert with a
+ *       fixed line (categories JIZZA_VITA_SLOT, JIZZA_VITA_MISSED, JIZZA_VITA_DAILY, thread "vita"),
+ *       collapsed per person and slot; no name, medicine or value;
  *   <li>anything else (device work): a silent background push ({@code content-available}).
  * </ul>
  *
@@ -103,7 +106,7 @@ public class ApnsPushProvider implements PushProvider {
   }
 
   static boolean isAlert(String type) {
-    return type.equals("inbox") || type.equals("run_failed");
+    return type.equals("inbox") || type.equals("run_failed") || type.startsWith("vita_");
   }
 
   /** The APNs JSON: an alert or a silent wake, with the ids under {@code jizza}. */
@@ -127,6 +130,23 @@ public class ApnsPushProvider implements PushProvider {
         aps.put("thread-id", "runs");
         aps.put("mutable-content", 1);
       }
+      // Vita: a fixed line only. The app fetches the slot and never shows health text from a push.
+      case "vita_slot", "vita_missed", "vita_daily_check" -> {
+        String title = switch (type) {
+          case "vita_slot" -> "Medicines reminder";
+          case "vita_missed" -> "Medicines not marked";
+          default -> "Medicines check";
+        };
+        aps.putObject("alert").put("title", title).put("body", "Open Jizza to see the list.");
+        aps.put("sound", "default");
+        aps.put("category", switch (type) {
+          case "vita_slot" -> "JIZZA_VITA_SLOT";
+          case "vita_missed" -> "JIZZA_VITA_MISSED";
+          default -> "JIZZA_VITA_DAILY";
+        });
+        aps.put("thread-id", "vita");
+        aps.put("mutable-content", 1);
+      }
       default -> aps.put("content-available", 1);
     }
     ObjectNode ids = body.putObject("jizza");
@@ -143,6 +163,18 @@ public class ApnsPushProvider implements PushProvider {
   /** One alert per inbox item or run, so a repeat replaces it rather than stacking. */
   static String collapseId(String type, JsonNode data) {
     if (data == null) return null;
+    if (type.startsWith("vita_")) {
+      String person = data.path("personId").asText("");
+      String due = data.path("dueAt").asText("");
+      String when = "";
+      try {
+        if (!due.isEmpty()) when = "-" + java.time.Instant.parse(due).getEpochSecond();
+      } catch (RuntimeException ignored) {
+        // no time: one per person
+      }
+      String c = type + "-" + person + when;
+      return c.length() <= 64 ? c : c.substring(0, 64);
+    }
     String id = switch (type) {
       case "inbox" -> data.path("notificationId").asText(null);
       case "run_failed" -> data.path("runId").asText(null);
