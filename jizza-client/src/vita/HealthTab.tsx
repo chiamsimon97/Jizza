@@ -29,6 +29,7 @@ import { Home } from './screens/Home'
 import { Profile } from './screens/Profile'
 import { QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
+import { Medicines } from './screens/Medicines'
 import { Visits } from './screens/Visits'
 import { Vitals } from './screens/Vitals'
 import { isReadingKind } from './readings'
@@ -54,6 +55,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const [adding, setAdding] = useState(false)
   const [addReading, setAddReading] = useState<ReadingKind | null>(null)
   const [addVisit, setAddVisit] = useState(false)
+  const [addMedicine, setAddMedicine] = useState(false)
   const navigate = useNavigate()
 
   if (isLoading) return <SkeletonRows rows={4} />
@@ -93,7 +95,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           </select>
         </label>
         <span className="ml-auto flex items-center gap-1">
-          {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }}
+          {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }} onMedicine={() => { go('medicines'); setAddMedicine(true) }}
             onCondition={() => go('conditions')} onAllergy={() => go('allergies')} />}
           <button type="button" onClick={askVita} title={`Ask ${agent.name} about this screen`}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -139,6 +141,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
               <Vitals personId={person.id} readOnly={closed} adding={addReading} onAddDone={() => setAddReading(null)} onOpenCard={() => go('emergency')}
                 initialKind={isReadingKind(scope.kind) ? scope.kind : undefined} />
             )}
+            {view.id === 'medicines' && <Medicines personId={person.id} readOnly={closed} adding={addMedicine} onAddDone={() => setAddMedicine(false)} />}
             {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} />}
             {view.id === 'allergies' && <Allergies personId={person.id} readOnly={closed} />}
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={closed} onOpen={go} />}
@@ -155,8 +158,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
 }
 
 /** "Add": what can be added today, and what comes later, never a dead end. */
-function AddMenu({ onReading, onVisit, onCondition, onAllergy }: {
-  onReading: (kind: ReadingKind) => void; onVisit: () => void; onCondition: () => void; onAllergy: () => void
+function AddMenu({ onReading, onVisit, onMedicine, onCondition, onAllergy }: {
+  onReading: (kind: ReadingKind) => void; onVisit: () => void; onMedicine: () => void; onCondition: () => void; onAllergy: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -180,6 +183,7 @@ function AddMenu({ onReading, onVisit, onCondition, onAllergy }: {
       </button>
       {open && (
         <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+          {item('Medicine', Pill, onMedicine)}
           {item('Blood pressure', HeartPulse, () => onReading('bp'))}
           {item('Sugar', Droplet, () => onReading('glucose'))}
           {item('Weight', Scale, () => onReading('weight'))}
@@ -187,7 +191,6 @@ function AddMenu({ onReading, onVisit, onCondition, onAllergy }: {
           {item('Visit', Stethoscope, onVisit)}
           {item('Condition', HeartPulse, onCondition)}
           {item('Allergy', TriangleAlert, onAllergy)}
-          {item('Dose or medicine', Pill, undefined, 'Next update')}
           {item('Document', ClipboardList, undefined, 'Later')}
         </div>
       )}

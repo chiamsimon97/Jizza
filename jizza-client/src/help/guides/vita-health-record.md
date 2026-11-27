@@ -22,7 +22,7 @@ The **Person** box at the top switches between records. **+ Add a person…** ad
 
 Eight short steps, one per screen: date of birth, sex at birth, height and weight, blood group, known conditions, allergies, current medicines, and one emergency contact. Each step is saved as soon as you press **Next**, so you can stop with **Finish later** and carry on from Home. **Skip** leaves a step for later. Answering a step again replaces what that step added the first time.
 
-Medicines arrive with the next update, so for now the medicines step only takes **Later**.
+The medicines step takes **Later**: add each medicine with its times on the **Medicines** page afterwards.
 
 ## The emergency card
 
@@ -37,7 +37,7 @@ Edit the details in **Profile**, opened from the card or from Settings.
 
 ## Conditions and allergies
 
-Add a condition from the common list or type your own. Type 2 diabetes and high blood pressure get pages of their own with the next update. When a person has none, press **Mark "None known"**: that is a recorded answer, not an empty list, and it shows on the card.
+Add a condition from the common list or type your own. Type 2 diabetes and high blood pressure have pages of their own with their readings and checks. When a person has none, press **Mark "None known"**: that is a recorded answer, not an empty list, and it shows on the card.
 
 Allergies work the same way, with the kind, the reaction, how severe it is and whether a doctor confirmed it.
 

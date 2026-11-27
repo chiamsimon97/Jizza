@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CalendarClock, ClipboardCheck, IdCard, Pill as PillIcon, Plus } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardCheck, IdCard, Pill as PillIcon, Plus, RefreshCw } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
 import { LoadFailed, Meter, Panel } from '@/portfolio/components/Panel'
 import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
 import { Sparkline } from '@/portfolio/components/Sparkline'
-import type { EmergencyCard, HomeRedFlag, Reading, ReadingKind, RedFlag, VitaConfigItem } from '@/types/vita'
+import type { EmergencyCard, HomeRedFlag, HomeView, Reading, ReadingKind, RedFlag, VitaConfigItem } from '@/types/vita'
 import { ViewTitle } from '../components/Common'
+import { DoseSlotCard } from '../components/DoseSlotCard'
 import { ReadingEntry } from '../components/ReadingEntry'
 import { RedFlagBanner } from '../components/RedFlagBanner'
 import { StatusBadge, TargetLabel } from '../components/Readings'
@@ -69,8 +70,14 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
         </Panel>
       )}
 
-      <Panel title={<><PillIcon className="h-4 w-4 text-gray-400" aria-hidden />Today’s medicines</>}>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Medicines come with the next update: one card per time slot with “All taken”, and a reminder on the phone.</p>
+      <Panel title={<><PillIcon className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Today’s medicines</>}
+        action={<Button size="sm" variant="secondary" onClick={() => onOpen('medicines')}>Medicines</Button>}>
+        {!h.slots.length && <p className="text-sm text-gray-500 dark:text-gray-400">No doses due today. Add medicines with their times and each time of day gets a card here.</p>}
+        {h.slots.length > 0 && (
+          <div className="grid gap-2 md:grid-cols-2">
+            {h.slots.map(slot => <DoseSlotCard key={slot.dueAt} personId={personId} slot={slot} readOnly={readOnly} />)}
+          </div>
+        )}
       </Panel>
 
       <Panel title={<><Activity className="h-4 w-4 text-gray-400" aria-hidden />Latest readings</>}
@@ -87,9 +94,7 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
 
       <div className="grid gap-4 md:grid-cols-2">
         <Panel title={<><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden />Coming up</>} action={<Button size="sm" variant="secondary" onClick={() => onOpen('visits')}>Visits</Button>}>
-          {h.nextVisit
-            ? <p className="text-sm text-gray-800 dark:text-gray-100">Visit on <b>{formatWhen(h.nextVisit.scheduledAt)}</b>{h.nextVisit.reason ? ` · ${h.nextVisit.reason}` : ''}</p>
-            : <p className="text-sm text-gray-500 dark:text-gray-400">No visit planned. Refills, renewals and checks that are due show here once medicines and reports are added.</p>}
+          <ComingUp home={h} onOpen={onOpen} />
         </Panel>
         <Panel title="Conditions" action={<Button size="sm" variant="secondary" onClick={() => onOpen('conditions')}>Open</Button>}>
           {!h.conditions.length && <p className="text-sm text-gray-500 dark:text-gray-400">No active conditions recorded.</p>}
@@ -115,6 +120,33 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
           </p>
         )}
       </Panel>
+    </div>
+  )
+}
+
+const REMINDER_KINDS: Record<string, string> = {
+  visit: 'Visit', vaccination: 'Vaccination', policy_renewal: 'Policy renewal', check_due: 'Check due', custom: 'Reminder', refill: 'Refill',
+}
+
+/** Visits, refills, renewals and checks that are due, soonest first. */
+function ComingUp({ home: h, onOpen }: { home: HomeView; onOpen: (view: string) => void }) {
+  const items = [
+    ...(h.nextVisit ? [{ key: `v-${h.nextVisit.id}`, at: h.nextVisit.scheduledAt, words: `Visit${h.nextVisit.reason ? ` · ${h.nextVisit.reason}` : ''}` }] : []),
+    ...h.reminders.map(r => ({ key: `r-${r.id}`, at: r.dueAt, words: [REMINDER_KINDS[r.kind] ?? 'Reminder', r.title].filter(Boolean).join(' · ') })),
+  ].sort((a, b) => a.at.localeCompare(b.at))
+  return (
+    <div className="flex flex-col gap-2">
+      {!!h.refillsDue && (
+        <button type="button" onClick={() => onOpen('medicines')} className="flex w-fit items-center gap-1.5 text-left text-sm font-medium text-amber-800 underline-offset-2 hover:underline dark:text-amber-300">
+          <RefreshCw className="h-4 w-4" aria-hidden />{h.refillsDue === 1 ? 'One medicine needs a refill' : `${h.refillsDue} medicines need a refill`}
+        </button>
+      )}
+      {!items.length && !h.refillsDue && <p className="text-sm text-gray-500 dark:text-gray-400">Nothing planned. Visits, refills, renewals and checks that are due show here.</p>}
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {items.map(i => <li key={i.key} className="text-sm text-gray-800 dark:text-gray-100"><b className="font-medium">{formatWhen(i.at)}</b> · {i.words}</li>)}
+        </ul>
+      )}
     </div>
   )
 }

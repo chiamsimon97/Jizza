@@ -12,7 +12,7 @@ export function cardLines(c: EmergencyCard): [string, string][] {
     ? c.allergies.map(a => `${a.substance}${a.severity && a.severity !== 'unknown' ? ` (${SEVERITIES[a.severity as keyof typeof SEVERITIES]?.toLowerCase() ?? a.severity})` : ''}${a.reaction ? `: ${a.reaction}` : ''}`).join(', ')
     : c.allergiesNoneKnown ? 'None known' : 'Not recorded'
   const conditions = c.conditions.length ? c.conditions.map(x => x.name).join(', ') : c.conditionsNoneKnown ? 'None known' : 'Not recorded'
-  const medicines = c.medicinesAvailable ? (c.medicines.map(m => m.name).join(', ') || 'None') : 'Added with the next update'
+  const medicines = c.medicinesAvailable ? (c.medicines.map(m => m.name).join(', ') || 'None') : 'Not on the card yet'
   return [
     ['Allergies', allergies],
     ['Conditions', conditions],

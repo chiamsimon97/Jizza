@@ -15,6 +15,8 @@ import { TEMPLATES, configLabel, describeFigure } from '../labels'
 import { CONTEXTS, kindLabel, showReading, showValue } from '../readings'
 import { vitaKeys } from '../queryKeys'
 import { ConditionForm, StatusChip } from './Conditions'
+import { adherenceWords } from './Medicines'
+import { scheduleWords } from '../medicines'
 
 /**
  * A condition page (7.5, spec 5.6): header with since-when and doctor, key-measure tiles each with
@@ -80,7 +82,18 @@ export function ConditionPage({ personId, conditionId, readOnly, onBack, onOpen 
       )}
 
       <Panel title={<><PillIcon className="h-4 w-4 text-gray-400" aria-hidden />Medicines for it</>}>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{data.medicines.length ? `${data.medicines.length} medicines` : 'Medicines for this condition show here once they are added.'}</p>
+        {!data.medicines.length && <p className="text-sm text-gray-500 dark:text-gray-400">No medicines linked to this condition. Pick the condition when adding a medicine.</p>}
+        {data.medicines.length > 0 && (
+          <ul className="flex flex-col gap-1.5">
+            {data.medicines.map(m => (
+              <li key={m.id} className="flex flex-col text-sm">
+                <span className="font-medium text-gray-900 dark:text-gray-100">{m.name}{m.strength ? ` ${m.strength}` : ''}{m.status === 'paused' ? ' (paused)' : ''}</span>
+                <span className="text-xs text-gray-600 dark:text-gray-300">{[scheduleWords(m.schedule), m.schedule ? `last 7 days: ${adherenceWords(m.adherence7Days)}` : null].filter(Boolean).join(' · ')}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div><Button size="sm" variant="ghost" onClick={() => onOpen('medicines')}>All medicines</Button></div>
       </Panel>
 
       {(data.checks.length > 0 || data.labs) && (

@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -88,4 +88,34 @@ export const vitaApi = {
   addVisit: (personId: string, body: VisitInput) => api.post<Visit>(`${person(personId)}/visits`, body),
   updateVisit: (personId: string, id: string, body: VisitInput) => api.put<Visit>(`${person(personId)}/visits/${id}`, body),
   removeVisit: (personId: string, id: string) => api.delete<void>(`${person(personId)}/visits/${id}`),
+
+  medicines: (personId: string) => api.get<Medicine[]>(`${person(personId)}/medicines`),
+  addMedicine: (personId: string, body: MedicineInput) => api.post<Medicine>(`${person(personId)}/medicines`, body),
+  /** Corrects details; the dose and times change only through `changeMedicine`. */
+  updateMedicine: (personId: string, id: string, body: MedicineInput) => api.put<Medicine>(`${person(personId)}/medicines/${id}`, body),
+  changeMedicine: (personId: string, id: string, body: MedicineChange) => api.post<Medicine>(`${person(personId)}/medicines/${id}/change`, body),
+  pauseMedicine: (personId: string, id: string, reason?: string | null) => api.post<Medicine>(`${person(personId)}/medicines/${id}/pause`, { reason: reason ?? null }),
+  resumeMedicine: (personId: string, id: string) => api.post<Medicine>(`${person(personId)}/medicines/${id}/resume`, {}),
+  stopMedicine: (personId: string, id: string, reason?: string | null) => api.post<Medicine>(`${person(personId)}/medicines/${id}/stop`, { reason: reason ?? null }),
+  refillMedicine: (personId: string, id: string, units?: number | null) =>
+    api.post<Medicine>(`${person(personId)}/medicines/${id}/refill`, units == null ? {} : { units }),
+  medicineEvents: (personId: string, id: string) => api.get<MedicineEvent[]>(`${person(personId)}/medicines/${id}/events`),
+
+  /** Time slots from `from` to `to` (local dates; default today). */
+  doses: (personId: string, from?: string, to?: string) => {
+    const q = new URLSearchParams()
+    if (from) q.set('from', from)
+    if (to) q.set('to', to)
+    const qs = q.toString()
+    return api.get<{ zone: string; slots: DoseSlot[] }>(`${person(personId)}/doses${qs ? `?${qs}` : ''}`)
+  },
+  actSlot: (personId: string, dueAt: string, body: DoseAction) =>
+    api.post<DoseSlot>(`${person(personId)}/slots/${encodeURIComponent(dueAt)}/act`, body),
+  actDose: (doseId: string, body: DoseAction) => api.post<DoseSlot>(`/api/vita/doses/${doseId}/act`, body),
+  adherence: (personId: string, from: string, to: string) => api.get<Adherence>(`${person(personId)}/adherence?from=${from}&to=${to}`),
+
+  reminders: (personId: string) => api.get<VitaReminder[]>(`${person(personId)}/reminders`),
+  addReminder: (personId: string, body: ReminderInput) => api.post<VitaReminder>(`${person(personId)}/reminders`, body),
+  updateReminder: (personId: string, id: string, body: ReminderInput) => api.put<VitaReminder>(`${person(personId)}/reminders/${id}`, body),
+  removeReminder: (personId: string, id: string) => api.delete<void>(`${person(personId)}/reminders/${id}`),
 }

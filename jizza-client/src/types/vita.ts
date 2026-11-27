@@ -355,8 +355,11 @@ export interface HomeView {
   redFlags: HomeRedFlag[]
   conditions: { id: string; name: string; template: string }[]
   nextVisit: Visit | null
-  slots: unknown[]
-  reminders: unknown[]
+  /** Today's medicine time slots. */
+  slots: DoseSlot[]
+  /** The next scheduled reminders, at most five. */
+  reminders: VitaReminder[]
+  refillsDue?: number
 }
 
 export type DoctorKind = 'doctor' | 'hospital' | 'clinic' | 'lab' | 'pharmacy'
@@ -411,5 +414,132 @@ export interface ConditionSummary {
   lowReadings?: Reading[]
   labs?: string
   checks: ConditionCheck[]
-  medicines: unknown[]
+  medicines: { id: string; name: string; strength: string | null; status: MedicineStatus; schedule: MedicineSchedule | null; adherence7Days?: AdherenceResult }[]
 }
+
+// ── Medicines, doses and reminders (Phase 1a) ────────────────────────────────
+
+export type MedicineForm = 'tablet' | 'capsule' | 'syrup' | 'injection' | 'inhaler' | 'drops' | 'cream' | 'supply' | 'other'
+export type MedicineSystem = 'allopathy' | 'ayurveda' | 'homeopathy' | 'siddha' | 'unani' | 'supplement' | 'other'
+export type DoseUnit = 'tablet' | 'ml' | 'units' | 'puffs' | 'drops' | 'other'
+export type WithFood = 'before' | 'with' | 'after' | 'any'
+export type MedicineStatus = 'active' | 'paused' | 'stopped'
+
+export interface MedicineSchedule {
+  id?: string
+  times: string[]
+  recurrence: string
+  doseUnits: number
+  doseUnit: DoseUnit
+  withFood: WithFood
+  effectiveFrom?: string
+  effectiveTo?: string | null
+}
+export type ScheduleInput = Partial<Omit<MedicineSchedule, 'id' | 'effectiveFrom' | 'effectiveTo'>> & { times?: string[] }
+
+export interface Medicine {
+  id: string
+  personId: string
+  name: string
+  brandName: string | null
+  genericName: string | null
+  strength: string | null
+  form: MedicineForm | null
+  system: MedicineSystem | null
+  conditionId: string | null
+  prescribedBy: string | null
+  startDate: string | null
+  endDate: string | null
+  asNeeded: boolean | null
+  trackStock: boolean | null
+  stockUnits: number | null
+  unitsPerPack: number | null
+  refillLeadDays: number | null
+  private: boolean | null
+  notes: string | null
+  status: MedicineStatus
+  stoppedOn?: string | null
+  schedule: MedicineSchedule | null
+  refillDue: boolean
+}
+
+export type MedicineInput = Partial<Omit<Medicine, 'id' | 'personId' | 'status' | 'schedule' | 'refillDue' | 'stoppedOn'>> & {
+  name?: string
+  schedule?: ScheduleInput | null
+}
+
+export interface MedicineChange {
+  fromDate?: string | null
+  strength?: string | null
+  schedule?: ScheduleInput
+  doctorId?: string | null
+  visitId?: string | null
+  reason?: string | null
+}
+
+export interface MedicineEvent {
+  id: string
+  medicineId: string
+  kind: 'started' | 'dose_changed' | 'paused' | 'resumed' | 'stopped' | 'refilled' | string
+  onDate: string
+  fromText: string | null
+  toText: string | null
+  reason: string | null
+  doctorId: string | null
+}
+
+export type DoseStatus = 'due' | 'taken' | 'skipped' | 'missed' | 'partial' | 'snoozed'
+export interface Dose {
+  id: string
+  medicineId: string
+  medicineName: string | null
+  strength: string | null
+  doseUnits: number | null
+  doseUnit: DoseUnit | null
+  withFood: WithFood | null
+  status: DoseStatus
+  snoozedUntil: string | null
+  takenAt: string | null
+  actedAt: string | null
+  markedBy: string | null
+  late: boolean
+  version: number
+}
+
+/** One time slot of one person's day, with its doses. */
+export interface DoseSlot {
+  personId: string
+  personName: string
+  dueAt: string
+  localTime: string
+  localDate: string
+  zone: string
+  status: DoseStatus
+  snoozedUntil: string | null
+  markedBy: string | null
+  markedAt: string | null
+  missedAt: string
+  doses: Dose[]
+}
+
+export interface DoseAction { action: 'taken' | 'skipped' | 'snoozed'; takenAt?: string; snoozeMinutes?: number; note?: string }
+
+export interface AdherenceResult { due: number; taken: number; skipped: number; missed: number; late: number; exact: number | null; percent: number | null }
+export interface Adherence {
+  from: string
+  to: string
+  overall: AdherenceResult
+  medicines: { medicineId: string; name: string | null; result: AdherenceResult }[]
+}
+
+export type ReminderKind = 'visit' | 'vaccination' | 'policy_renewal' | 'check_due' | 'custom'
+export interface VitaReminder {
+  id: string
+  personId: string
+  kind: ReminderKind | 'refill' | string
+  title: string | null
+  dueAt: string
+  recurrence: string | null
+  status: 'scheduled' | 'sent' | 'done' | 'dismissed' | 'cancelled'
+}
+export type ReminderInput = Partial<Omit<VitaReminder, 'id' | 'personId'>>

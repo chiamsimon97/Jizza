@@ -193,7 +193,7 @@ function StepBody({ step, busy, onSave, footer }: { step: QuickStartStep; busy: 
         ? { allergies: allergies.filter(a => a.substance.trim()).map(a => ({ substance: a.substance.trim(), severity: a.severity })) } : null
       break
     case 'medicines':
-      body = <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-800/60 dark:text-gray-200">Medicines, with their times and reminders, come with the next update. Answer “Later” and Vita will ask again then.</p>
+      body = <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-800/60 dark:text-gray-200">Add each medicine with its times on the Medicines page once Quick start is done; Vita then makes a card for each time of day on Home. Answer “Later” to carry on.</p>
       answers = { later: true }
       break
     case 'contact':
