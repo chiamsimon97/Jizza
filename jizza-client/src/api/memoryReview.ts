@@ -23,6 +23,8 @@ export interface ProposalEvidence {
   detail: string | null
   link: string | null
   at: string | null
+  /** The ids behind it (message, jobs, runs), for reference. */
+  ids?: Record<string, unknown> | null
 }
 
 /** A change the review suggests. Nothing changes until you approve it. */
