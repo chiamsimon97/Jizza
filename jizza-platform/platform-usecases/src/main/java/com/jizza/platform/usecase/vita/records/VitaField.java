@@ -22,7 +22,13 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
     /** A whole number from 0 to {@code max}. */
     INT,
     /** A phone number: digits with spaces, +, - and brackets, up to {@code max} characters. */
-    PHONE
+    PHONE,
+    /** yyyy-mm-dd, past or future (a follow-up date, a next visit). */
+    DATE,
+    /** A date and time: an instant, or a local date-time in the person's zone. */
+    DATETIME,
+    /** The id of one of the owner's own rows ({@code doctorId} names a doctor). */
+    REF
   }
 
   public static VitaField text(String name, int max) {
@@ -43,6 +49,11 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
 
   public static VitaField integer(String name, int max) {
     return new VitaField(name, Type.INT, false, max, Set.of());
+  }
+
+  /** The id of one of the owner's rows of {@code table}, checked by the use case. */
+  public static VitaField ref(String name, String table) {
+    return new VitaField(name, Type.REF, false, 0, Set.of(table));
   }
 
   public VitaField need() {

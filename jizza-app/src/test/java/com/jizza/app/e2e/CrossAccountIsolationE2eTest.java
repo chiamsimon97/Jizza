@@ -169,7 +169,16 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var profile = owner.put("/api/vita/people/" + personId + "/profile",
         Map.of("bloodGroup", "o_pos", "abhaNumber", "12345678901234"));
     assertThat(profile.ok()).as(profile.body()).isTrue();
+    var doctor = owner.post("/api/vita/doctors", Map.of("name", "Owner's doctor", "phone", "+91 80 0000 0000"));
+    assertThat(doctor.ok()).as(doctor.body()).isTrue();
+    String doctorId = doctor.json().path("id").asText();
+    owned.put("/api/vita/doctors/", doctorId);
+    var range = owner.put("/api/vita/people/" + personId + "/ranges", Map.of("kind", "bp", "setting", "home",
+        "high", 140, "high2", 90, "highInclusive", false, "setBy", "doctor", "doctorId", doctorId));
+    assertThat(range.ok()).as(range.body()).isTrue();
+    vitaRows.put("ranges", range.json().path("id").asText());
     for (var form : List.of(
+        Map.entry("visits", Map.of("doctorId", doctorId, "scheduledAt", "2030-01-05T10:30", "reason", "Review")),
         Map.entry("emergency-contacts", Map.of("name", "Owner's brother", "phone", "+91 98000 00000")),
         Map.entry("conditions", Map.of("name", "Owner's mother's condition", "template", "diabetes_t2")),
         Map.entry("allergies", Map.of("substance", "Owner's mother's allergy")),
@@ -236,6 +245,12 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       tried++;
       var moved = other.send("POST", base + "/move", Map.of("toPersonId", person));
       if (row.getKey().equals("measurements") && moved.ok()) leaks.add("POST " + base + "/move");
+      tried++;
+      var flagged = other.send("POST", base + "/red-flag", Map.of("right", true));
+      if (flagged.ok()) leaks.add("POST " + base + "/red-flag");
+      tried++;
+      var summary = other.send("GET", base + "/summary", null);
+      if (summary.ok()) leaks.add("GET " + base + "/summary");
     }
     assertThat(tried).as("routes swept").isGreaterThan(60);
     assertThat(leaks).as("routes another account could use on the owner's data").isEmpty();
