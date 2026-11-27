@@ -46,6 +46,13 @@ public class MemoryHistoryEntity {
   @Column(columnDefinition = "text")
   private String note;
 
+  /**
+   * The run that made the change, as {@code kind:ref}: {@code chat_turn:<message id>},
+   * {@code task:<id>}, {@code workflow_run:<id>}, {@code agent_run:<id>} or
+   * {@code memory_review:<proposal id>}. Null for a change the user made on a memory screen.
+   */
+  private String contextRef;
+
   private Instant createdAt;
 
   public UUID getId() { return id; }
@@ -73,6 +80,9 @@ public class MemoryHistoryEntity {
 
   public String getNote() { return note; }
   public void setNote(String note) { this.note = note; }
+
+  public String getContextRef() { return contextRef; }
+  public void setContextRef(String contextRef) { this.contextRef = contextRef; }
 
   public Instant getCreatedAt() { return createdAt; }
 

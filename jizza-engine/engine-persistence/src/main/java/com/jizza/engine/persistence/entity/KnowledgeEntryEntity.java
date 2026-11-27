@@ -51,6 +51,17 @@ public class KnowledgeEntryEntity {
   /** Never handed to an agent, its owner included; shown to the user only after a fresh step-up. */
   private boolean restricted;
 
+  /** {@code note} (the agent's own) or {@code lesson} (how-to the user approved). */
+  private String kind = "note";
+
+  /** A lesson's subject: {@code tool:<name>}, {@code site:<host>}, {@code workflow:<id>} or {@code general}. */
+  private String aboutKey;
+
+  private String aboutLabel;
+
+  /** How many times what a lesson is about went wrong before it was learned. */
+  private int occurrences;
+
   private int accessCount;
 
   private Instant lastAccessedAt;
@@ -113,4 +124,18 @@ public class KnowledgeEntryEntity {
 
   @PreUpdate
   void onUpdate() { updatedAt = Instant.now(); }
+
+  public String getKind() { return kind; }
+  public void setKind(String kind) { this.kind = kind; }
+
+  public boolean isLesson() { return "lesson".equals(kind); }
+
+  public String getAboutKey() { return aboutKey; }
+  public void setAboutKey(String aboutKey) { this.aboutKey = aboutKey; }
+
+  public String getAboutLabel() { return aboutLabel; }
+  public void setAboutLabel(String aboutLabel) { this.aboutLabel = aboutLabel; }
+
+  public int getOccurrences() { return occurrences; }
+  public void setOccurrences(int occurrences) { this.occurrences = occurrences; }
 }

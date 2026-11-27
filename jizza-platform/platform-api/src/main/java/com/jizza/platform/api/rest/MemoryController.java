@@ -130,7 +130,7 @@ public class MemoryController {
   @PutMapping("/settings")
   public MemorySettings updateSettings(@Valid @RequestBody Requests.MemorySettings input) {
     return memory.updateSettings(CurrentUser.userId(),
-        new MemorySettings(input.autoLearn(), input.retentionDays()));
+        new MemorySettings(input.autoLearn(), input.retentionDays(), input.review()));
   }
 
   @PostMapping("/preview")

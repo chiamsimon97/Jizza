@@ -48,11 +48,23 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>A restricted entry is invisible to every agent, its owner included: {@code search} and
  * {@code get} skip it in the query, and an upsert naming it is refused as if it did not exist.
+ *
+ * <p>A lesson is an entry of kind {@code lesson}: how-to the user approved for this agent. It is
+ * read like a note but written only through {@link #teach}; an agent's upsert naming one is
+ * refused, so nothing an agent read (a web page, a connector response) can rewrite what the user
+ * approved.
  */
 @Service
 public class NamespacedKnowledgeStore implements KnowledgeStore {
 
   private static final Logger log = LoggerFactory.getLogger(NamespacedKnowledgeStore.class);
+
+  static final String NOTE = "note";
+  static final String LESSON = "lesson";
+  /** A lesson is one piece of advice, not a document. */
+  static final int MAX_LESSON_CHARS = 600;
+  private static final java.util.regex.Pattern ABOUT_KEY = java.util.regex.Pattern.compile(
+      "general|tool:[A-Za-z0-9_.:-]{1,120}|site:[a-z0-9.-]{1,253}|workflow:[0-9a-f-]{36}");
 
   private final KnowledgeEntryRepository entries;
   private final AgentRepository agents;
@@ -134,6 +146,11 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
       requireOwnNamespace(agentId, entity.getAgentId());
       // The user put it out of reach; to the agent it does not exist.
       if (entity.isRestricted()) throw new NotFoundException("Knowledge entry", entry.id());
+      if (entity.isLesson()) {
+        throw new com.jizza.engine.api.error.ValidationException(
+            "That is a lesson the user approved; only they can change it. Save a note of your own instead.");
+      }
+      record(entity, "updated", Actor.agent(agentId));
     } else {
       entity = new KnowledgeEntryEntity();
       entity.setAgentId(agentId);
@@ -149,6 +166,7 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
     entity.setEmbedding(Vectors.fit(embeddings.embed(embeddingText(entry))));
 
     KnowledgeEntryEntity saved = entries.save(entity);
+    if (entry.id() == null) recordCreated(saved, Actor.agent(agentId));
 
     // The audit trail records that knowledge changed and how it is classified, never its content:
     // health and financial detail does not belong in a log (R13).
@@ -237,6 +255,85 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
     return toDto(saved);
   }
 
+  @Override
+  @Transactional
+  public KnowledgeEntry teach(UUID agentId, KnowledgeEntry.Lesson about, String content, Actor actor) {
+    AgentEntity agent = agents.findById(agentId)
+        .orElseThrow(() -> new NotFoundException("Agent", agentId));
+    if (actor.type() == ActorType.AGENT) {
+      throw new com.jizza.engine.api.error.ValidationException("Only the user can teach an agent a lesson");
+    }
+    String text = content == null ? "" : content.strip().replaceAll("\\s+", " ");
+    if (text.isEmpty()) throw new com.jizza.engine.api.error.ValidationException("A lesson needs some advice");
+    if (text.length() > MAX_LESSON_CHARS) {
+      throw new com.jizza.engine.api.error.ValidationException(
+          "A lesson is one piece of advice; keep it under " + MAX_LESSON_CHARS + " characters");
+    }
+    String key = about == null || about.aboutKey() == null ? "general" : about.aboutKey().strip();
+    if (!ABOUT_KEY.matcher(key).matches()) {
+      throw new com.jizza.engine.api.error.ValidationException("A lesson is about a tool, a site, a workflow, or nothing in particular");
+    }
+    String label = about == null || about.aboutLabel() == null || about.aboutLabel().isBlank()
+        ? null : clip(about.aboutLabel().strip(), 120);
+    int occurrences = about == null ? 0 : Math.max(0, about.occurrences());
+
+    // The same advice about the same thing again: the lesson grows stronger, not longer.
+    for (KnowledgeEntryEntity existing : entries.findByAgentIdAndKindOrderByUpdatedAtDesc(agentId, LESSON)) {
+      if (key.equals(existing.getAboutKey()) && text.equalsIgnoreCase(
+          existing.getContent() == null ? "" : existing.getContent().strip())) {
+        record(existing, "updated", actor);
+        existing.setOccurrences(existing.getOccurrences() + occurrences);
+        existing.setUpdatedAt(Instant.now());
+        KnowledgeEntryEntity saved = entries.save(existing);
+        events.changed(saved.getUserId(), MemoryEvents.UPDATED, MemoryNode.NOTE, saved.getId());
+        return toDto(saved);
+      }
+    }
+
+    KnowledgeEntryEntity entity = new KnowledgeEntryEntity();
+    entity.setAgentId(agentId);
+    entity.setUserId(agent.getUserId());
+    entity.setKind(LESSON);
+    entity.setAboutKey(key);
+    entity.setAboutLabel(label);
+    entity.setOccurrences(occurrences);
+    entity.setTitle(label == null ? "Lesson" : "Lesson: " + label);
+    entity.setContent(text);
+    entity.setClassification(DataClassification.NONE);
+    entity.setUpdatedAt(Instant.now());
+    try {
+      entity.setEmbedding(Vectors.fit(embeddings.embed(entity.getTitle() + "\n" + text)));
+    } catch (RuntimeException e) {
+      // A lesson is matched by its subject and words too; a provider being down must not lose it.
+      log.warn("Embedding a lesson failed; keeping it without a vector: {}", e.getMessage());
+    }
+    KnowledgeEntryEntity saved = entries.save(entity);
+    recordCreated(saved, actor);
+    audit.record(saved.getUserId(), actor.type(), actor.id(), "knowledge.lesson.learned",
+        saved.getId().toString(), Json.obj().put("agentId", agentId.toString()).put("about", key));
+    events.changed(saved.getUserId(), MemoryEvents.CREATED, MemoryNode.NOTE, saved.getId());
+    return toDto(saved);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<KnowledgeEntry> lessons(UUID agentId) {
+    return entries.findByAgentIdAndKindOrderByUpdatedAtDesc(agentId, LESSON).stream()
+        .filter(e -> !e.isRestricted()).map(this::toDto).toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<KnowledgeEntry> noteIndex(UUID agentId, int limit) {
+    return entries.findByAgentIdAndKindAndRestrictedFalseOrderByUpdatedAtDesc(agentId, NOTE,
+            PageRequest.of(0, Math.max(1, Math.min(limit, 200))))
+        .stream().map(this::toDto).toList();
+  }
+
+  private static String clip(String text, int max) {
+    return text.length() <= max ? text : text.substring(0, max - 1) + "…";
+  }
+
   private KnowledgeEntryEntity ownEntry(UUID agentId, UUID entryId) {
     KnowledgeEntryEntity entity = entries.findById(entryId)
         .orElseThrow(() -> new NotFoundException("Knowledge entry", entryId));
@@ -254,6 +351,19 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
     h.setPreviousAgentId(entity.getAgentId());
     h.setActorType(actor.type());
     h.setActorId(actor.id());
+    h.setContextRef(actor.contextRef());
+    history.save(h);
+  }
+
+  /** A new entry's first history line: who made it, and in which run. */
+  private void recordCreated(KnowledgeEntryEntity entity, Actor actor) {
+    KnowledgeHistoryEntity h = new KnowledgeHistoryEntity();
+    h.setEntryId(entity.getId());
+    h.setUserId(entity.getUserId());
+    h.setChange("created");
+    h.setActorType(actor.type());
+    h.setActorId(actor.id());
+    h.setContextRef(actor.contextRef());
     history.save(h);
   }
 
@@ -303,7 +413,10 @@ public class NamespacedKnowledgeStore implements KnowledgeStore {
   }
 
   private KnowledgeEntry toDto(KnowledgeEntryEntity e) {
+    KnowledgeEntry.Lesson lesson = e.isLesson()
+        ? new KnowledgeEntry.Lesson(e.getAboutKey(), e.getAboutLabel(), e.getOccurrences()) : null;
     return new KnowledgeEntry(e.getId(), e.getUserId(), e.getAgentId(), e.getTitle(), e.getContent(),
-        e.getData(), e.getClassification(), e.getCreatedAt(), e.getUpdatedAt(), null, e.isRestricted());
+        e.getData(), e.getClassification(), e.getCreatedAt(), e.getUpdatedAt(), null, e.isRestricted(),
+        lesson);
   }
 }

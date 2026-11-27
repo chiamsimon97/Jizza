@@ -150,7 +150,8 @@ public class ConversationMemoryLearner implements MemoryLearner {
     JsonNode parsed = parse(response.text());
     if (parsed == null) return 0;
 
-    Actor actor = Actor.system();
+    Actor actor = turn.userMessageId() == null ? Actor.system()
+        : Actor.system().within(com.jizza.engine.api.cosmos.AccessContext.chatTurn(turn.userMessageId()).toTrace());
     int stored = 0;
     int pending = 0;
     List<UUID> touched = new ArrayList<>();
@@ -254,7 +255,7 @@ public class ConversationMemoryLearner implements MemoryLearner {
   }
 
   /** The model's reply should be bare JSON; tolerate a code fence or a sentence around it. */
-  static JsonNode parse(String text) {
+  public static JsonNode parse(String text) {
     if (text == null) return null;
     int start = text.indexOf('{');
     int end = text.lastIndexOf('}');

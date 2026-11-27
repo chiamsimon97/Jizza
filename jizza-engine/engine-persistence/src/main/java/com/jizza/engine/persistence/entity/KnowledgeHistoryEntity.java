@@ -26,7 +26,7 @@ public class KnowledgeHistoryEntity {
   @Column(nullable = false)
   private UUID userId;
 
-  /** {@code updated}, {@code moved}, {@code restricted} or {@code unrestricted}. */
+  /** {@code created}, {@code updated}, {@code moved}, {@code restricted} or {@code unrestricted}. */
   @Column(nullable = false)
   private String change;
 
@@ -41,6 +41,13 @@ public class KnowledgeHistoryEntity {
   private ActorType actorType;
 
   private UUID actorId;
+
+  /**
+   * The run that made the change, as {@code kind:ref}: {@code chat_turn:<message id>},
+   * {@code task:<id>}, {@code workflow_run:<id>}, {@code agent_run:<id>} or
+   * {@code memory_review:<proposal id>}. Null for a change the user made on a memory screen.
+   */
+  private String contextRef;
 
   private Instant createdAt;
 
@@ -69,6 +76,9 @@ public class KnowledgeHistoryEntity {
 
   public UUID getActorId() { return actorId; }
   public void setActorId(UUID actorId) { this.actorId = actorId; }
+
+  public String getContextRef() { return contextRef; }
+  public void setContextRef(String contextRef) { this.contextRef = contextRef; }
 
   public Instant getCreatedAt() { return createdAt; }
 

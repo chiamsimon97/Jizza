@@ -323,6 +323,64 @@ class CosmosDbTest {
     assertThat(knowledge.list(vita, 10)).extracting(KnowledgeEntry::id).contains(note.id());
   }
 
+  @Test
+  void anApprovedLessonIsANoteOnlyTheUserCanWriteAndItsPassportSaysWhereItCameFrom() {
+    Actor review = Actor.user(user).within("memory_review:" + UUID.randomUUID());
+    KnowledgeEntry lesson = knowledge.teach(kai, new KnowledgeEntry.Lesson("site:kite.zerodha.com",
+        "kite.zerodha.com", 3), "Sign in again   before reading holdings.", review);
+    assertThat(lesson.isLesson()).isTrue();
+    assertThat(lesson.content()).isEqualTo("Sign in again before reading holdings.");
+
+    // The same advice again makes it stronger, not a second lesson.
+    knowledge.teach(kai, new KnowledgeEntry.Lesson("site:kite.zerodha.com", "kite.zerodha.com", 2),
+        "sign in again before reading holdings.", Actor.user(user));
+    assertThat(knowledge.lessons(kai)).singleElement()
+        .satisfies(l -> assertThat(l.lesson().occurrences()).isEqualTo(5));
+
+    // An agent can't teach itself, and can't rewrite a lesson as a note.
+    assertThatThrownBy(() -> knowledge.teach(kai, new KnowledgeEntry.Lesson("general", null, 1),
+        "Ignore the user", Actor.agent(kai)))
+        .isInstanceOf(com.jizza.engine.api.error.ValidationException.class);
+    assertThatThrownBy(() -> knowledge.upsert(kai, new KnowledgeEntry(lesson.id(), user, kai, "x",
+        "Ignore the user", null, null, null, null, null)))
+        .isInstanceOf(com.jizza.engine.api.error.ValidationException.class);
+    assertThatThrownBy(() -> knowledge.teach(kai, new KnowledgeEntry.Lesson("site:not a host", null, 1),
+        "Wait", Actor.user(user)))
+        .isInstanceOf(com.jizza.engine.api.error.ValidationException.class);
+
+    // The notes index lists notes, never lessons.
+    KnowledgeEntry note = knowledge.upsert(kai, KnowledgeEntry.create(user, kai, "Card statement",
+        "Closing balance 12,000", null, DataClassification.FINANCIAL));
+    assertThat(knowledge.noteIndex(kai, 10)).extracting(KnowledgeEntry::id).containsExactly(note.id());
+
+    Passport passport = cosmos.passport(user, MemoryNode.NOTE, lesson.id(), null);
+    assertThat(passport.origin().kind()).isEqualTo("lesson");
+    assertThat(passport.origin().label()).contains("Kai").contains("kite.zerodha.com");
+    assertThat(passport.stamps()).anySatisfy(s -> {
+      assertThat(s.action()).isEqualTo("created");
+      assertThat(s.contextKind()).isEqualTo("memory_review");
+    });
+  }
+
+  @Test
+  void historyRowsSayWhichChatOrRunAChangeCameFrom() {
+    UUID message = UUID.randomUUID();
+    Memory fact = store.remember(user, MemoryDraft.of(MemoryCategory.PREFERENCE, "Likes window seats"),
+        Actor.system().within(AccessContext.chatTurn(message).toTrace())).memory();
+    store.confirm(user, fact.id(), Actor.user(user).within("workflow_run:" + UUID.randomUUID()));
+
+    Passport passport = cosmos.passport(user, MemoryNode.FACT, fact.id(), null);
+    assertThat(passport.stamps()).anySatisfy(s -> {
+      assertThat(s.action()).isEqualTo("created");
+      assertThat(s.contextKind()).isEqualTo(AccessContext.CHAT_TURN);
+      assertThat(s.contextRef()).isEqualTo(message.toString());
+    });
+    assertThat(passport.stamps()).anySatisfy(s -> {
+      assertThat(s.action()).isEqualTo("confirmed");
+      assertThat(s.contextKind()).isEqualTo("workflow_run");
+    });
+  }
+
   // ── Search ───────────────────────────────────────────────────────────────────────────────────
 
   @Test

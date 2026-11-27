@@ -23,6 +23,7 @@ interface Props {
 
 const CONTEXT: Record<string, string> = {
   chat_turn: 'in a chat', task: 'for a task', workflow_run: 'in a workflow', agent_run: 'on its own',
+  memory_review: 'from a memory review', job: 'while working on a request',
 }
 const ACTION: Record<string, string> = {
   created: 'Created', updated: 'Edited', confirmed: 'Confirmed', retired: 'Retired', restored: 'Restored',

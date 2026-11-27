@@ -102,6 +102,14 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     this.permissions = permissions;
   }
 
+  private ObjectProvider<com.jizza.engine.api.knowledge.WorkingNotesProvider> workingNotes;
+
+  /** Lessons to add to a failed call's error, when the knowledge module is present. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setWorkingNotes(ObjectProvider<com.jizza.engine.api.knowledge.WorkingNotesProvider> provider) {
+    this.workingNotes = provider;
+  }
+
   /** Tracing, when the application has it. Records the tool's name and outcome, never its data. */
   private io.micrometer.observation.ObservationRegistry observations =
       io.micrometer.observation.ObservationRegistry.NOOP;
@@ -322,7 +330,21 @@ public class DefaultCapabilityRegistry implements CapabilityRegistry {
     audit.record(agent.getUserId(), ActorType.AGENT, agentId,
         result.ok() ? "tool.result.ok" : "tool.result.error", call.name(),
         result.ok() ? null : Json.obj().put("error", result.error()));
-    return result;
+    return withLessons(agentId, call, result);
+  }
+
+  /**
+   * A failed call, with the lessons the user approved about that tool or site added to the error
+   * the agent reads, so it learns from last time at the moment it matters. The activity timeline
+   * and the audit log keep the error exactly as the tool gave it.
+   */
+  private ToolResult withLessons(UUID agentId, ToolCall call, ToolResult result) {
+    if (result.ok() || workingNotes == null) return result;
+    var provider = workingNotes.getIfAvailable();
+    if (provider == null) return result;
+    String lessons = provider.lessonsForFailure(agentId, call.name(), call.args(), result.error());
+    if (lessons == null || lessons.isBlank()) return result;
+    return ToolResult.error((result.error() == null ? "The call failed." : result.error()) + lessons);
   }
 
   @Override

@@ -36,6 +36,7 @@ public class MemoryProperties {
   private final Extraction extraction = new Extraction();
   private final Retention retention = new Retention();
   private final Access access = new Access();
+  private final Review review = new Review();
 
   private static Map<MemoryCategory, List<String>> defaultCategoryDomains() {
     Map<MemoryCategory, List<String>> map = new EnumMap<>(MemoryCategory.class);
@@ -159,6 +160,73 @@ public class MemoryProperties {
     public void setMaxFactsPerTurn(int v) { this.maxFactsPerTurn = v; }
   }
 
+  /**
+   * The memory review ({@code jizza.memory.review.*}): once a night, reads each active user's
+   * recent chats and failures and suggests memory changes for them to approve.
+   */
+  public static class Review {
+    /** The nightly review at all; each user can still switch it off for themselves. */
+    private boolean enabled = true;
+    /** When the nightly review runs, in {@link #zone}. */
+    private String cron = "0 0 3 * * *";
+    private String zone = "Asia/Kolkata";
+    /** Reading a day of activity well is worth the standard model, once a night. */
+    private ModelTier tier = ModelTier.STANDARD;
+    /** The longest stretch one review reads; older activity is left alone. */
+    private Duration maxWindow = Duration.ofDays(7);
+    /** A nightly review skips a user reviewed more recently than this (a manual one counts). */
+    private Duration minGap = Duration.ofHours(20);
+    /** "Review now" can't be pressed more often than this. */
+    private Duration manualCooldown = Duration.ofMinutes(10);
+    /** No new review while this many suggestions are waiting: they would pile up unread. */
+    private int maxOpen = 20;
+    private int maxProposalsPerRun = 8;
+    /** How much of the user's own words the review reads. */
+    private int maxMessages = 60;
+    private int maxMessageChars = 400;
+    private int maxFailures = 60;
+    private int maxFacts = 80;
+    /** Facts at least this similar to a recently changed one are shown beside it as possible repeats. */
+    private double neighbourSimilarity = 0.75;
+    /** Unanswered suggestions expire after this. */
+    private Duration expireAfter = Duration.ofDays(30);
+    /** A dismissed suggestion is not raised again for this long. */
+    private Duration dismissedMemory = Duration.ofDays(90);
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { this.enabled = v; }
+    public String getCron() { return cron; }
+    public void setCron(String v) { this.cron = v; }
+    public String getZone() { return zone; }
+    public void setZone(String v) { this.zone = v; }
+    public ModelTier getTier() { return tier; }
+    public void setTier(ModelTier v) { this.tier = v; }
+    public Duration getMaxWindow() { return maxWindow; }
+    public void setMaxWindow(Duration v) { this.maxWindow = v; }
+    public Duration getMinGap() { return minGap; }
+    public void setMinGap(Duration v) { this.minGap = v; }
+    public Duration getManualCooldown() { return manualCooldown; }
+    public void setManualCooldown(Duration v) { this.manualCooldown = v; }
+    public int getMaxOpen() { return maxOpen; }
+    public void setMaxOpen(int v) { this.maxOpen = v; }
+    public int getMaxProposalsPerRun() { return maxProposalsPerRun; }
+    public void setMaxProposalsPerRun(int v) { this.maxProposalsPerRun = v; }
+    public int getMaxMessages() { return maxMessages; }
+    public void setMaxMessages(int v) { this.maxMessages = v; }
+    public int getMaxMessageChars() { return maxMessageChars; }
+    public void setMaxMessageChars(int v) { this.maxMessageChars = v; }
+    public int getMaxFailures() { return maxFailures; }
+    public void setMaxFailures(int v) { this.maxFailures = v; }
+    public int getMaxFacts() { return maxFacts; }
+    public void setMaxFacts(int v) { this.maxFacts = v; }
+    public double getNeighbourSimilarity() { return neighbourSimilarity; }
+    public void setNeighbourSimilarity(double v) { this.neighbourSimilarity = v; }
+    public Duration getExpireAfter() { return expireAfter; }
+    public void setExpireAfter(Duration v) { this.expireAfter = v; }
+    public Duration getDismissedMemory() { return dismissedMemory; }
+    public void setDismissedMemory(Duration v) { this.dismissedMemory = v; }
+  }
+
   public static class Retention {
     /** Superseded and retired facts are kept this long for history, then deleted. */
     private Duration inactive = Duration.ofDays(180);
@@ -181,6 +249,7 @@ public class MemoryProperties {
   public Write getWrite() { return write; }
   public Extraction getExtraction() { return extraction; }
   public Retention getRetention() { return retention; }
+  public Review getReview() { return review; }
   public Access getAccess() { return access; }
 
   /** Read stamps: which agent was handed which memory, once per run. */

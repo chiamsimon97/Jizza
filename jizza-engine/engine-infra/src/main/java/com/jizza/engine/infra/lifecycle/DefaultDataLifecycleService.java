@@ -138,6 +138,11 @@ public class DefaultDataLifecycleService implements com.jizza.engine.api.lifecyc
             e.put("content", entry.getContent());
             e.put("classification", String.valueOf(entry.getClassification()));
             if (entry.getData() != null) e.set("data", entry.getData());
+            if (entry.isLesson()) {
+              e.put("kind", "lesson");
+              e.put("about", entry.getAboutKey());
+              if (entry.getAboutLabel() != null) e.put("aboutLabel", entry.getAboutLabel());
+            }
           });
     });
 

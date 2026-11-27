@@ -284,6 +284,16 @@ export function fixLinkOf(n: NotificationDto): string | null {
 }
 
 /**
+ * Where to see the suggestions from a memory review, from the notification raised when one finished.
+ * Only the Memory page's own link is followed.
+ */
+export function memoryReviewLinkOf(n: NotificationDto): string | null {
+  const ctx = n.context
+  if (ctx?.source !== 'memory' || ctx?.kind !== 'memory_review') return null
+  return ctx.link === '/memory?review=open' ? ctx.link : null
+}
+
+/**
  * Where to sign in to a connector again, from the notification raised when its sign-in was lost.
  * Only a link to a connector's own page is followed.
  */

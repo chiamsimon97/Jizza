@@ -23,7 +23,8 @@ public record Passport(MemoryNode item, String title, String content, Visibility
 
   /**
    * @param kind {@code user}, {@code agent}, {@code conversation}, {@code import}, {@code note}
-   *             (an agent's own note) or {@code file}
+   *             (an agent's own note), {@code lesson} (how-to the user approved for an agent)
+   *             or {@code file}
    */
   public record Origin(String kind, String label, String ref, UUID conversationId, UUID fileId,
                        UUID agentId) {}

@@ -521,7 +521,7 @@ public class DefaultMemoryStore implements MemoryStore {
   @Transactional(readOnly = true)
   public MemorySettings settings(UUID userId) {
     return settings.findById(userId)
-        .map(s -> new MemorySettings(s.isAutoLearn(), s.getRetentionDays()))
+        .map(s -> new MemorySettings(s.isAutoLearn(), s.getRetentionDays(), s.isReviewEnabled()))
         .orElse(MemorySettings.defaults());
   }
 
@@ -538,11 +538,13 @@ public class DefaultMemoryStore implements MemoryStore {
     });
     entity.setAutoLearn(update.autoLearn());
     entity.setRetentionDays(update.retentionDays());
+    if (update.review() != null) entity.setReviewEnabled(update.review());
     settings.save(entity);
     audit.record(userId, com.jizza.engine.api.enums.ActorType.USER, userId, "memory.settings.updated", null,
         Json.obj().put("autoLearn", update.autoLearn())
-            .put("retentionDays", update.retentionDays() == null ? "keep" : update.retentionDays().toString()));
-    return new MemorySettings(entity.isAutoLearn(), entity.getRetentionDays());
+            .put("retentionDays", update.retentionDays() == null ? "keep" : update.retentionDays().toString())
+            .put("review", entity.isReviewEnabled()));
+    return new MemorySettings(entity.isAutoLearn(), entity.getRetentionDays(), entity.isReviewEnabled());
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────────────────────────
@@ -714,6 +716,7 @@ public class DefaultMemoryStore implements MemoryStore {
     entry.setActorType(actor.type());
     entry.setActorId(actor.id());
     entry.setNote(note);
+    entry.setContextRef(actor.contextRef());
     history.save(entry);
   }
 
