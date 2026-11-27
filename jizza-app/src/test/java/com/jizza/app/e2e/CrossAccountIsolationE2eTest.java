@@ -43,6 +43,8 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
   private ApiClient other;
   /** Route prefix (up to the first id) to the owner's id for it. */
   private final Map<String, String> owned = new LinkedHashMap<>();
+  /** Vita's rows under the owner's person: section to row id. */
+  private final Map<String, String> vitaRows = new LinkedHashMap<>();
 
   @BeforeEach
   void setUp() {
@@ -160,6 +162,23 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     assertThat(item.ok()).as(item.body()).isTrue();
     owned.put("/api/finance/lists/", item.json().path("id").asText());
 
+    // Vita Health: the same person's health record, and one of each row the person has.
+    String personId = person.json().path("id").asText();
+    owned.put("/api/people/", personId);
+    owned.put("/api/vita/people/", personId);
+    var profile = owner.put("/api/vita/people/" + personId + "/profile",
+        Map.of("bloodGroup", "o_pos", "abhaNumber", "12345678901234"));
+    assertThat(profile.ok()).as(profile.body()).isTrue();
+    for (var form : List.of(
+        Map.entry("emergency-contacts", Map.of("name", "Owner's brother", "phone", "+91 98000 00000")),
+        Map.entry("conditions", Map.of("name", "Owner's mother's condition", "template", "diabetes_t2")),
+        Map.entry("allergies", Map.of("substance", "Owner's mother's allergy")),
+        Map.entry("measurements", Map.of("kind", "weight", "value", 61.5)))) {
+      var row = owner.post("/api/vita/people/" + personId + "/" + form.getKey(), form.getValue());
+      assertThat(row.ok()).as(row.body()).isTrue();
+      vitaRows.put(form.getKey(), row.json().path("id").asText());
+    }
+
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
 
@@ -205,6 +224,19 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         }
       }
     }
+    // Vita: the owner's person with the owner's own row ids, not random ones.
+    String person = owned.get("/api/vita/people/");
+    for (var row : vitaRows.entrySet()) {
+      String base = "/api/vita/people/" + person + "/" + row.getKey() + "/" + row.getValue();
+      for (String method : List.of("PUT", "DELETE")) {
+        tried++;
+        var result = other.send(method, base, method.equals("PUT") ? Map.of("name", "x") : null);
+        if (result.ok()) leaks.add(method + " " + base + " -> " + result.status());
+      }
+      tried++;
+      var moved = other.send("POST", base + "/move", Map.of("toPersonId", person));
+      if (row.getKey().equals("measurements") && moved.ok()) leaks.add("POST " + base + "/move");
+    }
     assertThat(tried).as("routes swept").isGreaterThan(60);
     assertThat(leaks).as("routes another account could use on the owner's data").isEmpty();
 
@@ -212,6 +244,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     for (var e : owned.entrySet()) {
       String path = e.getKey() + e.getValue();
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
+      if (e.getKey().equals("/api/vita/people/")) continue; // checked below, section by section
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
       if (e.getKey().equals("/api/finance/transactions/")) continue; // read through the list
@@ -219,6 +252,13 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
           "/api/finance/rule-templates/", "/api/finance/lists/").contains(e.getKey())) continue; // no single GET
       var still = owner.get(path);
       assertThat(still.ok()).as("owner still has %s: %s", path, still.body()).isTrue();
+    }
+    String vitaPerson = owned.get("/api/vita/people/");
+    assertThat(owner.get("/api/vita/people/" + vitaPerson + "/profile").json().path("profile")
+        .path("bloodGroup").asText()).isEqualTo("o_pos");
+    for (var row : vitaRows.entrySet()) {
+      String list = owner.get("/api/vita/people/" + vitaPerson + "/" + row.getKey()).body();
+      assertThat(list).as("owner still has their %s", row.getKey()).contains(row.getValue());
     }
   }
 
@@ -294,6 +334,20 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     assertThat(ruleOnGoal.ok()).as("rule on the owner's goal: %s", ruleOnGoal.body()).isFalse();
     var fix = other.patch("/api/finance/instruments/" + owned.get("/api/finance/instruments/"), Map.of("capBucket", "small"));
     assertThat(fix.ok()).as("changing the owner's instrument: %s", fix.body()).isFalse();
+
+    // Vita: the caller's Quick start and readings cannot name the owner's person.
+    String ownersPerson = owned.get("/api/vita/people/");
+    var quickStart = other.post("/api/vita/quick-start", Map.of("personId", ownersPerson, "step", "blood_group",
+        "answers", Map.of("bloodGroup", "a_neg")));
+    assertThat(quickStart.status()).as("quick start for the owner's person: %s", quickStart.body()).isEqualTo(404);
+    var ownMe = other.get("/api/people").json().get(0).path("id").asText();
+    var reading = other.post("/api/vita/people/" + ownMe + "/measurements", Map.of("kind", "weight", "value", 70));
+    assertThat(reading.ok()).isTrue();
+    var move = other.post("/api/vita/people/" + ownMe + "/measurements/" + reading.json().path("id").asText()
+        + "/move", Map.of("toPersonId", ownersPerson));
+    assertThat(move.status()).as("moving a reading to the owner's person: %s", move.body()).isEqualTo(404);
+    assertThat(owner.get("/api/vita/people/" + ownersPerson + "/profile").json().path("profile")
+        .path("bloodGroup").asText()).isEqualTo("o_pos");
   }
 
   @Test
@@ -308,7 +362,8 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         "/api/finance/loans/plan", "/api/finance/net-worth", "/api/finance/quick-start",
         "/api/finance/goals", "/api/finance/goal-library", "/api/finance/builder", "/api/finance/holdings",
         "/api/finance/allocation", "/api/finance/realized-gains", "/api/finance/lists",
-        "/api/finance/rule-templates", "/api/finance/rules/effective")) {
+        "/api/finance/rule-templates", "/api/finance/rules/effective", "/api/people",
+        "/api/people?forHealth=true", "/api/vita/config", "/api/vita/quick-start")) {
       String body = other.get(list).body();
       for (String id : owned.values()) {
         assertThat(body).as("%s shows the owner's %s", list, id).doesNotContain(id);

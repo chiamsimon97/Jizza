@@ -81,7 +81,10 @@ public abstract class E2eSupport {
     // A fresh database has no Super Admin account to own the Public organization.
     registry.add("jizza.development", () -> "true");
     // Swept by the route suites like every other module while it is being built.
-    registry.add("jizza.finance.enabled", () -> "true");
+    // A suite that needs a switch off sets e2e.finance-enabled or e2e.health-enabled in its own
+    // @DynamicPropertySource (this method runs after a subclass's, so it cannot be overridden).
+    registry.add("jizza.finance.enabled", () -> "${e2e.finance-enabled:true}");
+    registry.add("jizza.health.enabled", () -> "${e2e.health-enabled:true}");
     registry.add("jizza.security.session.cookie-secure", () -> "false");
     // Every suite registers its own throwaway users and signs in with a password alone. The auth
     // suite switches two-step enforcement on where that is what it is testing.

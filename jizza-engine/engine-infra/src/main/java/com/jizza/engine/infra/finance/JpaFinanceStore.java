@@ -63,6 +63,18 @@ public class JpaFinanceStore implements FinanceStore {
   }
 
   @Override
+  @Transactional
+  public void ensureSelf(UUID userId, String selfName) {
+    em.createNativeQuery("""
+        insert into fin_person (user_id, display_name, kind, type, is_earning)
+        values (:u, :name, 'self', 'individual', false)
+        on conflict (user_id) where kind = 'self' do nothing""")
+        .setParameter("u", userId).setParameter("name", selfName).executeUpdate();
+    em.flush();
+    em.clear();
+  }
+
+  @Override
   @Transactional(readOnly = true)
   public Optional<ProfileRow> profile(UUID userId) {
     return profiles.findByUserId(userId).map(JpaFinanceStore::row);
@@ -114,6 +126,15 @@ public class JpaFinanceStore implements FinanceStore {
   public PersonRow setPersonStatus(UUID userId, UUID personId, String status) {
     FinPersonEntity p = ownedPerson(userId, personId);
     p.setStatus(status);
+    return row(people.saveAndFlush(p));
+  }
+
+  @Override
+  @Transactional
+  public PersonRow setPersonStatus(UUID userId, UUID personId, String status, LocalDate on) {
+    FinPersonEntity p = ownedPerson(userId, personId);
+    p.setStatus(status);
+    p.setStatusOn(on);
     return row(people.saveAndFlush(p));
   }
 
@@ -220,7 +241,7 @@ public class JpaFinanceStore implements FinanceStore {
   private static PersonRow row(FinPersonEntity p) {
     return new PersonRow(p.getId(), p.getUserId(), p.getDisplayName(), p.getKind(), p.getType(),
         p.getDob(), p.isEarning(), p.isDependent(), p.getStatus(), p.getSortOrder(),
-        p.getHandedOverToUserId());
+        p.getHandedOverToUserId(), p.getStatusOn());
   }
 
   private static ConsentRow row(FinConsentEntity c) {

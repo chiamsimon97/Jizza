@@ -136,7 +136,7 @@ public class FinConfigService {
   }
 
   /** Null when {@code value} has the same structure as {@code template}, else what differs. */
-  static String shapeProblem(JsonNode template, JsonNode value, String path) {
+  public static String shapeProblem(JsonNode template, JsonNode value, String path) {
     if (template.isNumber()) return value.isNumber() ? null : path + " must be a number.";
     if (template.isBoolean()) return value.isBoolean() ? null : path + " must be true or false.";
     if (template.isTextual()) return value.isTextual() ? null : path + " must be text.";

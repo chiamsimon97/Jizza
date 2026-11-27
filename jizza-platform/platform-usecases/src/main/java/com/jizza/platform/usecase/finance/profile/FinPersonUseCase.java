@@ -18,6 +18,9 @@ import org.springframework.stereotype.Service;
 /**
  * "People you manage" (7.22): the user plus anyone without a login whose money they look after.
  * Family members with their own login are not added here; they join a Family (Phase 5).
+ *
+ * <p>The same list serves Vita (the household people list Kai and Vita share, Vita spec 4.1), so it
+ * has no finance-switch condition and creates only "Me", never a finance profile.
  */
 @Service
 public class FinPersonUseCase {
@@ -42,7 +45,7 @@ public class FinPersonUseCase {
 
   public List<PersonRow> list(UUID callerUserId) {
     var scope = scopes.own(callerUserId);
-    store.ensureProfile(scope.ownerUserId(), FinProfileUseCase.SELF_NAME);
+    store.ensureSelf(scope.ownerUserId(), FinProfileUseCase.SELF_NAME);
     return store.people(scope.ownerUserId());
   }
 
@@ -54,7 +57,7 @@ public class FinPersonUseCase {
 
   public PersonRow create(UUID callerUserId, PersonInput in) {
     var scope = scopes.own(callerUserId);
-    store.ensureProfile(scope.ownerUserId(), FinProfileUseCase.SELF_NAME);
+    store.ensureSelf(scope.ownerUserId(), FinProfileUseCase.SELF_NAME);
     PersonFields fields = validate(in, null);
     PersonRow created = store.createPerson(scope.ownerUserId(), fields);
     audit.record(scope.ownerUserId(), ActorType.USER, callerUserId, "finance.person.added",
@@ -90,6 +93,31 @@ public class FinPersonUseCase {
     }
     PersonRow saved = store.setPersonStatus(current.userId(), personId, "archived");
     audit.record(current.userId(), ActorType.USER, callerUserId, "finance.person.archived",
+        personId.toString(), null);
+    return saved;
+  }
+
+  /** The statuses a person can be given here; handing a record over is not built yet. */
+  public static final Set<String> STATUSES = Set.of("active", "archived", "deceased");
+
+  /**
+   * Changes a person's status with the date it took effect: archived or deceased closes their
+   * records, active reopens them. "Me" always stays active; the date cannot be in the future.
+   */
+  public PersonRow setStatus(UUID callerUserId, UUID personId, String status, LocalDate on) {
+    PersonRow current = get(callerUserId, personId);
+    String s = status == null ? "" : status.strip().toLowerCase(java.util.Locale.ROOT);
+    if (!STATUSES.contains(s)) {
+      throw new ValidationException("status must be one of active, archived, deceased.");
+    }
+    if ("self".equals(current.kind())) {
+      throw new ValidationException("Your own entry always stays active.");
+    }
+    LocalDate today = LocalDate.now(ZONE);
+    LocalDate day = on == null ? today : on;
+    if (day.isAfter(today)) throw new ValidationException("The date is in the future.");
+    PersonRow saved = store.setPersonStatus(current.userId(), personId, s, "active".equals(s) ? null : day);
+    audit.record(current.userId(), ActorType.USER, callerUserId, "person.status_changed",
         personId.toString(), null);
     return saved;
   }
