@@ -1052,3 +1052,105 @@ export interface HealthClaim {
   policy?: { kind: PolicyKind; providerName: string | null }
 }
 export type ClaimInput = Partial<Pick<HealthClaim, 'policyId' | 'eventId' | 'visitId' | 'admittedOn' | 'dischargedOn' | 'amountClaimed' | 'amountPaid' | 'status' | 'documentIds' | 'notes'>>
+
+// ── Journal and goals (8c) ─────────────────────────────────────────────────────
+
+/** One day of the journal (7.12): mood and energy 1-5, pain 0-10, symptom words and a note. */
+export interface JournalEntry {
+  id: string
+  personId: string
+  entryDate: string
+  mood: number | null
+  energy: number | null
+  pain: number | null
+  symptoms: string[]
+  notes: string | null
+  source: string
+  createdByUserId: string | null
+  createdAt: string
+  updatedAt: string | null
+}
+export interface JournalInput {
+  mood?: number | null
+  energy?: number | null
+  pain?: number | null
+  symptoms?: string[] | null
+  notes?: string | null
+}
+
+export type GoalKind = 'weight' | 'steps' | 'sleep_hours' | 'water' | 'custom' | 'bp_range' | 'glucose_range' | 'hba1c'
+export type GoalStatus = 'active' | 'paused' | 'met' | 'dropped'
+export type GoalContext = 'before_meal' | 'after_meal'
+
+/** The target a goal is held to, with where it comes from, in the server's words. */
+export interface GoalTarget {
+  text: string
+  source: 'doctor' | 'vita_default' | 'you' | string
+  label: string
+  needsVerification?: boolean
+  configKey?: string
+  doctorId?: string
+  doctorName?: string
+  setOn?: string
+  note?: string
+}
+export interface GoalCheckin {
+  weekStart: string
+  source: 'manual' | 'measurements' | 'none'
+  value: number | null
+  value2: number | null
+  meets: boolean | null
+  note?: string
+}
+export interface HealthGoal {
+  id: string
+  personId: string
+  kind: GoalKind
+  title: string | null
+  context: GoalContext | null
+  /** A medical goal's target from the doctor or config; the user's own number otherwise. */
+  target: GoalTarget | null
+  targetNote?: string
+  target2?: number | null
+  startValue: number | null
+  unit: string | null
+  byDate: string | null
+  weeklyPlan: { text: string }[]
+  status: GoalStatus
+  metOn: string | null
+  medical: boolean
+  /** The last 12 weeks, oldest first. */
+  checkins: GoalCheckin[]
+  weeksMetInARow: number
+  metAfterWeeks: number
+  planNote: string
+  createdByUserId?: string | null
+  createdAt?: string
+}
+export interface GoalInput {
+  kind?: GoalKind
+  title?: string | null
+  context?: GoalContext | null
+  /** Refused for blood pressure, sugar and HbA1c, which read the doctor's or Vita's target. */
+  target?: number | null
+  startValue?: number | null
+  unit?: string | null
+  byDate?: string | null
+  weeklyPlan?: string[]
+  status?: GoalStatus
+}
+export interface GoalCheckinInput {
+  weekStart?: string
+  value: number
+  value2?: number | null
+  note?: string | null
+}
+export interface GoalPreview {
+  personId: string
+  kind: GoalKind
+  canCreate: boolean
+  target?: GoalTarget | null
+  message: string
+  planNote: string
+  metAfterWeeks: number
+}
