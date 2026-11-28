@@ -67,7 +67,17 @@ public enum VitaTable {
       oneOf("kind", "prescription", "lab_report", "scan", "discharge_summary", "certificate", "bill",
           "policy", "other"),
       text("title", 200), of("documentDate", Type.PAST_DATE), ref("doctorId", "vita_doctor"),
-      ref("conditionId", "vita_condition"), of("private", Type.BOOL), text("notes", 1000)));
+      ref("conditionId", "vita_condition"), of("private", Type.BOOL), text("notes", 1000))),
+
+  /**
+   * A check done or booked (spec 4.2): an eye or foot check, a dental visit, or one of the lab
+   * checks done outside a report. {@code nextDueOn} is a date the doctor gave.
+   */
+  CHECK("vita_check", "Check", 500, List.of(
+      oneOf("kind", "eye", "foot", "kidney", "dental", "lipids", "hba1c", "custom").need(),
+      text("customName", 120), ref("conditionId", "vita_condition"), of("doneOn", Type.PAST_DATE),
+      text("resultNote", 1000), ref("visitId", "vita_visit"), ref("documentId", "vita_document"),
+      of("nextDueOn", Type.DATE)));
 
   public final String table;
   public final String label;

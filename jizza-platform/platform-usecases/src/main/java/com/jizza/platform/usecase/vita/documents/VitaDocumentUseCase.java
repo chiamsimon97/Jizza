@@ -57,11 +57,14 @@ public class VitaDocumentUseCase {
   private final EncryptionService crypto;
   private final AuditLog audit;
   private final ChatFiles chatFiles;
+  private final com.jizza.platform.usecase.vita.labs.VitaLabUseCase labs;
 
   public VitaDocumentUseCase(VitaRecords records, VitaScopeResolver scopes, VitaRecordsUseCase forms,
                              VitaConfigService config, VitaExtractionService extraction,
                              VitaMedicineUseCase medicines, StatementFiles files, EncryptionService crypto,
-                             AuditLog audit, ChatFiles chatFiles) {
+                             AuditLog audit, ChatFiles chatFiles,
+                             com.jizza.platform.usecase.vita.labs.VitaLabUseCase labs) {
+    this.labs = labs;
     this.records = records;
     this.scopes = scopes;
     this.forms = forms;
@@ -351,7 +354,7 @@ public class VitaDocumentUseCase {
    * Saves the reviewed draft: the document's date and kind, and for a prescription each medicine
    * the user kept, with its drafted schedule. The edits the user made in the review are what is
    * saved. A patient mismatch must be confirmed knowingly ({@code patientConfirmed}). A lab
-   * report's rows stay on the confirmed draft until the lab results tables arrive (step 7b).
+   * report's kept rows become one lab report with its results.
    */
   @Transactional
   public ObjectNode confirm(UUID caller, UUID id, JsonNode body) {
@@ -382,6 +385,11 @@ public class VitaDocumentUseCase {
     if (date != null && date.isAfter(today)) throw new ValidationException("documentDate cannot be in the future.");
 
     List<String> saved = new ArrayList<>();
+    String labReport = null;
+    if (kind.equals("lab_report")) {
+      UUID doctor = uuid(b.path("doctorId").asText(f.row().path("doctorId").asText(null)));
+      labReport = labs.fromDocument(p, id, doctor, draft, date, now).map(r -> r.path("id").asText()).orElse(null);
+    }
     if (kind.equals("prescription")) {
       UUID doctor = uuid(b.path("doctorId").asText(f.row().path("doctorId").asText(null)));
       List<ObjectNode> bodies = medicineBodies(draft.path("medicines"), doctor, date == null ? today : date);
@@ -400,11 +408,13 @@ public class VitaDocumentUseCase {
     values.set("draft", draft);
     ObjectNode row = records.update(DOC, p.owner(), id, values).orElseThrow(() -> new NotFoundException("Document", id));
     audit.record(p.owner(), ActorType.USER, caller, "vita.document.confirmed", id.toString(),
-        Json.obj().put("medicines", saved.size()));
+        Json.obj().put("medicines", saved.size()).put("labReport", labReport != null));
     ObjectNode out = Json.obj();
     out.set("document", view(row));
-    ArrayNode meds = out.putObject("saved").putArray("medicines");
+    ObjectNode savedNode = out.putObject("saved");
+    ArrayNode meds = savedNode.putArray("medicines");
     saved.forEach(meds::add);
+    if (labReport != null) savedNode.put("labReport", labReport); else savedNode.putNull("labReport");
     return out;
   }
 

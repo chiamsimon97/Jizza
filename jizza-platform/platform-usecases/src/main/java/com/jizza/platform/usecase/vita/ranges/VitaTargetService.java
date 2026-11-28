@@ -57,15 +57,24 @@ public class VitaTargetService {
   private final VitaConfigService config;
   private final VitaRecordsUseCase forms;
   private final AuditLog audit;
+  private final com.jizza.platform.usecase.vita.labs.VitaLabCatalog labs;
 
   public VitaTargetService(VitaRecords records, VitaScopeResolver scopes, VitaConfigService config,
-                           VitaRecordsUseCase forms, AuditLog audit) {
+                           VitaRecordsUseCase forms, AuditLog audit,
+                           com.jizza.platform.usecase.vita.labs.VitaLabCatalog labs) {
     this.records = records;
     this.scopes = scopes;
     this.config = config;
     this.forms = forms;
     this.audit = audit;
+    this.labs = labs;
   }
+
+  /**
+   * Lab tests that are the same measure as a reading: a fasting glucose on a report is judged
+   * against the before-meal sugar range, an after-food glucose against the after-meal one.
+   */
+  static final Map<String, String> LAB_AS_READING = Map.of("fasting_glucose", "before_meal", "pp_glucose", "after_meal");
 
   /** Everything evaluation needs for one person, read once. */
   public final class Context {
@@ -94,6 +103,47 @@ public class VitaTargetService {
 
     public Evaluation evaluate(Reading r, Boolean signsNow) {
       return TargetEvaluator.evaluate(r, rangeFor(r.kind(), r.context(), r.setting()), rules, signsNow);
+    }
+
+    /**
+     * The target for a lab test (spec 2.4): the doctor's target for the test, else the person's own
+     * range for it, else, for a test that is a sugar reading, the range for that reading, else the
+     * Vita default of the person's active condition template or the general set. Null when none
+     * holds a number. Bounds are in the test's canonical unit.
+     */
+    public RangeSet labRangeFor(String testCode) {
+      if (testCode == null) return null;
+      ObjectNode doctor = bestLab(testCode, "doctor");
+      if (doctor != null) {
+        UUID did = doctor.hasNonNull("doctorId") ? UUID.fromString(doctor.get("doctorId").asText()) : null;
+        return RangeSet.doctor(range(doctor, ""), null, did, doctors.get(did),
+            doctor.hasNonNull("setOn") ? LocalDate.parse(doctor.get("setOn").asText()) : null);
+      }
+      ObjectNode own = bestLab(testCode, "user");
+      if (own != null) return RangeSet.own(range(own, ""), null);
+      if (LAB_AS_READING.containsKey(testCode)) return rangeFor("glucose", LAB_AS_READING.get(testCode), null);
+      List<String> keys = new ArrayList<>();
+      for (String t : List.of("diabetes_t2", "hypertension")) {
+        if (templates.contains(t)) keys.add("clinical.ranges." + t + "." + testCode);
+      }
+      keys.add("clinical.ranges.general." + testCode);
+      for (String key : keys) {
+        ConfigItem item = items.get(key);
+        for (int hops = 0; item != null && item.value() != null && item.value().hasNonNull("sameAs") && hops < 3; hops++) {
+          item = items.get(item.value().get("sameAs").asText());
+        }
+        if (item == null || item.value() == null) continue;
+        Range r = Range.fromConfig(item.value());
+        if (r != null) return RangeSet.vitaDefault(r, null, item.key(), item.needsVerification());
+      }
+      return null;
+    }
+
+    private ObjectNode bestLab(String code, String setBy) {
+      for (ObjectNode r : ranges) {
+        if (code.equals(r.path("labTestCode").asText(null)) && setBy.equals(r.path("setBy").asText())) return r;
+      }
+      return null;
     }
 
     /** The range in force for a measure, or null when none is set. */
@@ -171,7 +221,8 @@ public class VitaTargetService {
   /** One measure on the ranges screen: what applies now, and the rows behind it. */
   public record RangeView(String kind, String context, String setting, String status, String range,
                           String source, String label, boolean needsVerification, UUID doctorId,
-                          String doctorName, LocalDate setOn, ObjectNode own, ObjectNode doctorTarget) {}
+                          String doctorName, LocalDate setOn, ObjectNode own, ObjectNode doctorTarget,
+                          String labTestCode) {}
 
   public List<RangeView> ranges(UUID caller, UUID personId) {
     PersonScope p = scopes.person(caller, personId);
@@ -183,10 +234,25 @@ public class VitaTargetService {
       ObjectNode doc = ctx.best(s.kind(), s.context(), s.setting(), "doctor");
       if (r == null) {
         out.add(new RangeView(s.kind(), s.context(), s.setting(), TargetEvaluator.NOT_SET, null, null,
-            TargetEvaluator.NOT_SET_LABEL, false, null, null, null, own, doc));
+            TargetEvaluator.NOT_SET_LABEL, false, null, null, null, own, doc, null));
       } else {
         out.add(new RangeView(s.kind(), s.context(), s.setting(), "set", r.text(), r.source(), r.label(),
-            r.needsVerification(), r.doctorId(), r.doctorName(), r.setOn(), own, doc));
+            r.needsVerification(), r.doctorId(), r.doctorName(), r.setOn(), own, doc, null));
+      }
+    }
+    // Lab tests: HbA1c always, and every other test the person or a doctor set a range for.
+    java.util.LinkedHashSet<String> codes = new java.util.LinkedHashSet<>(List.of("hba1c"));
+    ctx.ranges.stream().map(r -> r.path("labTestCode").asText(null)).filter(Objects::nonNull).forEach(codes::add);
+    for (String code : codes) {
+      RangeSet r = ctx.labRangeFor(code);
+      ObjectNode own = ctx.bestLab(code, "user");
+      ObjectNode doc = ctx.bestLab(code, "doctor");
+      if (r == null) {
+        out.add(new RangeView(null, null, null, TargetEvaluator.NOT_SET, null, null, TargetEvaluator.NOT_SET_LABEL,
+            false, null, null, null, own, doc, code));
+      } else {
+        out.add(new RangeView(null, null, null, "set", r.text(), r.source(), r.label(), r.needsVerification(),
+            r.doctorId(), r.doctorName(), r.setOn(), own, doc, code));
       }
     }
     return out;
@@ -200,16 +266,24 @@ public class VitaTargetService {
   public ObjectNode putRange(UUID caller, UUID personId, JsonNode body) {
     PersonScope p = scopes.person(caller, personId).requireOpen();
     if (body == null || !body.isObject()) throw new ValidationException("Send the range as an object.");
-    Set<String> allowed = Set.of("kind", "context", "setting", "low", "high", "low2", "high2", "lowInclusive",
-        "highInclusive", "setBy", "doctorId", "setOn", "note");
+    Set<String> allowed = Set.of("kind", "labTestCode", "context", "setting", "low", "high", "low2", "high2",
+        "lowInclusive", "highInclusive", "setBy", "doctorId", "setOn", "note");
     body.fieldNames().forEachRemaining(f -> {
       if (!allowed.contains(f)) throw new ValidationException(f + " cannot be set here.");
     });
     var n = JsonNodeFactory.instance;
     ObjectNode v = n.objectNode();
-    String kind = body.path("kind").asText("");
-    if (!KINDS.contains(kind)) throw new ValidationException("kind must be one of " + String.join(", ", KINDS) + ".");
-    v.put("kind", kind);
+    String labTestCode = text(body, "labTestCode");
+    String kind = labTestCode != null ? "" : body.path("kind").asText("");
+    if (labTestCode != null) {
+      if (body.hasNonNull("kind")) throw new ValidationException("Give kind or labTestCode, not both.");
+      if (!labs.known(labTestCode)) throw new ValidationException("labTestCode is not a known lab test.");
+      v.putNull("kind");
+      v.put("labTestCode", labTestCode);
+    } else {
+      if (!KINDS.contains(kind)) throw new ValidationException("kind must be one of " + String.join(", ", KINDS) + ".");
+      v.put("kind", kind);
+    }
     String context = text(body, "context");
     if (context != null && !CONTEXTS.contains(context)) throw new ValidationException("context must be one of " + String.join(", ", CONTEXTS) + ".");
     if (context != null && !"glucose".equals(kind)) throw new ValidationException("Only sugar readings have a context.");
@@ -251,7 +325,9 @@ public class VitaTargetService {
 
     // Replace the live row for the same measure and setter.
     for (ObjectNode r : records.list("vita_usual_range", p.owner(), VitaRecordsUseCase.livePerson(p.personId()))) {
-      if (kind.equals(r.path("kind").asText(null)) && setBy.equals(r.path("setBy").asText())
+      boolean same = labTestCode != null ? labTestCode.equals(r.path("labTestCode").asText(null))
+          : kind.equals(r.path("kind").asText(null));
+      if (same && setBy.equals(r.path("setBy").asText())
           && Objects.equals(context, r.hasNonNull("context") ? r.get("context").asText() : null)
           && Objects.equals(setting, r.hasNonNull("setting") ? r.get("setting").asText() : null)) {
         forms.removeRow(p, "vita_usual_range", "Range", UUID.fromString(r.path("id").asText()));

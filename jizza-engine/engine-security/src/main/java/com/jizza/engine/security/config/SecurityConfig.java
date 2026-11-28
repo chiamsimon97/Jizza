@@ -33,6 +33,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableConfigurationProperties(SecurityProperties.class)
 public class SecurityConfig {
 
+  /** A Vita document's stored file: the only response the app's own page may frame. */
+  static final org.springframework.security.web.util.matcher.RequestMatcher VITA_DOCUMENT_FILE =
+      new org.springframework.security.web.util.matcher.RegexRequestMatcher("^/api/vita/documents/[0-9a-fA-F-]{36}/file$", "GET");
+
   /** Endpoints reachable without a session. Everything else requires one. */
   public static final String[] PUBLIC_ENDPOINTS = {
       "/api/auth/csrf", "/api/auth/register", "/api/auth/login", "/api/auth/mfa/verify",
@@ -84,7 +88,17 @@ public class SecurityConfig {
             .httpStrictTransportSecurity(hsts -> hsts
                 .includeSubDomains(true)
                 .maxAgeInSeconds(31_536_000))
-            .frameOptions(frame -> frame.deny())
+            // Nothing may be framed, except a Vita document's file, which the review shows
+            // inside the app's own page.
+            .frameOptions(frame -> frame.disable())
+            .addHeaderWriter(new org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter(
+                new org.springframework.security.web.util.matcher.NegatedRequestMatcher(VITA_DOCUMENT_FILE),
+                new org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter(
+                    org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter.XFrameOptionsMode.DENY)))
+            .addHeaderWriter(new org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter(
+                VITA_DOCUMENT_FILE,
+                new org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter(
+                    org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter.XFrameOptionsMode.SAMEORIGIN)))
             .contentSecurityPolicy(csp -> csp.policyDirectives(
                 "default-src 'self'; frame-ancestors 'none'; object-src 'none'; "
                     + "base-uri 'self'; form-action 'self'"))
