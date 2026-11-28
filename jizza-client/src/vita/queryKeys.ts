@@ -1,0 +1,31 @@
+/**
+ * React Query keys for the Health tab (spec 5.14): ['vita', personId, area, …]. Household-wide
+ * reads (status, people, config) sit under ['vita', '_', …]; every mutation invalidates by person
+ * or, when it changes more than one person's view, everything under ['vita'].
+ */
+export const vitaKeys = {
+  all: ['vita'] as const,
+  status: ['vita', '_', 'status'] as const,
+  people: ['vita', '_', 'people'] as const,
+  config: ['vita', '_', 'config'] as const,
+  person: (personId: string) => ['vita', personId] as const,
+  quickStart: (personId: string) => ['vita', personId, 'quick-start'] as const,
+  profile: (personId: string) => ['vita', personId, 'profile'] as const,
+  card: (personId: string) => ['vita', personId, 'emergency-card'] as const,
+  contacts: (personId: string) => ['vita', personId, 'emergency-contacts'] as const,
+  conditions: (personId: string) => ['vita', personId, 'conditions'] as const,
+  allergies: (personId: string) => ['vita', personId, 'allergies'] as const,
+  measurements: (personId: string, kind: string) => ['vita', personId, 'measurements', kind] as const,
+  trend: (personId: string, kind: string, days: number, context?: string | null) => ['vita', personId, 'measurements', kind, 'trend', days, context ?? ''] as const,
+  home: (personId: string) => ['vita', personId, 'home'] as const,
+  ranges: (personId: string) => ['vita', personId, 'ranges'] as const,
+  summary: (personId: string, conditionId: string) => ['vita', personId, 'conditions', conditionId, 'summary'] as const,
+  visits: (personId: string) => ['vita', personId, 'visits'] as const,
+  medicines: (personId: string) => ['vita', personId, 'medicines'] as const,
+  medicineEvents: (personId: string, id: string) => ['vita', personId, 'medicines', id, 'events'] as const,
+  doses: (personId: string, from: string, to: string) => ['vita', personId, 'doses', from, to] as const,
+  adherence: (personId: string, from: string, to: string) => ['vita', personId, 'adherence', from, to] as const,
+  reminders: (personId: string) => ['vita', personId, 'reminders'] as const,
+  /** Doctors belong to the household; any change also touches each person's targets and visits. */
+  doctors: ['vita', '_', 'doctors'] as const,
+}

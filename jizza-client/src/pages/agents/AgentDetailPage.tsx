@@ -20,9 +20,11 @@ import { AgentAvatar, AgentBadges, COLOURS, SHARED_DOMAINS, Section, TeamTrailLi
 import { ManagerSelect } from './NewAgentPage'
 import { PortfolioTab } from '@/portfolio/PortfolioTab'
 import { usePortfolioEnabled } from '@/portfolio/usePortfolioEnabled'
+import { HealthTab } from '@/vita/HealthTab'
+import { useHealthEnabled } from '@/vita/useHealthEnabled'
 import type { AgentDto, AgentTrial, ConnectorCard } from '@/types'
 
-const TABS = ['Overview', 'Instructions', 'Tools', 'Guardrails', 'Try it', 'Team', 'Portfolio'] as const
+const TABS = ['Overview', 'Instructions', 'Tools', 'Guardrails', 'Try it', 'Team', 'Portfolio', 'Health'] as const
 type Tab = (typeof TABS)[number]
 
 /** The tab's name in the URL (?tab=try-it), so a link or a reload opens the same tab. */
@@ -45,6 +47,7 @@ export function AgentDetailPage() {
   const { data: agent, isLoading } = useQuery({ queryKey: ['agent', agentId], queryFn: () => agentsApi.get(agentId) })
   const { data: agents } = useQuery({ queryKey: ['agents', 'all'], queryFn: () => agentsApi.list('all') })
   const portfolio = usePortfolioEnabled(agent)
+  const health = useHealthEnabled(agent)
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner /></div>
   if (!agent) return <div className="page"><p className="text-sm text-gray-500">This agent doesn't exist, or isn't yours.</p></div>
@@ -66,7 +69,7 @@ export function AgentDetailPage() {
       </div>
 
       <nav className="mb-4 flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800" aria-label="Agent sections">
-        {TABS.filter(t => !(agent.orchestrator && (t === 'Try it' || t === 'Team')) && (t !== 'Portfolio' || portfolio)).map(t => (
+        {TABS.filter(t => !(agent.orchestrator && (t === 'Try it' || t === 'Team')) && (t !== 'Portfolio' || portfolio) && (t !== 'Health' || health)).map(t => (
           <button key={t} type="button" onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t ? 'border-brand-500 font-medium text-brand-600 dark:text-brand-300' : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}`}>
             {t}
@@ -81,6 +84,7 @@ export function AgentDetailPage() {
       {tab === 'Try it' && <TryIt agent={agent} />}
       {tab === 'Team' && <Team agent={agent} agents={agents ?? []} />}
       {tab === 'Portfolio' && portfolio && <PortfolioTab agent={agent} />}
+      {tab === 'Health' && health && <HealthTab agent={agent} />}
     </div>
   )
 }
