@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LogOut, Send, UserPlus, Users } from 'lucide-react'
 import { workspacesApi } from '@/api/workspaces'
 import { listingApi } from '@/api/listings'
-import { useAuthorization } from '@/auth/useAuthorization'
+import { isFamily, useAuthorization } from '@/auth/useAuthorization'
 import { usePermission } from '@/auth/usePermission'
 import { applySnapshot } from '@/auth/useSwitchAccount'
 import { Can } from '@/auth/Can'
@@ -31,6 +31,21 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString()
 }
 
+/**
+ * A role's name in this account. A Family has Owner, Admin and Member: its User role reads as
+ * "Member", and it has no Developer role (the server never offers it there).
+ */
+function useRoleLabel(): (role: WorkspaceRole) => string {
+  const { data: snapshot } = useAuthorization()
+  const family = isFamily(snapshot)
+  return role => (family && role === 'USER' ? 'Member' : ROLE_LABELS[role])
+}
+
+/** Roles a Family can hold: never Developer, even if an answer lists it. */
+function forAccount(roles: WorkspaceRole[], family: boolean): WorkspaceRole[] {
+  return family ? roles.filter(r => r !== 'DEVELOPER') : roles
+}
+
 const STATUS_BADGE: Record<InvitationStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'danger' | 'info' }> = {
   PENDING:  { label: 'Pending',  variant: 'info' },
   ACCEPTED: { label: 'Accepted', variant: 'success' },
@@ -39,7 +54,7 @@ const STATUS_BADGE: Record<InvitationStatus, { label: string; variant: 'default'
   EXPIRED:  { label: 'Expired',  variant: 'warning' },
 }
 
-/** The active organization's members and membership requests (flow B). */
+/** The active organization's or Family's members and membership requests (flow B). */
 export function MembersPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -55,13 +70,17 @@ export function MembersPage() {
     },
   })
 
-  const orgName = snapshot?.activeWorkspace.name ?? 'this organization'
+  const family = isFamily(snapshot)
+  const kind = family ? 'Family' : 'organization'
+  const orgName = snapshot?.activeWorkspace.name ?? `this ${kind}`
   const isOwner = snapshot?.role === 'OWNER'
 
   return (
     <div className="page">
       <PageHeader icon={Users} title="Members"
-        description={`Who belongs to ${orgName}, their roles, and the requests sent to join.`}
+        description={family
+          ? `Who is in ${orgName}, their roles, and the requests sent to join. Health sharing is done from the Health tab of Vita in each person's own account.`
+          : `Who belongs to ${orgName}, their roles, and the requests sent to join.`}
         actions={
           <Can permission={PERMISSIONS.MEMBERS_INVITE}>
             <Button size="sm" onClick={() => { setNotice(''); setAdding(true) }}><UserPlus className="h-4 w-4" />Add member</Button>
@@ -73,22 +92,27 @@ export function MembersPage() {
       )}
 
       <div className="grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-6">
-        <MembersTable />
+        <MembersTable kind={kind} />
         <RequestsSection onSent={setNotice} />
-        <Can permission={PERMISSIONS.MEMBERS_INVITE}>
-          <JoinRequestsSection onAnswered={setNotice} />
-        </Can>
+        {!family && (
+          <Can permission={PERMISSIONS.MEMBERS_INVITE}>
+            <JoinRequestsSection onAnswered={setNotice} />
+          </Can>
+        )}
 
+        {snapshot && isOwner && family && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">As its Owner you can't leave the Family.</p>
+        )}
         {snapshot && !isOwner && (
           <Card padding="lg">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Leave organization</h2>
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Leave {family ? 'the Family' : 'organization'}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">You will lose access to {orgName} until someone adds you again.</p>
               </div>
               <Button size="sm" variant="danger" loading={leave.isPending} onClick={() => {
                 if (window.confirm(`Leave ${orgName}?`)) leave.mutate()
-              }}><LogOut className="h-4 w-4" />Leave organization</Button>
+              }}><LogOut className="h-4 w-4" />Leave {family ? 'the Family' : 'organization'}</Button>
             </div>
             {leave.error && <p className="mt-3 text-sm text-red-500">{errorText(leave.error)}</p>}
           </Card>
@@ -101,13 +125,14 @@ export function MembersPage() {
   )
 }
 
-function MembersTable() {
+function MembersTable({ kind }: { kind: string }) {
   const qc = useQueryClient()
   const { data: snapshot } = useAuthorization()
+  const roleLabel = useRoleLabel()
   const { data: members, isLoading, error } = useQuery({ queryKey: MEMBERS_KEY, queryFn: workspacesApi.members })
   const canModify = usePermission(PERMISSIONS.MEMBERS_MODIFY)
   const canRemove = usePermission(PERMISSIONS.MEMBERS_REMOVE)
-  const assignable = snapshot?.assignableRoles ?? []
+  const assignable = forAccount(snapshot?.assignableRoles ?? [], isFamily(snapshot))
 
   const changeRole = useMutation({
     mutationFn: ({ id, role }: { id: string; role: WorkspaceRole }) => workspacesApi.changeRole(id, role),
@@ -160,11 +185,11 @@ function MembersTable() {
                             aria-label={`Role for ${m.email}`} value={m.role}
                             disabled={changeRole.isPending && changeRole.variables?.id === m.id}
                             onChange={e => changeRole.mutate({ id: m.id, role: e.target.value as WorkspaceRole })}>
-                            {roles.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                            {roles.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                           </select>
                         </Can>
                       ) : (
-                        <span className="text-gray-700 dark:text-gray-300">{ROLE_LABELS[m.role]}</span>
+                        <span className="text-gray-700 dark:text-gray-300">{roleLabel(m.role)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -175,7 +200,7 @@ function MembersTable() {
                       {showRemove && (
                         <Can permission={PERMISSIONS.MEMBERS_REMOVE} mode="disable">
                           <Button size="sm" variant="ghost" loading={remove.isPending && remove.variables === m.id}
-                            onClick={() => { if (window.confirm(`Remove ${m.email} from the organization?`)) remove.mutate(m.id) }}>
+                            onClick={() => { if (window.confirm(`Remove ${m.email} from the ${kind}?`)) remove.mutate(m.id) }}>
                             Remove
                           </Button>
                         </Can>
@@ -199,6 +224,7 @@ const SHOWN: InvitationStatus[] = ['PENDING', 'DECLINED', 'EXPIRED']
 
 function RequestsSection({ onSent }: { onSent: (notice: string) => void }) {
   const qc = useQueryClient()
+  const roleLabel = useRoleLabel()
   const { data, isLoading, error } = useQuery({ queryKey: INVITATIONS_KEY, queryFn: workspacesApi.invitations })
   const revoke = useMutation({
     mutationFn: (id: string) => workspacesApi.revokeInvitation(id),
@@ -230,7 +256,7 @@ function RequestsSection({ onSent }: { onSent: (notice: string) => void }) {
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                   <span className="truncate">{inv.email}</span>
-                  <Badge>{ROLE_LABELS[inv.role]}</Badge>
+                  <Badge>{roleLabel(inv.role)}</Badge>
                   <Badge variant={STATUS_BADGE[inv.status].variant}>{STATUS_BADGE[inv.status].label}</Badge>
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -313,7 +339,8 @@ function JoinRequestsSection({ onAnswered }: { onAnswered: (notice: string) => v
 function AddMemberDialog({ open, onClose, onSent }: { open: boolean; onClose: () => void; onSent: (email: string) => void }) {
   const qc = useQueryClient()
   const { data: snapshot } = useAuthorization()
-  const roles = snapshot?.assignableRoles ?? []
+  const roleLabel = useRoleLabel()
+  const roles = forAccount(snapshot?.assignableRoles ?? [], isFamily(snapshot))
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<WorkspaceRole | ''>('')
   const chosenRole: WorkspaceRole | undefined = role || (roles.includes('USER') ? 'USER' : roles[0])
@@ -348,7 +375,7 @@ function AddMemberDialog({ open, onClose, onSent }: { open: boolean; onClose: ()
           value={email} onChange={e => setEmail(e.target.value)} />
         <Field label="Role">
           <select className={fieldClass} value={chosenRole ?? ''} onChange={e => setRole(e.target.value as WorkspaceRole)}>
-            {roles.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            {roles.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
         </Field>
         {roles.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">Your role can't assign any roles.</p>}

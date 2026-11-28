@@ -8,6 +8,8 @@ import type { AuthorizationSnapshot, WorkspaceRole, WorkspaceType } from '@/type
 
 const PERSONAL = { id: 'ws-personal', type: 'PERSONAL' as const, name: 'Personal', role: 'OWNER' as const }
 const ACME = { id: 'ws-acme', type: 'ORGANIZATION' as const, name: 'Acme', role: 'OWNER' as WorkspaceRole }
+const RAOS = { id: 'ws-family', type: 'FAMILY' as const, name: 'The Raos', role: 'OWNER' as WorkspaceRole }
+const FAMILY_MEMBERS = ['members_view', 'members_invite', 'members_modify', 'members_remove']
 
 /** What the server grants each role, per the shipped permission file. */
 const GRANTS: Record<WorkspaceType, Record<WorkspaceRole, string[]>> = {
@@ -27,6 +29,7 @@ const GRANTS: Record<WorkspaceType, Record<WorkspaceRole, string[]>> = {
       'guardrails_view'],
     USER: ['members_view', 'guardrails_view'],
   },
+  FAMILY: { OWNER: FAMILY_MEMBERS, ADMIN: FAMILY_MEMBERS, DEVELOPER: [], USER: ['members_view'] },
 }
 
 export function makeSnapshot(
@@ -34,7 +37,8 @@ export function makeSnapshot(
   role: WorkspaceRole = 'OWNER',
   overrides: Partial<AuthorizationSnapshot> = {},
 ): AuthorizationSnapshot {
-  const active = type === 'PERSONAL' ? PERSONAL : { ...ACME, role }
+  const active = type === 'PERSONAL' ? PERSONAL : type === 'FAMILY' ? { ...RAOS, role } : { ...ACME, role }
+  const family = type === 'FAMILY'
   return {
     userId: 'user-1',
     email: 'me@example.com',
@@ -42,8 +46,12 @@ export function makeSnapshot(
     activeWorkspace: active,
     role,
     permissions: GRANTS[type][role],
-    assignableRoles: role === 'OWNER' ? ['ADMIN', 'DEVELOPER', 'USER'] : role === 'ADMIN' ? ['DEVELOPER', 'USER'] : [],
-    workspaces: [PERSONAL, { ...ACME, role: type === 'ORGANIZATION' ? role : 'USER' }],
+    assignableRoles: family
+      ? (role === 'OWNER' ? ['ADMIN', 'USER'] : role === 'ADMIN' ? ['USER'] : [])
+      : role === 'OWNER' ? ['ADMIN', 'DEVELOPER', 'USER'] : role === 'ADMIN' ? ['DEVELOPER', 'USER'] : [],
+    workspaces: family
+      ? [PERSONAL, { ...RAOS, role }]
+      : [PERSONAL, { ...ACME, role: type === 'ORGANIZATION' ? role : 'USER' }],
     pendingInvitationCount: 0,
     permissionsVersion: 'v1',
     ...overrides,

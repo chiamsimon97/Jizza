@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, ChevronsUpDown, LifeBuoy, LogOut, Settings, ShieldCheck, User } from 'lucide-react'
+import { ChevronsUpDown, LifeBuoy, LogOut, Settings, ShieldCheck } from 'lucide-react'
 import { useAuthorization } from '@/auth/useAuthorization'
 import { ThemeSwitcher } from '@/components/theme/ThemeSwitcher'
 import { useSignOut } from '@/hooks/useSignOut'
-import { AccountChoices, CreateOrganization, PublicBadge, accountDescription, accountLabel } from './AccountSwitcher'
+import { AccountChoices, CreateFamily, CreateOrganization, PublicBadge, accountDescription, accountIcon, accountLabel, type CreateKind } from './AccountSwitcher'
 
 /**
  * The active account at the bottom of the left menu, like Claude's. It opens one menu with the
@@ -15,7 +15,7 @@ export function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onN
   const { data: snapshot } = useAuthorization()
   const signOut = useSignOut()
   const [open, setOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<CreateKind | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -32,8 +32,7 @@ export function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onN
 
   const email = snapshot?.email ?? ''
   const active = snapshot?.activeWorkspace
-  const isOrg = active?.type === 'ORGANIZATION'
-  const Icon = isOrg ? Building2 : User
+  const Icon = accountIcon(active)
   const label = active ? accountLabel(active) : 'Account'
   const activePublic = !!active && (snapshot?.publicWorkspaceIds ?? []).includes(active.id)
   const superAdmin = snapshot?.platformRole === 'SUPER_ADMIN'
@@ -54,7 +53,7 @@ export function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onN
               </p>
             )}
           </div>
-          <AccountChoices inMenu onNavigate={go} onCreate={() => { setOpen(false); setCreating(true) }} />
+          <AccountChoices inMenu onNavigate={go} onCreate={kind => { setOpen(false); setCreating(kind) }} />
           <div className="my-1 h-px bg-gray-100 dark:bg-gray-800" />
           <Link role="menuitem" to="/settings" onClick={go} className={itemClass}>
             <Settings className="h-4 w-4 text-gray-400" />Settings
@@ -104,7 +103,8 @@ export function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onN
           </span>
         )}
       </button>
-      <CreateOrganization open={creating} onClose={() => setCreating(false)} onNavigate={onNavigate} />
+      <CreateOrganization open={creating === 'organization'} onClose={() => setCreating(null)} onNavigate={onNavigate} />
+      <CreateFamily open={creating === 'family'} onClose={() => setCreating(null)} onNavigate={onNavigate} />
     </div>
   )
 }

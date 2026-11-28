@@ -1,10 +1,10 @@
 import { Lock } from 'lucide-react'
-import { useAuthorization, isOrganization } from '@/auth/useAuthorization'
+import { useAuthorization, hasMembers } from '@/auth/useAuthorization'
 
 /** Shown in place of a page the active account or role can't open. */
 export function NoAccessPage() {
   const { data } = useAuthorization()
-  const org = isOrganization(data) ? data!.activeWorkspace.name : null
+  const org = hasMembers(data) ? data!.activeWorkspace.name : null
   return (
     <div className="page">
       <div className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 px-6 py-16 text-center animate-fade-in dark:border-gray-700">
