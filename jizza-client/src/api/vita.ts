@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -137,5 +137,16 @@ export const vitaApi = {
   draft: (id: string) => api.get<DraftView>(`/api/vita/documents/${id}/draft`),
   discardDraft: (id: string) => api.delete<VitaDocument>(`/api/vita/documents/${id}/draft`),
   confirmDraft: (id: string, draft: DocumentDraft, opts: { patientConfirmed?: boolean; doctorId?: string | null } = {}) =>
-    api.post<{ document: VitaDocument; saved: { medicines: string[] } }>(`/api/vita/documents/${id}/confirm`, { draft, ...opts }),
+    api.post<{ document: VitaDocument; saved: { medicines: string[]; labReport?: string | null } }>(`/api/vita/documents/${id}/confirm`, { draft, ...opts }),
+  // Lab results and checks (7b)
+  labTests: () => api.get<LabTest[]>('/api/vita/lab-tests'),
+  labs: (personId: string) => api.get<LabReport[]>(`${person(personId)}/labs`),
+  lab: (id: string) => api.get<LabReportView>(`/api/vita/labs/${id}`),
+  updateLab: (id: string, body: LabReportInput) => api.put<LabReportView>(`/api/vita/labs/${id}`, body),
+  removeLab: (id: string) => api.delete<void>(`/api/vita/labs/${id}`),
+  labTrend: (personId: string, test: string) => api.get<LabTrend>(`${person(personId)}/labs/trend?test=${encodeURIComponent(test)}`),
+  checks: (personId: string) => api.get<VitaCheck[]>(`${person(personId)}/checks`),
+  addCheck: (personId: string, body: CheckInput) => api.post<VitaCheck>(`${person(personId)}/checks`, body),
+  updateCheck: (personId: string, id: string, body: CheckInput) => api.put<VitaCheck>(`${person(personId)}/checks/${id}`, body),
+  removeCheck: (personId: string, id: string) => api.delete<void>(`${person(personId)}/checks/${id}`),
 }

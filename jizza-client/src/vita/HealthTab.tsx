@@ -32,6 +32,8 @@ import { Settings } from './screens/Settings'
 import { Medicines } from './screens/Medicines'
 import { Documents } from './screens/Documents'
 import { DocumentReview } from './screens/DocumentReview'
+import { Labs } from './screens/Labs'
+import { LabReportPage } from './screens/LabReport'
 import { Visits } from './screens/Visits'
 import { Vitals } from './screens/Vitals'
 import { isReadingKind } from './readings'
@@ -73,7 +75,9 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const name = personName(person)
   const closed = person.status !== 'active'
   const view = findView(scope.view)
-  const go = (id: string) => setScope({ view: id, condition: null, doc: null })
+  const go = (id: string) => setScope({ view: id, condition: null, doc: null, report: null, test: null })
+  const openReport = (id: string) => setScope({ view: 'lab', report: id, test: null })
+  const openTest = (code: string | null) => setScope({ view: 'labs', report: null, test: code })
   const openDocument = (id: string) => setScope({ view: 'document', doc: id })
   const openCondition = (id: string) => setScope({ view: 'condition', condition: id })
   const askVita = () => {
@@ -115,7 +119,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-14 md:mx-0 md:w-48 md:shrink-0 md:flex-col md:overflow-visible md:px-0">
           {HEALTH_VIEWS.filter(v => !v.hidden).map(v => {
             const Icon = VIEW_ICONS[v.id]
-            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions', document: 'documents' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition', 'document'].includes(view.id) && v.id === 'home')
+            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions', document: 'documents', lab: 'labs' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition', 'document', 'lab'].includes(view.id) && v.id === 'home')
             return (
               <span key={v.id} className="contents">
                 {v.groupStart && <span aria-hidden className="hidden md:my-1 md:block md:border-t md:border-gray-200 dark:md:border-gray-800" />}
@@ -140,18 +144,22 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
             )}
             {view.id === 'quick-start' && !closed && <QuickStart personId={person.id} personName={name} onDone={() => go('home')} />}
             {view.id === 'conditions' && <Conditions personId={person.id} readOnly={closed} onOpenCondition={openCondition} />}
-            {view.id === 'condition' && <ConditionPage personId={person.id} conditionId={scope.condition} readOnly={closed} onBack={() => go('conditions')} onOpen={go} />}
+            {view.id === 'condition' && <ConditionPage personId={person.id} conditionId={scope.condition} readOnly={closed} onBack={() => go('conditions')} onOpen={go} onOpenTest={openTest} />}
             {view.id === 'vitals' && (
               <Vitals personId={person.id} readOnly={closed} adding={addReading} onAddDone={() => setAddReading(null)} onOpenCard={() => go('emergency')}
                 initialKind={isReadingKind(scope.kind) ? scope.kind : undefined} />
             )}
             {view.id === 'medicines' && <Medicines personId={person.id} readOnly={closed} adding={addMedicine} onAddDone={() => setAddMedicine(false)} />}
             {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} />}
+            {view.id === 'labs' && (
+              <Labs personId={person.id} readOnly={closed} test={scope.test} onOpenReport={openReport} onOpenTest={openTest} onUpload={() => { go('documents'); setAddDocument(true) }} />
+            )}
+            {view.id === 'lab' && <LabReportPage personId={person.id} reportId={scope.report} readOnly={closed} onBack={() => go('labs')} onOpenTest={openTest} />}
             {view.id === 'documents' && (
               <Documents personId={person.id} readOnly={closed} onReview={openDocument} uploading={addDocument} onUploadDone={() => setAddDocument(false)} />
             )}
             {view.id === 'document' && scope.doc && (
-              <DocumentReview personId={person.id} documentId={scope.doc} readOnly={closed} onBack={() => go('documents')} onOpen={go} />
+              <DocumentReview personId={person.id} documentId={scope.doc} readOnly={closed} onBack={() => go('documents')} onOpen={go} onOpenReport={openReport} />
             )}
             {view.id === 'allergies' && <Allergies personId={person.id} readOnly={closed} />}
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={closed} onOpen={go} />}

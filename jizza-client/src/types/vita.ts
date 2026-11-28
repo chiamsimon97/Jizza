@@ -291,7 +291,9 @@ export interface TrendView {
 
 /** One measure's range slot, with the person's own row and the doctor's target where set. */
 export interface RangeView {
-  kind: ReadingKind
+  /** Null on a lab test's row, which carries labTestCode instead. */
+  kind: ReadingKind | null
+  labTestCode?: string | null
   context: string | null
   setting: string | null
   status: 'set' | 'not_set'
@@ -322,7 +324,8 @@ export interface UsualRange {
 }
 
 export interface RangeInput {
-  kind: ReadingKind
+  kind?: ReadingKind
+  labTestCode?: string
   context?: string | null
   setting?: string | null
   low?: number | string | null
@@ -360,6 +363,7 @@ export interface HomeView {
   /** The next scheduled reminders, at most five. */
   reminders: VitaReminder[]
   refillsDue?: number
+  lastLabReport?: LastLabReport | null
 }
 
 export type DoctorKind = 'doctor' | 'hospital' | 'clinic' | 'lab' | 'pharmacy'
@@ -400,9 +404,19 @@ export interface ConditionMeasure {
 
 export interface ConditionCheck {
   check: string
+  /** The interval's config state and label. */
   state: ConfigState
   label: string
   interval?: JsonValue
+  needsVerification?: boolean
+  /** From 7b: whether the check is due. */
+  status?: 'due' | 'upcoming' | 'no_record' | 'not_set'
+  statusLabel?: string
+  lastDone?: string
+  lastDoneFrom?: 'lab' | 'check'
+  dueOn?: string
+  dueFrom?: 'doctor' | 'interval'
+  intervalUsed?: string
 }
 
 /** A condition page's data (spec 5.6, 7.5). */
@@ -412,7 +426,9 @@ export interface ConditionSummary {
   doctor?: Doctor
   measures: ConditionMeasure[]
   lowReadings?: Reading[]
+  /** Shown only until there is a result; then labResults takes its place. */
   labs?: string
+  labResults?: LabTrend[]
   checks: ConditionCheck[]
   medicines: { id: string; name: string; strength: string | null; status: MedicineStatus; schedule: MedicineSchedule | null; adherence7Days?: AdherenceResult }[]
 }
@@ -643,3 +659,119 @@ export interface DocumentDraft {
 }
 
 export interface DraftView { document: VitaDocument; draft: DocumentDraft | null; needsPassword?: boolean }
+
+// ── Lab results and checks (Phase 1b, 7b) ────────────────────────────────────
+
+export interface LabTestRef { code: string; name: string; group: string; unit: string; decimals: number }
+export interface LabTest extends LabTestRef {
+  conversions: { from: string; source: string | null; needsVerification: boolean }[]
+}
+
+export interface LabReport {
+  id: string
+  personId: string
+  labName: string | null
+  collectedOn: string | null
+  reportedOn: string | null
+  documentId: string | null
+  doctorId: string | null
+  status: string
+  notes: string | null
+  version: number
+  date: string | null
+  rows: number
+  labFlagged: number
+}
+
+export type LabFlag = 'low' | 'normal' | 'high' | 'critical' | 'unknown'
+
+/** The target side of a lab value: separate from the lab flag, never merged with it. */
+export interface LabTarget {
+  status: 'in_range' | 'outside_range' | 'not_set' | 'set'
+  range?: string | null
+  source?: string | null
+  label: string
+  needsVerification?: boolean
+  doctorName?: string | null
+  setOn?: string | null
+  outside?: string[]
+}
+
+export interface LabResult {
+  id: string
+  reportId: string
+  testCode: string | null
+  testNameAsPrinted: string | null
+  section: string | null
+  valueAsPrinted: string | null
+  valueNum: number | null
+  valueText: string | null
+  unit: string | null
+  refText: string | null
+  flagAsPrinted: string | null
+  flag: LabFlag
+  confidence: number | null
+  sortOrder: number
+  test: LabTestRef | null
+  shown: { value: string | null; unit: string | null; range: string | null; converted: boolean; asPrinted?: string; needsVerification?: boolean }
+  labFlag: { flag: LabFlag; label: string }
+  target: LabTarget
+  secondary?: { what: string; value: number; shown: string; unit: string; needsVerification: boolean; source: string | null }[]
+}
+
+export interface LabReportView { report: LabReport; date: string | null; results: LabResult[] }
+
+export interface LabResultChange {
+  id: string
+  testNameAsPrinted?: string | null
+  section?: string | null
+  valueAsPrinted?: string | null
+  unit?: string | null
+  rangeAsPrinted?: string | null
+  flagAsPrinted?: string | null
+  testCode?: string | null
+  remove?: boolean
+}
+export interface LabReportInput {
+  labName?: string | null
+  collectedOn?: string | null
+  reportedOn?: string | null
+  doctorId?: string | null
+  notes?: string | null
+  version?: number
+  results?: LabResultChange[]
+}
+
+export interface LabChange { by: number; shown: string; direction: 'up' | 'down' | 'same' }
+export interface LabTrendPoint extends LabResult {
+  date: string
+  reportId: string
+  labName?: string | null
+  comparable: boolean
+  changeSincePrevious?: LabChange
+}
+export interface LabTrend {
+  test: LabTestRef
+  target: LabTarget
+  points: LabTrendPoint[]
+  count: number
+  changeSinceFirst?: LabChange
+  changeSincePrevious?: LabChange
+}
+
+export type CheckKind = 'eye' | 'foot' | 'kidney' | 'dental' | 'lipids' | 'hba1c' | 'custom'
+export interface VitaCheck {
+  id: string
+  personId: string
+  kind: CheckKind
+  customName: string | null
+  conditionId: string | null
+  doneOn: string | null
+  resultNote: string | null
+  visitId: string | null
+  documentId: string | null
+  nextDueOn: string | null
+}
+export type CheckInput = Partial<Omit<VitaCheck, 'id' | 'personId'>>
+
+export interface LastLabReport { id: string; date: string | null; labName: string | null; rows: number; labFlagged: number }
