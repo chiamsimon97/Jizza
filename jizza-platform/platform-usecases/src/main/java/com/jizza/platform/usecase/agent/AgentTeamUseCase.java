@@ -75,6 +75,9 @@ public class AgentTeamUseCase {
           saves the day themselves, and never pass it on to anyone. A blood pressure, sugar or
           HbA1c goal reads the doctor's target or the configured default; never pick a number for
           one yourself. Open the Goals view with vita_open_screen.
+          The weekly note and the Insights view are built from the record's own rows. Something
+          that "goes with" something else never means one causes the other: never say it does,
+          and never read a cause, a diagnosis or a medicine change into them.
           Tag anything you record about the user's body, symptoms or treatment with the "health"
           classification.
           """,

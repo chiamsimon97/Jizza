@@ -1,6 +1,7 @@
 package com.jizza.platform.api.jobs;
 
 import com.jizza.platform.usecase.vita.documents.VitaMailPullService;
+import com.jizza.platform.usecase.vita.insights.VitaWeeklyNoteService;
 import com.jizza.platform.usecase.vita.medicine.VitaReminderService;
 import java.time.Instant;
 import java.util.UUID;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Component;
  * other reminders, and today's dose rows if the nightly run did not make them) and
  * {@code jizza-vita-nightly} at 00:45 (end dates, 48 hours of dose rows, refills, visit
  * reminders), and {@code jizza-vita-mail} at 07:15 (reports in linked mailboxes, each filed as a
- * document to review). All are safe to run twice. The log holds counts and user ids only.
+ * document to review), and {@code jizza-vita-weekly} on Sundays at 19:00 (the weekly health note
+ * for each open record). All are safe to run twice. The log holds counts and user ids only.
  */
 @Component
 @ConditionalOnProperty(name = "jizza.health.enabled", havingValue = "true")
@@ -27,10 +29,19 @@ public class VitaJobs {
 
   private final VitaReminderService reminders;
   private final VitaMailPullService mail;
+  private final VitaWeeklyNoteService weekly;
 
-  public VitaJobs(VitaReminderService reminders, VitaMailPullService mail) {
+  public VitaJobs(VitaReminderService reminders, VitaMailPullService mail, VitaWeeklyNoteService weekly) {
     this.reminders = reminders;
     this.mail = mail;
+    this.weekly = weekly;
+  }
+
+  /** The weekly health note: kept and sent once per open record and week. */
+  @Scheduled(cron = "0 0 19 * * SUN", zone = "Asia/Kolkata")
+  @SchedulerLock(name = "jizza-vita-weekly", lockAtMostFor = "PT1H", lockAtLeastFor = "PT1M")
+  public void weeklyNote() {
+    weekly.weekly(Instant.now(), null);
   }
 
   @Scheduled(cron = "0 * * * * *", zone = "Asia/Kolkata")
