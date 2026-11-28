@@ -545,3 +545,101 @@ export interface VitaReminder {
   status: 'scheduled' | 'sent' | 'done' | 'dismissed' | 'cancelled'
 }
 export type ReminderInput = Partial<Omit<VitaReminder, 'id' | 'personId'>>
+
+// ── Documents and the extraction review (Phase 1b) ───────────────────────────
+
+export type DocumentKind = 'prescription' | 'lab_report' | 'scan' | 'discharge_summary' | 'certificate' | 'bill' | 'policy' | 'other'
+
+export interface VitaDocument {
+  id: string
+  personId: string
+  kind: DocumentKind
+  title: string | null
+  documentDate: string | null
+  doctorId: string | null
+  conditionId: string | null
+  fileId: string | null
+  contentType: string | null
+  sizeBytes: number | null
+  pageCount: number | null
+  extractionStatus: 'none' | 'pending' | 'done' | 'failed'
+  extractionError: string | null
+  extractedAt: string | null
+  needsPassword: boolean
+  hasDraft: boolean
+  draftRows?: number
+  patientCheck?: 'match' | 'mismatch' | 'unknown'
+  confirmed: boolean
+  confirmedAt: string | null
+  confirmedByUserId: string | null
+  private: boolean | null
+  notes: string | null
+  version?: number
+  createdAt?: string
+}
+
+export type DocumentInput = Partial<Pick<VitaDocument, 'kind' | 'title' | 'documentDate' | 'doctorId' | 'conditionId' | 'private' | 'notes'>>
+
+export interface DraftTest {
+  section?: string | null
+  name: string | null
+  valueAsPrinted: string | null
+  value: number | null
+  valueText?: string | null
+  unit: string | null
+  rangeAsPrinted: string | null
+  refText?: string | null
+  refLow?: number | null
+  refHigh?: number | null
+  refLowInclusive?: boolean | null
+  refHighInclusive?: boolean | null
+  flagAsPrinted: string | null
+  flag: 'high' | 'low' | 'normal' | 'unknown' | null
+  needsCheck: boolean
+  confidence?: number | null
+  notes?: string[]
+  /** Left out when confirming. */
+  skip?: boolean
+}
+
+export interface DraftMedicine {
+  name: string | null
+  nameUnsure: boolean
+  strength: string | null
+  form: MedicineForm | null
+  doseAsPrinted: string | null
+  timingAsPrinted: string | null
+  frequencyAsPrinted?: string | null
+  durationAsPrinted: string | null
+  scheduleReading?: string | null
+  schedule: ScheduleInput | null
+  asNeeded: boolean
+  startDate: string | null
+  endDate: string | null
+  needsCheck: boolean
+  notes?: string[]
+  skip?: boolean
+}
+
+/** What Vita read from a document; nothing in it is saved until the person confirms. */
+export interface DocumentDraft {
+  kind: DocumentKind
+  documentDate: string | null
+  documentDateAsPrinted?: string | null
+  labName?: string | null
+  doctorName?: string | null
+  readFrom: 'text' | 'scan' | 'photo'
+  pages?: number | null
+  rowCount?: number
+  notes?: string[]
+  patient?: { name?: string | null; age?: string | null; sex?: string | null } | null
+  /** Vita's own check; never sent back as truth. */
+  patientCheck: { status: 'match' | 'mismatch' | 'unknown'; reasons?: string[]; notes?: string[] }
+  tests: DraftTest[]
+  medicines: DraftMedicine[]
+  advice?: string[]
+  reviewAfter?: string | null
+  confirmed?: boolean
+}
+
+export interface DraftView { document: VitaDocument; draft: DocumentDraft | null; needsPassword?: boolean }

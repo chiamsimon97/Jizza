@@ -30,6 +30,8 @@ import { Profile } from './screens/Profile'
 import { QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
 import { Medicines } from './screens/Medicines'
+import { Documents } from './screens/Documents'
+import { DocumentReview } from './screens/DocumentReview'
 import { Visits } from './screens/Visits'
 import { Vitals } from './screens/Vitals'
 import { isReadingKind } from './readings'
@@ -56,6 +58,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const [addReading, setAddReading] = useState<ReadingKind | null>(null)
   const [addVisit, setAddVisit] = useState(false)
   const [addMedicine, setAddMedicine] = useState(false)
+  const [addDocument, setAddDocument] = useState(false)
   const navigate = useNavigate()
 
   if (isLoading) return <SkeletonRows rows={4} />
@@ -70,7 +73,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const name = personName(person)
   const closed = person.status !== 'active'
   const view = findView(scope.view)
-  const go = (id: string) => setScope({ view: id, condition: null })
+  const go = (id: string) => setScope({ view: id, condition: null, doc: null })
+  const openDocument = (id: string) => setScope({ view: 'document', doc: id })
   const openCondition = (id: string) => setScope({ view: 'condition', condition: id })
   const askVita = () => {
     setChatDraft(`@${agent.name} ${view.ask}`)
@@ -95,7 +99,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           </select>
         </label>
         <span className="ml-auto flex items-center gap-1">
-          {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }} onMedicine={() => { go('medicines'); setAddMedicine(true) }}
+          {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }} onMedicine={() => { go('medicines'); setAddMedicine(true) }} onDocument={() => { go('documents'); setAddDocument(true) }}
             onCondition={() => go('conditions')} onAllergy={() => go('allergies')} />}
           <button type="button" onClick={askVita} title={`Ask ${agent.name} about this screen`}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -111,7 +115,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-14 md:mx-0 md:w-48 md:shrink-0 md:flex-col md:overflow-visible md:px-0">
           {HEALTH_VIEWS.filter(v => !v.hidden).map(v => {
             const Icon = VIEW_ICONS[v.id]
-            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition'].includes(view.id) && v.id === 'home')
+            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions', document: 'documents' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition', 'document'].includes(view.id) && v.id === 'home')
             return (
               <span key={v.id} className="contents">
                 {v.groupStart && <span aria-hidden className="hidden md:my-1 md:block md:border-t md:border-gray-200 dark:md:border-gray-800" />}
@@ -143,6 +147,12 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
             )}
             {view.id === 'medicines' && <Medicines personId={person.id} readOnly={closed} adding={addMedicine} onAddDone={() => setAddMedicine(false)} />}
             {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} />}
+            {view.id === 'documents' && (
+              <Documents personId={person.id} readOnly={closed} onReview={openDocument} uploading={addDocument} onUploadDone={() => setAddDocument(false)} />
+            )}
+            {view.id === 'document' && scope.doc && (
+              <DocumentReview personId={person.id} documentId={scope.doc} readOnly={closed} onBack={() => go('documents')} onOpen={go} />
+            )}
             {view.id === 'allergies' && <Allergies personId={person.id} readOnly={closed} />}
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={closed} onOpen={go} />}
             {view.id === 'profile' && <Profile personId={person.id} readOnly={closed} onOpen={go} />}
@@ -158,8 +168,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
 }
 
 /** "Add": what can be added today, and what comes later, never a dead end. */
-function AddMenu({ onReading, onVisit, onMedicine, onCondition, onAllergy }: {
-  onReading: (kind: ReadingKind) => void; onVisit: () => void; onMedicine: () => void; onCondition: () => void; onAllergy: () => void
+function AddMenu({ onReading, onVisit, onMedicine, onDocument, onCondition, onAllergy }: {
+  onReading: (kind: ReadingKind) => void; onVisit: () => void; onMedicine: () => void; onDocument: () => void; onCondition: () => void; onAllergy: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -191,7 +201,7 @@ function AddMenu({ onReading, onVisit, onMedicine, onCondition, onAllergy }: {
           {item('Visit', Stethoscope, onVisit)}
           {item('Condition', HeartPulse, onCondition)}
           {item('Allergy', TriangleAlert, onAllergy)}
-          {item('Document', ClipboardList, undefined, 'Later')}
+          {item('Document or report', ClipboardList, onDocument)}
         </div>
       )}
     </div>

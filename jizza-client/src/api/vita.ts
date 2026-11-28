@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -118,4 +118,24 @@ export const vitaApi = {
   addReminder: (personId: string, body: ReminderInput) => api.post<VitaReminder>(`${person(personId)}/reminders`, body),
   updateReminder: (personId: string, id: string, body: ReminderInput) => api.put<VitaReminder>(`${person(personId)}/reminders/${id}`, body),
   removeReminder: (personId: string, id: string) => api.delete<void>(`${person(personId)}/reminders/${id}`),
+
+  documents: (personId: string) => api.get<VitaDocument[]>(`${person(personId)}/documents`),
+  /** A PDF or a photo; Vita reads it only when asked, and saves nothing it read until confirmed. */
+  uploadDocument: (personId: string, file: File, meta: DocumentInput = {}) => {
+    const form = new FormData()
+    form.append('file', file)
+    for (const [k, v] of Object.entries(meta)) if (v != null && v !== '') form.append(k, String(v))
+    return api.upload<VitaDocument>(`${person(personId)}/documents`, form)
+  },
+  document: (id: string) => api.get<VitaDocument>(`/api/vita/documents/${id}`),
+  updateDocument: (id: string, body: DocumentInput) => api.put<VitaDocument>(`/api/vita/documents/${id}`, body),
+  removeDocument: (id: string) => api.delete<void>(`/api/vita/documents/${id}`),
+  moveDocument: (id: string, toPersonId: string) => api.post<VitaDocument>(`/api/vita/documents/${id}/move`, { toPersonId }),
+  /** The stored file, for the preview beside the review; same-origin, so the session cookie applies. */
+  documentFileUrl: (id: string) => `/api/vita/documents/${id}/file`,
+  extractDocument: (id: string, password?: string) => api.post<DraftView>(`/api/vita/documents/${id}/extract`, password ? { password } : {}),
+  draft: (id: string) => api.get<DraftView>(`/api/vita/documents/${id}/draft`),
+  discardDraft: (id: string) => api.delete<VitaDocument>(`/api/vita/documents/${id}/draft`),
+  confirmDraft: (id: string, draft: DocumentDraft, opts: { patientConfirmed?: boolean; doctorId?: string | null } = {}) =>
+    api.post<{ document: VitaDocument; saved: { medicines: string[] } }>(`/api/vita/documents/${id}/confirm`, { draft, ...opts }),
 }

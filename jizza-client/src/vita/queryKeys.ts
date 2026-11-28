@@ -25,6 +25,8 @@ export const vitaKeys = {
   medicineEvents: (personId: string, id: string) => ['vita', personId, 'medicines', id, 'events'] as const,
   doses: (personId: string, from: string, to: string) => ['vita', personId, 'doses', from, to] as const,
   adherence: (personId: string, from: string, to: string) => ['vita', personId, 'adherence', from, to] as const,
+  documents: (personId: string) => ['vita', personId, 'documents'] as const,
+  draft: (personId: string, id: string) => ['vita', personId, 'documents', id, 'draft'] as const,
   reminders: (personId: string) => ['vita', personId, 'reminders'] as const,
   /** Doctors belong to the household; any change also touches each person's targets and visits. */
   doctors: ['vita', '_', 'doctors'] as const,
