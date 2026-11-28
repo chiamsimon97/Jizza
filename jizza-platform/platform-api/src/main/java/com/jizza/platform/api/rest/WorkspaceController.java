@@ -46,6 +46,13 @@ public class WorkspaceController {
     return workspaces.createOrganization(CurrentUser.userId(), request.name());
   }
 
+  /** Creates a Family (spec 4.4), at most one per owner. The session is not switched. */
+  @PostMapping("/families")
+  @StepUpRequired
+  public WorkspaceSummary createFamily(@Valid @RequestBody Requests.CreateOrganization request) {
+    return workspaces.createFamily(CurrentUser.userId(), request.name());
+  }
+
   /** Leaves the active organization and moves this session back to the Individual account. */
   @DeleteMapping("/current/membership")
   public ResponseEntity<AuthorizationSnapshot> leave() {

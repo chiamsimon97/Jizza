@@ -43,6 +43,7 @@ public class VitaLabHomeCards implements VitaHomeUseCase.HomeExtras {
 
   @Override
   public void addToHome(PersonScope p, ObjectNode home) {
+    if (!p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.LABS)) return;
     var reports = labs.reports(p).stream().filter(r -> "confirmed".equals(r.path("status").asText()))
         .filter(r -> VitaLabUseCase.date(r) != null)
         .max(java.util.Comparator.comparing(VitaLabUseCase::date));
@@ -71,6 +72,7 @@ public class VitaLabHomeCards implements VitaHomeUseCase.HomeExtras {
     };
     VitaTargetService.Context ctx = targets.context(p);
     VitaLabUseCase.Formulas formulas = labs.formulas(p);
+    if (!p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.LABS)) return;
     ArrayNode out = summary.putArray("labResults");
     for (String code : tests) {
       var test = catalog.normaliser().byCode(code).orElse(null);
@@ -86,7 +88,7 @@ public class VitaLabHomeCards implements VitaHomeUseCase.HomeExtras {
       case "hypertension" -> HYPERTENSION_CHECKS;
       default -> List.of();
     };
-    if (!names.isEmpty()) {
+    if (!names.isEmpty() && p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.VISITS)) {
       UUID conditionId = condition.hasNonNull("id") ? UUID.fromString(condition.get("id").asText()) : null;
       summary.set("checks", checks.statuses(p, ctx, "clinical.intervals." + template + ".", names, conditionId,
           LocalDate.now(VitaRecordsUseCase.ZONE)));

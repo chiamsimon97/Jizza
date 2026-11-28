@@ -155,8 +155,9 @@ public class JsonPermissionCatalog implements PermissionCatalog {
       types.add(switch (t) {
         case "personal" -> WorkspaceType.PERSONAL;
         case "organization" -> WorkspaceType.ORGANIZATION;
+        case "family" -> WorkspaceType.FAMILY;
         default -> throw invalid("'" + name + "' lists unknown account type '" + t
-            + "'; use personal or organization");
+            + "'; use personal, organization or family");
       });
     }
     Set<WorkspaceRole> roles = EnumSet.noneOf(WorkspaceRole.class);

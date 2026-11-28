@@ -197,7 +197,7 @@ public class VitaLabUseCase {
 
   /** The person's live reports, newest first, with how many rows the lab flagged. */
   public List<ObjectNode> list(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.LABS, false);
     List<ObjectNode> out = new ArrayList<>();
     for (ObjectNode r : reports(p)) {
       List<ObjectNode> rows = results(p, UUID.fromString(r.path("id").asText()));
@@ -237,7 +237,7 @@ public class VitaLabUseCase {
   @Transactional
   public ObjectNode update(UUID caller, UUID reportId, JsonNode body) {
     Found f = report(caller, reportId);
-    PersonScope p = f.p().requireOpen();
+    PersonScope p = f.p().requireOpen().requireManager();
     if (body == null || !body.isObject()) throw new ValidationException("Send the changes as an object.");
     Set<String> allowed = Set.of("labName", "collectedOn", "reportedOn", "doctorId", "notes", "results", "version");
     body.fieldNames().forEachRemaining(k -> {
@@ -329,7 +329,7 @@ public class VitaLabUseCase {
   @Transactional
   public void delete(UUID caller, UUID reportId) {
     Found f = report(caller, reportId);
-    PersonScope p = f.p().requireOpen();
+    PersonScope p = f.p().requireOpen().requireManager();
     for (ObjectNode r : results(p, reportId)) forms.removeRow(p, RESULT, "Lab result", UUID.fromString(r.path("id").asText()));
     forms.removeRow(p, REPORT, "Lab report", reportId);
     audit.record(p.owner(), ActorType.USER, caller, "vita.lab.report.removed", reportId.toString(), null);
@@ -345,7 +345,7 @@ public class VitaLabUseCase {
    * of the changes.
    */
   public ObjectNode trend(UUID caller, UUID personId, String testCode) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.LABS, false);
     LabNormaliser n = catalog.normaliser();
     LabNormaliser.Test test = n.byCode(testCode).orElseThrow(() -> new ValidationException("test is not a known lab test."));
     return trend(p, targets.context(p), test, formulas(p));
@@ -506,11 +506,21 @@ public class VitaLabUseCase {
 
   record Found(PersonScope p, ObjectNode row) {}
 
+  /** A report the caller manages or that is shared with them on labs; anything else is not found. */
   Found report(UUID caller, UUID id) {
-    UUID owner = scopes.own(caller).ownerUserId();
-    ObjectNode row = records.get(REPORT, owner, id).filter(r -> r.path("deletedAt").isNull())
-        .orElseThrow(() -> new NotFoundException("Lab report", id));
-    return new Found(scopes.person(caller, UUID.fromString(row.path("personId").asText())), row);
+    for (UUID owner : scopes.reachableOwners(caller)) {
+      var found = records.get(REPORT, owner, id).filter(r -> r.path("deletedAt").isNull());
+      if (found.isEmpty()) continue;
+      PersonScope p;
+      try {
+        p = scopes.person(caller, UUID.fromString(found.get().path("personId").asText()), com.jizza.platform.usecase.vita.sharing.VitaSection.LABS, false);
+      } catch (NotFoundException notShared) {
+        continue;
+      }
+      if (!p.owner().equals(owner) || VitaRecordsUseCase.hidden(p, found.get())) continue;
+      return new Found(p, found.get());
+    }
+    throw new NotFoundException("Lab report", id);
   }
 
   public List<ObjectNode> reports(PersonScope p) {

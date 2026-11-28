@@ -13,6 +13,8 @@ import java.util.UUID;
 /** A managed adult's consent to have their money recorded in this account. */
 @Entity
 @Table(name = "fin_consent")
+// Kai sees only notes for money; Vita keeps its health notes in the same table (V73).
+@org.hibernate.annotations.SQLRestriction("domain = 'finance'")
 public class FinConsentEntity {
 
   @Id

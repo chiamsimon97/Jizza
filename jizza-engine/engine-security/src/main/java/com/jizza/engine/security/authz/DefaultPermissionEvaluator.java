@@ -95,8 +95,7 @@ public class DefaultPermissionEvaluator implements PermissionEvaluator {
     if (superAdminInSession(userId)) {
       catalog.all().forEach(d -> permissions.add(d.name()));
     }
-    Set<WorkspaceRole> assignable = activeSummary.type() == WorkspaceType.PERSONAL
-        ? EnumSet.noneOf(WorkspaceRole.class) : RoleAssignmentPolicy.assignableRoles(role);
+    Set<WorkspaceRole> assignable = RoleAssignmentPolicy.assignableRoles(role, activeSummary.type());
 
     Instant now = Instant.now();
     long pending = directory.pendingFor(userId, email).stream()

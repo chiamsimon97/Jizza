@@ -67,7 +67,7 @@ public class VitaDoseUseCase {
    * included; default today), each with its doses. On the web the medicine names are shown.
    */
   public ObjectNode list(UUID caller, UUID personId, LocalDate from, LocalDate to) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = medicines.read(caller, personId);
     var ps = medicines.settings(p);
     LocalDate today = LocalDate.now(ps.zone());
     LocalDate a = from == null ? today : from;
@@ -84,7 +84,16 @@ public class VitaDoseUseCase {
   }
 
   /** The slots of the given rows, grouped by due time, in order. */
+  /** The doses a shared caller may see: none of a private medicine (spec 5.10). */
+  List<DoseRow> visible(PersonScope p, List<DoseRow> rows) {
+    if (!p.shared()) return rows;
+    Map<UUID, Boolean> hidden = new HashMap<>();
+    return rows.stream().filter(r -> !hidden.computeIfAbsent(r.medicineId(), id -> records.get("vita_medicine", p.owner(), id)
+        .map(m -> VitaRecordsUseCase.hidden(p, m)).orElse(true))).toList();
+  }
+
   public List<ObjectNode> slots(PersonScope p, List<DoseRow> rows, boolean showNames, Instant now) {
+    rows = visible(p, rows);
     var ps = medicines.settings(p);
     Duration missedAfter = medicines.reminderSettings(p.owner()).missedAfter();
     Map<UUID, ObjectNode> meds = new HashMap<>();
@@ -129,6 +138,7 @@ public class VitaDoseUseCase {
       d.put("actedAt", r.actedAt() == null ? null : r.actedAt().toString());
       d.put("markedBy", r.actedByUserId() == null ? null : r.actedByUserId().toString());
       d.put("markedByYou", r.actedByUserId() != null && r.actedByUserId().equals(p.caller()));
+      d.put("markedByName", r.actedByUserId() == null ? null : scopes.nameOf(p, r.actedByUserId()));
       d.put("late", late(r, missedAfter));
       d.put("version", r.version());
       list.add(d);
@@ -149,6 +159,7 @@ public class VitaDoseUseCase {
     s.put("markedBy", lastMark == null ? null : lastMark.actedByUserId().toString());
     s.put("markedAt", lastMark == null ? null : lastMark.actedAt().toString());
     s.put("markedByYou", lastMark != null && lastMark.actedByUserId().equals(p.caller()));
+    s.put("markedByName", lastMark == null ? null : scopes.nameOf(p, lastMark.actedByUserId()));
     s.put("missedAt", dueAt.plus(missedAfter).toString());
     s.set("doses", list);
     return s;
@@ -190,9 +201,14 @@ public class VitaDoseUseCase {
 
   @Transactional
   public ObjectNode actDose(UUID caller, UUID doseId, Act act, Instant now, boolean showNames) {
-    UUID owner = scopes.own(caller).ownerUserId();
-    DoseRow row = doses.get(owner, doseId).orElseThrow(() -> new NotFoundException("Dose", doseId));
-    PersonScope p = scopes.person(caller, row.personId()).requireOpen();
+    // The caller's own dose, or one of a record shared with them (the dose is the manager's row).
+    java.util.Set<UUID> owners = new java.util.LinkedHashSet<>();
+    owners.add(scopes.own(caller).ownerUserId());
+    scopes.sharedWithMe(caller).forEach(s -> owners.add(s.owner()));
+    DoseRow row = owners.stream().map(o -> doses.get(o, doseId)).flatMap(java.util.Optional::stream).findFirst()
+        .orElseThrow(() -> new NotFoundException("Dose", doseId));
+    PersonScope p = medicines.write(caller, row.personId());
+    if (!p.owner().equals(row.userId()) || visible(p, List.of(row)).isEmpty()) throw new NotFoundException("Dose", doseId);
     act(p, row, act, now);
     return slotView(p, row.dueAt(), now, showNames);
   }
@@ -200,20 +216,20 @@ public class VitaDoseUseCase {
   /** Acts on every dose of a time slot that is still open; returns the slot. */
   @Transactional
   public ObjectNode actSlot(UUID caller, UUID personId, Instant dueAt, JsonNode body) {
-    return actSlot(scopes.person(caller, personId).requireOpen(), dueAt, Act.of(body), Instant.now(), true);
+    return actSlot(medicines.write(caller, personId), dueAt, Act.of(body), Instant.now(), true);
   }
 
   @Transactional
   public ObjectNode actSlot(PersonScope p, Instant dueAt, Act act, Instant now, boolean showNames) {
     p.requireOpen();
-    List<DoseRow> rows = doses.slot(p.owner(), p.personId(), dueAt);
+    List<DoseRow> rows = visible(p, doses.slot(p.owner(), p.personId(), dueAt));
     if (rows.isEmpty()) throw new NotFoundException("Medicines slot", dueAt.toString());
     for (DoseRow r : rows) act(p, r, act, now);
     return slotView(p, dueAt, now, showNames);
   }
 
   public ObjectNode slotView(PersonScope p, Instant dueAt, Instant now, boolean showNames) {
-    List<DoseRow> rows = doses.slot(p.owner(), p.personId(), dueAt);
+    List<DoseRow> rows = visible(p, doses.slot(p.owner(), p.personId(), dueAt));
     if (rows.isEmpty()) throw new NotFoundException("Medicines slot", dueAt.toString());
     return slots(p, rows, showNames, now).get(0);
   }
@@ -259,7 +275,7 @@ public class VitaDoseUseCase {
 
   /** Taken ÷ due from {@code from} to {@code to} (local dates, both included), overall and per medicine. */
   public ObjectNode adherence(UUID caller, UUID personId, LocalDate from, LocalDate to) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = medicines.read(caller, personId);
     var ps = medicines.settings(p);
     LocalDate today = LocalDate.now(ps.zone());
     LocalDate b = to == null ? today : to;

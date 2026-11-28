@@ -30,7 +30,7 @@ class VitaConfigServiceTest {
   private final UUID me = UUID.randomUUID();
   private final VitaStore store = mock(VitaStore.class);
   private final VitaConfigService config = new VitaConfigService(store,
-      new VitaScopeResolver(mock(FinanceStore.class)), mock(AuditLog.class));
+      new VitaScopeResolver(mock(FinanceStore.class), mock(com.jizza.engine.api.vita.VitaShares.class), mock(com.jizza.engine.api.workspace.WorkspaceDirectory.class)), mock(AuditLog.class));
   private final List<ConfigRow> rows = new ArrayList<>();
 
   private void row(UUID user, String key, String json, String source, LocalDate verified) {

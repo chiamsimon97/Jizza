@@ -21,7 +21,7 @@ class VitaScopeResolverTest {
   private final UUID me = UUID.randomUUID();
   private final UUID stranger = UUID.randomUUID();
   private final FinanceStore people = mock(FinanceStore.class);
-  private final VitaScopeResolver scopes = new VitaScopeResolver(people);
+  private final VitaScopeResolver scopes = new VitaScopeResolver(people, org.mockito.Mockito.mock(com.jizza.engine.api.vita.VitaShares.class), org.mockito.Mockito.mock(com.jizza.engine.api.workspace.WorkspaceDirectory.class));
 
   private PersonRow person(UUID owner, String kind, String status) {
     return new PersonRow(UUID.randomUUID(), owner, "Someone", kind, "huf".equals(kind) ? "huf" : "individual",

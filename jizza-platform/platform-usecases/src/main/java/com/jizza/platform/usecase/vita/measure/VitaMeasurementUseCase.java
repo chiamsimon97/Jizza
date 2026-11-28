@@ -97,7 +97,7 @@ public class VitaMeasurementUseCase {
 
   /** The person's live readings, newest first, each with its evaluation; {@code kind} narrows the list. */
   public List<ObjectNode> list(UUID caller, UUID personId, String kind) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, false);
     var ctx = targets.context(p);
     return list(p, kind).stream().map(r -> withEvaluation(r, ctx)).toList();
   }
@@ -117,13 +117,13 @@ public class VitaMeasurementUseCase {
   }
 
   public ObjectNode get(UUID caller, UUID personId, UUID id) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, false);
     return withEvaluation(get(p, id), targets.context(p));
   }
 
   @Transactional
   public ObjectNode create(UUID caller, UUID personId, JsonNode body, Options options) {
-    return create(scopes.person(caller, personId), body, "manual", options);
+    return create(scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, true), body, "manual", options);
   }
 
   @Transactional
@@ -186,8 +186,9 @@ public class VitaMeasurementUseCase {
   /** Corrects a reading: the fields sent replace what was there. */
   @Transactional
   public ObjectNode update(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, true).requireOpen();
     ObjectNode current = get(p, id);
+    VitaRecordsUseCase.requireOwnEntry(p, current, "Reading", id);
     if (body == null || !body.isObject()) throw new ValidationException("Send the fields as an object.");
     ObjectNode merged = current.deepCopy();
     merged.retain(FIELDS);
@@ -207,7 +208,7 @@ public class VitaMeasurementUseCase {
 
   @Transactional
   public void delete(UUID caller, UUID personId, UUID id) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, true).requireOpen().requireManager();
     forms.removeRow(p, TABLE, "Reading", id);
     audit.record(p.owner(), ActorType.USER, caller, "vita.measurement.removed", id.toString(), null);
   }

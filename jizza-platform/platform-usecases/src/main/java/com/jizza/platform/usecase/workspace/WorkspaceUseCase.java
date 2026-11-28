@@ -56,6 +56,27 @@ public class WorkspaceUseCase {
   }
 
   /**
+   * Creates a Family (spec 4.4): a name of 2 to 100 characters, the creator as its owner, at most one
+   * per owner, from inside an Individual account. It is never public.
+   */
+  @Transactional
+  public WorkspaceSummary createFamily(UUID userId, String name) {
+    String trimmed = name == null ? "" : name.trim();
+    if (trimmed.length() < 2 || trimmed.length() > 100) {
+      throw new ValidationException("The Family name must be 2 to 100 characters");
+    }
+    if (directory.familyOwnedBy(userId).isPresent()) {
+      throw new JizzaException(HttpStatus.CONFLICT, "family-exists", "You already have a Family",
+          "You already have a Family. Invite people to it from Members.");
+    }
+    var ws = directory.createFamily(userId, trimmed);
+    listings.registerAccount(ws.id(), AccountSource.FAMILY_CREATED, userId);
+    audit.record(userId, ActorType.USER, userId, "workspace.created", trimmed,
+        Json.obj().put("workspaceId", ws.id().toString()).put("type", WorkspaceType.FAMILY.name()));
+    return new WorkspaceSummary(ws.id(), ws.type(), ws.name(), WorkspaceRole.OWNER);
+  }
+
+  /**
    * Confirms the person may act in {@code workspaceId} and remembers it for their next sign-in.
    * Anything they do not belong to is reported as missing. The super admin may enter any account.
    */
@@ -81,7 +102,8 @@ public class WorkspaceUseCase {
     }
     if (m.role() == WorkspaceRole.OWNER) {
       throw new JizzaException(HttpStatus.CONFLICT, "owner-cannot-leave", "The owner can't leave",
-          "The owner can't leave the organization.");
+          m.workspaceType() == WorkspaceType.FAMILY ? "The owner can't leave the Family."
+              : "The owner can't leave the organization.");
     }
     directory.removeMember(m.id());
     UUID personal = directory.personalWorkspaceOf(userId);

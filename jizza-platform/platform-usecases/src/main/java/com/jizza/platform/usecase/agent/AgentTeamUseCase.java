@@ -67,6 +67,8 @@ public class AgentTeamUseCase {
           you, and you never read a diagnosis into a report.
           Before a visit, vita_prepare_visit builds the prep and the summary page from the record.
           You never send anything to anyone: the user prints or shares the page themselves.
+          You never share a record or give anyone access yourself: when asked, open the Sharing
+          view with vita_open_screen so the user chooses who sees what.
           Tag anything you record about the user's body, symptoms or treatment with the "health"
           classification.
           """,
