@@ -327,6 +327,7 @@ its `/api` twin for the phone's owner.
 | `/agent/v1/me/help` | The web's Help guides (jizza-client/src/help/guides): slug, title, summary, section, order, updated |
 | `/agent/v1/me/help/{slug}` | One guide with its Markdown `body`, header removed |
 | `/agent/v1/me/vita/today?tz=&hours=` | Today's medicine slots for the people the user manages (see Vita below) |
+| `/agent/v1/me/vita/people` | Whose health data the phone may send (see Vita: health data below) |
 | `/agent/v1/me/vita/connectors` | This phone's health-data connections (see Vita: health data below) |
 
 ### Acting: signed requests
@@ -439,6 +440,16 @@ health data; they never write to Health Connect or HealthKit. Never log a value.
 **Data types** are named as the readings they become: `steps`, `sleep`, `workout`,
 `resting_heart_rate`, `bp`, `glucose`, `weight`, `spo2`, `temperature`. Raw heart rate is not
 taken (send the platform's resting heart rate); `heart_rate` is refused.
+
+**`GET /agent/v1/me/vita/people`** (device token) lists whose health data this phone may be asked
+to send: the record the user is linked to as themself (or their own "self" record) first, then the
+people they manage, then records shared with them with View on vitals. Pick the `asSelf` record by
+default and let the person choose another; only `canSendHealthData` people can take a connection.
+
+```json
+[{"id":"6f1c…","name":"Amma","asSelf":true,"shared":true,"canSendHealthData":true},
+ {"id":"7a20…","name":"Father","asSelf":false,"shared":false,"canSendHealthData":true}]
+```
 
 **`GET /agent/v1/me/vita/connectors`** (device token) lists this phone's connections, live first:
 

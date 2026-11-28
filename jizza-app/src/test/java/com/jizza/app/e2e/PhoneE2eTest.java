@@ -471,6 +471,16 @@ class PhoneE2eTest extends E2eSupport {
     String grantBody = Json.write(Map.of("personId", me, "source", "health_connect", "dataTypes",
         java.util.List.of("steps", "sleep")));
     assertThat(post("/agent/v1/me/vita/connectors", grantBody, null).statusCode()).isEqualTo(401);
+    // The phone learns whose data it may send.
+    JsonNode people = Json.read(get("/agent/v1/me/vita/people").body());
+    assertThat(people.toString()).contains(me);
+    for (JsonNode person : people) {
+      if (person.path("id").asText().equals(me)) {
+        assertThat(person.path("name").asText()).isEqualTo("Me");
+        assertThat(person.path("canSendHealthData").asBoolean()).isTrue();
+        assertThat(person.path("shared").asBoolean()).isFalse();
+      }
+    }
     JsonNode grant = signedPost("/agent/v1/me/vita/connectors", Map.of("personId", me, "source", "health_connect",
         "dataTypes", java.util.List.of("steps", "sleep")));
     String grantId = grant.path("id").asText();

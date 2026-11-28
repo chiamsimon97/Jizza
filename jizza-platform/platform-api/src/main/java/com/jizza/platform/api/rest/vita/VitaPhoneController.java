@@ -175,6 +175,41 @@ public class VitaPhoneController {
 
   // ── Health data from the phone (Phase 3) ───────────────────────────────────
 
+  /**
+   * The people whose health data this phone may be asked to send: the record the user is linked
+   * to as themself, or their own "self" record, first; then the people they manage; then records
+   * shared with them with View on vitals. {@code canSendHealthData} is true when the record is open
+   * and the user may edit its vitals (a manager, or a share with Edit on vitals).
+   */
+  @PublicEndpoint
+  @GetMapping("/people")
+  public List<ObjectNode> people(HttpServletRequest http) {
+    Companion phone = phones.read(http);
+    UUID user = phone.userId();
+    List<ObjectNode> out = new ArrayList<>();
+    for (PersonScope shared : scopes.sharedWithMe(user)) {
+      if (shared.grant().asSelf() && shared.canView(VitaSection.VITALS)) out.add(personItem(shared, true));
+    }
+    List<ObjectNode> own = new ArrayList<>();
+    for (var person : people.people(user)) {
+      if ("huf".equals(person.kind()) || !"active".equals(person.status())) continue;
+      PersonScope p = scopes.person(user, person.id());
+      ObjectNode item = personItem(p, "self".equals(person.kind()));
+      if ("self".equals(person.kind())) own.add(0, item); else own.add(item);
+    }
+    out.addAll(own);
+    for (PersonScope shared : scopes.sharedWithMe(user)) {
+      if (!shared.grant().asSelf() && shared.canView(VitaSection.VITALS)) out.add(personItem(shared, false));
+    }
+    return out;
+  }
+
+  private static ObjectNode personItem(PersonScope p, boolean asSelf) {
+    return Json.obj().put("id", p.personId().toString()).put("name", p.person().displayName())
+        .put("asSelf", asSelf).put("shared", p.shared())
+        .put("canSendHealthData", p.open() && p.scope().canEdit() && p.canEdit(VitaSection.VITALS));
+  }
+
   /** This phone's connections, for every person it reaches. */
   @PublicEndpoint
   @GetMapping("/connectors")
