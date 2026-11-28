@@ -66,12 +66,12 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   public static final String FORM_CARD = "vita_form";
 
   public static final List<String> FORMS = List.of("profile", "emergency_contact", "reading", "condition",
-      "allergy", "doctor", "medicine", "dose", "visit", "vaccination", "event");
+      "allergy", "doctor", "medicine", "dose", "visit", "vaccination", "event", "journal");
   static final List<String> SECTIONS = List.of("people", "profile", "emergency_card", "conditions",
       "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "medicines", "settings");
   static final List<String> SCREENS = List.of("home", "conditions", "allergies", "emergency-card",
       "profile", "quick-start", "vitals", "doctors", "visits", "medicines", "documents", "labs", "checks",
-      "vaccinations", "events", "summary", "settings", "sharing", "insurance");
+      "vaccinations", "events", "summary", "settings", "sharing", "insurance", "journal", "goals");
   /** Fields a reading form may carry, as the user typed them (Save posts them unchanged). */
   static final List<String> READING_FORM = List.of("kind", "value", "value2", "value3", "unit", "context",
       "meal", "setting", "takenAt", "note");
@@ -172,7 +172,8 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
             + "allergy, doctor, medicine (one the user or their doctor named), dose (marking a "
             + "time slot taken or skipped), visit (a doctor's visit, with questions to ask), "
             + "vaccination (a dose given, or the next due date the user gives) or event (a surgery, "
-            + "procedure, hospital stay, injury or fall). Use it whenever the user tells you one of these: fill in what "
+            + "procedure, hospital stay, injury or fall) or journal (the day's check-in: mood and "
+            + "energy 1-5, pain 0-10, symptom words, a note). Use it whenever the user tells you one of these: fill in what "
             + "they said, exactly as they said it, and leave the rest. Say in a sentence what to "
             + "check, then end your turn. Nothing is saved until the user presses Save on the "
             + "card; you never save it yourself. A reading that is a red flag is answered with "
@@ -181,7 +182,9 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                 "form", enumOf("Which form", FORMS),
                 "title", JsonSchemas.string("Optional heading"),
                 "intro", JsonSchemas.string("Optional: one sentence above the fields"),
-                "values", JsonSchemas.objectSchema("What you know, by field. profile: bloodGroup "
+                "values", JsonSchemas.objectSchema("What you know, by field. journal: entryDate "
+                    + "(yyyy-mm-dd, today by default), mood (1-5), energy (1-5), pain (0-10), symptoms "
+                    + "(a list of the user's own words), notes. profile: bloodGroup "
                     + "(a_pos, a_neg, b_pos, b_neg, ab_pos, ab_neg, o_pos, o_neg, unknown), heightCm, "
                     + "sexAtBirth (female, male, intersex, unknown), dob (yyyy-mm-dd), organDonor "
                     + "(true/false), preferredHospital, preferredHospitalPhone. emergency_contact: "
@@ -504,6 +507,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   static boolean allowed(String form, String field) {
     if ("profile".equals(form)) return PROFILE_FORM.contains(field);
     if ("dose".equals(form)) return DOSE_FORM.contains(field);
+    if ("journal".equals(form)) return com.jizza.platform.usecase.vita.journal.VitaJournalUseCase.FORM_FIELDS.contains(field);
     if ("medicine".equals(form) && SCHEDULE_FORM.contains(field)) return true;
     if ("medicine".equals(form) && ("conditionId".equals(field) || "prescribedBy".equals(field))) return false;
     VitaTable t = table(form);
@@ -527,6 +531,13 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   }
 
   static JsonNode checked(String form, String field, JsonNode v) {
+    if ("journal".equals(form)) {
+      if ("entryDate".equals(field)) {
+        return Json.mapper().getNodeFactory().textNode(VitaRecordsUseCase.pastDate(field, v).toString());
+      }
+      if ("symptoms".equals(field)) return com.jizza.platform.usecase.vita.journal.VitaJournalUseCase.symptoms(v);
+      return com.jizza.platform.usecase.vita.journal.VitaJournalUseCase.clean(Json.obj().set(field, v)).get(field);
+    }
     if ("medicine".equals(form) && SCHEDULE_FORM.contains(field)) return VitaMedicineUseCase.checkScheduleField(field, v);
     if ("dose".equals(form)) {
       return switch (field) {

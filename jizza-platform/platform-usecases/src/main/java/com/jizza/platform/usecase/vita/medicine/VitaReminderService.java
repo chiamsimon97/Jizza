@@ -55,11 +55,14 @@ public class VitaReminderService {
   private final RecurrenceDays days;
   private final com.jizza.engine.api.finance.FinanceStore people;
   private final com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance;
+  private final com.jizza.platform.usecase.vita.goals.VitaGoalUseCase goals;
 
   public VitaReminderService(VitaDoseStore doses, VitaRecords records, VitaScopeResolver scopes,
                              VitaMedicineUseCase medicines, VitaReminderNotifier notifier, RecurrenceDays days,
                              com.jizza.engine.api.finance.FinanceStore people,
-                             com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance) {
+                             com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance,
+                             com.jizza.platform.usecase.vita.goals.VitaGoalUseCase goals) {
+    this.goals = goals;
     this.people = people;
     this.insurance = insurance;
     this.doses = doses;
@@ -321,6 +324,7 @@ public class VitaReminderService {
             if (medicines.refillCheck(p, med, rs, now)) refills++;
           }
           visits += visitReminders(p, rs, now);
+          goals.markMet(p);
         }
         renewals += insurance.renewals(owner, rs, now);
       } catch (RuntimeException e) {

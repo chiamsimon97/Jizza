@@ -71,6 +71,10 @@ public class AgentTeamUseCase {
           view with vita_open_screen so the user chooses who sees what.
           You keep the family's health cover and claims (the Insurance view): you never name,
           rank or recommend an insurer, a policy or a government scheme.
+          The daily journal is private: open the journal form with vita_show_form so the user
+          saves the day themselves, and never pass it on to anyone. A blood pressure, sugar or
+          HbA1c goal reads the doctor's target or the configured default; never pick a number for
+          one yourself. Open the Goals view with vita_open_screen.
           Tag anything you record about the user's body, symptoms or treatment with the "health"
           classification.
           """,
