@@ -1353,7 +1353,7 @@ export interface ProblemDetail {
 }
 
 // ── Accounts, members and access ──────────────────────────────────────────────
-export type WorkspaceType = 'PERSONAL' | 'ORGANIZATION'
+export type WorkspaceType = 'PERSONAL' | 'ORGANIZATION' | 'FAMILY'
 export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'DEVELOPER' | 'USER'
 
 export interface WorkspaceSummary {
@@ -1402,7 +1402,7 @@ export interface Member {
   you: boolean
 }
 
-export type AccountSource = 'INDIVIDUAL_SIGNUP' | 'ORGANIZATION_SIGNUP' | 'ORGANIZATION_CREATED' | 'EXISTING'
+export type AccountSource = 'INDIVIDUAL_SIGNUP' | 'ORGANIZATION_SIGNUP' | 'ORGANIZATION_CREATED' | 'FAMILY_CREATED' | 'EXISTING'
 
 /** An Individual or Team account registered in Jizza Public. publicRole is its owner's role there. */
 export interface RegisteredAccount {

@@ -7,7 +7,11 @@ export const workspacesApi = {
   create: (name: string) =>
     api.post<WorkspaceSummary>('/api/workspaces', { name }),
 
-  /** Leaves the active organization. The answer is the Personal account's snapshot. */
+  /** Creates the caller's Family (at most one each). Needs a fresh step-up; it is not made active. */
+  createFamily: (name: string) =>
+    api.post<WorkspaceSummary>('/api/workspaces/families', { name }),
+
+  /** Leaves the active organization or Family. The answer is the Personal account's snapshot. */
   leave: () =>
     api.delete<AuthorizationSnapshot>('/api/workspaces/current/membership'),
 

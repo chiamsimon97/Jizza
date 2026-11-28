@@ -17,6 +17,7 @@ const SOURCE_LABELS: Record<AccountSource, string> = {
   INDIVIDUAL_SIGNUP: 'Individual sign-up',
   ORGANIZATION_SIGNUP: 'Team sign-up',
   ORGANIZATION_CREATED: 'Team created later',
+  FAMILY_CREATED: 'Family created later',
   EXISTING: 'Before the registry',
 }
 
@@ -24,7 +25,10 @@ const TYPE_FILTERS: { value: '' | WorkspaceType; label: string }[] = [
   { value: '', label: 'All accounts' },
   { value: 'PERSONAL', label: 'Individual' },
   { value: 'ORGANIZATION', label: 'Team' },
+  { value: 'FAMILY', label: 'Family' },
 ]
+
+const TYPE_LABELS: Record<WorkspaceType, string> = { PERSONAL: 'Individual', ORGANIZATION: 'Team', FAMILY: 'Family' }
 
 /**
  * The Super Admin's view of Jizza Public: every Individual and Team account registered there, and
@@ -61,17 +65,20 @@ export function RegisteredAccountsPage() {
 
   const accounts = (data?.accounts ?? []).filter(a => !type || a.type === type)
   const individuals = data?.accounts.filter(a => a.type === 'PERSONAL').length ?? 0
-  const teams = (data?.accounts.length ?? 0) - individuals
+  const families = data?.accounts.filter(a => a.type === 'FAMILY').length ?? 0
+  const teams = (data?.accounts.length ?? 0) - individuals - families
   const publicName = data?.workspaceName || 'Jizza Public'
 
   return (
     <div className="page">
       <PageHeader icon={UserCog} title="Registered accounts"
-        description={`Every Individual and Team account is registered in ${publicName} when it's created. People don't join ${publicName} or see it, unless you make them a Developer or Admin.`} />
+        description={`Every Individual, Family and Team account is registered in ${publicName} when it's created. People don't join ${publicName} or see it, unless you make them a Developer or Admin.`} />
 
       {data && (
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          {individuals} Individual and {teams} Team account{teams === 1 ? '' : 's'}{debounced ? ' match' : ''}.
+          {families
+            ? `${individuals} Individual, ${teams} Team and ${families} Family account${families === 1 ? '' : 's'}`
+            : `${individuals} Individual and ${teams} Team account${teams === 1 ? '' : 's'}`}{debounced ? ' match' : ''}.
         </p>
       )}
 
@@ -101,14 +108,14 @@ export function RegisteredAccountsPage() {
               <div className="min-w-0">
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                   {a.type === 'PERSONAL' ? a.ownerEmail : a.name}
-                  <Badge>{a.type === 'PERSONAL' ? 'Individual' : 'Team'}</Badge>
+                  <Badge>{TYPE_LABELS[a.type] ?? 'Team'}</Badge>
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {a.type === 'ORGANIZATION' && `Owner ${a.ownerEmail} · `}
+                  {a.type !== 'PERSONAL' && `Owner ${a.ownerEmail} · `}
                   {SOURCE_LABELS[a.source]} · {new Date(a.registeredAt).toLocaleDateString()}
                 </p>
               </div>
-              {a.type === 'ORGANIZATION'
+              {a.type !== 'PERSONAL'
                 ? null
                 : a.publicRole === 'OWNER'
                   ? <Badge>{ROLE_LABELS.OWNER}</Badge>

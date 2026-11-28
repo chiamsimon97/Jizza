@@ -84,6 +84,14 @@ const organizationMenu: NavHub[] = [
   HUBS.organization,
 ]
 
+/**
+ * A Family account's menu: Members only. Nobody works inside a Family; each member keeps their own
+ * Individual account, where Health sharing is done.
+ */
+const familyMenu: NavHub[] = [
+  single('/members', 'Members', Users, { permission: PERMISSIONS.MEMBERS_VIEW }),
+]
+
 /** A group of Settings pages, shown as a heading in the Settings page's own list. */
 export interface SettingsGroup { title: string; items: NavTab[] }
 
@@ -125,6 +133,21 @@ const organizationSettings: SettingsGroup[] = [
   },
 ]
 
+const familySettings: SettingsGroup[] = [
+  {
+    title: 'Account',
+    items: [
+      { to: '/settings/general', label: 'General', icon: SlidersHorizontal },
+      { to: '/settings/security', label: 'Security', icon: ShieldCheck },
+    ],
+  },
+]
+
+function forType<T>(snapshot: AuthorizationSnapshot | undefined, personal: T, organization: T, family: T): T {
+  const type = snapshot?.activeWorkspace.type
+  return type === 'ORGANIZATION' ? organization : type === 'FAMILY' ? family : personal
+}
+
 /** Whether the snapshot lets the user open this tab. */
 export function canOpen(tab: NavTab, snapshot: AuthorizationSnapshot | undefined): boolean {
   if (!snapshot) return !tab.permission && !tab.superAdmin
@@ -146,7 +169,7 @@ export function pathMatches(tab: NavTab, pathname: string): boolean {
 
 /** The left menu for the active account, with what the role can't open left out. */
 export function menuFor(snapshot: AuthorizationSnapshot | undefined): { main: NavHub[]; platform: NavHub | null } {
-  const base = snapshot?.activeWorkspace.type === 'ORGANIZATION' ? organizationMenu : personalMenu
+  const base = forType(snapshot, personalMenu, organizationMenu, familyMenu)
   return {
     main: base.map(h => visibleHub(h, snapshot)).filter((h): h is NavHub => h !== null),
     platform: visibleHub(HUBS.platform, snapshot),
@@ -155,7 +178,7 @@ export function menuFor(snapshot: AuthorizationSnapshot | undefined): { main: Na
 
 /** The Settings page's list for the active account. */
 export function settingsFor(snapshot: AuthorizationSnapshot | undefined): SettingsGroup[] {
-  const base = snapshot?.activeWorkspace.type === 'ORGANIZATION' ? organizationSettings : personalSettings
+  const base = forType(snapshot, personalSettings, organizationSettings, familySettings)
   return base
     .map(g => ({ ...g, items: g.items.filter(i => canOpen(i, snapshot)) }))
     .filter(g => g.items.length > 0)

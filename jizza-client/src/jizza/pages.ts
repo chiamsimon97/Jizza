@@ -32,14 +32,18 @@ const PAGE_PERMISSION: Record<string, string> = {
 /** The only pages an Organization account has; the rest belong to the Individual account. */
 const ORGANIZATION_PAGES = new Set(['members', 'connections', 'notifications'])
 
+/** The only page a Family account has: it holds the member list and nothing else. */
+const FAMILY_PAGES = new Set(['members'])
+
 /**
  * Whether Jizza may open this page for the active account and role. Without a snapshot yet, only
  * personal pages that need no permission are allowed; the server still checks every request.
  */
 export function canOpenPage(key: string, snapshot: AuthorizationSnapshot | undefined): boolean {
   if (!PAGES[key]) return false
-  const isOrg = snapshot?.activeWorkspace.type === 'ORGANIZATION'
-  if (isOrg ? !ORGANIZATION_PAGES.has(key) : key === 'members') return false
+  const type = snapshot?.activeWorkspace.type
+  const allowed = type === 'ORGANIZATION' ? ORGANIZATION_PAGES : type === 'FAMILY' ? FAMILY_PAGES : null
+  if (allowed ? !allowed.has(key) : key === 'members') return false
   const needed = PAGE_PERMISSION[key]
   return !needed || (snapshot?.permissions.includes(needed) ?? false)
 }

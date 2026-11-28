@@ -28,4 +28,4 @@ export function getCachedSnapshot(): AuthorizationSnapshot | undefined {
   return queryClient.getQueryData<AuthorizationSnapshot>(CONTEXT_KEY)
 }
 
-export { accountHome, isOrganization } from '@/lib/account'
+export { accountHome, hasMembers, isFamily, isOrganization } from '@/lib/account'
