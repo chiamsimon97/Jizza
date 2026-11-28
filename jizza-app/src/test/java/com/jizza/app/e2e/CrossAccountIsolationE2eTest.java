@@ -47,7 +47,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
   private final Map<String, String> vitaRows = new LinkedHashMap<>();
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
     model.reset();
     owner = account();
     other = account();
@@ -201,6 +201,10 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         + "&to=" + java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).plusDays(1));
     assertThat(today.ok()).as(today.body()).isTrue();
     owned.put("/api/vita/doses/", today.json().path("slots").get(0).path("doses").get(0).path("id").asText());
+    var document = owner.upload("/api/vita/people/" + personId + "/documents", Map.of(), "owner.pdf", "application/pdf",
+        VitaDocumentsE2eTest.resource("rx-01-fictional.pdf"));
+    assertThat(document.status()).as(document.body()).isEqualTo(201);
+    owned.put("/api/vita/documents/", document.json().path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
