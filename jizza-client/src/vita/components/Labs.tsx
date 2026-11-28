@@ -86,7 +86,7 @@ export function LabChart({ trend, width = 640, height = 180 }: { trend: LabTrend
                   : s === 'in_range'
                     ? <circle cx={cx} cy={cy} r={4.5} fill="rgb(var(--agent-health))" />
                     : <rect x={cx - 4} y={cy - 4} width={8} height={8} transform={`rotate(45 ${cx} ${cy})`} fill="rgb(var(--agent-health))" />}
-                <text x={cx} y={height - 8} textAnchor="middle" className="fill-gray-500 text-[10px] dark:fill-gray-400">{formatDay(q.p.date)}</text>
+                <text x={cx} y={height - 8} textAnchor={pts.length > 1 && i === 0 ? 'start' : pts.length > 1 && i === pts.length - 1 ? 'end' : 'middle'} className="fill-gray-500 text-[10px] dark:fill-gray-400">{formatDay(q.p.date)}</text>
               </g>
             )
           })}

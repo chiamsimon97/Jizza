@@ -155,8 +155,8 @@ function LabTile({ t, onOpen }: { t: LabTrend; onOpen?: () => void }) {
   const last = t.points[t.points.length - 1]
   const values = t.points.filter(p => p.comparable && p.shown.value != null).map(p => Number(p.shown.value)).filter(Number.isFinite)
   return (
-    <section className="flex flex-col gap-1.5 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
-      <div className="flex items-start justify-between gap-2">
+    <section className="flex flex-col items-start gap-1.5 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
+      <div className="flex w-full items-start justify-between gap-2">
         <div>
           <p className="text-xs text-gray-500 dark:text-gray-400">{t.test.name}</p>
           <p className="font-mono text-xl font-semibold text-gray-900 dark:text-gray-100">{last ? `${last.shown.value} ` : '—'}<span className="font-sans text-xs font-normal text-gray-500 dark:text-gray-400">{last?.shown.unit ?? t.test.unit}</span></p>
