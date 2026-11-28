@@ -28,7 +28,7 @@ The review shows the document on one side and what Vita read on the other. Every
 - When Vita **could not read a medicine's name**, the name is left empty. Type it from the prescription, or tick **Leave out**. Vita never guesses a name.
 - Tick **Leave out** on any row you do not want saved.
 
-Press **Confirm** to save the rows you kept. Medicines are added to Medicines with the times you checked, and reminders start from today. **Discard what Vita read** throws the reading away and keeps the document.
+Press **Confirm** to save the rows you kept. Medicines are added to Medicines with the times you checked, and reminders start from today. A lab report becomes a report in [Lab results](/help/vita-labs), each test with its lab flag and target. **Discard what Vita read** throws the reading away and keeps the document.
 
 ## When the patient may be someone else
 

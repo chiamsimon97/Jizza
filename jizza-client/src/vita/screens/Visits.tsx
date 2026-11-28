@@ -12,6 +12,7 @@ import { ViewTitle } from '../components/Common'
 import { errorText, formatWhen, toLocalInput } from '../data'
 import { kindLabel } from '../readings'
 import { vitaKeys } from '../queryKeys'
+import { Checks } from './Checks'
 
 export const DOCTOR_KINDS: Record<DoctorKind, string> = { doctor: 'Doctor', hospital: 'Hospital', clinic: 'Clinic', lab: 'Lab', pharmacy: 'Pharmacy' }
 const VISIT_STATUS: Record<VisitStatus, string> = { planned: 'Planned', done: 'Done', cancelled: 'Cancelled' }
@@ -41,6 +42,7 @@ export function Visits({ personId, personName, readOnly, adding, onAddDone }: {
     <div className="flex flex-col gap-4">
       <ViewTitle title="Doctors and visits" sub="Doctors for the whole household; visits for the person picked above" />
       <VisitList personId={personId} personName={personName} readOnly={readOnly} adding={adding} onAddDone={onAddDone} />
+      <Checks personId={personId} readOnly={readOnly} />
       <Doctors readOnly={readOnly} />
     </div>
   )

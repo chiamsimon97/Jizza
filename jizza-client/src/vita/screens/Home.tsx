@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CalendarClock, ClipboardCheck, IdCard, Pill as PillIcon, Plus, RefreshCw } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardCheck, FlaskConical, IdCard, Pill as PillIcon, Plus, RefreshCw } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
 import { LoadFailed, Meter, Panel } from '@/portfolio/components/Panel'
 import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
 import { Sparkline } from '@/portfolio/components/Sparkline'
+import { formatDay } from '@/portfolio/components/AsOf'
 import type { EmergencyCard, HomeRedFlag, HomeView, Reading, ReadingKind, RedFlag, VitaConfigItem } from '@/types/vita'
 import { ViewTitle } from '../components/Common'
 import { DoseSlotCard } from '../components/DoseSlotCard'
@@ -90,6 +91,14 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
           </div>
         )}
         {h.latest.length > 0 && <div><Button size="sm" variant="ghost" onClick={() => onOpen('vitals')}>All readings and charts</Button></div>}
+        {h.lastLabReport && (
+          <button type="button" onClick={() => onOpen('labs')}
+            className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3 text-left text-sm hover:bg-gray-100 dark:bg-gray-800/60 dark:hover:bg-gray-800">
+            <FlaskConical className="h-4 w-4 text-gray-400" aria-hidden />
+            <span className="font-medium text-gray-900 dark:text-gray-100">Last lab report{h.lastLabReport.date ? `, ${formatDay(h.lastLabReport.date)}` : ''}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{[h.lastLabReport.labName, `${h.lastLabReport.rows} tests`, h.lastLabReport.labFlagged ? `${h.lastLabReport.labFlagged} flagged by the lab` : 'none flagged by the lab'].filter(Boolean).join(' · ')}</span>
+          </button>
+        )}
       </Panel>
 
       <div className="grid gap-4 md:grid-cols-2">
