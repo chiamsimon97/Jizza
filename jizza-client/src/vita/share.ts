@@ -47,11 +47,11 @@ export const VIEW_SECTION: Record<string, ShareSection | null> = {
   home: null, conditions: 'conditions', condition: 'conditions', medicines: 'medicines', vitals: 'vitals',
   visits: 'visits', 'visit-prep': 'visits', labs: 'labs', lab: 'labs', documents: 'documents', document: 'documents',
   vaccinations: 'vaccinations', surgeries: 'events', allergies: 'allergies', emergency: 'emergency', profile: 'profile',
-  insurance: 'insurance', journal: 'journal', goals: 'goals',
+  insurance: 'insurance', journal: 'journal', goals: 'goals', activity: 'vitals',
 }
 
 /** Views that belong to whoever keeps the record, never shown on a shared one. */
-export const MANAGER_ONLY_VIEWS = new Set(['sharing', 'connect', 'settings', 'quick-start', 'summary', 'activity'])
+export const MANAGER_ONLY_VIEWS = new Set(['sharing', 'connect', 'settings', 'quick-start', 'summary'])
 
 /** Whether a view opens on this record. */
 export function viewOpens(scope: ShareScope, viewId: string): boolean {

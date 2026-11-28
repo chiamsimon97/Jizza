@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Inbox, KeyRound, LogIn, Mail, Pencil, RefreshCw, Smartphone, Trash2, Upload, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CirclePause, Inbox, KeyRound, LogIn, Mail, Pencil, RefreshCw, Smartphone, Trash2, Upload, XCircle } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
 import { CheckField, SelectField, TextField } from '@/portfolio/components/Fields'
 import { LoadFailed, Panel, Pill } from '@/portfolio/components/Panel'
 import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
-import type { MailCheckResult, MailServer, MailSource, MailSourceInput, MailStatus } from '@/types/vita'
+import type { DeviceDataType, HealthConnection, MailCheckResult, MailServer, MailSource, MailSourceInput, MailStatus } from '@/types/vita'
 import { ViewTitle } from '../components/Common'
 import { errorText, formatWhen, useVitaPeople } from '../data'
 import { splitPeople } from '../people'
@@ -30,7 +30,8 @@ function StatusPill({ s }: { s: MailStatus | null }) {
 /**
  * Connect (7.17): Upload, and lab reports pulled from a connected mailbox: pick the mailbox, name the
  * sender, see the last check and its status. A report found is read into a draft and waits in
- * Documents for review, like an upload. Phone and watch sources come with a later update.
+ * Documents for review, like an upload. Phones and watches connected through Health Connect or Apple Health
+ * are listed with what they send, and can be stopped, with the offer to delete what they added.
  */
 export function Connect({ personId, readOnly, onOpen, onReview }: {
   personId: string
@@ -46,9 +47,7 @@ export function Connect({ personId, readOnly, onOpen, onReview }: {
         <div><Button size="sm" variant="secondary" onClick={() => onOpen('documents')}>Go to Documents</Button></div>
       </Panel>
       <Mailbox personId={personId} readOnly={readOnly} onReview={onReview} />
-      <Panel title={<><Smartphone className="h-4 w-4 text-gray-400" aria-hidden />Health Connect and Apple Health</>}>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Steps, sleep and heart rate from a phone or a watch come with the phone and watch update. Each source will show its status, last sync and the data it shares, with Remove.</p>
-      </Panel>
+      <Devices personId={personId} onOpen={onOpen} />
     </div>
   )
 }
@@ -164,5 +163,105 @@ function SourceForm({ start, servers, personId, onDone }: { start: MailSource | 
       </div>
       {save.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(save.error, 'Could not save the sender.')}</p>}
     </form>
+  )
+}
+
+export const DATA_TYPE_WORDS: Record<DeviceDataType, string> = {
+  steps: 'Steps', sleep: 'Sleep', workout: 'Workouts', resting_heart_rate: 'Resting heart rate', bp: 'Blood pressure',
+  glucose: 'Sugar', weight: 'Weight', spo2: 'Oxygen (SpO2)', temperature: 'Temperature',
+}
+const SOURCE_NAMES: Record<string, string> = { health_connect: 'Health Connect', apple_health: 'Apple Health' }
+const readings = (n: number) => `${n.toLocaleString('en-IN')} ${n === 1 ? 'reading' : 'readings'}`
+
+/**
+ * Phones and watches (7.17, 5.11): each connection with its phone, status, last sync and the data
+ * types it sends, each with what it added. Turning a type off or removing the connection stops
+ * sync at once; then the screen offers to delete what it added, which is asked separately.
+ */
+function Devices({ personId, onOpen }: { personId: string; onOpen: (view: string) => void }) {
+  const list = useQuery({ queryKey: vitaKeys.connectors(personId), queryFn: () => vitaApi.connectors(personId) })
+  const live = (list.data ?? []).filter(c => !c.revokedAt)
+  const ended = (list.data ?? []).filter(c => c.revokedAt && c.rowsWritten > 0)
+  return (
+    <Panel title={<><Smartphone className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Phones and watches</>}>
+      <p className="-mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Connect in the Jizza app on the phone: Health Connect on Android, Apple Health on an iPhone. The app only reads, and sends only the data you turn on.
+      </p>
+      {list.isLoading && <SkeletonRows rows={2} />}
+      {list.error && <LoadFailed text="Could not load the connections." onRetry={() => list.refetch()} />}
+      {list.data && !live.length && !ended.length && <p className="text-sm text-gray-600 dark:text-gray-300">No phone or watch is connected for this person.</p>}
+      {live.map(c => <Connection key={c.id} personId={personId} c={c} />)}
+      {ended.map(c => <Connection key={c.id} personId={personId} c={c} />)}
+      {live.length > 0 && <div><Button size="sm" variant="ghost" onClick={() => onOpen('activity')}>See activity and sleep</Button></div>}
+    </Panel>
+  )
+}
+
+function Connection({ personId, c }: { personId: string; c: HealthConnection }) {
+  const qc = useQueryClient()
+  const [offer, setOffer] = useState<{ types: DeviceDataType[] | null; rows: number } | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const refresh = () => { qc.invalidateQueries({ queryKey: vitaKeys.connectors(personId) }); qc.invalidateQueries({ queryKey: ['vita', personId, 'measurements'] }) }
+  const count = (types: DeviceDataType[] | null) => (types ?? c.dataTypes).reduce((a, t) => a + (c.rowsByType[t] ?? 0), 0)
+  const stop = useMutation({
+    mutationFn: (types: DeviceDataType[] | null) => vitaApi.revokeConnector(personId, c.id, { types: types ?? undefined }),
+    onSuccess: (r, types) => {
+      const rows = types ? types.reduce((a, t) => a + (r.rowsByType[t] ?? 0), 0) : r.rowsWritten
+      setDone(types ? `${types.map(t => DATA_TYPE_WORDS[t]).join(', ')} stopped.` : 'Connection removed. Nothing more is sent through it.')
+      setOffer(rows > 0 ? { types, rows } : null)
+      refresh()
+    },
+  })
+  const purge = useMutation({
+    mutationFn: (types: DeviceDataType[] | null) => vitaApi.revokeConnector(personId, c.id, { types: types ?? undefined, deleteData: true }),
+    onSuccess: r => { setOffer(null); setDone(`Deleted ${readings(r.rowsDeleted ?? 0)}.`); refresh() },
+  })
+  const revoked = !!c.revokedAt
+  const name = c.deviceName ?? (c.deviceId ? 'A phone' : 'Added on the web')
+  const types = revoked ? (Object.keys(c.rowsByType) as DeviceDataType[]) : c.dataTypes
+  return (
+    <section aria-label={`${name}, ${SOURCE_NAMES[c.source] ?? c.source}`} className="flex flex-col gap-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{name} <span className="font-normal text-gray-500 dark:text-gray-400">· {SOURCE_NAMES[c.source] ?? c.source}</span></p>
+        {revoked
+          ? <Pill><CirclePause className="h-3 w-3" aria-hidden />Stopped {formatWhen(c.revokedAt)}</Pill>
+          : <Pill tone="ok"><CheckCircle2 className="h-3 w-3" aria-hidden />Connected</Pill>}
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Connected {formatWhen(c.grantedAt)} · {c.lastSyncAt ? `last sync ${formatWhen(c.lastSyncAt)}` : 'not synced yet'}{c.shared ? ' · made by someone you share with' : ''}
+      </p>
+      <ul className="flex flex-col divide-y divide-gray-100 text-sm dark:divide-gray-800">
+        {types.map(t => (
+          <li key={t} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+            <span className="text-gray-800 dark:text-gray-100">{DATA_TYPE_WORDS[t] ?? t}</span>
+            <span className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              {readings(c.rowsByType[t] ?? 0)} added
+              {!revoked && c.dataTypes.length > 1 && (
+                <Button size="sm" variant="ghost" disabled={stop.isPending} onClick={() => { setDone(null); stop.mutate([t]) }}>Turn off</Button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!offer && (
+        <div className="flex flex-wrap gap-2">
+          {!revoked && <Button size="sm" variant="secondary" loading={stop.isPending} onClick={() => { setDone(null); stop.mutate(null) }}><Trash2 className="h-3.5 w-3.5" aria-hidden />Remove</Button>}
+          {revoked && c.rowsWritten > 0 && <Button size="sm" variant="secondary" onClick={() => { setDone(null); setOffer({ types: null, rows: count(null) }) }}>Delete what it added</Button>}
+        </div>
+      )}
+      {done && <p role="status" className="text-sm text-gray-700 dark:text-gray-200">{done}</p>}
+      {offer && (
+        <div className="flex flex-col gap-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/60">
+          <p className="text-sm text-gray-800 dark:text-gray-100">
+            Delete what it added? {readings(offer.rows)}{offer.types ? ` of ${offer.types.map(t => DATA_TYPE_WORDS[t].toLowerCase()).join(', ')}` : ''} from this phone stay in the record until you delete them. This cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="danger" loading={purge.isPending} onClick={() => purge.mutate(offer.types)}>Delete {readings(offer.rows)}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setOffer(null)}>Keep them</Button>
+          </div>
+        </div>
+      )}
+      {(stop.error || purge.error) && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(stop.error ?? purge.error, 'That did not work.')}</p>}
+    </section>
   )
 }

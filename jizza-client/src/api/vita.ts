@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import type { JsonValue } from '@/types/finance'
 import type {
+  ActivityReading, DeviceDataType, HealthConnection,
   GoalCheckinInput, GoalContext, GoalInput, GoalKind, GoalPreview, HealthGoal, JournalEntry, JournalInput,
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
@@ -227,4 +228,15 @@ export const vitaApi = {
   /** The target a new goal would read, and whether it can be created. */
   goalPreview: (personId: string, kind: GoalKind, context?: GoalContext | null) =>
     api.post<GoalPreview>('/api/vita/goals/preview', { personId, kind, context: context ?? undefined }),
+
+  // Devices (9a): connections are made on the phone; the web lists, stops and deletes.
+  connectors: (personId: string) => api.get<HealthConnection[]>(`/api/vita/connectors?personId=${encodeURIComponent(personId)}`),
+  /** Stops a connection, or only some of its data types; with deleteData, removes what it sent for them. */
+  revokeConnector: (personId: string, id: string, opts: { types?: DeviceDataType[]; deleteData?: boolean } = {}) => {
+    const q = new URLSearchParams({ personId })
+    if (opts.types?.length) q.set('types', opts.types.join(','))
+    if (opts.deleteData) q.set('deleteData', 'true')
+    return api.delete<HealthConnection>(`/api/vita/connectors/${id}?${q}`)
+  },
+  activity: (personId: string, kind: ActivityReading['kind']) => api.get<ActivityReading[]>(`${person(personId)}/measurements?kind=${kind}`),
 }
