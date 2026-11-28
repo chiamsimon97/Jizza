@@ -71,7 +71,8 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "medicines", "settings");
   static final List<String> SCREENS = List.of("home", "conditions", "allergies", "emergency-card",
       "profile", "quick-start", "vitals", "doctors", "visits", "medicines", "documents", "labs", "checks",
-      "vaccinations", "events", "summary", "settings", "sharing", "insurance", "journal", "goals");
+      "vaccinations", "events", "summary", "settings", "sharing", "insurance", "journal", "goals", "activity",
+      "connect");
   /** Fields a reading form may carry, as the user typed them (Save posts them unchanged). */
   static final List<String> READING_FORM = List.of("kind", "value", "value2", "value3", "unit", "context",
       "meal", "setting", "takenAt", "note");
