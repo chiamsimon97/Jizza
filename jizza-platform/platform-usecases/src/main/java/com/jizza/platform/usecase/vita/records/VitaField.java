@@ -30,7 +30,11 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
     /** The id of one of the owner's own rows ({@code doctorId} names a doctor). */
     REF,
     /** A number from 0 to {@code max} with at most two decimals (a stock count, a pack size). */
-    DECIMAL
+    DECIMAL,
+    /** Up to {@code max} ids of the owner's own rows of one table (a stay's documents). */
+    REFS,
+    /** Up to {@code max} short lines of text, each kept as {@code {"text": ...}} (a visit's questions). */
+    LINES
   }
 
   public static VitaField text(String name, int max) {
@@ -61,6 +65,18 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
   public static VitaField decimal(String name, int max) {
     return new VitaField(name, Type.DECIMAL, false, max, Set.of());
   }
+
+  /** Up to {@code max} ids of the owner's rows of {@code table}. */
+  public static VitaField refs(String name, String table, int max) {
+    return new VitaField(name, Type.REFS, false, max, Set.of(table));
+  }
+
+  /** Up to {@code max} lines of text, each at most {@link #LINE_MAX} characters. */
+  public static VitaField lines(String name, int max) {
+    return new VitaField(name, Type.LINES, false, max, Set.of());
+  }
+
+  public static final int LINE_MAX = 300;
 
   public VitaField need() {
     return new VitaField(name, type, true, max, values);

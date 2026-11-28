@@ -182,7 +182,9 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         Map.entry("emergency-contacts", Map.of("name", "Owner's brother", "phone", "+91 98000 00000")),
         Map.entry("conditions", Map.of("name", "Owner's mother's condition", "template", "diabetes_t2")),
         Map.entry("allergies", Map.of("substance", "Owner's mother's allergy")),
-        Map.entry("measurements", Map.of("kind", "weight", "value", 61.5)))) {
+        Map.entry("measurements", Map.of("kind", "weight", "value", 61.5)),
+        Map.entry("vaccinations", Map.of("vaccine", "Owner's vaccine", "givenOn", "2026-03-01")),
+        Map.entry("events", Map.of("kind", "admission", "fromDate", "2026-02-01", "doctorId", doctorId)))) {
       var row = owner.post("/api/vita/people/" + personId + "/" + form.getKey(), form.getValue());
       assertThat(row.ok()).as(row.body()).isTrue();
       vitaRows.put(form.getKey(), row.json().path("id").asText());
@@ -220,6 +222,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var check = owner.post("/api/vita/people/" + personId + "/checks", Map.of("kind", "eye", "doneOn", "2026-05-01"));
     assertThat(check.ok()).as(check.body()).isTrue();
     vitaRows.put("checks", check.json().path("id").asText());
+    owned.put("/api/vita/visits/", vitaRows.get("visits"));
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
@@ -305,6 +308,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
       if (e.getKey().equals("/api/vita/people/")) continue; // checked below, section by section
       if (e.getKey().equals("/api/vita/doses/")) continue; // read through the dose list
+      if (e.getKey().equals("/api/vita/visits/")) continue; // read through the person's visits
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
       if (e.getKey().equals("/api/finance/transactions/")) continue; // read through the list
@@ -406,6 +410,13 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
     var move = other.post("/api/vita/people/" + ownMe + "/measurements/" + reading.json().path("id").asText()
         + "/move", Map.of("toPersonId", ownersPerson));
     assertThat(move.status()).as("moving a reading to the owner's person: %s", move.body()).isEqualTo(404);
+    // Vaccinations and stays cannot point at the owner's document or doctor.
+    var shot = other.post("/api/vita/people/" + ownMe + "/vaccinations", Map.of("vaccine", "x", "givenOn", "2026-03-01",
+        "documentId", owned.get("/api/vita/documents/")));
+    assertThat(shot.ok()).as("vaccination with the owner's document: %s", shot.body()).isFalse();
+    var stay = other.post("/api/vita/people/" + ownMe + "/events", Map.of("kind", "admission", "fromDate", "2026-02-01",
+        "documentIds", List.of(owned.get("/api/vita/documents/"))));
+    assertThat(stay.ok()).as("stay with the owner's document: %s", stay.body()).isFalse();
     assertThat(owner.get("/api/vita/people/" + ownersPerson + "/profile").json().path("profile")
         .path("bloodGroup").asText()).isEqualTo("o_pos");
   }

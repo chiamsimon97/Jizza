@@ -61,15 +61,17 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   public static final String TREND = "vita_trend";
   public static final String CONDITION_SUMMARY = "vita_condition_summary";
   public static final String EXTRACT_DOCUMENT = "vita_extract_document";
+  public static final String PREPARE_VISIT = "vita_prepare_visit";
   /** The chat card a form goes out as. */
   public static final String FORM_CARD = "vita_form";
 
   public static final List<String> FORMS = List.of("profile", "emergency_contact", "reading", "condition",
-      "allergy", "doctor", "medicine", "dose");
+      "allergy", "doctor", "medicine", "dose", "visit", "vaccination", "event");
   static final List<String> SECTIONS = List.of("people", "profile", "emergency_card", "conditions",
       "allergies", "emergency_contacts", "readings", "weight", "ranges", "doctors", "visits", "medicines", "settings");
   static final List<String> SCREENS = List.of("home", "conditions", "allergies", "emergency-card",
-      "profile", "quick-start", "vitals", "doctors", "visits", "medicines", "documents", "settings");
+      "profile", "quick-start", "vitals", "doctors", "visits", "medicines", "documents", "labs", "checks",
+      "vaccinations", "events", "summary", "settings");
   /** Fields a reading form may carry, as the user typed them (Save posts them unchanged). */
   static final List<String> READING_FORM = List.of("kind", "value", "value2", "value3", "unit", "context",
       "meal", "setting", "takenAt", "note");
@@ -77,7 +79,8 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   static final Map<String, ActionType> TYPES = Map.of(
       OVERVIEW, ActionType.READ, READ, ActionType.READ, RED_FLAG_HELP, ActionType.READ,
       TREND, ActionType.READ, CONDITION_SUMMARY, ActionType.READ,
-      OPEN_SCREEN, ActionType.DRAFT, SHOW_FORM, ActionType.DRAFT, EXTRACT_DOCUMENT, ActionType.DRAFT);
+      OPEN_SCREEN, ActionType.DRAFT, SHOW_FORM, ActionType.DRAFT, EXTRACT_DOCUMENT, ActionType.DRAFT,
+      PREPARE_VISIT, ActionType.DRAFT);
 
   private final AgentDirectory agents;
   private final ObjectProvider<VitaScopeResolver> scopes;
@@ -90,6 +93,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<VitaHomeUseCase> home;
   private final ObjectProvider<VitaMedicineUseCase> medicines;
   private final ObjectProvider<VitaDocumentUseCase> documents;
+  private final ObjectProvider<com.jizza.platform.usecase.vita.visits.VitaVisitUseCase> visits;
   private final boolean enabled;
   private final List<ToolSpec> specs;
 
@@ -103,6 +107,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                           ObjectProvider<VitaHomeUseCase> home,
                           ObjectProvider<VitaMedicineUseCase> medicines,
                           ObjectProvider<VitaDocumentUseCase> documents,
+                          ObjectProvider<com.jizza.platform.usecase.vita.visits.VitaVisitUseCase> visits,
                           @Value("${jizza.health.enabled:false}") boolean enabled) {
     this.agents = agents;
     this.scopes = scopes;
@@ -115,6 +120,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     this.home = home;
     this.medicines = medicines;
     this.documents = documents;
+    this.visits = visits;
     this.enabled = enabled;
     ObjectNode person = JsonSchemas.string("A person's id from vita_overview; leave out for the user themself");
     this.specs = List.of(
@@ -163,8 +169,10 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
             + "profile (blood group, height, sex at birth, date of birth, organ donor, preferred "
             + "hospital and its phone), emergency_contact (name, relation, phone), reading (a "
             + "blood pressure, sugar, weight, heart rate, SpO2 or temperature reading), condition, "
-            + "allergy, doctor, medicine (one the user or their doctor named) or dose (marking a "
-            + "time slot taken or skipped). Use it whenever the user tells you one of these: fill in what "
+            + "allergy, doctor, medicine (one the user or their doctor named), dose (marking a "
+            + "time slot taken or skipped), visit (a doctor's visit, with questions to ask), "
+            + "vaccination (a dose given, or the next due date the user gives) or event (a surgery, "
+            + "procedure, hospital stay, injury or fall). Use it whenever the user tells you one of these: fill in what "
             + "they said, exactly as they said it, and leave the rest. Say in a sentence what to "
             + "check, then end your turn. Nothing is saved until the user presses Save on the "
             + "card; you never save it yourself. A reading that is a red flag is answered with "
@@ -192,7 +200,12 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
                     + "trackStock, stockUnits, unitsPerPack, refillLeadDays, times (list of HH:mm), "
                     + "doseUnits, doseUnit (tablet, ml, units, puffs, drops, other), withFood "
                     + "(before, with, after, any): only what the user or their doctor said. dose: "
-                    + "dueAt (the slot's time from vita_overview), action (taken, skipped), takenAt.")),
+                    + "dueAt (the slot's time from vita_overview), action (taken, skipped), takenAt. "
+                    + "visit: scheduledAt (yyyy-mm-ddThh:mm), status (planned, done, cancelled), reason, "
+                    + "questions (list of short lines), notes, followUpOn. vaccination: vaccine, "
+                    + "doseNumber, givenOn, place, batch, nextDueOn (only a date the user gave), notes. "
+                    + "event: kind (surgery, procedure, admission, injury, fall), title, fromDate, "
+                    + "toDate, hospital, notes.")),
                 List.of("form")), false, false),
         new ToolSpec(EXTRACT_DOCUMENT, "Read a prescription, lab report or other health document "
             + "into a draft and give the user a link card to its review. Pass documentId for one "
@@ -204,6 +217,16 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
             JsonSchemas.object(props("personId", person,
                 "documentId", JsonSchemas.string("A document's id from the Health tab"),
                 "fileId", JsonSchemas.string("The ref of a PDF or photo attached in this chat")),
+                List.of()), false, false),
+        new ToolSpec(PREPARE_VISIT, "Prepare a doctor's visit: one page with the visit's questions, "
+            + "the last 30 days of readings with averages, current medicines, every medicine change "
+            + "since the last visit (from the record's history), the latest lab values with their "
+            + "dates, and adherence. Every line is a fact from the record; nothing is advice. Give "
+            + "visitId, or leave it out for the person's next planned visit. It also links the "
+            + "doctor-ready summary page. It SENDS NOTHING: if the user wants it sent to a doctor, "
+            + "say the page is ready and that they print or share it themselves.",
+            JsonSchemas.object(props("personId", person,
+                "visitId", JsonSchemas.string("A visit's id; leave out for the next planned visit")),
                 List.of()), false, false));
   }
 
@@ -247,6 +270,7 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
         case CONDITION_SUMMARY -> ToolResult.ok(home.getObject().conditionSummary(user, personOrSelf(user, args),
             uuid(args, "conditionId")));
         case EXTRACT_DOCUMENT -> ToolResult.ok(extractDocument(vita.get(), args));
+        case PREPARE_VISIT -> ToolResult.ok(prepareVisit(vita.get(), args));
         default -> ToolResult.error("Unknown health tool " + call.name());
       };
     } catch (ValidationException | NotFoundException e) {
@@ -369,6 +393,40 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     return out;
   }
 
+  /** The visit's prep, plus links to it and to the summary page. Nothing is sent. */
+  private JsonNode prepareVisit(AgentDto vita, JsonNode args) {
+    UUID user = vita.userId();
+    UUID visitId = uuid(args, "visitId");
+    PersonScope p = scopes.getObject().personOrSelf(user, uuid(args, "personId"));
+    if (visitId == null) {
+      java.time.Instant now = java.time.Instant.now();
+      visitId = forms.getObject().live(p, VitaTable.VISIT).stream()
+          .filter(v -> "planned".equals(v.path("status").asText()) && v.hasNonNull("scheduledAt"))
+          .filter(v -> !java.time.Instant.parse(v.get("scheduledAt").asText()).isBefore(now))
+          .min(java.util.Comparator.comparing(v -> v.get("scheduledAt").asText()))
+          .map(v -> UUID.fromString(v.path("id").asText()))
+          .orElseThrow(() -> new ValidationException("There is no planned visit for " + p.person().displayName()
+              + ". Offer the visit form so the user can add one."));
+    }
+    ObjectNode prep = visits.getObject().prepare(user, visitId);
+    ObjectNode out = Json.obj();
+    out.put("visitId", visitId.toString());
+    for (String f : List.of("person", "doctor", "questions", "readings", "medicines", "medicineChanges", "labs", "adherence")) {
+      if (prep.has(f)) out.set(f, prep.get(f));
+    }
+    out.put("changesSinceLabel", prep.path("changesSinceLabel").asText());
+    out.put("sent", false);
+    out.put("note", "Nothing was sent to anyone. The user prints or shares the page themselves. Quote the "
+        + "lines as given; add no advice of your own.");
+    String person = prep.path("person").path("id").asText();
+    ArrayNode cards = out.putArray("cards");
+    cards.addObject().put("type", "link").put("label", "Open the visit prep")
+        .put("url", "/agents/" + vita.id() + "?tab=health&view=visits&person=" + person + "&visit=" + visitId);
+    cards.addObject().put("type", "link").put("label", "Open the summary page")
+        .put("url", "/agents/" + vita.id() + "?tab=health&view=summary&person=" + person);
+    return out;
+  }
+
   private JsonNode openScreen(AgentDto vita, UUID personId, String screen) {
     if (!SCREENS.contains(screen)) throw new ValidationException("screen must be one of " + String.join(", ", SCREENS));
     String url = "/agents/" + vita.id() + "?tab=health&view=" + screen;
@@ -450,7 +508,8 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
     if ("medicine".equals(form) && ("conditionId".equals(field) || "prescribedBy".equals(field))) return false;
     VitaTable t = table(form);
     return t != null && t.fields.containsKey(field) && !"sortOrder".equals(field)
-        && !"private".equals(field) && !"doctorId".equals(field);
+        && !"private".equals(field) && !"doctorId".equals(field)
+        && !"documentId".equals(field) && !"documentIds".equals(field);
   }
 
   static VitaTable table(String form) {
@@ -460,6 +519,9 @@ public class VitaToolProvider implements ToolProvider, ActionTypeSource {
       case "allergy" -> VitaTable.ALLERGY;
       case "doctor" -> VitaTable.DOCTOR;
       case "medicine" -> VitaTable.MEDICINE;
+      case "visit" -> VitaTable.VISIT;
+      case "vaccination" -> VitaTable.VACCINATION;
+      case "event" -> VitaTable.EVENT;
       default -> null;
     };
   }

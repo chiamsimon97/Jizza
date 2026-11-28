@@ -58,7 +58,7 @@ class VitaFoundationE2eTest extends E2eSupport {
       if ("health".equals(agent.path("key").asText())) {
         assertThat(names).containsExactlyInAnyOrder("vita_overview", "vita_read", "vita_red_flag_help",
             "vita_open_screen", "vita_show_form", "vita_trend", "vita_condition_summary",
-            "vita_extract_document");
+            "vita_extract_document", "vita_prepare_visit");
         for (String name : names) {
           assertThat(tools.actionTypeOf(id, name)).as("action type of %s", name).isPresent();
           assertThat(tools.redactArguments(name)).isTrue();

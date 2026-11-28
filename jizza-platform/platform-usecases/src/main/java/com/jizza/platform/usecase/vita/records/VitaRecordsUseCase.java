@@ -232,6 +232,32 @@ public class VitaRecordsUseCase {
           throw new ValidationException(name + " must be an id.");
         }
       }
+      case REFS -> {
+        if (!v.isArray() || v.size() > f.max()) throw new ValidationException(name + " must be a list of at most " + f.max() + " ids.");
+        var out = nodes.arrayNode();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (JsonNode x : v) {
+          try {
+            String id = UUID.fromString(x.asText()).toString();
+            if (seen.add(id)) out.add(id);
+          } catch (IllegalArgumentException e) {
+            throw new ValidationException(name + " must be a list of ids.");
+          }
+        }
+        return out;
+      }
+      case LINES -> {
+        if (!v.isArray() || v.size() > f.max()) throw new ValidationException(name + " must be a list of at most " + f.max() + " lines.");
+        var out = nodes.arrayNode();
+        for (JsonNode x : v) {
+          String s = x.isObject() ? x.path("text").asText("") : x.isTextual() ? x.asText() : "";
+          s = s.strip();
+          if (s.isEmpty()) continue;
+          if (s.length() > VitaField.LINE_MAX) throw new ValidationException(name + ": each line is " + VitaField.LINE_MAX + " characters at most.");
+          out.addObject().put("text", s);
+        }
+        return out;
+      }
       default -> throw new IllegalStateException("Unhandled field type " + f.type());
     }
   }
@@ -274,6 +300,15 @@ public class VitaRecordsUseCase {
   /** Every id field must name one of the owner's own live rows of its table, or it reads as missing. */
   public void checkRefs(UUID owner, Map<String, VitaField> fields, ObjectNode values) {
     for (VitaField f : fields.values()) {
+      if (f.type() == VitaField.Type.REFS && values.path(f.name()).isArray()) {
+        String table = f.values().iterator().next();
+        for (JsonNode x : values.get(f.name())) {
+          UUID id = UUID.fromString(x.asText());
+          records.get(table, owner, id).filter(r -> r.path("deletedAt").isNull())
+              .orElseThrow(() -> new NotFoundException("Record", id));
+        }
+        continue;
+      }
       if (f.type() != VitaField.Type.REF || !values.hasNonNull(f.name())) continue;
       String table = f.values().iterator().next();
       UUID id = UUID.fromString(values.get(f.name()).asText());
