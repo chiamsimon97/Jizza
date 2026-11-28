@@ -86,8 +86,8 @@ describe('HealthTab shell', () => {
   })
 
   it('shows what a later view will hold', async () => {
-    renderTab('&view=insurance')
-    expect(await screen.findByText(/Insurance comes with the insurance update/)).toBeInTheDocument()
+    renderTab('&view=journal')
+    expect(await screen.findByText(/Journal comes with the journal and goals update/)).toBeInTheDocument()
   })
 
   it('shows a closed record read-only', async () => {

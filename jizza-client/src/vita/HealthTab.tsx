@@ -43,6 +43,7 @@ import { isReadingKind } from './readings'
 import { useHealthScope } from './useHealthScope'
 import { splitPeople } from './people'
 import { Sharing } from './screens/Sharing'
+import { Insurance } from './screens/Insurance'
 import { ShareContext, VIEW_SECTION, accessWords, canEdit, scopeOf, useSharedWithMe, viewOpens, type ShareScope } from './share'
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
@@ -202,6 +203,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={ro('emergency')} onOpen={go} />}
             {view.id === 'profile' && <Profile personId={person.id} readOnly={ro('profile')} onOpen={go} />}
             {view.id === 'settings' && <Settings onOpen={go} />}
+            {view.id === 'insurance' && <Insurance personId={person.id} personName={name} readOnly={closed} onOpenDocument={openDocument} />}
             {view.id === 'sharing' && <Sharing personId={person.id} personName={name} kind={person.kind} closed={closed} />}
             {!BUILT_VIEWS.has(view.id) && <NotYet view={view} />}
             </>}
