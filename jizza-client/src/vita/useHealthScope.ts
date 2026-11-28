@@ -11,11 +11,13 @@ export interface HealthScope {
   condition?: string | null
   /** A kind of reading to open Vitals on. */
   kind?: string | null
+  /** The document open for review. */
+  doc?: string | null
 }
 
 export function useHealthScope(): [HealthScope, (patch: Partial<HealthScope>) => void] {
   const [params, setParams] = useSearchParams()
-  const scope: HealthScope = { view: findView(params.get('view')).id, person: params.get('person'), condition: params.get('condition'), kind: params.get('kind') }
+  const scope: HealthScope = { view: findView(params.get('view')).id, person: params.get('person'), condition: params.get('condition'), kind: params.get('kind'), doc: params.get('doc') }
   const update = useCallback((patch: Partial<HealthScope>) => {
     setParams(prev => {
       const next = new URLSearchParams(prev)
