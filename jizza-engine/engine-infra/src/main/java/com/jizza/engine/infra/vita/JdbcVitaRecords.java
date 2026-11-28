@@ -18,7 +18,8 @@ public class JdbcVitaRecords extends JdbcOwnedRecords implements VitaRecords {
       "vita_measurement", "vita_visit", "vita_usual_range", "vita_medicine", "vita_medicine_schedule",
       "vita_medicine_event", "vita_dose_log", "vita_reminder", "vita_document",
       "vita_lab_report", "vita_lab_result", "vita_check",
-      "vita_vaccination", "vita_event", "vita_mail_source", "vita_policy_detail", "vita_claim");
+      "vita_vaccination", "vita_event", "vita_mail_source", "vita_policy_detail", "vita_claim",
+      "vita_journal_entry", "vita_goal", "vita_goal_checkin");
 
   public JdbcVitaRecords(JdbcTemplate jdbc) {
     super(jdbc, TABLES_IN_ORDER, "Vita");

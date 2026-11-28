@@ -161,6 +161,47 @@ public class VitaTargetService {
       return vitaDefault(kind, ctx, set);
     }
 
+    /**
+     * The target a goal reads (spec 5.7): the doctor's target, else the Vita default from config.
+     * Never the person's own row and never a figure of the goal's own. Null when neither is set.
+     */
+    public RangeSet goalTargetFor(String kind, String context, String setting) {
+      String ctx = "fasting".equals(context) ? "before_meal" : context;
+      String set = "bp".equals(kind) && setting == null ? "home" : setting;
+      ObjectNode doctor = best(kind, ctx, set, "doctor");
+      if (doctor != null) {
+        UUID did = doctor.hasNonNull("doctorId") ? UUID.fromString(doctor.get("doctorId").asText()) : null;
+        return RangeSet.doctor(range(doctor, ""), range(doctor, "2"), did, doctors.get(did),
+            doctor.hasNonNull("setOn") ? LocalDate.parse(doctor.get("setOn").asText()) : null);
+      }
+      return vitaDefault(kind, ctx, set);
+    }
+
+    /** The target a lab goal (HbA1c) reads: the doctor's, else the configured Vita default. */
+    public RangeSet goalLabTargetFor(String testCode) {
+      ObjectNode doctor = bestLab(testCode, "doctor");
+      if (doctor != null) {
+        UUID did = doctor.hasNonNull("doctorId") ? UUID.fromString(doctor.get("doctorId").asText()) : null;
+        return RangeSet.doctor(range(doctor, ""), null, did, doctors.get(did),
+            doctor.hasNonNull("setOn") ? LocalDate.parse(doctor.get("setOn").asText()) : null);
+      }
+      List<String> keys = new ArrayList<>();
+      for (String t : List.of("diabetes_t2", "hypertension")) {
+        if (templates.contains(t)) keys.add("clinical.ranges." + t + "." + testCode);
+      }
+      keys.add("clinical.ranges.general." + testCode);
+      for (String key : keys) {
+        ConfigItem item = items.get(key);
+        for (int hops = 0; item != null && item.value() != null && item.value().hasNonNull("sameAs") && hops < 3; hops++) {
+          item = items.get(item.value().get("sameAs").asText());
+        }
+        if (item == null || item.value() == null) continue;
+        Range r = Range.fromConfig(item.value());
+        if (r != null) return RangeSet.vitaDefault(r, null, item.key(), item.needsVerification());
+      }
+      return null;
+    }
+
     /** The most specific live row for the measure: exact context and setting beat an empty one. */
     private ObjectNode best(String kind, String ctx, String set, String setBy) {
       ObjectNode best = null;

@@ -50,7 +50,8 @@ public class VitaConfigService {
       "clinical.intervals.diabetes_t2.lipids",
       "clinical.intervals.hypertension.bp_checks",
       "clinical.intervals.hypertension.kidney_function",
-      "clinical.intervals.hypertension.lipids");
+      "clinical.intervals.hypertension.lipids",
+      "clinical.goal_plans");
 
   public static final String VERIFIED = "verified";
   public static final String NEEDS_VERIFICATION = "needs_verification";
