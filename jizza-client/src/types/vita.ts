@@ -391,6 +391,9 @@ export interface Visit {
   reason: string | null
   notes: string | null
   followUpOn: string | null
+  /** Questions for the doctor, at most 30 (from 7c). */
+  questions?: { text: string }[] | null
+  documentIds?: string[] | null
 }
 export type VisitInput = Partial<Omit<Visit, 'id' | 'personId'>>
 
@@ -775,3 +778,111 @@ export interface VitaCheck {
 export type CheckInput = Partial<Omit<VitaCheck, 'id' | 'personId'>>
 
 export interface LastLabReport { id: string; date: string | null; labName: string | null; rows: number; labFlagged: number }
+
+// ── Visit prep, summary, vaccinations, events (7c) and mailbox sources (7d) ─
+
+export interface PrepReading {
+  kind: ReadingKind
+  context: string | null
+  days: number
+  count: number
+  outside: number
+  average: number | null
+  average2?: number | null
+  last: { id: string; takenAt: string; value: number; value2: number | null; status: TargetStatus } | null
+  range: { status: string; range?: string | null; source?: string | null; label: string; needsVerification?: boolean } | null
+}
+export interface PrepMedicine {
+  name: string
+  strength: string | null
+  form: string | null
+  system: string | null
+  status: string
+  asNeeded: boolean
+  schedule?: { times: string[]; doseUnits: number; doseUnit: DoseUnit; withFood: WithFood; recurrence: string } | null
+}
+export interface PrepMedicineChange { onDate: string; kind: string; medicine: string; fromText: string | null; toText: string | null; doctorName: string | null; line: string }
+export interface PrepLab { code: string; name: string; date: string; flag: LabFlag; value: string | null; unit: string | null; rangeAsPrinted: string | null }
+export interface PrepPerson { id: string; name: string; dob?: string | null; age?: number | null; bloodGroup?: string | null; sexAtBirth?: string | null; heightCm?: string | null }
+
+export interface VisitPrep {
+  visit: Visit
+  person: PrepPerson
+  doctor?: { id: string; name: string; speciality: string | null; clinic: string | null }
+  questions: string[]
+  readings: PrepReading[]
+  medicines: PrepMedicine[]
+  changesSince?: string
+  changesSinceLabel: string
+  medicineChanges: PrepMedicineChange[]
+  labs: PrepLab[]
+  adherence: AdherenceResult | null
+  note: string
+  sent: false
+}
+
+export interface HealthSummary {
+  person: PrepPerson
+  condition?: Condition
+  allergies: { substance: string; severity: string | null; reaction: string | null }[]
+  conditions: { name: string; since: string | null }[]
+  medicines: PrepMedicine[]
+  medicineChanges: PrepMedicineChange[]
+  readings: PrepReading[]
+  labs: PrepLab[]
+  adherence: AdherenceResult | null
+  nextVisit?: { id: string; scheduledAt: string; questions: string[] }
+  preparedOn: string
+  note: string
+  sent: false
+}
+
+export interface Vaccination {
+  id: string
+  personId: string
+  vaccine: string
+  doseNumber: number | null
+  givenOn: string | null
+  place: string | null
+  batch: string | null
+  documentId: string | null
+  nextDueOn: string | null
+  notes: string | null
+}
+export type VaccinationInput = Partial<Omit<Vaccination, 'id' | 'personId'>>
+
+export type HealthEventKind = 'surgery' | 'procedure' | 'admission' | 'injury' | 'fall'
+export interface HealthEvent {
+  id: string
+  personId: string
+  kind: HealthEventKind
+  title: string | null
+  fromDate: string
+  toDate: string | null
+  hospital: string | null
+  doctorId: string | null
+  notes: string | null
+  documentIds: string[] | null
+}
+export type HealthEventInput = Partial<Omit<HealthEvent, 'id' | 'personId'>>
+
+export type MailStatus = 'to_review' | 'nothing_new' | 'needs_sign_in' | 'needs_password' | 'failed'
+export interface MailSource {
+  id: string
+  serverId: string
+  serverName: string | null
+  personId: string
+  personName: string | null
+  sender: string
+  subject: string | null
+  hasPassword: boolean
+  enabled: boolean
+  signedIn: boolean
+  lastStatus: MailStatus | null
+  lastCheckedAt: string | null
+  lastDocumentId: string | null
+}
+export interface MailServer { serverId: string; name: string; signedIn: boolean; enabled: boolean }
+export interface MailSourcesView { sources: MailSource[]; servers: MailServer[] }
+export interface MailSourceInput { serverId?: string; personId?: string; sender?: string; subject?: string | null; password?: string; enabled?: boolean }
+export interface MailCheckResult { status: MailStatus; documentId: string | null; found: number; message: string }

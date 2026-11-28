@@ -36,6 +36,8 @@ export const HEALTH_VIEWS: HealthView[] = [
   { id: 'connect', label: 'Connect', phase: '1b', about: 'Upload reports, and pull them from your mailbox.', ask: 'About connecting: ' },
   { id: 'settings', label: 'Settings', phase: '0', about: 'Units, emergency numbers and the figures Vita uses, with where each comes from.', ask: 'About settings: ' },
   { id: 'profile', label: 'Profile', phase: '0', hidden: true, about: 'Date of birth, blood group, height, hospital and reminder mode.', ask: 'About this profile: ' },
+  { id: 'visit-prep', label: 'Visit prep', phase: '1b', hidden: true, about: 'What to take to a visit: questions, readings, medicines, changes and labs.', ask: 'Help me prepare: ' },
+  { id: 'summary', label: 'Health summary', phase: '1b', hidden: true, about: 'A print-ready summary of the record.', ask: 'About this summary: ' },
   { id: 'lab', label: 'Lab report', phase: '1b', hidden: true, about: 'One lab report with each test, its lab flag and its target.', ask: 'About this report: ' },
   { id: 'document', label: 'Document', phase: '1b', hidden: true, about: 'One document beside what Vita read from it, to check before saving.', ask: 'About this document: ' },
   { id: 'condition', label: 'Condition', phase: '1a', hidden: true, about: 'One condition with its readings, checks and medicines.', ask: 'About this condition: ' },
@@ -49,7 +51,7 @@ export function findView(id: string | null | undefined): HealthView {
 }
 
 /** Views built in this release; the rest show what they will hold. */
-export const BUILT_VIEWS = new Set(['home', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
+export const BUILT_VIEWS = new Set(['home', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'vaccinations', 'surgeries', 'connect', 'visit-prep', 'summary', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
 
 /** The update that brings each later phase, in plain words. */
 export const PHASE_WORDS: Record<string, string> = {

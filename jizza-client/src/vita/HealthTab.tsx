@@ -33,6 +33,9 @@ import { Medicines } from './screens/Medicines'
 import { Documents } from './screens/Documents'
 import { DocumentReview } from './screens/DocumentReview'
 import { Labs } from './screens/Labs'
+import { Connect } from './screens/Connect'
+import { SurgeriesAndStays, Vaccinations } from './screens/History'
+import { SummaryPage, VisitPrepPage } from './screens/VisitPrep'
 import { LabReportPage } from './screens/LabReport'
 import { Visits } from './screens/Visits'
 import { Vitals } from './screens/Vitals'
@@ -75,7 +78,9 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const name = personName(person)
   const closed = person.status !== 'active'
   const view = findView(scope.view)
-  const go = (id: string) => setScope({ view: id, condition: null, doc: null, report: null, test: null })
+  const go = (id: string) => setScope({ view: id, condition: null, doc: null, report: null, test: null, visit: null })
+  const openPrep = (visitId: string) => setScope({ view: 'visit-prep', visit: visitId })
+  const openSummary = (conditionId?: string | null) => setScope({ view: 'summary', condition: conditionId ?? null })
   const openReport = (id: string) => setScope({ view: 'lab', report: id, test: null })
   const openTest = (code: string | null) => setScope({ view: 'labs', report: null, test: code })
   const openDocument = (id: string) => setScope({ view: 'document', doc: id })
@@ -104,7 +109,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
         </label>
         <span className="ml-auto flex items-center gap-1">
           {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }} onMedicine={() => { go('medicines'); setAddMedicine(true) }} onDocument={() => { go('documents'); setAddDocument(true) }}
-            onCondition={() => go('conditions')} onAllergy={() => go('allergies')} />}
+            onCondition={() => go('conditions')} onAllergy={() => go('allergies')} onVaccination={() => go('vaccinations')} onStay={() => go('surgeries')} />}
           <button type="button" onClick={askVita} title={`Ask ${agent.name} about this screen`}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
             <MessageSquare className="h-3.5 w-3.5" aria-hidden /> Ask {agent.name}
@@ -119,7 +124,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-14 md:mx-0 md:w-48 md:shrink-0 md:flex-col md:overflow-visible md:px-0">
           {HEALTH_VIEWS.filter(v => !v.hidden).map(v => {
             const Icon = VIEW_ICONS[v.id]
-            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions', document: 'documents', lab: 'labs' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition', 'document', 'lab'].includes(view.id) && v.id === 'home')
+            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions', document: 'documents', lab: 'labs', 'visit-prep': 'visits', summary: 'visits' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition', 'document', 'lab', 'visit-prep', 'summary'].includes(view.id) && v.id === 'home')
             return (
               <span key={v.id} className="contents">
                 {v.groupStart && <span aria-hidden className="hidden md:my-1 md:block md:border-t md:border-gray-200 dark:md:border-gray-800" />}
@@ -144,13 +149,18 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
             )}
             {view.id === 'quick-start' && !closed && <QuickStart personId={person.id} personName={name} onDone={() => go('home')} />}
             {view.id === 'conditions' && <Conditions personId={person.id} readOnly={closed} onOpenCondition={openCondition} />}
-            {view.id === 'condition' && <ConditionPage personId={person.id} conditionId={scope.condition} readOnly={closed} onBack={() => go('conditions')} onOpen={go} onOpenTest={openTest} />}
+            {view.id === 'condition' && <ConditionPage personId={person.id} conditionId={scope.condition} readOnly={closed} onBack={() => go('conditions')} onOpen={go} onOpenTest={openTest} onSummary={() => openSummary(scope.condition)} />}
             {view.id === 'vitals' && (
               <Vitals personId={person.id} readOnly={closed} adding={addReading} onAddDone={() => setAddReading(null)} onOpenCard={() => go('emergency')}
                 initialKind={isReadingKind(scope.kind) ? scope.kind : undefined} />
             )}
             {view.id === 'medicines' && <Medicines personId={person.id} readOnly={closed} adding={addMedicine} onAddDone={() => setAddMedicine(false)} />}
-            {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} />}
+            {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} onPrepare={openPrep} onSummary={() => openSummary(null)} />}
+            {view.id === 'visit-prep' && <VisitPrepPage personId={person.id} visitId={scope.visit} onBack={() => go('visits')} />}
+            {view.id === 'summary' && <SummaryPage personId={person.id} conditionId={scope.condition} onBack={() => (scope.condition ? openCondition(scope.condition) : go('visits'))} backLabel={scope.condition ? 'Back to the condition' : 'Doctors and visits'} />}
+            {view.id === 'vaccinations' && <Vaccinations personId={person.id} readOnly={closed} />}
+            {view.id === 'surgeries' && <SurgeriesAndStays personId={person.id} readOnly={closed} />}
+            {view.id === 'connect' && <Connect personId={person.id} readOnly={closed} onOpen={go} onReview={id => setScope({ view: 'document', doc: id })} />}
             {view.id === 'labs' && (
               <Labs personId={person.id} readOnly={closed} test={scope.test} onOpenReport={openReport} onOpenTest={openTest} onUpload={() => { go('documents'); setAddDocument(true) }} />
             )}
@@ -176,8 +186,9 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
 }
 
 /** "Add": what can be added today, and what comes later, never a dead end. */
-function AddMenu({ onReading, onVisit, onMedicine, onDocument, onCondition, onAllergy }: {
+function AddMenu({ onReading, onVisit, onMedicine, onDocument, onCondition, onAllergy, onVaccination, onStay }: {
   onReading: (kind: ReadingKind) => void; onVisit: () => void; onMedicine: () => void; onDocument: () => void; onCondition: () => void; onAllergy: () => void
+  onVaccination: () => void; onStay: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -209,6 +220,8 @@ function AddMenu({ onReading, onVisit, onMedicine, onDocument, onCondition, onAl
           {item('Visit', Stethoscope, onVisit)}
           {item('Condition', HeartPulse, onCondition)}
           {item('Allergy', TriangleAlert, onAllergy)}
+          {item('Vaccination', Syringe, onVaccination)}
+          {item('Surgery or stay', BedDouble, onStay)}
           {item('Document or report', ClipboardList, onDocument)}
         </div>
       )}

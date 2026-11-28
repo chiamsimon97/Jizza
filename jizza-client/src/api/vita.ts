@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -149,4 +149,27 @@ export const vitaApi = {
   addCheck: (personId: string, body: CheckInput) => api.post<VitaCheck>(`${person(personId)}/checks`, body),
   updateCheck: (personId: string, id: string, body: CheckInput) => api.put<VitaCheck>(`${person(personId)}/checks/${id}`, body),
   removeCheck: (personId: string, id: string) => api.delete<void>(`${person(personId)}/checks/${id}`),
+  // Visit prep, summary, vaccinations and events (7c)
+  prepareVisit: (visitId: string) => api.post<VisitPrep>(`/api/vita/visits/${visitId}/prepare`, {}),
+  summary: (personId: string, opts: { condition?: string | null; includePrivate?: boolean } = {}) => {
+    const q = new URLSearchParams()
+    if (opts.condition) q.set('condition', opts.condition)
+    if (opts.includePrivate) q.set('includePrivate', 'true')
+    const qs = q.toString()
+    return api.get<HealthSummary>(`${person(personId)}/summary${qs ? `?${qs}` : ''}`)
+  },
+  vaccinations: (personId: string) => api.get<Vaccination[]>(`${person(personId)}/vaccinations`),
+  addVaccination: (personId: string, body: VaccinationInput) => api.post<Vaccination>(`${person(personId)}/vaccinations`, body),
+  updateVaccination: (personId: string, id: string, body: VaccinationInput) => api.put<Vaccination>(`${person(personId)}/vaccinations/${id}`, body),
+  removeVaccination: (personId: string, id: string) => api.delete<void>(`${person(personId)}/vaccinations/${id}`),
+  events: (personId: string) => api.get<HealthEvent[]>(`${person(personId)}/events`),
+  addEvent: (personId: string, body: HealthEventInput) => api.post<HealthEvent>(`${person(personId)}/events`, body),
+  updateEvent: (personId: string, id: string, body: HealthEventInput) => api.put<HealthEvent>(`${person(personId)}/events/${id}`, body),
+  removeEvent: (personId: string, id: string) => api.delete<void>(`${person(personId)}/events/${id}`),
+  // Mailbox sources (7d)
+  mailSources: () => api.get<MailSourcesView>('/api/vita/mail-sources'),
+  addMailSource: (body: MailSourceInput) => api.post<MailSource>('/api/vita/mail-sources', body),
+  updateMailSource: (id: string, body: MailSourceInput) => api.put<MailSource>(`/api/vita/mail-sources/${id}`, body),
+  removeMailSource: (id: string) => api.delete<void>(`/api/vita/mail-sources/${id}`),
+  checkMailSource: (id: string) => api.post<MailCheckResult>(`/api/vita/mail-sources/${id}/check`, {}),
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlarmClock, ArrowLeft, CalendarClock, ClipboardCheck, FlaskConical, HelpCircle, Pencil, Phone, Pill as PillIcon, Stethoscope } from 'lucide-react'
+import { AlarmClock, ArrowLeft, CalendarClock, ClipboardCheck, FlaskConical, HelpCircle, Pencil, Printer, Phone, Pill as PillIcon, Stethoscope } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
 import { LoadFailed, Panel, Pill } from '@/portfolio/components/Panel'
@@ -27,13 +27,14 @@ import { scheduleWords } from '../medicines'
  * who set the target, a trend chart (the 7-day BP band, or sugar over 30 days), checks done and due
  * (or "not set: ask your doctor"), the doctor's standing advice and the visits with that doctor.
  */
-export function ConditionPage({ personId, conditionId, readOnly, onBack, onOpen, onOpenTest }: {
+export function ConditionPage({ personId, conditionId, readOnly, onBack, onOpen, onOpenTest, onSummary }: {
   personId: string
   conditionId: string | null | undefined
   readOnly: boolean
   onBack: () => void
   onOpen: (view: string) => void
   onOpenTest?: (code: string) => void
+  onSummary?: () => void
 }) {
   const units = useUnits()
   const [editing, setEditing] = useState(false)
@@ -53,6 +54,7 @@ export function ConditionPage({ personId, conditionId, readOnly, onBack, onOpen,
       <div>{back}</div>
       <ViewTitle title={c.name} sub={[c.template && c.template !== 'generic' ? TEMPLATES[c.template] : null, c.since ? `Since ${formatDay(c.since)}` : 'Since: not recorded'].filter(Boolean).join(' · ')}>
         <StatusChip status={c.status} />
+        {onSummary && <Button size="sm" variant="secondary" onClick={onSummary}><Printer className="h-3.5 w-3.5" aria-hidden />Summary</Button>}
         {!readOnly && !editing && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" aria-hidden />Edit</Button>}
       </ViewTitle>
       {editing && <ConditionForm personId={personId} start={c} onDone={() => { setEditing(false); refetch() }} />}
