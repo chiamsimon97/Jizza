@@ -67,6 +67,10 @@ class VitaRecordDbTest extends PostgresIntegrationTest {
     em.createNativeQuery("update vita_usual_range set deleted_at = now() where person_id = :p").setParameter("p", p).executeUpdate();
     em.createNativeQuery(insert).setParameter("u", u).setParameter("p", p).setParameter("d", d).executeUpdate();
     assertThat(count("select count(*) from vita_usual_range where person_id = ?1", p)).isEqualTo(2);
+    // The person's own range sits beside the doctor's target for the same measure.
+    em.createNativeQuery("""
+        insert into vita_usual_range (user_id, person_id, kind, setting, high, high2, set_by)
+        values (:u, :p, 'bp', 'home', 130, 85, 'user')""").setParameter("u", u).setParameter("p", p).executeUpdate();
     assertThatThrownBy(() -> em.createNativeQuery(insert).setParameter("u", u).setParameter("p", p).setParameter("d", d)
         .executeUpdate()).hasMessageContaining("vita_usual_range_one_live");
   }
