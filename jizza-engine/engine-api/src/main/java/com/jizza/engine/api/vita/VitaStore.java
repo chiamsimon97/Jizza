@@ -30,4 +30,17 @@ public interface VitaStore {
    * must already be the owner's.
    */
   UUID ensureProfile(UUID userId, UUID personId, UUID createdBy);
+
+  /**
+   * One canonical lab test of the system reference table (spec 5.4). {@code conversions} is a JSON
+   * array of {from, multiply, add?, decimals?, source, verifiedOn}.
+   */
+  record LabTestRow(String code, String name, List<String> synonyms, String canonicalUnit,
+                    List<String> unitAliases, int displayDecimals, JsonNode conversions, String group,
+                    int sortOrder) {}
+
+  /** Every canonical lab test, in display order. */
+  default List<LabTestRow> labTests() {
+    return List.of();
+  }
 }

@@ -338,7 +338,7 @@ public class VitaExtractionService {
   }
 
   /** The lab's own flag, only when it printed one; "critical" only when the lab said so. */
-  static String flag(String printed) {
+  public static String flag(String printed) {
     if (printed == null) return null;
     String f = printed.strip().toLowerCase(Locale.ROOT).replace("*", "");
     if (f.isEmpty()) return null;

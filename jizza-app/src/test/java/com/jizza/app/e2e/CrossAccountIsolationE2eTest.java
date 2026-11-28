@@ -205,6 +205,21 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
         VitaDocumentsE2eTest.resource("rx-01-fictional.pdf"));
     assertThat(document.status()).as(document.body()).isEqualTo(201);
     owned.put("/api/vita/documents/", document.json().path("id").asText());
+    // A second document read and confirmed into a lab report, and a check.
+    var labDoc = owner.upload("/api/vita/people/" + personId + "/documents", Map.of(), "lab.pdf", "application/pdf",
+        VitaDocumentsE2eTest.pdf(List.of(VitaDocumentsE2eTest.FIXTURE_D), null));
+    assertThat(labDoc.status()).as(labDoc.body()).isEqualTo(201);
+    model.scriptFor(com.jizza.platform.usecase.vita.documents.VitaExtractionService.READER_NAME,
+        com.jizza.engine.api.llm.LlmResponse.text(VitaDocumentsE2eTest.FIXTURE_D_REPLY));
+    String labDocId = labDoc.json().path("id").asText();
+    var read = owner.post("/api/vita/documents/" + labDocId + "/extract", Map.of());
+    assertThat(read.ok()).as(read.body()).isTrue();
+    var confirmed = owner.post("/api/vita/documents/" + labDocId + "/confirm", Map.of("patientConfirmed", true));
+    assertThat(confirmed.ok()).as(confirmed.body()).isTrue();
+    owned.put("/api/vita/labs/", confirmed.json().path("saved").path("labReport").asText());
+    var check = owner.post("/api/vita/people/" + personId + "/checks", Map.of("kind", "eye", "doneOn", "2026-05-01"));
+    assertThat(check.ok()).as(check.body()).isTrue();
+    vitaRows.put("checks", check.json().path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }

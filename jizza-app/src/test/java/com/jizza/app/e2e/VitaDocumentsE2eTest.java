@@ -295,6 +295,9 @@ class VitaDocumentsE2eTest extends E2eSupport {
     assertThat(model.everythingTheModelSaw()).contains("<attachment kind=\"image\" name=\"document\" ref=\"" + fileId + "\">");
     var file = api.get("/api/vita/documents/" + id + "/file");
     assertThat(file.status()).isEqualTo(200);
+    // A photo is sandboxed; the app's own page may frame it, nobody else's.
+    assertThat(api.lastHeaders().firstValue("content-security-policy")).contains("sandbox; default-src 'none'; frame-ancestors 'self'");
+    assertThat(api.lastHeaders().allValues("x-frame-options")).containsExactly("SAMEORIGIN");
 
     assertThat(upload(mother, "photo.heic", "image/heic", new byte[] {0, 0, 0, 0x18, 'f', 't', 'y', 'p'}).body()).contains("HEIC");
     assertThat(upload(mother, "notes.txt", "text/plain", "hello".getBytes()).status()).isEqualTo(400);
