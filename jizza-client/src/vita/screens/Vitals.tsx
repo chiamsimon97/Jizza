@@ -132,7 +132,7 @@ function Average({ title, side, kind, units }: { title: string; side: TrendSide;
 /** The 7-day BP diary: morning and evening for each day. */
 function Diary({ data, units }: { data: TrendView; units: Units }) {
   const cell = (pts: TrendView['trend']['days'][number]['morning']) => pts.length
-    ? pts.map(p => <span key={p.id} className="mr-2 inline-flex items-center gap-1 font-mono">{showValue('bp', p.value, p.value2, units).replace(' mmHg', '')}{p.status && p.status !== 'in_range' && <StatusBadge status={p.status} />}</span>)
+    ? pts.map(p => <span key={p.id} className="mr-2 inline-flex items-center gap-1"><span className="font-mono">{showValue('bp', p.value, p.value2, units).replace(' mmHg', '')}</span>{p.status && p.status !== 'in_range' && <StatusBadge status={p.status} />}</span>)
     : <span className="text-gray-400">—</span>
   return (
     <div className="overflow-x-auto">
