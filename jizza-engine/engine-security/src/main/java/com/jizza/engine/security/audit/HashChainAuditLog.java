@@ -11,6 +11,7 @@ import com.jizza.engine.persistence.repository.AuditLogRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,7 +52,9 @@ public class HashChainAuditLog implements AuditLog {
                      JsonNode detail) {
     lockChain(userId);
     JsonNode safeDetail = redact(detail);
-    Instant now = Instant.now();
+    // PostgreSQL keeps microseconds and rounds the rest, which can carry into the next
+    // millisecond; truncating here hashes exactly the time that is read back.
+    Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
     String prevHash = repository.findFirstByUserIdOrderBySeqDesc(userId)
         .map(AuditLogEntity::getHash).orElse(AuditHash.GENESIS);
 
