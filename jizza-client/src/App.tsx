@@ -35,6 +35,7 @@ import { AiModelsPage } from '@/pages/AiModelsPage'
 import { DevicesPage } from '@/pages/DevicesPage'
 import { SetupTwoStepPage } from '@/pages/SetupTwoStepPage'
 import { MembersPage } from '@/pages/MembersPage'
+import { MyMedicinesPage } from '@/pages/MyMedicinesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { PublicListingPage } from '@/pages/PublicListingPage'
 import { ListingReviewsPage } from '@/pages/ListingReviewsPage'
@@ -71,6 +72,7 @@ export default function App() {
               pages share one menu entry (HubLayout shows their tabs); each keeps its own address. */}
           <Route element={<PersonalOnly />}>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/my-medicines" element={<MyMedicinesPage />} />
             {/* Conversations live in the chat workspace's left column now. */}
             <Route path="/conversations" element={<Navigate to="/chat" replace />} />
             <Route element={<HubLayout hub="agents" />}>

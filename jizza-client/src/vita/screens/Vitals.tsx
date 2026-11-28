@@ -16,6 +16,7 @@ import { errorText, formatWhen, useUnits, useVitaConfig, useVitaPeople, type Uni
 import { describeFigure } from '../labels'
 import { CONTEXTS, PERIODS, READING_KINDS, kindLabel, readingContext, showReading, showValue, sourceWords } from '../readings'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 import { splitPeople } from '../people'
 
 /** The red-flag rules that apply to each kind (spec 8.2). */
@@ -291,7 +292,7 @@ function slotName(s: ReadingSlot): string {
 
 function RangeForm({ personId, slot, setBy, onDone }: { personId: string; slot: ReadingSlot; setBy: 'user' | 'doctor'; onDone: () => void }) {
   const start = setBy === 'doctor' ? slot.doctorTarget : slot.own
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors, enabled: setBy === 'doctor' })
+  const doctors = useDoctors(setBy === 'doctor')
   const n = (v: number | null | undefined) => (v == null ? '' : String(v))
   const [v, setV] = useState({
     low: n(start?.low), high: n(start?.high), low2: n(start?.low2), high2: n(start?.high2),

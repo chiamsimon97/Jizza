@@ -1,7 +1,7 @@
 import {
   MessageSquare, Bell, Bot, Brain, ListTodo, Plug, Workflow, Braces, GitBranch, Shield, Activity, BarChart2,
   History, ShieldCheck, Users, Compass, Globe, ClipboardCheck, ClipboardList, UserCog, MonitorSmartphone, Video,
-  Cpu, Hammer, Building2, Crown, SlidersHorizontal,
+  Cpu, Hammer, Building2, Crown, SlidersHorizontal, Pill,
   type LucideIcon,
 } from 'lucide-react'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -76,6 +76,9 @@ const personalMenu: NavHub[] = [
   HUBS.build,
   HUBS.activity,
 ]
+
+/** "My medicines today" (Vita 7.20), first in the menu for a person linked to their own health record. */
+export const MY_MEDICINES_HUB: NavHub = single('/my-medicines', 'My medicines', Pill)
 
 /** An Organization account's menu. */
 const organizationMenu: NavHub[] = [
@@ -168,8 +171,9 @@ export function pathMatches(tab: NavTab, pathname: string): boolean {
 }
 
 /** The left menu for the active account, with what the role can't open left out. */
-export function menuFor(snapshot: AuthorizationSnapshot | undefined): { main: NavHub[]; platform: NavHub | null } {
-  const base = forType(snapshot, personalMenu, organizationMenu, familyMenu)
+export function menuFor(snapshot: AuthorizationSnapshot | undefined, opts: { myMedicines?: boolean } = {}): { main: NavHub[]; platform: NavHub | null } {
+  const personal = opts.myMedicines ? [MY_MEDICINES_HUB, ...personalMenu] : personalMenu
+  const base = forType(snapshot, personal, organizationMenu, familyMenu)
   return {
     main: base.map(h => visibleHub(h, snapshot)).filter((h): h is NavHub => h !== null),
     platform: visibleHub(HUBS.platform, snapshot),

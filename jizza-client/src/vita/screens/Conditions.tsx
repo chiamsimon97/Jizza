@@ -12,6 +12,7 @@ import { Chip, ViewTitle } from '../components/Common'
 import { errorText } from '../data'
 import { COMMON_CONDITIONS, CONDITION_STATUS, TEMPLATES } from '../labels'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 const STATUS_ICON = { active: CheckCircle2, resolved: Clock, suspected: HelpCircle }
 const STATUS_TONE = { active: 'brand', resolved: 'neutral', suspected: 'warn' } as const
@@ -109,7 +110,7 @@ export function ConditionForm({ personId, start, onDone }: { personId: string; s
     name: start.name ?? '', template: start.template ?? 'generic', status: start.status ?? 'active', since: start.since ?? '',
     private: start.private ?? false, notes: start.notes ?? '', doctorId: start.doctorId ?? '', advice: start.advice ?? '',
   })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const save = useMutation({
     mutationFn: () => {
       const body: ConditionInput = {

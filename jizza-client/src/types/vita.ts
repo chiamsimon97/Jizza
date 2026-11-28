@@ -352,8 +352,15 @@ export interface HomeRedFlag {
 }
 
 export interface HomeView {
-  person: { id: string; name: string; recordOpen: boolean; status: string }
-  quickStart: VitaQuickStartView['progress']
+  person: {
+    id: string; name: string; recordOpen: boolean; status: string
+    /** A record someone else keeps, shared with the caller (8a): only its shared sections' cards come. */
+    shared?: boolean
+    asSelf?: boolean
+    sections?: Record<string, ShareAccess>
+  }
+  /** Null on a shared record: Quick start belongs to the manager. */
+  quickStart: VitaQuickStartView['progress'] | null
   latest: Reading[]
   redFlags: HomeRedFlag[]
   conditions: { id: string; name: string; template: string }[]
@@ -538,6 +545,8 @@ export interface DoseSlot {
   markedBy: string | null
   /** Whether the caller made the last mark. */
   markedByYou?: boolean
+  /** Who made the last mark, in words: "You", "Mother", or a member's email (8a). */
+  markedByName?: string | null
   markedAt: string | null
   missedAt: string
   doses: Dose[]
@@ -886,3 +895,76 @@ export interface MailServer { serverId: string; name: string; signedIn: boolean;
 export interface MailSourcesView { sources: MailSource[]; servers: MailServer[] }
 export interface MailSourceInput { serverId?: string; personId?: string; sender?: string; subject?: string | null; password?: string; enabled?: boolean }
 export interface MailCheckResult { status: MailStatus; documentId: string | null; found: number; message: string }
+
+// ── Family and sharing (8a, spec 5.10, 7.16) ────────────────────────────────
+
+export type ShareAccess = 'view' | 'edit'
+/** The sections a record can be shared by (VitaSection on the server). */
+export type ShareSection = 'profile' | 'emergency' | 'conditions' | 'allergies' | 'medicines' | 'vitals' | 'labs' | 'documents'
+  | 'visits' | 'vaccinations' | 'events' | 'insurance' | 'journal' | 'goals'
+export type SharePreset = 'self' | 'emergency' | 'caregiver' | 'everything_except_journal'
+
+export interface ShareLink {
+  personId: string
+  personName: string
+  granteeUserId: string
+  granteeEmail: string | null
+  asSelf: boolean
+  sections: Partial<Record<ShareSection, ShareAccess>>
+  shares: { id: string; section: ShareSection; access: ShareAccess; grantedAt: string }[]
+}
+
+export interface SharesView {
+  links: ShareLink[]
+  members: { userId: string; email: string | null }[]
+  hasFamily: boolean
+  presets: { key: SharePreset; sections: Partial<Record<ShareSection, ShareAccess>> }[]
+  sectionKeys: ShareSection[]
+  /** "Pages already saved or printed cannot be recalled." */
+  note: string
+}
+
+export interface ShareInput {
+  personId: string
+  granteeUserId: string
+  preset?: SharePreset | null
+  /** Overrides the preset section by section; "none" ends that section. */
+  sections?: Partial<Record<ShareSection, ShareAccess | 'none'>>
+  asSelf?: boolean
+}
+
+export interface SharedWithMe {
+  personId: string
+  /** "You" when the caller is linked as the person themself. */
+  name: string
+  personName: string
+  asSelf: boolean
+  managerEmail: string | null
+  sections: Partial<Record<ShareSection, ShareAccess>>
+}
+
+export interface AccessEntry {
+  id: string
+  granteeUserId: string
+  granteeEmail: string | null
+  asSelf: boolean
+  section: ShareSection
+  access: ShareAccess
+  grantedAt: string
+  endedAt: string | null
+  endedReason: string | null
+  active: boolean
+}
+export interface AccessList { personId: string; personName: string; entries: AccessEntry[]; note: string }
+
+export interface HealthConsent {
+  id: string
+  personId: string
+  scope: 'view' | 'manage'
+  channel: string | null
+  grantedAt: string
+  withdrawnAt: string | null
+  open: boolean
+}
+
+export interface CareNote { id: string; text: string; writtenBy: string | null; writtenByName: string; writtenAt: string }

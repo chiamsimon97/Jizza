@@ -1,4 +1,5 @@
 import { meApi } from '@/api/me'
+import { vitaApi } from '@/api/vita'
 import { queryClient } from '@/lib/queryClient'
 import { postSignInDestination, type SignInDestination } from '@/lib/session'
 import { CONTEXT_KEY } from './useAuthorization'
@@ -11,7 +12,11 @@ export async function destinationAfterSignIn(from?: string): Promise<SignInDesti
   try {
     const context = await meApi.getContext()
     queryClient.setQueryData(CONTEXT_KEY, context)
-    return postSignInDestination(context, from)
+    // Only an Individual account heading nowhere in particular asks Vita; a 404 means health is off.
+    const openOn = (!from || from === '/') && context.activeWorkspace.type === 'PERSONAL'
+      ? await vitaApi.status().then(s => s.openOn ?? null, () => null)
+      : null
+    return postSignInDestination(context, from, openOn)
   } catch {
     return { to: from ?? '/chat' }
   }

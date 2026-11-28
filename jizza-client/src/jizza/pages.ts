@@ -20,6 +20,7 @@ export const PAGES: Record<string, { path: string; label: string; aliases: strin
   devices:       { path: '/settings/devices', label: 'Devices',     aliases: ['devices', 'device', 'agents on my computer', 'paired devices', 'browsers', 'phones'] },
   help:          { path: '/help',          label: 'Help',          aliases: ['help', 'guides', 'docs', 'how to'] },
   usage:         { path: '/usage',         label: 'Usage',         aliases: ['usage', 'cost', 'costs', 'spend', 'billing', 'tokens'] },
+  my_medicines:  { path: '/my-medicines',  label: 'My medicines',  aliases: ['my medicines', 'my medicines today', 'my tablets', 'my doses'] },
   members:       { path: '/members',       label: 'Members',       aliases: ['members', 'member', 'people', 'organization members', 'membership requests'] },
 }
 

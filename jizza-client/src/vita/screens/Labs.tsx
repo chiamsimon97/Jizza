@@ -14,6 +14,7 @@ import { TargetLabel } from '../components/Readings'
 import { errorText } from '../data'
 import { changeWords } from '../labs'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 /**
  * Lab results (7.8): the reports newest first with how many tests the lab flagged, the trend of one
@@ -161,7 +162,7 @@ function LabRangeForm({ personId, test, code, setBy, slot, onDone }: {
   personId: string; test: LabTest | undefined; code: string; setBy: 'user' | 'doctor'; slot: RangeView | null; onDone: () => void
 }) {
   const start = setBy === 'doctor' ? slot?.doctorTarget : slot?.own
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors, enabled: setBy === 'doctor' })
+  const doctors = useDoctors(setBy === 'doctor')
   const n = (v: number | null | undefined) => (v == null ? '' : String(v))
   const [v, setV] = useState({ low: n(start?.low), high: n(start?.high), doctorId: start?.doctorId ?? '', setOn: start?.setOn ?? '', note: start?.note ?? '' })
   const unit = test?.unit ?? ''

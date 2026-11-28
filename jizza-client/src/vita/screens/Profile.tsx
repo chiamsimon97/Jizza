@@ -11,21 +11,25 @@ import { Chip, ViewTitle } from '../components/Common'
 import { errorText, feetToCm, useUnits } from '../data'
 import { BLOOD_GROUPS, REMINDER_MODES, SEXES } from '../labels'
 import { vitaKeys } from '../queryKeys'
+import { useShareScope } from '../share'
+import { RecordActions } from './RecordActions'
 
 const ZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Australia/Sydney']
 
 /** Profile (7.4), opened from the emergency card and Settings. */
 export function Profile({ personId, readOnly, onOpen }: { personId: string; readOnly: boolean; onOpen: (view: string) => void }) {
   const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.profile(personId), queryFn: () => vitaApi.profile(personId) })
+  const share = useShareScope()
   return (
     <div className="flex flex-col gap-4">
       <ViewTitle title={data ? `Profile for ${data.person.displayName}` : 'Profile'} sub="What the emergency card and every reading builds on">
         <Button size="sm" variant="secondary" onClick={() => onOpen('emergency')}>Emergency card</Button>
-        <Button size="sm" variant="secondary" onClick={() => onOpen('settings')}>Settings</Button>
+        {!share.shared && <Button size="sm" variant="secondary" onClick={() => onOpen('settings')}>Settings</Button>}
       </ViewTitle>
       {isLoading && <SkeletonRows rows={6} />}
       {error && <LoadFailed text="Could not load the profile." onRetry={() => refetch()} />}
       {data && <ProfileForm key={data.profile.updatedAt ?? data.profile.id} personId={personId} view={data} readOnly={readOnly} />}
+      {data && !share.shared && <RecordActions personId={personId} name={data.person.displayName} self={data.person.kind === 'self'} />}
     </div>
   )
 }

@@ -86,13 +86,13 @@ describe('HealthTab shell', () => {
   })
 
   it('shows what a later view will hold', async () => {
-    renderTab('&view=sharing')
-    expect(await screen.findByText(/Sharing comes with the Family update/)).toBeInTheDocument()
+    renderTab('&view=insurance')
+    expect(await screen.findByText(/Insurance comes with the insurance update/)).toBeInTheDocument()
   })
 
   it('shows a closed record read-only', async () => {
     renderTab('&person=p-gp&view=conditions')
-    expect(await screen.findByText(/record is closed/)).toBeInTheDocument()
+    expect(await screen.findByText(/record stays here to read under “Past records”/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Add condition/ })).toBeNull()
   })
 

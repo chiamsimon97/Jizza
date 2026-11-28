@@ -14,6 +14,7 @@ import { ConvertedNote, LabFlagPill, LabTargetCell } from '../components/Labs'
 import { errorText } from '../data'
 import { groupResults, resultName } from '../labs'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 /**
  * One lab report (7.8): tests grouped (Diabetes, Kidney, Lipids, …), each with its value, the lab's
@@ -31,7 +32,7 @@ export function LabReportPage({ personId, reportId, readOnly, onBack, onOpenTest
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: vitaKeys.lab(personId, reportId ?? ''), queryFn: () => vitaApi.lab(reportId as string), enabled: !!reportId,
   })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const remove = useMutation({

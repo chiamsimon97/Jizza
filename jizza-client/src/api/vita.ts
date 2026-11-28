@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, AccessList, CareNote, HealthConsent, ShareInput, SharedWithMe, SharesView, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -172,4 +172,27 @@ export const vitaApi = {
   updateMailSource: (id: string, body: MailSourceInput) => api.put<MailSource>(`/api/vita/mail-sources/${id}`, body),
   removeMailSource: (id: string) => api.delete<void>(`/api/vita/mail-sources/${id}`),
   checkMailSource: (id: string) => api.post<MailCheckResult>(`/api/vita/mail-sources/${id}/check`, {}),
+
+  // Family and sharing (8a)
+  shares: (personId?: string) => api.get<SharesView>(`/api/vita/shares${personId ? `?personId=${encodeURIComponent(personId)}` : ''}`),
+  /** Replaces what one member may see of one record. Any Edit needs a fresh step-up. */
+  share: (body: ShareInput) => api.post<SharesView>('/api/vita/shares', body),
+  endShare: (id: string) => api.delete<void>(`/api/vita/shares/${id}`),
+  /** Ends everything one member was given on one record. */
+  endShares: (personId: string, granteeUserId: string) =>
+    api.delete<void>(`/api/vita/shares?personId=${encodeURIComponent(personId)}&granteeUserId=${encodeURIComponent(granteeUserId)}`),
+  sharedWithMe: () => api.get<SharedWithMe[]>('/api/vita/shared-with-me'),
+  accessList: (personId: string) => api.get<AccessList>(`${person(personId)}/access-list`),
+  consents: (personId: string) => api.get<HealthConsent[]>(`${person(personId)}/consents`),
+  recordConsent: (personId: string, body: { scope: 'view' | 'manage'; channel?: string | null }) =>
+    api.post<HealthConsent>(`${person(personId)}/consents`, body),
+  withdrawConsent: (personId: string, id: string) => api.delete<HealthConsent>(`${person(personId)}/consents/${id}`),
+  careNotes: (personId: string) => api.get<CareNote[]>(`${person(personId)}/care-notes`),
+  addCareNote: (personId: string, text: string) => api.post<CareNote>(`${person(personId)}/care-notes`, { text }),
+  /** The doctors a shared record names (for the manager, every doctor). */
+  personDoctors: (personId: string) => api.get<Doctor[]>(`${person(personId)}/doctors`),
+  /** Every Vita row of the person. Needs a fresh step-up. */
+  exportRecord: (personId: string) => api.get<Record<string, JsonValue>>(`${person(personId)}/export`),
+  /** Deletes the person's health record for good. Needs a fresh step-up. */
+  deleteRecord: (personId: string) => api.delete<{ deleted: number }>(`${person(personId)}/record`),
 }

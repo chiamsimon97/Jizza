@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { ExternalLink, RotateCcw } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
-import { SelectField, TextField } from '@/portfolio/components/Fields'
+import { CheckField, SelectField, TextField } from '@/portfolio/components/Fields'
 import { LoadFailed, Panel } from '@/portfolio/components/Panel'
 import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
 import type { JsonValue } from '@/types/finance'
@@ -14,6 +14,7 @@ import { FigureLabel, NeedsVerification } from '../components/FigureLabel'
 import { errorText, unitsOf, useVitaConfig } from '../data'
 import { configLabel, describeFigure, FIGURE_GROUPS } from '../labels'
 import { vitaKeys } from '../queryKeys'
+import { useLinkedToOwnRecord } from '../useMyMedicines'
 
 /**
  * Settings (7.18): units, emergency numbers, and every figure Vita uses with where it comes from. A
@@ -37,9 +38,12 @@ export function Settings({ onOpen }: { onOpen: (view: string) => void }) {
 function SettingsBody({ items }: { items: VitaConfigItem[] }) {
   const units = unitsOf(items)
   const numbers = items.find(i => i.key === 'emergency.numbers')
+  const openOn = items.find(i => i.key === 'ui.open_my_medicines')
+  const linked = useLinkedToOwnRecord(true)
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
+        {linked && openOn && <OpenOnMyMedicines item={openOn} />}
         <Units units={units} />
         {numbers && <EmergencyNumbers item={numbers} />}
         <Panel title="Reminders">
@@ -91,6 +95,20 @@ function FigureRow({ item }: { item: VitaConfigItem }) {
         )}
       </div>
     </li>
+  )
+}
+
+/** 7.20: a person linked to their own record who also manages others can stop Jizza opening on My medicines. */
+function OpenOnMyMedicines({ item }: { item: VitaConfigItem }) {
+  const save = useSave(item.key)
+  const v = item.value && typeof item.value === 'object' && !Array.isArray(item.value) ? item.value : {}
+  const on = v.enabled !== false
+  return (
+    <Panel title="Where Jizza opens">
+      <CheckField label="Open Jizza on My medicines after I sign in" checked={on} onChange={enabled => save.mutate({ enabled })} />
+      <p className="text-xs text-gray-500 dark:text-gray-400">My medicines stays in the left menu either way.</p>
+      {save.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errorText(save.error, 'Could not save that.')}</p>}
+    </Panel>
   )
 }
 

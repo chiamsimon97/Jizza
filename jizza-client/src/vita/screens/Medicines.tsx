@@ -16,6 +16,7 @@ import { DoseStatusPill } from '../components/DoseSlotCard'
 import { errorText } from '../data'
 import { DOSE_UNITS, FORMS, GROUPS, SYSTEMS, WITH_FOOD, clock, groupOf, localDay, scheduleWords } from '../medicines'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 export const MEDICINES_PROMISE = 'Vita keeps this list and reminds. It never changes a dose or suggests starting or stopping a medicine.'
 
@@ -35,7 +36,7 @@ export function Medicines({ personId, readOnly, adding, onAddDone }: { personId:
   const to = localDay(-1)
   const meds = useQuery({ queryKey: vitaKeys.medicines(personId), queryFn: () => vitaApi.medicines(personId) })
   const conditions = useQuery({ queryKey: vitaKeys.conditions(personId), queryFn: () => vitaApi.conditions(personId) })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const adherence = useQuery({ queryKey: vitaKeys.adherence(personId, from, to), queryFn: () => vitaApi.adherence(personId, from, to) })
   const [panel, setPanel] = useState<Medicine | 'new' | null>(null)
   const open = panel ?? (adding ? 'new' : null)
