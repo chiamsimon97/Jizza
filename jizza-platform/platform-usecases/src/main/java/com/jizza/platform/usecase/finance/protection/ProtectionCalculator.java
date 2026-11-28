@@ -108,6 +108,28 @@ public final class ProtectionCalculator {
         premiumPct == null ? null : premiumPct.setScale(1, java.math.RoundingMode.HALF_UP), flag, floor);
   }
 
+  /**
+   * One line per policy as the Protection view lists it: a floater is one policy covering several
+   * people, never one per person. {@code used} holds "used this policy year" for the health
+   * policies that have one (Vita's claims, spec 4.3); the rest show none.
+   */
+  public record PolicyLine(String id, String kind, String personId, List<String> coveredPersonIds,
+                           boolean floater, BigDecimal sumAssured, boolean employerProvided,
+                           java.time.LocalDate renewalDate, BigDecimal usedThisYear,
+                           BigDecimal leftThisYear) {}
+
+  public static List<PolicyLine> policyLines(Household h, java.util.Map<String, BigDecimal> used) {
+    List<PolicyLine> out = new ArrayList<>();
+    for (Policy p : h.policies()) {
+      List<String> covered = p.coveredPersonIds().isEmpty() ? List.of(p.personId()) : p.coveredPersonIds();
+      BigDecimal u = used == null ? null : used.get(p.id());
+      BigDecimal left = u == null ? null : nz(p.sumAssured()).subtract(u).max(BigDecimal.ZERO);
+      out.add(new PolicyLine(p.id(), p.kind(), p.personId(), covered, covered.size() > 1,
+          nz(p.sumAssured()), p.employerProvided(), p.renewalDate(), u, left));
+    }
+    return out;
+  }
+
   private static String kind(Household h, String personId) {
     return h.people().stream().filter(p -> p.id().equals(personId)).map(Person::kind)
         .findFirst().orElse("other");

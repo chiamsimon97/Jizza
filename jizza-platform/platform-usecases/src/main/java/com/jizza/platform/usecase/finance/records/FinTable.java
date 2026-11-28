@@ -74,7 +74,7 @@ public enum FinTable {
   POLICY("fin_insurance_policy", "Policy", List.of(
       of("personId", Type.PERSON),
       oneOf("kind", "term", "health", "super_topup", "personal_accident", "critical_illness",
-          "vehicle", "home", "endowment", "ulip").need(),
+          "vehicle", "home", "endowment", "ulip", "government_scheme").need(),
       text("providerName", 120), of("sumAssured", Type.MONEY).need(), of("deductible", Type.MONEY),
       of("premium", Type.MONEY), oneOf("premiumFrequency", "monthly", "quarterly", "yearly", "single"),
       of("renewalDate", Type.DATE), of("policyEndDate", Type.DATE),

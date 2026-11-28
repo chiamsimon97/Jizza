@@ -19,6 +19,7 @@ export const isInformal = (k: LoanKind) => k === 'FAMILY_FRIEND' || k === 'MONEY
 export const POLICY_KINDS: Record<PolicyKind, string> = {
   term: 'Term life', health: 'Health', super_topup: 'Super top-up', personal_accident: 'Personal accident',
   critical_illness: 'Critical illness', vehicle: 'Vehicle', home: 'Home', endowment: 'Endowment', ulip: 'ULIP',
+  government_scheme: 'Government scheme',
 }
 
 export const ASSET_KINDS: Record<AssetKind, string> = {

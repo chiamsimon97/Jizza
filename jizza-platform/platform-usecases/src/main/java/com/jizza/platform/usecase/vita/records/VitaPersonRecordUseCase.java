@@ -35,9 +35,16 @@ public class VitaPersonRecordUseCase {
   private final VitaShares shares;
   private final StatementFiles files;
   private final AuditLog audit;
+  private final com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance;
+
+  /** Tables with no person of their own: doctors are the household's, a policy's detail the policy's. */
+  private static final Set<String> NOT_A_PERSON = Set.of(VitaTable.DOCTOR.table,
+      com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase.DETAIL_TABLE);
 
   public VitaPersonRecordUseCase(VitaScopeResolver scopes, VitaRecords records, VitaShares shares,
-                                 StatementFiles files, AuditLog audit) {
+                                 StatementFiles files, AuditLog audit,
+                                 com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance) {
+    this.insurance = insurance;
     this.scopes = scopes;
     this.records = records;
     this.shares = shares;
@@ -57,7 +64,7 @@ public class VitaPersonRecordUseCase {
     ObjectNode tables = out.putObject("records");
     Set<String> doctorIds = new LinkedHashSet<>();
     for (String table : records.tables()) {
-      if (table.equals(VitaTable.DOCTOR.table)) continue;
+      if (NOT_A_PERSON.contains(table)) continue;
       ArrayNode rows = tables.putArray(table);
       for (ObjectNode r : records.list(table, p.owner(), Map.of("personId", p.personId()))) {
         rows.add(r);
@@ -69,6 +76,9 @@ public class VitaPersonRecordUseCase {
     ArrayNode doctors = tables.putArray(VitaTable.DOCTOR.table);
     records.list(VitaTable.DOCTOR.table, p.owner(), Map.of()).stream()
         .filter(d -> doctorIds.contains(d.path("id").asText())).forEach(doctors::add);
+    // The health policies covering the person, numbers masked; the policies stay with the household.
+    ArrayNode cover = out.putArray("insurance");
+    insurance.policies(caller, personId).forEach(cover::add);
     ArrayNode notes = out.putArray("careNotes");
     shares.careNotes(p.owner(), p.personId(), Integer.MAX_VALUE).forEach(n -> notes.addObject()
         .put("text", n.text()).put("writtenAt", n.writtenAt().toString())
@@ -95,7 +105,7 @@ public class VitaPersonRecordUseCase {
     List<String> tables = new ArrayList<>(records.tables());
     java.util.Collections.reverse(tables);
     for (String table : tables) {
-      if (table.equals(VitaTable.DOCTOR.table)) continue;
+      if (NOT_A_PERSON.contains(table)) continue;
       n += records.deleteWhere(table, p.owner(), Map.of("personId", p.personId()));
     }
     for (UUID fileId : fileIds) files.delete(p.owner(), fileId);

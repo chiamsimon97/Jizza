@@ -101,6 +101,8 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
   private final ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports;
   private final ObjectProvider<com.jizza.platform.usecase.finance.records.FinRecordsUseCase> forms;
   private final boolean enabled;
+  /** While on, health cover is Vita's: Kai's chat form no longer offers or saves it. */
+  private final boolean healthOn;
   private final List<ToolSpec> specs;
 
   public FinanceToolProvider(AgentDirectory agents, ObjectProvider<FinHealthUseCase> health,
@@ -115,7 +117,27 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
                              ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers,
                              ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports,
                              ObjectProvider<com.jizza.platform.usecase.finance.records.FinRecordsUseCase> forms,
-                             @Value("${jizza.finance.enabled:false}") boolean enabled) {
+                             boolean enabled) {
+    this(agents, health, cashFlow, loans, protection, goals, tax, holdings, trees, rules, brokers, imports,
+        forms, enabled, false);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public FinanceToolProvider(AgentDirectory agents, ObjectProvider<FinHealthUseCase> health,
+                             ObjectProvider<FinCashFlowUseCase> cashFlow,
+                             ObjectProvider<FinLoansUseCase> loans,
+                             ObjectProvider<FinProtectionUseCase> protection,
+                             ObjectProvider<FinGoalUseCase> goals,
+                             ObjectProvider<FinTaxUseCase> tax,
+                             ObjectProvider<com.jizza.platform.usecase.finance.ledger.HoldingsUseCase> holdings,
+                             ObjectProvider<com.jizza.platform.usecase.finance.tree.TreeService> trees,
+                             ObjectProvider<com.jizza.platform.usecase.finance.rules.RulesService> rules,
+                             ObjectProvider<com.jizza.platform.usecase.finance.sync.BrokerSyncService> brokers,
+                             ObjectProvider<com.jizza.platform.usecase.finance.imports.ImportService> imports,
+                             ObjectProvider<com.jizza.platform.usecase.finance.records.FinRecordsUseCase> forms,
+                             @Value("${jizza.finance.enabled:false}") boolean enabled,
+                             @Value("${jizza.health.enabled:false}") boolean healthOn) {
+    this.healthOn = healthOn;
     this.agents = agents;
     this.health = health;
     this.cashFlow = cashFlow;
@@ -467,6 +489,10 @@ public class FinanceToolProvider implements ToolProvider, ActionTypeSource {
     String form = args.path("form").asText();
     var table = FORMS.get(form);
     if (table == null) return ToolResult.error("form must be one of " + String.join(", ", FORMS.keySet()));
+    if (healthOn && "policy".equals(form)
+        && com.jizza.platform.usecase.vita.insurance.PolicyYear.healthKind(args.path("values").path("kind").asText(null))) {
+      return ToolResult.error(FinProtectionUseCase.KEPT_IN_VITA + " Tell the user that, and that Vita can help there.");
+    }
     ObjectNode values = Json.obj();
     ArrayNode dropped = Json.mapper().createArrayNode();
     var it = args.path("values").fields();

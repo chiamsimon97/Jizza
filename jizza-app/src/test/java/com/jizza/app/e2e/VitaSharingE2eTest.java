@@ -347,6 +347,48 @@ class VitaSharingE2eTest extends E2eSupport {
   }
 
   @Test
+  void insuranceFollowsTheShareOfItsSection() {
+    ApiClient you = clients.get("you");
+    ApiClient brother = clients.get("brother");
+    String mum = person("Mother");
+    String dad = person("Father");
+    String me = ok(you.get("/api/people")).get(0).path("id").asText();
+    String policy = ok(you.post("/api/vita/policies", Map.of("kind", "health", "sumAssured", 1000000,
+        "renewalDate", "2027-03-31", "coveredPersonIds", List.of(me, mum, dad)))).path("id").asText();
+    ok(you.post("/api/vita/people/" + dad + "/claims", Map.of("policyId", policy, "admittedOn", "2026-08-02",
+        "amountClaimed", 120000, "amountPaid", 105000, "status", "settled")));
+    ok(you.post("/api/vita/people/" + mum + "/claims", Map.of("policyId", policy, "admittedOn", "2026-09-02",
+        "amountClaimed", 10000, "status", "filed")));
+    you.post("/api/vita/people/" + mum + "/consents", Map.of("scope", "view"));
+
+    // The caregiver preset leaves insurance out (Fixture E): no policy and no claim of hers.
+    ok(share(mum, "brother", "caregiver", null));
+    assertThat(brother.get("/api/vita/policies?personId=" + mum).status()).isEqualTo(404);
+    assertThat(brother.get("/api/vita/people/" + mum + "/claims").status()).isEqualTo(404);
+    assertThat(brother.get("/api/vita/policies/" + policy).status()).isEqualTo(404);
+
+    // With insurance on View: the cover over her, without the household's used figures, and her
+    // claims only; nothing to change and nothing of Father's.
+    ok(share(mum, "brother", "emergency", Map.of("insurance", "view")));
+    JsonNode seen = ok(brother.get("/api/vita/policies?personId=" + mum));
+    assertThat(seen).hasSize(1);
+    assertThat(seen.get(0).path("shared").asBoolean()).isTrue();
+    assertThat(seen.get(0).path("usedThisYear").isNull()).isTrue();
+    assertThat(seen.get(0).has("claimCount")).isFalse();
+    assertThat(ok(brother.get("/api/vita/policies/" + policy)).path("id").asText()).isEqualTo(policy);
+    assertThat(ok(brother.get("/api/vita/policies/" + policy + "/detail")).path("policyId").asText()).isEqualTo(policy);
+    JsonNode herClaims = ok(brother.get("/api/vita/people/" + mum + "/claims"));
+    assertThat(herClaims).hasSize(1);
+    assertThat(brother.get("/api/vita/people/" + dad + "/claims").status()).isEqualTo(404);
+    assertThat(brother.put("/api/vita/policies/" + policy, Map.of("sumAssured", 1)).status()).isEqualTo(404);
+    assertThat(brother.put("/api/vita/policies/" + policy + "/detail", Map.of("tpaName", "X")).status()).isEqualTo(404);
+    assertThat(brother.post("/api/vita/people/" + mum + "/claims", Map.of("policyId", policy, "admittedOn", "2026-10-01"))
+        .status()).isEqualTo(404);
+    assertThat(ok(brother.get("/api/vita/policies"))).isEmpty();
+    assertThat(clients.get("outsider").get("/api/vita/policies/" + policy).status()).isEqualTo(404);
+  }
+
+  @Test
   void grantingEditNeedsAFreshStepUpAndOnlyTheManagerShares() {
     // Brother has not stepped up: View is fine, Edit is refused until he does.
     ApiClient brother = clients.get("brother");
