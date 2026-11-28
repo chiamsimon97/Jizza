@@ -50,6 +50,19 @@ class VitaRecordAndVitalsE2eTest extends E2eSupport {
     return "/api/vita/people/" + person + rest;
   }
 
+  /**
+   * Times relative to now in India: Home shows a red flag only for a while, and trends look back a
+   * number of days, so fixed dates would stop passing as the calendar moves on.
+   */
+  private static String minutesAgo(int minutes) {
+    return java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).minusMinutes(minutes)
+        .truncatedTo(java.time.temporal.ChronoUnit.MINUTES).toString();
+  }
+
+  private static String daysAgo(int days, String time) {
+    return java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).minusDays(days) + "T" + time;
+  }
+
   private JsonNode bp(String person, int sys, int dia, String takenAt) {
     var r = api.post(path(person, "/measurements"), Map.of("kind", "bp", "value", sys, "value2", dia,
         "value3", 72, "takenAt", takenAt));
@@ -107,7 +120,7 @@ class VitaRecordAndVitalsE2eTest extends E2eSupport {
   @Test
   void aTypedRedFlagAsksFirstThenAlertsTheManagerOnce() {
     int before = api.get("/api/notifications").json().size();
-    JsonNode r = bp(father, 182, 112, "2026-11-27T07:30");
+    JsonNode r = bp(father, 182, 112, minutesAgo(30));
     assertThat(r.path("evaluation").path("status").asText()).isEqualTo("red_flag");
     assertThat(r.path("evaluation").path("redFlag").path("level").asText()).isEqualTo("urgent");
     assertThat(r.path("confirmNeeded").asBoolean()).isTrue();
@@ -142,14 +155,14 @@ class VitaRecordAndVitalsE2eTest extends E2eSupport {
     assertThat(banners.get(0).path("wording").asText()).startsWith("Call now");
 
     // 180/120 is not a red flag: the rule is "above".
-    assertThat(bp(mother, 180, 120, "2026-11-27T08:00").path("evaluation").path("status").asText())
+    assertThat(bp(mother, 180, 120, minutesAgo(20)).path("evaluation").path("status").asText())
         .isNotEqualTo("red_flag");
   }
 
   @Test
   void sugarUsesTheDiabetesSetOnlyWithAnActiveConditionAndALowReadingIsAFlag() {
     var before = api.post(path(mother, "/measurements"), Map.of("kind", "glucose", "value", 142, "context", "fasting",
-        "takenAt", "2026-11-25T07:00"));
+        "takenAt", daysAgo(3, "07:00")));
     assertThat(before.json().path("evaluation").path("status").asText()).isEqualTo("not_set");
     var c = api.post(path(mother, "/conditions"), Map.of("name", "Type 2 diabetes", "template", "diabetes_t2"));
     String cid = c.json().path("id").asText();
@@ -157,10 +170,10 @@ class VitaRecordAndVitalsE2eTest extends E2eSupport {
     assertThat(fasting.path("status").asText()).isEqualTo("outside_range");
     assertThat(fasting.path("range").asText()).isEqualTo("80–130");
     var after = api.post(path(mother, "/measurements"), Map.of("kind", "glucose", "value", 170, "context", "after_meal",
-        "meal", "lunch", "takenAt", "2026-11-25T14:00"));
+        "meal", "lunch", "takenAt", daysAgo(3, "14:00")));
     assertThat(after.json().path("evaluation").path("status").asText()).isEqualTo("in_range");
     var low = api.post(path(mother, "/measurements"), Map.of("kind", "glucose", "value", 62, "context", "random",
-        "takenAt", "2026-11-26T22:00"));
+        "takenAt", daysAgo(2, "22:00")));
     assertThat(low.json().path("evaluation").path("redFlag").path("ruleId").asText()).isEqualTo("low_sugar");
     assertThat(api.post(path(mother, "/measurements"), Map.of("kind", "glucose", "value", 7.8, "unit", "mmol/L")).status())
         .isEqualTo(400);
@@ -186,9 +199,9 @@ class VitaRecordAndVitalsE2eTest extends E2eSupport {
     assertThat(f.json().path("value").decimalValue()).isEqualByComparingTo("37");
     assertThat(api.post(path(father, "/measurements"), Map.of("kind", "steps", "value", 4000)).status()).isEqualTo(400);
 
-    JsonNode first = bp(father, 150, 95, "2026-11-26T07:30");
+    JsonNode first = bp(father, 150, 95, daysAgo(2, "07:30"));
     var second = api.post(path(father, "/measurements?secondOf=" + first.path("id").asText()),
-        Map.of("kind", "bp", "value", 140, "value2", 85, "takenAt", "2026-11-26T07:32"));
+        Map.of("kind", "bp", "value", 140, "value2", 85, "takenAt", daysAgo(2, "07:32")));
     assertThat(second.ok()).as(second.body()).isTrue();
     assertThat(second.json().path("pairId").asText()).isEqualTo(first.path("id").asText());
     JsonNode trend = api.get(path(father, "/measurements/trend?kind=bp&days=30")).json().path("trend");
