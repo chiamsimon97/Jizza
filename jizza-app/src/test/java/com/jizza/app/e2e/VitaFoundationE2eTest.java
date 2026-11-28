@@ -113,6 +113,9 @@ class VitaFoundationE2eTest extends E2eSupport {
     api.post("/api/vita/people/" + appa + "/conditions", Map.of("name", "Something private", "private", true));
     api.post("/api/vita/people/" + appa + "/emergency-contacts", Map.of("name", "Ravi", "relation", "Son",
         "phone", "+91 98000 00001"));
+    api.post("/api/vita/people/" + appa + "/medicines", Map.of("name", "Telma", "strength", "40 mg",
+        "schedule", Map.of("times", java.util.List.of("08:00"))));
+    api.post("/api/vita/people/" + appa + "/medicines", Map.of("name", "Private pill", "private", true, "asNeeded", true));
 
     JsonNode card = api.get("/api/vita/people/" + appa + "/emergency-card").json();
     assertThat(card.path("name").asText()).isEqualTo("Appa");
@@ -124,7 +127,11 @@ class VitaFoundationE2eTest extends E2eSupport {
     assertThat(card.path("emergencyContacts").get(0).path("relation").asText()).isEqualTo("Son");
     assertThat(card.path("emergencyNumbers").path("emergency").asText()).isEqualTo("112");
     assertThat(card.path("emergencyNumbersNeedVerification").asBoolean()).isTrue();
-    assertThat(card.path("medicinesAvailable").asBoolean()).isFalse();
+    assertThat(card.path("medicinesAvailable").asBoolean()).isTrue();
+    assertThat(card.path("medicines")).hasSize(1);
+    assertThat(card.path("medicines").get(0).path("name").asText()).isEqualTo("Telma");
+    assertThat(card.path("medicines").get(0).path("strength").asText()).isEqualTo("40 mg");
+    assertThat(card.toString()).doesNotContain("Private pill");
     assertThat(card.path("updatedOn").asText()).matches("\\d{4}-\\d{2}-\\d{2}");
   }
 

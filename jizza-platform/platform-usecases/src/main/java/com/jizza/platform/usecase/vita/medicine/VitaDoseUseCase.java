@@ -128,6 +128,7 @@ public class VitaDoseUseCase {
       d.put("takenAt", r.takenAt() == null ? null : r.takenAt().toString());
       d.put("actedAt", r.actedAt() == null ? null : r.actedAt().toString());
       d.put("markedBy", r.actedByUserId() == null ? null : r.actedByUserId().toString());
+      d.put("markedByYou", r.actedByUserId() != null && r.actedByUserId().equals(p.caller()));
       d.put("late", late(r, missedAfter));
       d.put("version", r.version());
       list.add(d);
@@ -147,6 +148,7 @@ public class VitaDoseUseCase {
     s.put("snoozedUntil", snoozed == null ? null : snoozed.toString());
     s.put("markedBy", lastMark == null ? null : lastMark.actedByUserId().toString());
     s.put("markedAt", lastMark == null ? null : lastMark.actedAt().toString());
+    s.put("markedByYou", lastMark != null && lastMark.actedByUserId().equals(p.caller()));
     s.put("missedAt", dueAt.plus(missedAfter).toString());
     s.set("doses", list);
     return s;
@@ -236,6 +238,8 @@ public class VitaDoseUseCase {
       case "skipped" -> mark = new Mark("skipped", null, null, now, p.caller(), null, act.note());
       case "snoozed" -> {
         if (!"due".equals(r.status())) throw new ValidationException("This dose was already missed: mark it taken or skipped.");
+        // Already snoozed: the same press again (a resent request) changes nothing.
+        if (r.snoozedUntil() != null && r.snoozedUntil().isAfter(now)) return false;
         int minutes = act.snoozeMinutes() != null ? act.snoozeMinutes() : medicines.reminderSettings(p.owner()).snoozeMinutes();
         Instant cap = r.dueAt().plus(missedAfter);
         Instant until = now.plus(Duration.ofMinutes(minutes));

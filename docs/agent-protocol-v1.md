@@ -224,8 +224,10 @@ the app's bundle id (default `com.jizza.ios`). Apps installed from Xcode get dev
 so set `JIZZA_APNS_SANDBOX=true` for them; TestFlight and App Store builds use production. The app
 registers its token with `{"provider":"apns","token":"<hex>"}`. The ids go under the `jizza` key
 of the APNs payload. `inbox` and `run_failed` show a fixed alert ("Jizza needs your answer", "A
-run failed") collapsed per item, never the item's own text; other types are silent
-`content-available` wakes. A 410, `BadDeviceToken` or `DeviceTokenNotForTopic` forgets the token.
+run failed") collapsed per item, never the item's own text; `vita_slot`, `vita_missed` and
+`vita_daily_check` (section 12, Vita) show "Medicines reminder", "Medicines not marked" and
+"Medicines check" with categories `JIZZA_VITA_SLOT`, `JIZZA_VITA_MISSED` and `JIZZA_VITA_DAILY`,
+thread `vita`, collapsed per person and slot; other types are silent `content-available` wakes. A 410, `BadDeviceToken` or `DeviceTokenNotForTopic` forgets the token.
 
 ## 9. Conformance
 
@@ -324,6 +326,7 @@ its `/api` twin for the phone's owner.
 | `/agent/v1/me/agents` | id, name, description, status, enabled, modelTier, monthlyCostLimit, parentAgentId (no instructions) |
 | `/agent/v1/me/help` | The web's Help guides (jizza-client/src/help/guides): slug, title, summary, section, order, updated |
 | `/agent/v1/me/help/{slug}` | One guide with its Markdown `body`, header removed |
+| `/agent/v1/me/vita/today?tz=&hours=` | Today's medicine slots for the people the user manages (see Vita below) |
 
 ### Acting: signed requests
 
@@ -358,6 +361,66 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | `POST /agent/v1/me/workflows/{id}/run` | `{"input":{…},"version"}` | full |
 | `POST /agent/v1/me/runs/{id}/cancel` | empty | full |
 | `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
+| `POST /agent/v1/me/vita/slots/act` | `{"personId","dueAt","action","snoozeMinutes"}` (see Vita below) | approve |
+| `POST /agent/v1/me/vita/doses/{id}/act` | `{"action","snoozeMinutes"}` | approve |
+
+### Vita: medicine reminders
+
+Only while the health switch (`JIZZA_HEALTH_ENABLED`) is on; otherwise these answer 404. Each calls
+the same use case as its `/api/vita` twin as the phone's owner, so it reaches only the people that
+person manages (their own record and the people in their list; others read as 404).
+
+**Push.** When a slot is due (reminder mode "each slot"), when a slot was not marked
+`reminder.missed_after_minutes` after it was due (one grouped alert per slot), and for the daily
+check (mode "daily check"), the recipient's phones get a push with ids only, never a name, a
+medicine or a value:
+
+```json
+{"type":"vita_slot","personId":"6f1c…","dueAt":"2026-12-10T14:30:00Z"}
+{"type":"vita_missed","personId":"6f1c…","dueAt":"2026-12-10T14:30:00Z"}
+{"type":"vita_daily_check","personId":"6f1c…"}
+```
+
+The app then reads `GET /agent/v1/me/vita/today` and shows "<person> · <time> medicines" with
+All taken, Skip and Snooze 15 min. The inbox item the web shows for the same reminder has the
+same three ids in its `context` (`type`, `personId`, `dueAt`). An iPhone without Apple push may
+instead schedule local notifications from `/today?hours=48` and refresh whenever it opens; only one
+of the two may be active on a phone.
+
+**`GET /agent/v1/me/vita/today?tz=<IANA>[&hours=1..48]`** (device token). Slots from midnight in
+`tz` to the next midnight, or with `hours` to that many hours from now, for every person the user
+manages, by time. `showNames` says whether the user allowed medicine names; when false every
+`medicineName` is null. A slot's `status` is `due`, `taken`, `skipped`, `missed`, `partial` (some
+doses marked) or `snoozed`; `markedBy` (a user id) and `markedAt` name the latest mark.
+
+```json
+{"showNames":false,"zone":"Europe/London","from":"2026-12-10T00:00:00Z","to":"2026-12-11T00:00:00Z",
+ "slots":[{"personId":"6f1c…","personName":"Amma","dueAt":"2026-12-10T14:30:00Z","localTime":"20:00",
+   "localDate":"2026-12-10","zone":"Asia/Kolkata","status":"due","snoozedUntil":null,"markedBy":null,
+   "markedAt":null,"missedAt":"2026-12-10T15:30:00Z",
+   "doses":[{"id":"0b7e…","medicineId":"9a2d…","medicineName":null,"doseUnits":1,"doseUnit":"tablet",
+     "withFood":"after","status":"due","snoozedUntil":null,"takenAt":null,"actedAt":null,
+     "markedBy":null,"late":false,"version":0}]}]}
+```
+
+`localTime` is in the person's zone (`zone`); the phone shows its own time beside it when its zone
+differs ("8:00 PM in India (2:30 PM your time)").
+
+**`POST /agent/v1/me/vita/slots/act`** (signed, needs approve) marks every open dose of one slot:
+
+```json
+{"personId":"6f1c…","dueAt":"2026-12-10T14:30:00Z","action":"taken"}
+```
+
+`action` is `taken`, `skipped` or `snoozed` (with optional `snoozeMinutes`, 1 to 240; default the
+user's setting, 15). The answer is the slot as in `/today`. **`POST /agent/v1/me/vita/doses/{id}/act`**
+(signed, needs approve) takes `{"action":"taken"}` for one dose and also answers its slot.
+
+Both are safe to send twice: the first mark wins, and a slot or dose already taken or skipped
+(by anyone) is answered unchanged with 200, its `markedBy` and `markedAt` showing who marked it
+and when. A snooze never passes the time the slot would be missed, and snoozing again while
+snoozed changes nothing. A missed dose can still be marked taken (it counts as taken, `late`) or
+skipped. A closed record answers 400; another account's person or dose 404.
 
 ### Ask
 

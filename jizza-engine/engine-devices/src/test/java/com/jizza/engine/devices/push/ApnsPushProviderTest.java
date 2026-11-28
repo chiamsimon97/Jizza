@@ -85,6 +85,21 @@ class ApnsPushProviderTest {
   }
 
   @Test
+  void aVitaReminderIsAFixedLineWithIdsOnly() {
+    ApnsPushProvider apns = provider(Clock.systemUTC());
+    apns.send(TOKEN, Json.obj().put("type", "vita_slot").put("personId", "p-1").put("dueAt", "2026-12-01T02:30:00Z"));
+    apns.send(TOKEN, Json.obj().put("type", "vita_missed").put("personId", "p-1").put("dueAt", "2026-12-01T02:30:00Z"));
+    JsonNode slot = Json.read(bodies.get(0));
+    assertThat(slot.at("/aps/alert/title").asText()).isEqualTo("Medicines reminder");
+    assertThat(slot.at("/aps/category").asText()).isEqualTo("JIZZA_VITA_SLOT");
+    assertThat(slot.at("/aps/thread-id").asText()).isEqualTo("vita");
+    assertThat(slot.at("/jizza/personId").asText()).isEqualTo("p-1");
+    assertThat(headers.get(0).getFirst("apns-push-type")).isEqualTo("alert");
+    assertThat(headers.get(0).getFirst("apns-collapse-id")).isEqualTo("vita_slot-p-1-1796092200");
+    assertThat(Json.read(bodies.get(1)).at("/aps/category").asText()).isEqualTo("JIZZA_VITA_MISSED");
+  }
+
+  @Test
   void runFailedIsAnAlertAndDeviceWorkIsSilent() {
     ApnsPushProvider apns = provider(Clock.systemUTC());
     apns.send(TOKEN, Json.obj().put("type", "run_failed").put("runId", "r-9"));

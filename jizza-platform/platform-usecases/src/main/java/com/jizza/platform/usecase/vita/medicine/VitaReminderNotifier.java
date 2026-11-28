@@ -33,8 +33,11 @@ public class VitaReminderNotifier {
   private final NotificationBus bus;
   private final AgentDirectory agents;
   private final VitaReminderRecipients recipients;
+  private final org.springframework.context.ApplicationEventPublisher events;
 
-  public VitaReminderNotifier(NotificationBus bus, AgentDirectory agents, VitaReminderRecipients recipients) {
+  public VitaReminderNotifier(NotificationBus bus, AgentDirectory agents, VitaReminderRecipients recipients,
+                              org.springframework.context.ApplicationEventPublisher events) {
+    this.events = events;
     this.bus = bus;
     this.agents = agents;
     this.recipients = recipients;
@@ -55,6 +58,7 @@ public class VitaReminderNotifier {
     ObjectNode ctx = Json.obj().put("type", "vita_slot").put("personId", p.personId().toString())
         .put("dueAt", dueAt.toString());
     send(recipients.forSlot(p), p, slotText(p, dueAt, zone, names), ctx, Duration.ofHours(12), NotificationPriority.URGENT);
+    push(recipients.forSlot(p), "vita_slot", p, dueAt);
   }
 
   public void missed(PersonScope p, Instant dueAt, ZoneId zone) {
@@ -64,12 +68,14 @@ public class VitaReminderNotifier {
     ObjectNode ctx = Json.obj().put("type", "vita_missed").put("personId", p.personId().toString())
         .put("dueAt", dueAt.toString());
     send(recipients.forMissed(p), p, body, ctx, Duration.ofDays(1), NotificationPriority.URGENT);
+    push(recipients.forMissed(p), "vita_missed", p, dueAt);
   }
 
   public void dailyCheck(PersonScope p) {
     String body = self(p) ? "Did you take today's medicines?" : "Did " + p.person().displayName() + " take today's medicines?";
     ObjectNode ctx = Json.obj().put("type", "vita_daily_check").put("personId", p.personId().toString());
     send(recipients.forSlot(p), p, body, ctx, Duration.ofHours(12), NotificationPriority.NORMAL);
+    push(recipients.forSlot(p), "vita_daily_check", p, null);
   }
 
   public void refill(PersonScope p, UUID medicineId, String name) {
@@ -94,6 +100,11 @@ public class VitaReminderNotifier {
     ObjectNode ctx = Json.obj().put("type", "vita_reminder").put("personId", p.personId().toString())
         .put("reminderId", reminderId.toString()).put("kind", kind);
     send(recipients.forOther(p), p, body, ctx, Duration.ofDays(7), NotificationPriority.NORMAL);
+  }
+
+  /** Wakes the recipients' phones with ids only (6d). */
+  private void push(List<UUID> to, String type, PersonScope p, Instant dueAt) {
+    for (UUID user : to) events.publishEvent(new com.jizza.engine.api.event.VitaReminderDue(user, type, p.personId(), dueAt));
   }
 
   private void send(List<UUID> to, PersonScope p, String body, ObjectNode ctx, Duration expires, NotificationPriority priority) {
