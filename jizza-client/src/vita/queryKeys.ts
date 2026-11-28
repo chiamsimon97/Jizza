@@ -32,6 +32,12 @@ export const vitaKeys = {
   labTrend: (personId: string, test: string) => ['vita', personId, 'labs', 'trend', test] as const,
   checks: (personId: string) => ['vita', personId, 'checks'] as const,
   labTests: ['vita', '_', 'lab-tests'] as const,
+  prep: (personId: string, visitId: string) => ['vita', personId, 'visits', visitId, 'prep'] as const,
+  summaryPage: (personId: string, condition: string, includePrivate: boolean) => ['vita', personId, 'summary', condition, includePrivate] as const,
+  vaccinations: (personId: string) => ['vita', personId, 'vaccinations'] as const,
+  events: (personId: string) => ['vita', personId, 'events'] as const,
+  /** Mailbox sources belong to the household. */
+  mailSources: ['vita', '_', 'mail-sources'] as const,
   reminders: (personId: string) => ['vita', personId, 'reminders'] as const,
   /** Doctors belong to the household; any change also touches each person's targets and visits. */
   doctors: ['vita', '_', 'doctors'] as const,

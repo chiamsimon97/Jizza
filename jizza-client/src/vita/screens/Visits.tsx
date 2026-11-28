@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Pencil, Phone, Plus, Stethoscope, Trash2 } from 'lucide-react'
+import { CalendarClock, ClipboardList, FileText, Pencil, Phone, Plus, Stethoscope, Trash2 } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
 import { SelectField, TextField } from '@/portfolio/components/Fields'
@@ -30,25 +30,29 @@ export function targetWords(r: Pick<UsualRange, 'low' | 'high' | 'low2' | 'high2
  * and the targets they set for each person. Visits are this person's: upcoming first, then past with
  * notes and follow-up dates.
  */
-export function Visits({ personId, personName, readOnly, adding, onAddDone }: {
+export function Visits({ personId, personName, readOnly, adding, onAddDone, onPrepare, onSummary }: {
   personId: string
   personName: string
   readOnly: boolean
   /** The Add menu asked for a visit. */
   adding: boolean
   onAddDone: () => void
+  onPrepare?: (visitId: string) => void
+  onSummary?: () => void
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <ViewTitle title="Doctors and visits" sub="Doctors for the whole household; visits for the person picked above" />
-      <VisitList personId={personId} personName={personName} readOnly={readOnly} adding={adding} onAddDone={onAddDone} />
+      <ViewTitle title="Doctors and visits" sub="Doctors for the whole household; visits for the person picked above">
+        {onSummary && <Button size="sm" variant="secondary" onClick={onSummary}><FileText className="h-3.5 w-3.5" aria-hidden />Health summary</Button>}
+      </ViewTitle>
+      <VisitList personId={personId} personName={personName} readOnly={readOnly} adding={adding} onAddDone={onAddDone} onPrepare={onPrepare} />
       <Checks personId={personId} readOnly={readOnly} />
       <Doctors readOnly={readOnly} />
     </div>
   )
 }
 
-function VisitList({ personId, personName, readOnly, adding, onAddDone }: { personId: string; personName: string; readOnly: boolean; adding: boolean; onAddDone: () => void }) {
+function VisitList({ personId, personName, readOnly, adding, onAddDone, onPrepare }: { personId: string; personName: string; readOnly: boolean; adding: boolean; onAddDone: () => void; onPrepare?: (visitId: string) => void }) {
   const qc = useQueryClient()
   const visits = useQuery({ queryKey: vitaKeys.visits(personId), queryFn: () => vitaApi.visits(personId) })
   const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
@@ -72,10 +76,11 @@ function VisitList({ personId, personName, readOnly, adding, onAddDone }: { pers
         <p className="text-xs text-gray-600 dark:text-gray-300">{[doctorName(v.doctorId), v.reason].filter(Boolean).join(' · ') || 'No doctor or reason given'}</p>
         {v.notes && <p className="whitespace-pre-line text-xs text-gray-600 dark:text-gray-300">{v.notes}</p>}
         {v.followUpOn && <p className="text-xs text-gray-600 dark:text-gray-300">Follow-up on {formatDay(v.followUpOn)}</p>}
+        {v.questions && v.questions.length > 0 && <p className="text-xs text-gray-600 dark:text-gray-300">{v.questions.length} {v.questions.length === 1 ? 'question' : 'questions'} for the doctor</p>}
       </div>
       {!readOnly && (
         <span className="flex gap-1">
-          {v.status === 'planned' && <Button size="sm" variant="secondary" disabled title="Comes with the documents update">Prepare</Button>}
+          {v.status === 'planned' && onPrepare && <Button size="sm" variant="secondary" onClick={() => onPrepare(v.id)}><ClipboardList className="h-3.5 w-3.5" aria-hidden />Prepare</Button>}
           <Button size="sm" variant="ghost" aria-label="Change this visit" onClick={() => setEditing(v)}><Pencil className="h-3.5 w-3.5" aria-hidden /></Button>
           <Button size="sm" variant="ghost" aria-label="Delete this visit" onClick={() => remove.mutate(v.id)}><Trash2 className="h-3.5 w-3.5" aria-hidden /></Button>
         </span>
@@ -112,10 +117,12 @@ function VisitForm({ personId, start, doctors, onDone }: { personId: string; sta
   const [v, setV] = useState({
     doctorId: start.doctorId ?? '', scheduledAt: toLocalInput(start.scheduledAt), status: start.status ?? 'planned',
     reason: start.reason ?? '', notes: start.notes ?? '', followUpOn: start.followUpOn ?? '',
+    questions: (start.questions ?? []).map(q => q.text),
   })
   const body: VisitInput = {
     doctorId: v.doctorId || null, scheduledAt: v.scheduledAt, status: v.status as VisitStatus,
     reason: v.reason.trim() || null, notes: v.notes.trim() || null, followUpOn: v.followUpOn || null,
+    questions: v.questions.map(q => q.trim()).filter(Boolean).map(text => ({ text })),
   }
   const save = useMutation({ mutationFn: () => (id ? vitaApi.updateVisit(personId, id, body) : vitaApi.addVisit(personId, body)), onSuccess: onDone })
   return (
@@ -134,6 +141,16 @@ function VisitForm({ personId, start, doctors, onDone }: { personId: string; sta
         <TextField label="Notes (optional)" value={v.notes} maxLength={4000} onChange={notes => setV({ ...v, notes })} />
         <TextField label="Follow-up on (optional)" type="date" value={v.followUpOn} onChange={followUpOn => setV({ ...v, followUpOn })} />
       </div>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-xs font-medium text-gray-600 dark:text-gray-300">Questions for the doctor (optional)</legend>
+        {v.questions.map((q, i) => (
+          <div key={i} className="flex items-end gap-2">
+            <TextField label={`Question ${i + 1}`} value={q} maxLength={300} className="flex-1" onChange={t => setV({ ...v, questions: v.questions.map((x, j) => (j === i ? t : x)) })} />
+            <Button size="sm" variant="ghost" type="button" aria-label={`Remove question ${i + 1}`} onClick={() => setV({ ...v, questions: v.questions.filter((_, j) => j !== i) })}><Trash2 className="h-3.5 w-3.5" aria-hidden /></Button>
+          </div>
+        ))}
+        {v.questions.length < 30 && <div><Button size="sm" variant="ghost" type="button" onClick={() => setV({ ...v, questions: [...v.questions, ''] })}><Plus className="h-3.5 w-3.5" aria-hidden />Add a question</Button></div>}
+      </fieldset>
       <div className="flex gap-2">
         <Button size="sm" type="submit" disabled={!v.scheduledAt} loading={save.isPending}>Save visit</Button>
         <Button size="sm" variant="ghost" type="button" onClick={onDone}>Cancel</Button>
