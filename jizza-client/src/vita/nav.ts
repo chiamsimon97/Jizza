@@ -51,7 +51,7 @@ export function findView(id: string | null | undefined): HealthView {
 }
 
 /** Views built in this release; the rest show what they will hold. */
-export const BUILT_VIEWS = new Set(['home', 'sharing', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'vaccinations', 'surgeries', 'connect', 'visit-prep', 'summary', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
+export const BUILT_VIEWS = new Set(['home', 'sharing', 'insurance', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'vaccinations', 'surgeries', 'connect', 'visit-prep', 'summary', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
 
 /** The update that brings each later phase, in plain words. */
 export const PHASE_WORDS: Record<string, string> = {

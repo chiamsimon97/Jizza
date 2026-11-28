@@ -39,6 +39,8 @@ export const vitaKeys = {
   /** Mailbox sources belong to the household. */
   mailSources: ['vita', '_', 'mail-sources'] as const,
   reminders: (personId: string) => ['vita', personId, 'reminders'] as const,
+  policies: (personId: string) => ['vita', personId, 'policies'] as const,
+  claims: (personId: string) => ['vita', personId, 'claims'] as const,
   shares: (personId: string) => ['vita', personId, 'shares'] as const,
   sharedWithMe: ['vita', '_', 'shared-with-me'] as const,
   accessList: (personId: string) => ['vita', personId, 'access-list'] as const,

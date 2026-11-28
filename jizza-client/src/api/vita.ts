@@ -3,7 +3,7 @@ import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
-  ReadingKind, RedFlagAnswer, AccessList, CareNote, HealthConsent, ShareInput, SharedWithMe, SharesView, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  ReadingKind, RedFlagAnswer, ClaimInput, HealthClaim, HealthPolicy, PolicyDetail, PolicyDetailInput, PolicyInput, AccessList, CareNote, HealthConsent, ShareInput, SharedWithMe, SharesView, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -195,4 +195,15 @@ export const vitaApi = {
   exportRecord: (personId: string) => api.get<Record<string, JsonValue>>(`${person(personId)}/export`),
   /** Deletes the person's health record for good. Needs a fresh step-up. */
   deleteRecord: (personId: string) => api.delete<{ deleted: number }>(`${person(personId)}/record`),
+
+  // Insurance and claims (8b): policies are the household's, claims a person's.
+  policies: (personId?: string) => api.get<HealthPolicy[]>(`/api/vita/policies${personId ? `?personId=${encodeURIComponent(personId)}` : ''}`),
+  addPolicy: (body: PolicyInput) => api.post<HealthPolicy>('/api/vita/policies', body),
+  updatePolicy: (id: string, body: PolicyInput) => api.put<HealthPolicy>(`/api/vita/policies/${id}`, body),
+  removePolicy: (id: string) => api.delete<void>(`/api/vita/policies/${id}`),
+  putPolicyDetail: (id: string, body: PolicyDetailInput) => api.put<PolicyDetail>(`/api/vita/policies/${id}/detail`, body),
+  claims: (personId: string) => api.get<HealthClaim[]>(`${person(personId)}/claims`),
+  addClaim: (personId: string, body: ClaimInput) => api.post<HealthClaim>(`${person(personId)}/claims`, body),
+  updateClaim: (personId: string, id: string, body: ClaimInput) => api.put<HealthClaim>(`${person(personId)}/claims/${id}`, body),
+  removeClaim: (personId: string, id: string) => api.delete<void>(`${person(personId)}/claims/${id}`),
 }

@@ -968,3 +968,87 @@ export interface HealthConsent {
 }
 
 export interface CareNote { id: string; text: string; writtenBy: string | null; writtenByName: string; writtenAt: string }
+
+// ── Insurance and claims (8b, spec 4.3, 7.15) ──────────────────────────────
+
+export type PolicyKind = 'health' | 'super_topup' | 'critical_illness' | 'personal_accident' | 'government_scheme'
+export type PremiumFrequency = 'monthly' | 'quarterly' | 'yearly' | 'single'
+export interface PolicyDetail {
+  policyId: string
+  /** "•••• 3456": the full numbers go in and never come back. */
+  policyNumberMasked: string | null
+  cardNumberMasked: string | null
+  tpaName: string | null
+  cashlessCardDocumentId: string | null
+  roomRentLimit: number | null
+  copayPct: number | null
+  waitingPeriods: { text: string }[]
+  networkHospitalsNote: string | null
+}
+export interface HealthPolicy {
+  id: string
+  /** The holder. */
+  personId: string
+  kind: PolicyKind
+  providerName: string | null
+  sumAssured: number | null
+  deductible: number | null
+  premium: number | null
+  premiumFrequency: PremiumFrequency | null
+  renewalDate: string | null
+  policyEndDate: string | null
+  employerProvided: boolean | null
+  coveredPersonIds: string[]
+  floater: boolean
+  policyYear: { from: string; to: string } | null
+  /** Settled claims this policy year; null for a helper or with no renewal date. */
+  usedThisYear: number | null
+  leftThisYear: number | null
+  renewalReminderOn: string | null
+  detail: PolicyDetail
+  /** Only for whoever keeps the policies. */
+  claimCount?: number
+  shared: boolean
+}
+export interface PolicyInput {
+  kind?: PolicyKind
+  providerName?: string | null
+  sumAssured?: number | null
+  deductible?: number | null
+  premium?: number | null
+  premiumFrequency?: PremiumFrequency | null
+  renewalDate?: string | null
+  policyEndDate?: string | null
+  employerProvided?: boolean | null
+  personId?: string
+  coveredPersonIds?: string[]
+}
+export interface PolicyDetailInput {
+  policyNumber?: string | null
+  cardNumber?: string | null
+  tpaName?: string | null
+  cashlessCardDocumentId?: string | null
+  roomRentLimit?: number | null
+  copayPct?: number | null
+  waitingPeriods?: { text: string }[]
+  networkHospitalsNote?: string | null
+}
+export type ClaimStatus = 'draft' | 'filed' | 'query' | 'settled' | 'rejected'
+export interface HealthClaim {
+  id: string
+  personId: string
+  policyId: string
+  eventId: string | null
+  visitId: string | null
+  admittedOn: string
+  dischargedOn: string | null
+  amountClaimed: number | null
+  amountPaid: number | null
+  status: ClaimStatus
+  documentIds: string[] | null
+  notes: string | null
+  outOfPocket: number | null
+  policyYearTo?: string | null
+  policy?: { kind: PolicyKind; providerName: string | null }
+}
+export type ClaimInput = Partial<Pick<HealthClaim, 'policyId' | 'eventId' | 'visitId' | 'admittedOn' | 'dischargedOn' | 'amountClaimed' | 'amountPaid' | 'status' | 'documentIds' | 'notes'>>
