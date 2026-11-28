@@ -1154,3 +1154,43 @@ export interface GoalPreview {
   planNote: string
   metAfterWeeks: number
 }
+
+// ── Devices (9a) ───────────────────────────────────────────────────────────────
+
+export type DeviceSource = 'health_connect' | 'apple_health'
+export type DeviceDataType = 'steps' | 'sleep' | 'workout' | 'resting_heart_rate' | 'bp' | 'glucose' | 'weight' | 'spo2' | 'temperature'
+
+/** A phone's permission to send some data types for one person (spec 5.11). */
+export interface HealthConnection {
+  id: string
+  personId: string
+  source: DeviceSource
+  dataTypes: DeviceDataType[]
+  deviceId: string | null
+  deviceName: string | null
+  createdByUserId?: string | null
+  grantedAt: string
+  revokedAt: string | null
+  lastSyncAt: string | null
+  shared: boolean
+  /** What it sent that is still in the record. */
+  rowsWritten: number
+  rowsByType: Partial<Record<string, number>>
+  rowsDeleted?: number
+}
+
+/** A reading from a phone or watch: steps a day, a sleep session, a workout or resting heart rate. */
+export interface ActivityReading {
+  id: string
+  personId: string
+  kind: 'steps' | 'sleep' | 'workout' | 'resting_heart_rate'
+  /** Steps: the day's total; sleep: hours; workout: minutes; resting heart rate: bpm. */
+  value: number
+  unit: string | null
+  takenAt: string
+  startedAt?: string | null
+  endedAt?: string | null
+  source: string
+  device?: string | null
+  detail?: { date?: string; zone?: string; workoutType?: string } | null
+}

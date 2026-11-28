@@ -62,6 +62,7 @@ export function readingContext(r: Reading): string {
 
 const SOURCES: Record<string, string> = {
   manual: 'Typed in', chat: 'From chat', quick_start: 'Quick start', device: 'Device', import: 'Imported', lab: 'Lab report',
+  health_connect: 'Health Connect', apple_health: 'Apple Health',
 }
 export function sourceWords(source: string | null | undefined): string {
   return source ? SOURCES[source] ?? source : ''

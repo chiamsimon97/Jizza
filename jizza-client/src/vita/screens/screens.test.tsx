@@ -85,9 +85,13 @@ describe('HealthTab shell', () => {
     expect(screen.getByText(/Not medical advice/)).toBeInTheDocument()
   })
 
-  it('shows what a later view will hold', async () => {
+  it('says what Activity and sleep will show before a phone is connected', async () => {
+    vi.spyOn(vitaApi, 'activity').mockResolvedValue([])
+    vi.spyOn(vitaApi, 'connectors').mockResolvedValue([])
     renderTab('&view=activity')
-    expect(await screen.findByText(/Activity and sleep comes with the phone and watch update/)).toBeInTheDocument()
+    expect(await screen.findByText('Nothing is connected yet')).toBeInTheDocument()
+    expect(screen.getByText('Sleep each night, with bedtime and wake time')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect a phone' })).toBeInTheDocument()
   })
 
   it('shows a closed record read-only', async () => {
