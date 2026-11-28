@@ -18,6 +18,7 @@ export interface HealthView {
 
 export const HEALTH_VIEWS: HealthView[] = [
   { id: 'home', label: 'Home', phase: '0', about: 'Today’s medicines, the latest readings and what is coming up.', ask: 'About today: ' },
+  { id: 'weekly-note', label: 'Weekly note', phase: '4', about: 'What changed this week, from the record: medicine changes, missed doses, readings outside range, visits and refills.', ask: 'About this week: ' },
   { id: 'conditions', label: 'Conditions', phase: '0', about: 'Long-term conditions, each with its own page of medicines, readings and reports.', ask: 'About this condition: ' },
   { id: 'medicines', label: 'Medicines', phase: '1a', about: 'Each medicine with its times, stock and refills, and the reminders on the phone.', ask: 'About these medicines: ' },
   { id: 'vitals', label: 'Vitals', phase: '1a', about: 'Blood pressure, sugar, weight and pulse, with a 7-day diary and a chart against the target.', ask: 'About these readings: ' },
@@ -35,6 +36,7 @@ export const HEALTH_VIEWS: HealthView[] = [
   { id: 'emergency', label: 'Emergency card', phase: '0', groupStart: true, about: 'What a stranger or a hospital needs in the first minutes.', ask: 'About the emergency card: ' },
   { id: 'connect', label: 'Connect', phase: '1b', about: 'Upload reports, and pull them from your mailbox.', ask: 'About connecting: ' },
   { id: 'settings', label: 'Settings', phase: '0', about: 'Units, emergency numbers and the figures Vita uses, with where each comes from.', ask: 'About settings: ' },
+  { id: 'insights', label: 'Goes with', phase: '4', hidden: true, about: 'What in the journal goes together with sleep, steps, missed doses or readings.', ask: 'About what goes together: ' },
   { id: 'profile', label: 'Profile', phase: '0', hidden: true, about: 'Date of birth, blood group, height, hospital and reminder mode.', ask: 'About this profile: ' },
   { id: 'visit-prep', label: 'Visit prep', phase: '1b', hidden: true, about: 'What to take to a visit: questions, readings, medicines, changes and labs.', ask: 'Help me prepare: ' },
   { id: 'summary', label: 'Health summary', phase: '1b', hidden: true, about: 'A print-ready summary of the record.', ask: 'About this summary: ' },
@@ -51,7 +53,7 @@ export function findView(id: string | null | undefined): HealthView {
 }
 
 /** Views built in this release; the rest show what they will hold. */
-export const BUILT_VIEWS = new Set(['home', 'sharing', 'insurance', 'journal', 'goals', 'activity', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'vaccinations', 'surgeries', 'connect', 'visit-prep', 'summary', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
+export const BUILT_VIEWS = new Set(['home', 'sharing', 'insurance', 'journal', 'goals', 'activity', 'weekly-note', 'insights', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'labs', 'lab', 'documents', 'document', 'vaccinations', 'surgeries', 'connect', 'visit-prep', 'summary', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
 
 /** The update that brings each later phase, in plain words. */
 export const PHASE_WORDS: Record<string, string> = {

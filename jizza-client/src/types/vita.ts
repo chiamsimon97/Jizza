@@ -1194,3 +1194,53 @@ export interface ActivityReading {
   device?: string | null
   detail?: { date?: string; zone?: string; workoutType?: string } | null
 }
+
+// ── Weekly note and insights (step 10) ─────────────────────────────────────────
+
+export type NoteSentenceKind = 'medicine_change' | 'lab_report' | 'missed_doses' | 'outside_range' | 'visit' | 'refill'
+/** One sentence of the weekly note, with the rows it was built from. */
+export interface NoteSentence {
+  kind: NoteSentenceKind | string
+  text: string
+  rows: { table: string; id: string }[]
+}
+export interface WeeklyNote {
+  personId: string
+  personName: string
+  weekStart: string
+  weekEnd: string
+  zone: string
+  disclaimer: string
+  sentences: NoteSentence[]
+  empty: boolean
+  message?: string
+  until?: string
+  sentAt?: string | null
+  closed?: boolean
+}
+
+export type InsightField = 'mood' | 'energy' | 'pain'
+export type InsightFactor = 'sleep' | 'steps' | 'missed_doses' | 'outside_range'
+export interface InsightStatement {
+  journalField: InsightField
+  factor: InsightFactor
+  text: string
+  rho: number
+  days: number
+  split: { factorMedian: number; daysAbove: number; daysAtOrBelow: number; journalAverageAbove?: number; journalAverageAtOrBelow?: number }
+  /** The days behind the statement: the journal value and the factor's value that day. */
+  data: ({ date: string; rowIds?: string[] } & Partial<Record<InsightField | InsightFactor, number>>)[]
+}
+export interface Insights {
+  personId: string
+  disclaimer: string
+  minJournalDays: number
+  minStrength: number
+  journalDays: number
+  from: string
+  to: string
+  silent: boolean
+  message?: string
+  note?: string
+  statements: InsightStatement[]
+}

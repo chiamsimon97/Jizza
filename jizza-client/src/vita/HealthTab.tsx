@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Activity, BedDouble, ChevronDown, Droplet, ClipboardList, FileText, FlaskConical, FolderInput, HeartPulse, Home as HomeIcon, IdCard, MessageSquare, NotebookPen,
   Pill, Plus, Scale, Settings as SettingsIcon, Share2, ShieldPlus, Stethoscope, Syringe, Target, TriangleAlert, UserPlus, type LucideIcon,
+  CalendarRange,
 } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
 import { Button } from '@/components/ui/Button'
@@ -47,12 +48,14 @@ import { Insurance } from './screens/Insurance'
 import { Journal } from './screens/Journal'
 import { Goals } from './screens/Goals'
 import { Activity as ActivityView } from './screens/Activity'
+import { WeeklyNote } from './screens/WeeklyNote'
+import { Insights } from './screens/Insights'
 import { ShareContext, VIEW_SECTION, accessWords, canEdit, scopeOf, useSharedWithMe, viewOpens, type ShareScope } from './share'
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   home: HomeIcon, conditions: HeartPulse, medicines: Pill, vitals: Activity, visits: Stethoscope, labs: FlaskConical, documents: FileText,
   vaccinations: Syringe, surgeries: BedDouble, allergies: TriangleAlert, sharing: Share2, insurance: ShieldPlus, journal: NotebookPen,
-  goals: Target, activity: Activity, emergency: IdCard, connect: FolderInput, settings: SettingsIcon,
+  goals: Target, activity: Activity, 'weekly-note': CalendarRange, emergency: IdCard, connect: FolderInput, settings: SettingsIcon,
 }
 
 export { splitPeople }
@@ -204,6 +207,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
             )}
             {view.id === 'allergies' && <Allergies personId={person.id} readOnly={ro('allergies')} />}
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={ro('emergency')} onOpen={go} />}
+            {view.id === 'weekly-note' && <WeeklyNote personId={person.id} personName={name} onOpen={go} onOpenReport={openReport} />}
+            {view.id === 'insights' && <Insights personId={person.id} />}
             {view.id === 'profile' && <Profile personId={person.id} readOnly={ro('profile')} onOpen={go} />}
             {view.id === 'settings' && <Settings onOpen={go} />}
             {view.id === 'insurance' && <Insurance personId={person.id} personName={name} readOnly={closed} onOpenDocument={openDocument} />}

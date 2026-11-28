@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import type { JsonValue } from '@/types/finance'
 import type {
+  Insights, WeeklyNote,
   ActivityReading, DeviceDataType, HealthConnection,
   GoalCheckinInput, GoalContext, GoalInput, GoalKind, GoalPreview, HealthGoal, JournalEntry, JournalInput,
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
@@ -238,5 +239,10 @@ export const vitaApi = {
     if (opts.deleteData) q.set('deleteData', 'true')
     return api.delete<HealthConnection>(`/api/vita/connectors/${id}?${q}`)
   },
+  /** The week's note (Monday to Sunday, India time); only whoever keeps the record, or the person, reads it. */
+  weeklyNote: (personId: string, weekStart?: string) =>
+    api.get<WeeklyNote>(`${person(personId)}/weekly-note${weekStart ? `?weekStart=${weekStart}` : ''}`),
+  /** What goes together in the journal; silent until the journal has enough days. */
+  insights: (personId: string) => api.get<Insights>(`${person(personId)}/insights`),
   activity: (personId: string, kind: ActivityReading['kind']) => api.get<ActivityReading[]>(`${person(personId)}/measurements?kind=${kind}`),
 }
