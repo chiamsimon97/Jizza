@@ -38,7 +38,8 @@ public enum VitaTable {
   VISIT("vita_visit", "Visit", 2000, List.of(
       ref("doctorId", "vita_doctor"), of("scheduledAt", Type.DATETIME).need(),
       oneOf("status", "planned", "done", "cancelled"), text("reason", 300), text("notes", 4000),
-      of("followUpOn", Type.DATE))),
+      of("followUpOn", Type.DATE), VitaField.lines("questions", 30),
+      VitaField.refs("documentIds", "vita_document", 20))),
 
   /**
    * A medicine as the user wrote it (spec 4.2): the name is free text, never completed. Its status
@@ -77,7 +78,18 @@ public enum VitaTable {
       oneOf("kind", "eye", "foot", "kidney", "dental", "lipids", "hba1c", "custom").need(),
       text("customName", 120), ref("conditionId", "vita_condition"), of("doneOn", Type.PAST_DATE),
       text("resultNote", 1000), ref("visitId", "vita_visit"), ref("documentId", "vita_document"),
-      of("nextDueOn", Type.DATE)));
+      of("nextDueOn", Type.DATE))),
+
+  /** A vaccine dose (spec 4.2). The next due date is the user's, from the card or the doctor. */
+  VACCINATION("vita_vaccination", "Vaccination", 300, List.of(
+      text("vaccine", 120).need(), integer("doseNumber", 20), of("givenOn", Type.PAST_DATE), text("place", 200),
+      text("batch", 60), ref("documentId", "vita_document"), of("nextDueOn", Type.DATE), text("notes", 1000))),
+
+  /** Surgeries, procedures, hospital stays, injuries and falls (spec 4.2). */
+  EVENT("vita_event", "Surgery or stay", 300, List.of(
+      oneOf("kind", "surgery", "procedure", "admission", "injury", "fall").need(), text("title", 200),
+      of("fromDate", Type.PAST_DATE).need(), of("toDate", Type.DATE), text("hospital", 200),
+      ref("doctorId", "vita_doctor"), text("notes", 4000), VitaField.refs("documentIds", "vita_document", 20)));
 
   public final String table;
   public final String label;
