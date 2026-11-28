@@ -327,6 +327,8 @@ its `/api` twin for the phone's owner.
 | `/agent/v1/me/help` | The web's Help guides (jizza-client/src/help/guides): slug, title, summary, section, order, updated |
 | `/agent/v1/me/help/{slug}` | One guide with its Markdown `body`, header removed |
 | `/agent/v1/me/vita/today?tz=&hours=` | Today's medicine slots for the people the user manages (see Vita below) |
+| `/agent/v1/me/vita/people` | Whose health data the phone may send (see Vita: health data below) |
+| `/agent/v1/me/vita/connectors` | This phone's health-data connections (see Vita: health data below) |
 
 ### Acting: signed requests
 
@@ -363,6 +365,9 @@ two minutes from its clock (401 `signature_expired`), one it has already seen fr
 | `POST /agent/v1/me/runs/{id}/resume` | `{"instruction","approved"}` | full |
 | `POST /agent/v1/me/vita/slots/act` | `{"personId","dueAt","action","snoozeMinutes"}` (see Vita below) | approve |
 | `POST /agent/v1/me/vita/doses/{id}/act` | `{"action","snoozeMinutes"}` | approve |
+| `POST /agent/v1/me/vita/connectors` | `{"personId","source","dataTypes"}` (see Vita: health data below) | approve |
+| `DELETE /agent/v1/me/vita/connectors/{id}?personId=&types=&deleteData=` | empty | approve |
+| `POST /agent/v1/me/vita/ingest` | `{"personId","grantId","records"}` | approve |
 
 ### Vita: medicine reminders
 
@@ -421,6 +426,108 @@ Both are safe to send twice: the first mark wins, and a slot or dose already tak
 and when. A snooze never passes the time the slot would be missed, and snoozing again while
 snoozed changes nothing. A missed dose can still be marked taken (it counts as taken, `late`) or
 skipped. A closed record answers 400; another account's person or dose 404.
+
+### Vita: health data
+
+Only while the health switch is on (otherwise 404). The Android app reads Health Connect and the
+iPhone app reads HealthKit, only for the data types the person turned on, and sends them here.
+Each route calls the same use case as its `/api/vita` twin (`/api/vita/connectors`,
+`/api/vita/ingest`) as the phone's owner, so it reaches only people that person manages, or that
+are shared with them with Edit on vitals; others read as 404. A connection made on the web belongs
+to no phone and a phone cannot send through it, nor through another phone's. The apps only read
+health data; they never write to Health Connect or HealthKit. Never log a value.
+
+**Data types** are named as the readings they become: `steps`, `sleep`, `workout`,
+`resting_heart_rate`, `bp`, `glucose`, `weight`, `spo2`, `temperature`. Raw heart rate is not
+taken (send the platform's resting heart rate); `heart_rate` is refused.
+
+**`GET /agent/v1/me/vita/people`** (device token) lists whose health data this phone may be asked
+to send: the record the user is linked to as themself (or their own "self" record) first, then the
+people they manage, then records shared with them with View on vitals. Pick the `asSelf` record by
+default and let the person choose another; only `canSendHealthData` people can take a connection.
+
+```json
+[{"id":"6f1c…","name":"Amma","asSelf":true,"shared":true,"canSendHealthData":true},
+ {"id":"7a20…","name":"Father","asSelf":false,"shared":false,"canSendHealthData":true}]
+```
+
+**`GET /agent/v1/me/vita/connectors`** (device token) lists this phone's connections, live first:
+
+```json
+[{"id":"c41a…","personId":"6f1c…","source":"health_connect","dataTypes":["steps","sleep"],
+  "deviceId":"9d2e…","deviceName":"Chiam's Pixel","createdByUserId":"…","grantedAt":"2026-12-10T08:00:00Z",
+  "revokedAt":null,"lastSyncAt":"2026-12-10T09:15:02Z","shared":false,
+  "rowsWritten":42,"rowsByType":{"steps":30,"sleep":12}}]
+```
+
+**`POST /agent/v1/me/vita/connectors`** (signed, approve) turns data types on for one person:
+`{"personId":"6f1c…","source":"health_connect","dataTypes":["steps","sleep"]}`. `source` is
+`health_connect` or `apple_health`. Sending it again for the same person and source from the same
+phone replaces the types of that connection (same `id`), so the app sends the full list each time a
+switch changes. The answer is the connection as listed above.
+
+**`DELETE /agent/v1/me/vita/connectors/{id}?personId=…[&types=sleep,steps][&deleteData=true]`**
+(signed, approve, empty body; the signed path has no query). With `types`, only those types stop
+and the connection stays for the rest; without, or when none is left, the connection is revoked
+(`revokedAt` set) and every batch through it answers 409. With `deleteData=true` the readings it
+sent for those types are removed. The answer is the connection with `rowsWritten` (what it sent
+that is still there, so the app can offer "Delete what it added?") and `rowsDeleted`. A revoked
+connection can be called again with `deleteData=true` just to delete. To start again after revoking,
+POST a new connection.
+
+**`POST /agent/v1/me/vita/ingest`** (signed, approve):
+
+```json
+{"personId":"6f1c…","grantId":"c41a…","records":[
+  {"externalId":"hc:steps:2026-12-09","type":"steps","date":"2026-12-09","zone":"Asia/Kolkata","value":8432},
+  {"externalId":"hc:9b3f…","type":"sleep","startedAt":"2026-12-09T17:10:00Z","endedAt":"2026-12-10T00:40:00Z"},
+  {"externalId":"hc:77aa…","type":"workout","workoutType":"walking","startedAt":"2026-12-10T01:00:00Z","endedAt":"2026-12-10T01:35:00Z"},
+  {"externalId":"hc:5c01…","type":"resting_heart_rate","value":64,"takenAt":"2026-12-10T01:00:00Z"},
+  {"externalId":"hc:e2d0…","type":"bp","value":128,"value2":82,"value3":71,"takenAt":"2026-12-10T02:30:00Z"},
+  {"externalId":"hc:a8c4…","type":"glucose","value":104,"context":"fasting","takenAt":"2026-12-10T02:00:00Z"},
+  {"externalId":"hc:0f19…","type":"weight","value":61.2,"takenAt":"2026-12-10T02:05:00Z"},
+  {"externalId":"hc:41be…","type":"spo2","value":97,"takenAt":"2026-12-10T02:06:00Z"},
+  {"externalId":"hc:6d7e…","type":"temperature","value":36.8,"takenAt":"2026-12-10T02:07:00Z"}]}
+```
+
+- `externalId` (at most 200 characters, once per batch): the platform's own id for the record
+  (Health Connect `metadata.id`, HealthKit sample `uuid`), or for a daily total a stable id for the
+  day such as `hc:steps:2026-12-09`. Every time is an instant with its offset (`Z` or `+05:30`), no
+  more than five minutes ahead.
+- `steps`: `date` (yyyy-mm-dd) is the day in `zone` (IANA; India by default) and `value` that day's
+  whole total. Send the day again with the same `externalId` when the total grows: the value is
+  replaced (`updated`).
+- `sleep`: one session, `startedAt` to `endedAt` (24 hours at most); its value is kept in hours.
+- `workout`: `workoutType` (the platform's name for it, at most 40 characters), `startedAt` and
+  `endedAt`; its value is kept in minutes.
+- `resting_heart_rate`: bpm, rounded to whole beats.
+- `bp` in mmHg (`value` systolic, `value2` diastolic, `value3` pulse, optional), `glucose` in mg/dL
+  (`context`: `fasting`, `before_meal`, `after_meal`, `random` or `bedtime`; default `random`. The
+  server has no mmol/L conversion set, so convert on the phone with the platform's own unit API),
+  `weight` in kg (or `"unit":"lb"`), `spo2` as a percentage (HealthKit gives a fraction: multiply by
+  100), `temperature` in °C (or `"unit":"F"`). Values are rounded to the precision a person types
+  (weight 2 decimals, sugar and temperature 1, the rest whole) and must then pass the same entry
+  format as a typed reading. They go through the same evaluator, and the same duplicate check: a
+  reading the person already typed with the same values within the duplicate window is not added
+  again (`duplicate`, with the typed row's `id`). A device reading never asks "Is this right?"; a
+  red flag from it alerts at once (`alerted: true`).
+
+At most 500 records a batch (more answers 400; split larger sets). The answer has a status for
+every record, in order:
+
+```json
+{"grantId":"c41a…","personId":"6f1c…","added":7,"updated":1,"unchanged":0,"duplicate":1,"refused":0,
+ "results":[{"externalId":"hc:steps:2026-12-09","status":"updated","id":"…"},
+            {"externalId":"hc:e2d0…","status":"duplicate","id":"…"},
+            {"externalId":"hc:41be…","status":"added","id":"…","alerted":true}]}
+```
+
+`added`, `updated` (a revised total or session), `unchanged` (sent before; also a record the person
+deleted, which stays deleted), `duplicate` or `refused` with a plain `reason` (a type not turned on,
+a bad value, a missing field). A refused record does not stop the others, and sending the same batch
+again is always safe. Errors for the whole batch: 400 (not an object, more than 500 records, missing
+`personId` or `grantId`, closed record), 404 (a person or connection this phone cannot reach), 409
+(the connection was revoked).
 
 ### Ask
 
