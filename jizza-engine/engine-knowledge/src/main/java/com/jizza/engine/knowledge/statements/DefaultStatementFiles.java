@@ -98,4 +98,16 @@ public class DefaultStatementFiles implements StatementFiles {
       throw new ValidationException("Kai could not read this file as a PDF.");
     }
   }
+
+  @Override
+  public int pdfPages(byte[] bytes, String password) {
+    boolean given = password != null && !password.isEmpty();
+    try (PDDocument doc = given ? Loader.loadPDF(bytes, password) : Loader.loadPDF(bytes)) {
+      return doc.getNumberOfPages();
+    } catch (InvalidPasswordException locked) {
+      throw new PdfLockedException(given);
+    } catch (IOException unreadable) {
+      throw new ValidationException("This file could not be read as a PDF.");
+    }
+  }
 }
