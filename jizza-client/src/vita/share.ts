@@ -47,7 +47,7 @@ export const VIEW_SECTION: Record<string, ShareSection | null> = {
   home: null, conditions: 'conditions', condition: 'conditions', medicines: 'medicines', vitals: 'vitals',
   visits: 'visits', 'visit-prep': 'visits', labs: 'labs', lab: 'labs', documents: 'documents', document: 'documents',
   vaccinations: 'vaccinations', surgeries: 'events', allergies: 'allergies', emergency: 'emergency', profile: 'profile',
-  insurance: 'insurance', journal: 'journal', goals: 'goals', activity: 'vitals',
+  insurance: 'insurance', journal: 'journal', goals: 'goals', activity: 'vitals', insights: 'journal', 'weekly-note': null,
 }
 
 /** Views that belong to whoever keeps the record, never shown on a shared one. */
@@ -57,6 +57,8 @@ export const MANAGER_ONLY_VIEWS = new Set(['sharing', 'connect', 'settings', 'qu
 export function viewOpens(scope: ShareScope, viewId: string): boolean {
   if (!scope.shared) return true
   if (MANAGER_ONLY_VIEWS.has(viewId)) return false
+  // The weekly note reaches whoever keeps the record and the person themself, nobody else.
+  if (viewId === 'weekly-note') return scope.asSelf
   return canSee(scope, VIEW_SECTION[viewId])
 }
 

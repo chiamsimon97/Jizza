@@ -16,7 +16,10 @@ const entry: JournalEntry = {
 afterEach(() => vi.restoreAllMocks())
 
 describe('Journal', () => {
-  beforeEach(() => { vi.spyOn(vitaApi, 'journal').mockResolvedValue([]) })
+  beforeEach(() => {
+    vi.spyOn(vitaApi, 'journal').mockResolvedValue([])
+    vi.spyOn(vitaApi, 'insights').mockResolvedValue({ personId: 'p-mum', disclaimer: 'Prepared by Vita from your own records. Not medical advice.', minJournalDays: 21, minStrength: 0.4, journalDays: 3, from: today, to: today, silent: true, message: 'Vita looks for what goes together once the journal has 21 days.', statements: [] })
+  })
 
   it('saves a day only when Save is pressed, with what was picked', async () => {
     const put = vi.spyOn(vitaApi, 'putJournal').mockResolvedValue(entry)

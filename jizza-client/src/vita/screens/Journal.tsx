@@ -13,6 +13,7 @@ import { errorText } from '../data'
 import { localDay } from '../medicines'
 import { vitaKeys } from '../queryKeys'
 import { useShareScope } from '../share'
+import { Insights } from './Insights'
 
 const FACES = [Angry, Frown, Meh, Smile, Laugh]
 export const MOOD_WORDS = ['Very low', 'Low', 'Okay', 'Good', 'Very good']
@@ -75,6 +76,7 @@ export function Journal({ personId, personName: name, readOnly }: { personId: st
           onMonth={by => setMonth(m => shiftMonth(m, by))}
           onPick={d => setPicked(d)} />
       </div>
+      <Insights personId={personId} />
     </div>
   )
 }

@@ -46,6 +46,8 @@ export const vitaKeys = {
   goalPreview: (personId: string, kind: string, context: string) => ['vita', personId, 'goals', 'preview', kind, context] as const,
   connectors: (personId: string) => ['vita', personId, 'connectors'] as const,
   activity: (personId: string, kind: string) => ['vita', personId, 'measurements', kind] as const,
+  weeklyNote: (personId: string, weekStart: string) => ['vita', personId, 'weekly-note', weekStart] as const,
+  insights: (personId: string) => ['vita', personId, 'insights'] as const,
   shares: (personId: string) => ['vita', personId, 'shares'] as const,
   sharedWithMe: ['vita', '_', 'shared-with-me'] as const,
   accessList: (personId: string) => ['vita', personId, 'access-list'] as const,

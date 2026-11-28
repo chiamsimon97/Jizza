@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import {
   AlarmClock, Archive, ArchiveRestore, Bell, Check, ChevronDown, Clock, GitBranch, History,
   Info, Lightbulb, ListTodo, LogIn, Mail, MailOpen, MessageCircleQuestion, MoreHorizontal, ShieldCheck, Undo2, Wrench, X, type LucideIcon,
+  HeartPulse,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { NotificationDto, NotificationKind } from '@/types'
 import {
-  KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, signInLinkOf, memoryReviewLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
+  KIND_META, agentOf, ago, argsOf, defaultChoiceOf, defaultEffect, detailsOf, fixLinkOf, signInLinkOf, memoryReviewLinkOf, weeklyNoteLinkOf, isFailedStep, isOpen, isSnoozed, outcomeOf, priorityOf, snoozeOptions, timeLeft,
   runChoicesFor, cannotBeUndone, backStepsOf,
 } from './inbox'
 import { StepApprovalForm } from './StepApprovalForm'
@@ -74,6 +75,7 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
   const fixLink = fixLinkOf(n)
   const signInLink = signInLinkOf(n)
   const reviewLink = memoryReviewLinkOf(n)
+  const noteLink = weeklyNoteLinkOf(n)
   const unread = n.status === 'UNREAD'
   const tool = typeof n.context?.tool === 'string' ? n.context.tool : null
   const failedStep = open && n.kind === 'INSTRUCTION_REQUIRED' && isFailedStep(n)
@@ -218,6 +220,12 @@ export function NotificationItem({ n, now, actions, focused, onFocus, command, o
           {signInLink && (
             <div className="mt-2 flex flex-wrap gap-3 text-xs">
               <Link to={signInLink} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><LogIn className="h-3.5 w-3.5" />Sign in again</Link>
+            </div>
+          )}
+
+          {noteLink && (
+            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+              <Link to={noteLink} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"><HeartPulse className="h-3.5 w-3.5" />Open the weekly note</Link>
             </div>
           )}
 

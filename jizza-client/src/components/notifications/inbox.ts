@@ -293,6 +293,19 @@ export function memoryReviewLinkOf(n: NotificationDto): string | null {
   return ctx.link === '/memory?review=open' ? ctx.link : null
 }
 
+const UUIDISH = /^[0-9a-fA-F-]{8,64}$/
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+
+/** The Health tab's weekly note a "weekly health note is ready" item opens; only ids and a date are taken from it. */
+export function weeklyNoteLinkOf(n: NotificationDto): string | null {
+  const ctx = n.context
+  if (ctx?.type !== 'vita_weekly_note' || !n.sourceAgentId) return null
+  const person = typeof ctx.personId === 'string' && UUIDISH.test(ctx.personId) ? ctx.personId : null
+  const week = typeof ctx.weekStart === 'string' && ISO_DAY.test(ctx.weekStart) ? ctx.weekStart : null
+  if (!person || !UUIDISH.test(n.sourceAgentId)) return null
+  return `/agents/${n.sourceAgentId}?tab=health&person=${person}&view=weekly-note${week ? `&week=${week}` : ''}`
+}
+
 /**
  * Where to sign in to a connector again, from the notification raised when its sign-in was lost.
  * Only a link to a connector's own page is followed.
