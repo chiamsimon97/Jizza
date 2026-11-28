@@ -17,6 +17,7 @@ import com.jizza.platform.usecase.vita.medicine.VitaDoseUseCase;
 import com.jizza.platform.usecase.vita.medicine.VitaDoseUseCase.Act;
 import com.jizza.platform.usecase.vita.medicine.VitaMedicineUseCase;
 import com.jizza.platform.usecase.vita.sharing.VitaScopeResolver;
+import com.jizza.platform.usecase.vita.sharing.VitaSection;
 import com.jizza.platform.usecase.vita.sharing.VitaScopeResolver.PersonScope;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
@@ -74,8 +75,9 @@ public class VitaPhoneController {
   }
 
   /**
-   * Today's time slots for every person this user may mark (their own record and the people
-   * they manage), from midnight in the phone's zone {@code tz}: to the next midnight, or with
+   * Today's time slots for every person this user may mark (the record they are linked to as
+   * themself first, then their own record and the people they manage, then records shared with
+   * them with Edit on medicines), from midnight in the phone's zone {@code tz}: to the next midnight, or with
    * {@code hours} (1 to 48) to that many hours from now, for a phone that schedules local
    * reminders. Medicine names come only when the user turned names on ({@code showNames}).
    */
@@ -99,13 +101,31 @@ public class VitaPhoneController {
     ObjectNode out = Json.obj().put("showNames", names).put("zone", zone.getId())
         .put("from", from.toString()).put("to", to.toString());
     List<ObjectNode> slots = new ArrayList<>();
+    // A record this user is linked to as themself comes first, then their own people, then the
+    // records shared with them with Edit on medicines (8a).
+    List<PersonScope> reach = new ArrayList<>();
+    for (PersonScope shared : scopes.sharedWithMe(user)) {
+      if (shared.grant().asSelf() && shared.canEdit(VitaSection.MEDICINES)) reach.add(shared);
+    }
     for (var person : people.people(user)) {
       if ("huf".equals(person.kind()) || !"active".equals(person.status())) continue;
-      PersonScope p = scopes.person(user, person.id());
-      slots.addAll(doses.slots(p, store.forPerson(user, p.personId(), from, to), names, now));
+      reach.add(scopes.person(user, person.id()));
     }
-    slots.sort(Comparator.comparing((ObjectNode s) -> s.path("dueAt").asText())
-        .thenComparing(s -> s.path("personName").asText()));
+    for (PersonScope shared : scopes.sharedWithMe(user)) {
+      if (!shared.grant().asSelf() && shared.canEdit(VitaSection.MEDICINES)) reach.add(shared);
+    }
+    for (int i = 0; i < reach.size(); i++) {
+      PersonScope p = reach.get(i);
+      final int rank = i;
+      for (ObjectNode slot : doses.slots(p, store.forPerson(p.owner(), p.personId(), from, to), names, now)) {
+        slot.put("shared", p.shared()).put("asSelf", p.shared() && p.grant().asSelf()).put("rank", rank);
+        slots.add(slot);
+      }
+    }
+    slots.sort(Comparator.comparing((ObjectNode s) -> !s.path("asSelf").asBoolean())
+        .thenComparing(s -> s.path("dueAt").asText())
+        .thenComparing(s -> s.path("rank").asInt()));
+    slots.forEach(s -> s.remove("rank"));
     ArrayNode list = out.putArray("slots");
     slots.forEach(list::add);
     return out;
@@ -126,7 +146,7 @@ public class VitaPhoneController {
     } catch (DateTimeParseException e) {
       throw new ValidationException("dueAt must be the slot's time as sent by /today.");
     }
-    PersonScope p = scopes.person(phone.userId(), body.personId()).requireOpen();
+    PersonScope p = scopes.person(phone.userId(), body.personId(), VitaSection.MEDICINES, true).requireOpen();
     boolean names = medicines.reminderSettings(phone.userId()).showMedicineNames();
     ObjectNode slot = doses.actSlot(p, dueAt, act(body.action(), body.snoozeMinutes()), Instant.now(), names);
     record(phone, "device.phone.vita_slot", body.personId().toString(), body.action());

@@ -95,7 +95,7 @@ public class VitaDocumentUseCase {
   @Transactional
   public ObjectNode upload(UUID caller, UUID personId, String filename, String contentType, byte[] bytes,
                            JsonNode meta, String source) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.DOCUMENTS, true).requireOpen();
     Limits limits = limits(caller);
     String type = checkFile(contentType, bytes, limits);
     if (forms.live(p, VitaTable.DOCUMENT).size() >= VitaTable.DOCUMENT.maxPerPerson) {
@@ -169,7 +169,7 @@ public class VitaDocumentUseCase {
 
   /** The person's documents, newest first by their date, then by when they were added. */
   public List<ObjectNode> list(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.DOCUMENTS, false);
     return forms.live(p, VitaTable.DOCUMENT).stream()
         .sorted(Comparator.comparing((ObjectNode r) -> r.path("documentDate").asText(""))
             .thenComparing(r -> r.path("createdAt").asText("")).reversed())
@@ -198,7 +198,12 @@ public class VitaDocumentUseCase {
   public ObjectNode update(UUID caller, UUID id, JsonNode body) {
     Found f = doc(caller, id);
     f.p().requireOpen();
+    if (f.p().shared() && !f.p().canEdit(com.jizza.platform.usecase.vita.sharing.VitaSection.DOCUMENTS)) {
+      throw new NotFoundException("Document", id);
+    }
+    VitaRecordsUseCase.requireOwnEntry(f.p(), f.row(), "Document", id);
     ObjectNode values = VitaRecordsUseCase.clean(VitaTable.DOCUMENT.fields, body, false);
+    if (f.p().shared()) values.remove("private");
     forms.checkRefs(f.p().owner(), VitaTable.DOCUMENT.fields, values);
     ObjectNode row = values.isEmpty() ? f.row()
         : records.update(DOC, f.p().owner(), id, values).orElseThrow(() -> new NotFoundException("Document", id));
@@ -212,7 +217,7 @@ public class VitaDocumentUseCase {
    */
   @Transactional
   public void delete(UUID caller, UUID id) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     f.p().requireOpen();
     UUID fileId = uuid(f.row().path("fileId").asText(null));
     ObjectNode gone = Json.obj().put("deletedAt", Instant.now().toString());
@@ -231,7 +236,7 @@ public class VitaDocumentUseCase {
    */
   @Transactional
   public ObjectNode move(UUID caller, UUID id, JsonNode body) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     f.p().requireOpen();
     UUID to = uuid(body == null ? null : body.path("toPersonId").asText(null));
     if (to == null) throw new ValidationException("Choose the person to move it to (toPersonId).");
@@ -268,7 +273,7 @@ public class VitaDocumentUseCase {
   }
 
   public ObjectNode extract(UUID caller, UUID id, JsonNode body, Instant now) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     PersonScope p = f.p().requireOpen();
     if (f.row().hasNonNull("confirmedAt")) throw new ConflictException("This document's review is already confirmed.");
     Limits limits = limits(caller);
@@ -327,7 +332,7 @@ public class VitaDocumentUseCase {
 
   /** The draft waiting for review. */
   public ObjectNode draft(UUID caller, UUID id) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     JsonNode draft = f.row().get("draft");
     if (draft == null || !draft.isObject()) throw new NotFoundException("Draft", id);
     ObjectNode out = Json.obj();
@@ -339,7 +344,7 @@ public class VitaDocumentUseCase {
   /** Throws the draft away; the document stays and can be read again. */
   @Transactional
   public ObjectNode discard(UUID caller, UUID id) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     f.p().requireOpen();
     if (f.row().hasNonNull("confirmedAt")) throw new ConflictException("This document's review is already confirmed.");
     ObjectNode values = Json.obj().put("extractionStatus", "none");
@@ -363,7 +368,7 @@ public class VitaDocumentUseCase {
 
   @Transactional
   public ObjectNode confirm(UUID caller, UUID id, JsonNode body, Instant now) {
-    Found f = doc(caller, id);
+    Found f = managed(caller, id);
     PersonScope p = f.p().requireOpen();
     if (f.row().hasNonNull("confirmedAt")) throw new ConflictException("This document's review is already confirmed.");
     JsonNode stored = f.row().get("draft");
@@ -457,11 +462,27 @@ public class VitaDocumentUseCase {
 
   /** One of the caller's household documents; anyone else's reads as not found. */
   Found doc(UUID caller, UUID id) {
-    UUID owner = scopes.own(caller).ownerUserId();
-    ObjectNode row = records.get(DOC, owner, id).filter(r -> r.path("deletedAt").isNull())
-        .orElseThrow(() -> new NotFoundException("Document", id));
-    PersonScope p = scopes.person(caller, UUID.fromString(row.path("personId").asText()));
-    return new Found(p, row);
+    for (UUID owner : scopes.reachableOwners(caller)) {
+      var found = records.get(DOC, owner, id).filter(r -> r.path("deletedAt").isNull());
+      if (found.isEmpty()) continue;
+      ObjectNode row = found.get();
+      PersonScope p;
+      try {
+        p = scopes.person(caller, UUID.fromString(row.path("personId").asText()), com.jizza.platform.usecase.vita.sharing.VitaSection.DOCUMENTS, false);
+      } catch (NotFoundException notShared) {
+        continue;
+      }
+      if (!p.owner().equals(owner) || VitaRecordsUseCase.hidden(p, row)) continue;
+      return new Found(p, row);
+    }
+    throw new NotFoundException("Document", id);
+  }
+
+  /** A document only its manager may change this way (read, confirm, move, delete). */
+  Found managed(UUID caller, UUID id) {
+    Found f = doc(caller, id);
+    if (f.p().shared()) throw new NotFoundException("Document", id);
+    return f;
   }
 
   private VitaExtractionService.PersonFacts facts(PersonScope p) {

@@ -60,7 +60,7 @@
     "category": "read",
     "module": "members",
     "dependencies": [],
-    "permittedAccountTypes": ["organization"],
+    "permittedAccountTypes": ["organization", "family"],
     "permittedRoles": ["owner", "admin", "developer", "user"]
   },
   {
@@ -70,7 +70,7 @@
     "category": "read_and_write",
     "module": "members",
     "dependencies": ["members_view"],
-    "permittedAccountTypes": ["organization"],
+    "permittedAccountTypes": ["organization", "family"],
     "permittedRoles": ["owner", "admin"]
   },
   {
@@ -80,7 +80,7 @@
     "category": "read_and_write",
     "module": "members",
     "dependencies": ["members_view"],
-    "permittedAccountTypes": ["organization"],
+    "permittedAccountTypes": ["organization", "family"],
     "permittedRoles": ["owner", "admin"]
   },
   {
@@ -90,7 +90,7 @@
     "category": "read_and_write",
     "module": "members",
     "dependencies": ["members_view"],
-    "permittedAccountTypes": ["organization"],
+    "permittedAccountTypes": ["organization", "family"],
     "permittedRoles": ["owner", "admin"]
   },
   // ========== MEMBERS PERMISSIONS END ==========

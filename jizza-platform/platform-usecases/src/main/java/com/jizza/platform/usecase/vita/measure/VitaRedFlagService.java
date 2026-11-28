@@ -31,8 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * What happens after a reading raises a red flag (spec 5.1, 8.2, Fixture B). A typed reading asks
- * "Is 182/112 right?" first; once the user confirms, the manager is alerted (from Phase 2a also
- * helpers with access to vitals). A yes to the rule's question raises urgent to emergency. The alert
+ * "Is 182/112 right?" first; once the user confirms, the manager is alerted (and
+ * everyone the vitals section is shared with). A yes to the rule's question raises urgent to emergency. The alert
  * carries no value and no diagnosis: only the person, the level and a link to the reading.
  */
 @Service
@@ -49,10 +49,13 @@ public class VitaRedFlagService {
   private final NotificationBus bus;
   private final AgentDirectory agents;
   private final AuditLog audit;
+  private final com.jizza.engine.api.vita.VitaShares shares;
 
   public VitaRedFlagService(VitaRecords records, VitaScopeResolver scopes, VitaConfigService config,
                             ObjectProvider<VitaTargetService> targets, ObjectProvider<VitaSafetyService> safety,
-                            NotificationBus bus, AgentDirectory agents, AuditLog audit) {
+                            NotificationBus bus, AgentDirectory agents, AuditLog audit,
+                            com.jizza.engine.api.vita.VitaShares shares) {
+    this.shares = shares;
     this.records = records;
     this.scopes = scopes;
     this.config = config;
@@ -75,7 +78,7 @@ public class VitaRedFlagService {
    */
   @Transactional
   public ObjectNode confirm(UUID caller, UUID personId, UUID id, boolean right, Boolean signsNow) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, true);
     ObjectNode row = records.get("vita_measurement", p.owner(), id)
         .filter(r -> p.personId().toString().equals(r.path("personId").asText()))
         .filter(r -> r.path("deletedAt").isNull())
@@ -104,7 +107,6 @@ public class VitaRedFlagService {
     ObjectNode detail = row.hasNonNull("detail") && row.get("detail").isObject()
         ? (ObjectNode) row.get("detail").deepCopy() : Json.obj();
     if (level.equals(detail.path("redFlag").path("level").asText(null))) return false;
-    UUID vita = agents.byKey(p.owner(), VitaToolProvider.AGENT_KEY).map(a -> a.id()).orElse(null);
     String what = switch (row.path("kind").asText()) {
       case "bp" -> "blood pressure reading";
       case "glucose" -> "sugar reading";
@@ -116,6 +118,7 @@ public class VitaRedFlagService {
         .put("measurementId", row.path("id").asText()).put("level", level)
         .put("rule", e.redFlag().ruleId());
     for (UUID recipient : recipients(p)) {
+      UUID vita = agents.byKey(recipient, VitaToolProvider.AGENT_KEY).map(a -> a.id()).orElse(null);
       bus.raise(NotificationKind.INFO, vita, new NotificationContext(recipient, body, ctx, null, null, null,
           Duration.ofDays(2), NotificationPriority.URGENT));
     }
@@ -127,9 +130,14 @@ public class VitaRedFlagService {
     return true;
   }
 
-  /** Who hears of a red flag: the manager until sharing arrives (Phase 2a). */
+  /** Who hears of a red flag: the manager and everyone the vitals section is shared with. */
   List<UUID> recipients(PersonScope p) {
-    return List.of(p.owner());
+    java.util.LinkedHashSet<UUID> out = new java.util.LinkedHashSet<>();
+    out.add(p.owner());
+    shares.activeOf(p.owner(), p.personId()).stream()
+        .filter(s -> com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS.key().equals(s.section()))
+        .forEach(s -> out.add(s.granteeUserId()));
+    return List.copyOf(out);
   }
 
   /** Whether the latest reading of a kind is a red flag from the last hours (for Home's banners). */

@@ -7,6 +7,7 @@ import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.util.Json;
+import com.jizza.platform.usecase.vita.medicine.VitaReminderRecipients.Recipient;
 import com.jizza.platform.usecase.vita.sharing.VitaScopeResolver.PersonScope;
 import com.jizza.platform.usecase.vita.tools.VitaToolProvider;
 import java.time.Duration;
@@ -48,34 +49,41 @@ public class VitaReminderNotifier {
   }
 
   /** "Amma · 8:00 medicines", or "Your 8:00 medicines"; with names when allowed. */
-  static String slotText(PersonScope p, Instant dueAt, ZoneId zone, List<String> names) {
+  static String slotText(PersonScope p, boolean thePerson, Instant dueAt, ZoneId zone, List<String> names) {
     String time = CLOCK.format(dueAt.atZone(zone));
-    String head = self(p) ? "Your " + time + " medicines" : p.person().displayName() + " · " + time + " medicines";
+    String head = thePerson ? "Your " + time + " medicines" : p.person().displayName() + " · " + time + " medicines";
     return names == null || names.isEmpty() ? head : head + ": " + String.join(", ", names);
+  }
+
+  static String slotText(PersonScope p, Instant dueAt, ZoneId zone, List<String> names) {
+    return slotText(p, self(p), dueAt, zone, names);
   }
 
   public void slot(PersonScope p, Instant dueAt, ZoneId zone, List<String> names) {
     ObjectNode ctx = Json.obj().put("type", "vita_slot").put("personId", p.personId().toString())
         .put("dueAt", dueAt.toString());
-    send(recipients.forSlot(p), p, slotText(p, dueAt, zone, names), ctx, Duration.ofHours(12), NotificationPriority.URGENT);
-    push(recipients.forSlot(p), "vita_slot", p, dueAt);
+    List<Recipient> to = recipients.forSlot(p);
+    send(to, r -> slotText(p, r.thePerson(), dueAt, zone, names), ctx, Duration.ofHours(12), NotificationPriority.URGENT);
+    push(to, "vita_slot", p, dueAt);
   }
 
   public void missed(PersonScope p, Instant dueAt, ZoneId zone) {
     String time = CLOCK.format(dueAt.atZone(zone));
-    String body = self(p) ? "Your " + time + " medicines were not marked as taken."
-        : p.person().displayName() + " · " + time + " medicines were not marked as taken.";
     ObjectNode ctx = Json.obj().put("type", "vita_missed").put("personId", p.personId().toString())
         .put("dueAt", dueAt.toString());
-    send(recipients.forMissed(p), p, body, ctx, Duration.ofDays(1), NotificationPriority.URGENT);
-    push(recipients.forMissed(p), "vita_missed", p, dueAt);
+    List<Recipient> to = recipients.forMissed(p);
+    send(to, r -> r.thePerson() ? "Your " + time + " medicines were not marked as taken."
+        : p.person().displayName() + " · " + time + " medicines were not marked as taken.",
+        ctx, Duration.ofDays(1), NotificationPriority.URGENT);
+    push(to, "vita_missed", p, dueAt);
   }
 
   public void dailyCheck(PersonScope p) {
-    String body = self(p) ? "Did you take today's medicines?" : "Did " + p.person().displayName() + " take today's medicines?";
     ObjectNode ctx = Json.obj().put("type", "vita_daily_check").put("personId", p.personId().toString());
-    send(recipients.forSlot(p), p, body, ctx, Duration.ofHours(12), NotificationPriority.NORMAL);
-    push(recipients.forSlot(p), "vita_daily_check", p, null);
+    List<Recipient> to = recipients.forSlot(p);
+    send(to, r -> r.thePerson() ? "Did you take today's medicines?" : "Did " + p.person().displayName() + " take today's medicines?",
+        ctx, Duration.ofHours(12), NotificationPriority.NORMAL);
+    push(to, "vita_daily_check", p, null);
   }
 
   public void refill(PersonScope p, UUID medicineId, String name) {
@@ -83,7 +91,7 @@ public class VitaReminderNotifier {
     String body = (self(p) ? "You are" : p.person().displayName() + " is") + " running low on " + what + ". Time to refill.";
     ObjectNode ctx = Json.obj().put("type", "vita_refill").put("personId", p.personId().toString())
         .put("medicineId", medicineId.toString());
-    send(recipients.forOther(p), p, body, ctx, Duration.ofDays(7), NotificationPriority.NORMAL);
+    send(recipients.forOther(p), r -> body, ctx, Duration.ofDays(7), NotificationPriority.NORMAL);
   }
 
   public void other(PersonScope p, UUID reminderId, String kind, String title, Instant dueAt, ZoneId zone) {
@@ -99,18 +107,21 @@ public class VitaReminderNotifier {
         };
     ObjectNode ctx = Json.obj().put("type", "vita_reminder").put("personId", p.personId().toString())
         .put("reminderId", reminderId.toString()).put("kind", kind);
-    send(recipients.forOther(p), p, body, ctx, Duration.ofDays(7), NotificationPriority.NORMAL);
+    send(recipients.forOther(p), r -> body, ctx, Duration.ofDays(7), NotificationPriority.NORMAL);
   }
 
   /** Wakes the recipients' phones with ids only (6d). */
-  private void push(List<UUID> to, String type, PersonScope p, Instant dueAt) {
-    for (UUID user : to) events.publishEvent(new com.jizza.engine.api.event.VitaReminderDue(user, type, p.personId(), dueAt));
+  private void push(List<Recipient> to, String type, PersonScope p, Instant dueAt) {
+    for (Recipient r : to) events.publishEvent(new com.jizza.engine.api.event.VitaReminderDue(r.userId(), type, p.personId(), dueAt));
   }
 
-  private void send(List<UUID> to, PersonScope p, String body, ObjectNode ctx, Duration expires, NotificationPriority priority) {
-    UUID vita = agents.byKey(p.owner(), VitaToolProvider.AGENT_KEY).map(a -> a.id()).orElse(null);
-    for (UUID user : to) {
-      bus.raise(NotificationKind.INFO, vita, new NotificationContext(user, body, ctx, null, null, null, expires, priority));
+  /** One notification per recipient, from the recipient's own Vita, worded for them. */
+  private void send(List<Recipient> to, java.util.function.Function<Recipient, String> body, ObjectNode ctx,
+                    Duration expires, NotificationPriority priority) {
+    for (Recipient r : to) {
+      UUID vita = agents.byKey(r.userId(), VitaToolProvider.AGENT_KEY).map(a -> a.id()).orElse(null);
+      bus.raise(NotificationKind.INFO, vita,
+          new NotificationContext(r.userId(), body.apply(r), ctx.deepCopy(), null, null, null, expires, priority));
     }
   }
 }

@@ -36,6 +36,7 @@ public class VitaMedicineHomeCards implements VitaHomeUseCase.HomeExtras {
 
   @Override
   public void addToHome(PersonScope p, ObjectNode home) {
+    if (!p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.MEDICINES)) return;
     var ps = medicines.settings(p);
     Instant now = Instant.now();
     LocalDate today = now.atZone(ps.zone()).toLocalDate();
@@ -43,7 +44,7 @@ public class VitaMedicineHomeCards implements VitaHomeUseCase.HomeExtras {
     doses.slots(p, store.forPerson(p.owner(), p.personId(), today.atStartOfDay(ps.zone()).toInstant(),
         today.plusDays(1).atStartOfDay(ps.zone()).toInstant()), true, now).forEach(slots::add);
     ArrayNode reminders = home.putArray("reminders");
-    forms.live(p, VitaTable.REMINDER).stream()
+    (p.shared() ? java.util.List.<ObjectNode>of() : forms.live(p, VitaTable.REMINDER)).stream()
         .filter(r -> "scheduled".equals(r.path("status").asText()))
         .sorted(java.util.Comparator.comparing((ObjectNode r) -> r.path("dueAt").asText()))
         .limit(5).forEach(reminders::add);
@@ -52,6 +53,7 @@ public class VitaMedicineHomeCards implements VitaHomeUseCase.HomeExtras {
 
   @Override
   public void addToSummary(PersonScope p, ObjectNode condition, ObjectNode summary) {
+    if (!p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.MEDICINES)) return;
     String id = condition.path("id").asText();
     ArrayNode list = summary.putArray("medicines");
     var ps = medicines.settings(p);

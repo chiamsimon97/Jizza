@@ -25,6 +25,21 @@ public interface WorkspaceDirectory {
   /** Creates an organization with {@code ownerUserId} as its owner. */
   Workspace createOrganization(UUID ownerUserId, String name);
 
+  /** Creates a Family with {@code ownerUserId} as its owner (spec 4.4). */
+  Workspace createFamily(UUID ownerUserId, String name);
+
+  /** The Family this person created, if any: a person owns at most one. */
+  Optional<Workspace> familyOwnedBy(UUID userId);
+
+  /**
+   * True when both are active members of one workspace of type Family (spec 4.4). Vita's sharing
+   * and any later family work read the plan only through this.
+   */
+  boolean sameFamily(UUID userA, UUID userB);
+
+  /** The Family both are active members of, if any. */
+  Optional<UUID> sharedFamily(UUID userA, UUID userB);
+
   // ── Memberships ───────────────────────────────────────────────────────────
 
   List<Membership> membershipsOf(UUID userId);

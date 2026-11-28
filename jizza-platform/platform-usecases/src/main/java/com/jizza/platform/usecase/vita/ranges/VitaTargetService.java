@@ -225,7 +225,7 @@ public class VitaTargetService {
                           String labTestCode) {}
 
   public List<RangeView> ranges(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, false);
     Context ctx = context(p);
     List<RangeView> out = new ArrayList<>();
     for (Slot s : SLOTS) {

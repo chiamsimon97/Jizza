@@ -59,12 +59,22 @@ public class VitaSafetyService {
       return out;
     }
 
-    PersonScope p = scopes.personOrSelf(caller, personId);
-    ObjectNode profile = profiles.profileRow(p);
+    // A helper who sees the readings but not the emergency card gets the person's name only.
+    PersonScope p;
+    boolean card = true;
+    try {
+      p = scopes.personOrSelf(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.EMERGENCY, false);
+    } catch (com.jizza.engine.api.error.NotFoundException noCard) {
+      p = scopes.personOrSelf(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, false);
+      card = false;
+    }
     out.put("personName", p.person().displayName());
-    out.set("preferredHospital", profile.get("preferredHospital"));
-    out.set("preferredHospitalPhone", profile.get("preferredHospitalPhone"));
-    out.put("emergencyCard", "/api/vita/people/" + p.personId() + "/emergency-card");
+    if (card) {
+      ObjectNode profile = profiles.profileRow(p);
+      out.set("preferredHospital", profile.get("preferredHospital"));
+      out.set("preferredHospitalPhone", profile.get("preferredHospitalPhone"));
+      out.put("emergencyCard", "/api/vita/people/" + p.personId() + "/emergency-card");
+    }
     out.put("wording", "emergency".equals(level)
         ? "Call now. This is at a level where doctors advise emergency care."
         : "Act today. This is at a level where doctors advise urgent care.");

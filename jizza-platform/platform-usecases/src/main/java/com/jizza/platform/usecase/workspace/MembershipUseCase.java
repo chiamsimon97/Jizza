@@ -125,7 +125,7 @@ public class MembershipUseCase {
     }
     if (role == null) throw new ValidationException("Choose a role");
     WorkspaceRole actor = roleOf(access);
-    if (!RoleAssignmentPolicy.canInvite(actor, role)) {
+    if (!RoleAssignmentPolicy.canInvite(actor, role, workspace.type())) {
       throw new PermissionDeniedException("members_invite", "members");
     }
     Optional<UUID> invitee = directory.userIdByEmail(email);
@@ -175,13 +175,13 @@ public class MembershipUseCase {
 
   @Transactional
   public Membership changeRole(Access access, UUID memberId, WorkspaceRole newRole) {
-    organization(access);
+    var workspace = organization(access);
     Membership target = memberOf(access, memberId);
     WorkspaceRole actor = roleOf(access);
     boolean self = target.userId().equals(access.userId());
     if (newRole == null) throw new ValidationException("Choose a role");
     if (target.role() == newRole) return target;
-    if (!RoleAssignmentPolicy.canChangeRole(actor, target.role(), newRole, self)) {
+    if (!RoleAssignmentPolicy.canChangeRole(actor, target.role(), newRole, self, workspace.type())) {
       throw new PermissionDeniedException("members_modify", "members");
     }
     Membership updated = directory.changeRole(memberId, newRole);
@@ -279,7 +279,8 @@ public class MembershipUseCase {
   private com.jizza.engine.api.workspace.WorkspaceDirectory.Workspace organization(Access access) {
     var ws = directory.workspace(access.workspaceId())
         .orElseThrow(() -> new NotFoundException("Account", access.workspaceId()));
-    if (ws.type() != WorkspaceType.ORGANIZATION) {
+    // Members side (spec 4.4): an Organization or a Family.
+    if (!ws.type().hasMembers()) {
       throw new JizzaException(HttpStatus.CONFLICT, "personal-workspace-no-members",
           "Individual accounts can't have members", "Individual accounts can't have members.");
     }

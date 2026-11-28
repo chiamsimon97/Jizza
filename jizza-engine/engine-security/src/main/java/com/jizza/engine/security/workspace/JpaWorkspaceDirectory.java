@@ -70,6 +70,44 @@ public class JpaWorkspaceDirectory implements WorkspaceDirectory {
     return toWorkspace(w);
   }
 
+  @Override
+  @Transactional
+  public Workspace createFamily(UUID ownerUserId, String name) {
+    WorkspaceEntity w = create(WorkspaceType.FAMILY, name, ownerUserId);
+    addMember(w.getId(), ownerUserId, WorkspaceRole.OWNER);
+    return toWorkspace(w);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<Workspace> familyOwnedBy(UUID userId) {
+    return workspaces.findFirstByCreatedByUserIdAndType(userId, WorkspaceType.FAMILY).map(JpaWorkspaceDirectory::toWorkspace);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean sameFamily(UUID userA, UUID userB) {
+    return sharedFamily(userA, userB).isPresent();
+  }
+
+  @Override
+  public Optional<UUID> sharedFamily(UUID userA, UUID userB) {
+    if (userA == null || userB == null) return Optional.empty();
+    java.util.Set<UUID> families = new java.util.HashSet<>();
+    for (WorkspaceMemberEntity m : members.findByUserId(userA)) {
+      if (m.getStatus() != MembershipStatus.ACTIVE) continue;
+      workspaces.findById(m.getWorkspaceId()).filter(w -> w.getType() == WorkspaceType.FAMILY)
+          .ifPresent(w -> families.add(w.getId()));
+    }
+    if (families.isEmpty()) return Optional.empty();
+    for (WorkspaceMemberEntity m : members.findByUserId(userB)) {
+      if (m.getStatus() == MembershipStatus.ACTIVE && families.contains(m.getWorkspaceId())) {
+        return Optional.of(m.getWorkspaceId());
+      }
+    }
+    return Optional.empty();
+  }
+
   private WorkspaceEntity create(WorkspaceType type, String name, UUID createdBy) {
     WorkspaceEntity w = new WorkspaceEntity();
     w.setType(type);

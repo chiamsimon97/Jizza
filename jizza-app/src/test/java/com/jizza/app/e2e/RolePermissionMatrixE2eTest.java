@@ -96,7 +96,52 @@ class RolePermissionMatrixE2eTest extends E2eSupport {
   void eachRoleGetsExactlyTheRoutesItsPermissionsAllow() {
     // The roles really differ, or the matrix proves nothing.
     assertThat(grants.get("ADMIN")).isNotEqualTo(grants.get("USER"));
+    sweep(members, grants);
+  }
 
+  /**
+   * The same sweep for a Family (Vita spec 4.4): its owner assigns Admin and User but never
+   * Developer, and its roles hold only the members permissions, so no agent, connector, device,
+   * guardrail or listing route opens for it.
+   */
+  @Test
+  void aFamilyHasAdminAndUserMembersAndOnlyTheMembersRoutes() {
+    ApiClient familyOwner = signUp("matrix-family-" + UUID.randomUUID() + "@jizza.local", Map.of());
+    assertThat(familyOwner.post("/api/auth/step-up", Map.of("password", PASSWORD)).ok()).isTrue();
+    var created = familyOwner.post("/api/workspaces/families", Map.of("name", "Matrix Family"));
+    assertThat(created.ok()).as(created.body()).isTrue();
+    UUID family = UUID.fromString(created.json().path("id").asText());
+    assertThat(familyOwner.post("/api/me/active-workspace", Map.of("workspaceId", family.toString())).ok()).isTrue();
+
+    String developer = "matrix-family-dev-" + UUID.randomUUID() + "@jizza.local";
+    signUp(developer, Map.of());
+    assertThat(familyOwner.post("/api/auth/step-up", Map.of("password", PASSWORD)).ok()).isTrue();
+    var refused = familyOwner.post("/api/workspaces/current/invitations", Map.of("email", developer, "role", "DEVELOPER"));
+    assertThat(refused.status()).as(refused.body()).isBetween(400, 403);
+
+    Map<String, ApiClient> familyMembers = new LinkedHashMap<>();
+    Map<String, Set<String>> familyGrants = new HashMap<>();
+    for (String role : List.of("ADMIN", "USER")) {
+      String email = "matrix-family-" + role.toLowerCase() + "-" + UUID.randomUUID() + "@jizza.local";
+      ApiClient member = signUp(email, Map.of());
+      assertThat(familyOwner.post("/api/auth/step-up", Map.of("password", PASSWORD)).ok()).isTrue();
+      var invited = familyOwner.post("/api/workspaces/current/invitations", Map.of("email", email, "role", role));
+      assertThat(invited.status()).as(invited.body()).isEqualTo(202);
+      String invitation = member.get("/api/me/invitations").json().get(0).path("id").asText();
+      assertThat(member.post("/api/me/invitations/" + invitation + "/accept", null).ok()).isTrue();
+      var switched = member.post("/api/me/active-workspace", Map.of("workspaceId", family.toString()));
+      assertThat(switched.ok()).as(switched.body()).isTrue();
+      Set<String> granted = new HashSet<>();
+      switched.json().path("permissions").forEach(p -> granted.add(p.asText()));
+      assertThat(granted).allMatch(p -> p.startsWith("members_"));
+      familyMembers.put(role, member);
+      familyGrants.put(role, granted);
+    }
+    assertThat(familyGrants.get("ADMIN")).contains("members_invite");
+    sweep(familyMembers, familyGrants);
+  }
+
+  private void sweep(Map<String, ApiClient> members, Map<String, Set<String>> grants) {
     List<String> wronglyRefused = new ArrayList<>();
     List<String> wronglyAllowed = new ArrayList<>();
     int checked = 0;
@@ -126,7 +171,7 @@ class RolePermissionMatrixE2eTest extends E2eSupport {
         }
       }
     }
-    assertThat(checked).as("route x role checks").isGreaterThan(100);
+    assertThat(checked).as("route x role checks").isGreaterThan(50);
     assertThat(wronglyAllowed).as("roles let through without the permission").isEmpty();
     assertThat(wronglyRefused).as("roles refused despite holding the permission").isEmpty();
   }

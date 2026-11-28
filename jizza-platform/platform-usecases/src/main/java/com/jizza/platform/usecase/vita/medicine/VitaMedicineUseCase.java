@@ -106,24 +106,43 @@ public class VitaMedicineUseCase {
   // ── Reading ─────────────────────────────────────────────────────────────────
 
   public List<ObjectNode> list(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = read(caller, personId);
     return medicines(p).stream().map(m -> view(p, m)).toList();
   }
 
+  /** The person for reading medicines: own, or shared with the medicines section. */
+  public PersonScope read(UUID caller, UUID personId) {
+    return scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.MEDICINES, false);
+  }
+
+  /** The person for adding or marking: own, or shared with Edit on medicines. */
+  public PersonScope write(UUID caller, UUID personId) {
+    return scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.MEDICINES, true).requireOpen();
+  }
+
+  /** A change to a medicine: the manager's, or a helper's to a medicine they added themself. */
+  private PersonScope ownEntry(UUID caller, UUID personId, UUID id) {
+    PersonScope p = write(caller, personId);
+    VitaRecordsUseCase.requireOwnEntry(p, medicine(p, id), "Medicine", id);
+    return p;
+  }
+
   public ObjectNode get(UUID caller, UUID personId, UUID id) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = read(caller, personId);
     return view(p, medicine(p, id));
   }
 
   /** The person's live medicines, oldest first. */
   public List<ObjectNode> medicines(PersonScope p) {
-    return records.list(MED, p.owner(), VitaRecordsUseCase.livePerson(p.personId()));
+    return records.list(MED, p.owner(), VitaRecordsUseCase.livePerson(p.personId())).stream()
+        .filter(m -> !VitaRecordsUseCase.hidden(p, m)).toList();
   }
 
   public ObjectNode medicine(PersonScope p, UUID id) {
     return records.get(MED, p.owner(), id)
         .filter(r -> p.personId().toString().equals(r.path("personId").asText()))
         .filter(r -> r.path("deletedAt").isNull())
+        .filter(r -> !VitaRecordsUseCase.hidden(p, r))
         .orElseThrow(() -> new NotFoundException("Medicine", id));
   }
 
@@ -154,7 +173,7 @@ public class VitaMedicineUseCase {
   }
 
   public List<ObjectNode> events(UUID caller, UUID personId, UUID id) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = read(caller, personId);
     medicine(p, id);
     Map<String, Object> where = new LinkedHashMap<>();
     where.put("medicineId", id);
@@ -172,7 +191,7 @@ public class VitaMedicineUseCase {
    */
   @Transactional
   public ObjectNode create(UUID caller, UUID personId, JsonNode body, String source) {
-    return create(scopes.person(caller, personId).requireOpen(), body, source, Instant.now());
+    return create(write(caller, personId), body, source, Instant.now());
   }
 
   @Transactional
@@ -223,7 +242,7 @@ public class VitaMedicineUseCase {
    */
   @Transactional
   public ObjectNode update(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = ownEntry(caller, personId, id);
     ObjectNode current = medicine(p, id);
     if (body != null && body.has("schedule")) {
       throw new ValidationException("Use Change to change the dose or the times.");
@@ -259,7 +278,7 @@ public class VitaMedicineUseCase {
    */
   @Transactional
   public ObjectNode change(UUID caller, UUID personId, UUID id, JsonNode body) {
-    return change(scopes.person(caller, personId).requireOpen(), id, body, Instant.now());
+    return change(ownEntry(caller, personId, id), id, body, Instant.now());
   }
 
   @Transactional
@@ -323,7 +342,7 @@ public class VitaMedicineUseCase {
   /** Pauses: no rows are made while paused, and the future un-acted ones go. */
   @Transactional
   public ObjectNode pause(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = ownEntry(caller, personId, id);
     return pause(p, id, body, Instant.now());
   }
 
@@ -341,7 +360,7 @@ public class VitaMedicineUseCase {
 
   @Transactional
   public ObjectNode resume(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = ownEntry(caller, personId, id);
     return resume(p, id, body, Instant.now());
   }
 
@@ -360,7 +379,7 @@ public class VitaMedicineUseCase {
   /** Stops: the course ends today, the schedule closes and the future un-acted rows go. */
   @Transactional
   public ObjectNode stop(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = ownEntry(caller, personId, id);
     return stop(p, id, body, Instant.now());
   }
 
@@ -396,7 +415,7 @@ public class VitaMedicineUseCase {
    */
   @Transactional
   public ObjectNode refill(UUID caller, UUID personId, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = write(caller, personId);
     return refill(p, id, body, Instant.now());
   }
 

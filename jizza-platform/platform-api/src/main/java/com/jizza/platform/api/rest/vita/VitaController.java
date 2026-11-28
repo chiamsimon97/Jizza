@@ -51,11 +51,14 @@ public class VitaController {
   private final VitaRedFlagService redFlags;
   private final VitaTargetService targets;
   private final VitaHomeUseCase home;
+  private final com.jizza.platform.usecase.vita.sharing.VitaSharingUseCase sharing;
 
   public VitaController(VitaConfigService config, VitaQuickStartUseCase quickStart,
                         VitaProfileUseCase profiles, VitaRecordsUseCase forms,
                         VitaMeasurementUseCase readings, VitaRedFlagService redFlags,
-                        VitaTargetService targets, VitaHomeUseCase home) {
+                        VitaTargetService targets, VitaHomeUseCase home,
+                        com.jizza.platform.usecase.vita.sharing.VitaSharingUseCase sharing) {
+    this.sharing = sharing;
     this.config = config;
     this.quickStart = quickStart;
     this.profiles = profiles;
@@ -66,12 +69,19 @@ public class VitaController {
     this.home = home;
   }
 
-  /** What the client needs to decide whether to show the Health tab. */
-  public record VitaStatus(boolean enabled) {}
+  /**
+   * What the client needs to decide whether to show the Health tab. {@code openOn} is
+   * "my-medicines" for a member linked to their own record with Edit on medicines who has not
+   * turned that off (setting ui.open_my_medicines), otherwise null.
+   */
+  public record VitaStatus(boolean enabled, String openOn) {}
 
   @GetMapping("/status")
   public VitaStatus status() {
-    return new VitaStatus(true);
+    UUID me = CurrentUser.userId();
+    boolean open = sharing.linkedAsSelfWithMedicines(me)
+        && config.value(me, "ui.open_my_medicines").map(v -> v.path("enabled").asBoolean(true)).orElse(true);
+    return new VitaStatus(true, open ? "my-medicines" : null);
   }
 
   // ── Settings ────────────────────────────────────────────────────────────────

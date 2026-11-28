@@ -97,6 +97,29 @@ public enum VitaTable {
   public final int maxPerPerson;
   public final Map<String, VitaField> fields;
 
+  /**
+   * The section a share must cover to reach this form (spec 5.10), or null when only the manager
+   * reaches it (doctors are the household's; other reminders stay with the manager).
+   */
+  public com.jizza.platform.usecase.vita.sharing.VitaSection section() {
+    return switch (this) {
+      case CONTACT -> com.jizza.platform.usecase.vita.sharing.VitaSection.PROFILE;
+      case CONDITION -> com.jizza.platform.usecase.vita.sharing.VitaSection.CONDITIONS;
+      case ALLERGY -> com.jizza.platform.usecase.vita.sharing.VitaSection.ALLERGIES;
+      case VISIT, CHECK -> com.jizza.platform.usecase.vita.sharing.VitaSection.VISITS;
+      case MEDICINE -> com.jizza.platform.usecase.vita.sharing.VitaSection.MEDICINES;
+      case DOCUMENT -> com.jizza.platform.usecase.vita.sharing.VitaSection.DOCUMENTS;
+      case VACCINATION -> com.jizza.platform.usecase.vita.sharing.VitaSection.VACCINATIONS;
+      case EVENT -> com.jizza.platform.usecase.vita.sharing.VitaSection.EVENTS;
+      case DOCTOR, REMINDER -> null;
+    };
+  }
+
+  /** Whether rows of this form carry a {@code private} flag that keeps them out of every share. */
+  public boolean hasPrivate() {
+    return fields.containsKey("private");
+  }
+
   /** Whether rows belong to the household rather than to one person. */
   public boolean household() {
     return this == DOCTOR;

@@ -19,6 +19,7 @@ import com.jizza.platform.usecase.vita.ranges.RangeSet;
 import com.jizza.platform.usecase.vita.records.VitaRecordsUseCase;
 import com.jizza.platform.usecase.vita.records.VitaTable;
 import com.jizza.platform.usecase.vita.sharing.VitaScopeResolver;
+import com.jizza.platform.usecase.vita.sharing.VitaSection;
 import com.jizza.platform.usecase.vita.sharing.VitaScopeResolver.PersonScope;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -94,10 +95,24 @@ public class VitaVisitUseCase {
    * Nothing is saved and nothing is sent.
    */
   public ObjectNode prepare(UUID caller, UUID visitId, Instant now) {
-    UUID owner = scopes.own(caller).ownerUserId();
-    ObjectNode visit = records.get("vita_visit", owner, visitId).filter(r -> r.path("deletedAt").isNull())
-        .orElseThrow(() -> new NotFoundException("Visit", visitId));
-    PersonScope p = scopes.person(caller, UUID.fromString(visit.path("personId").asText()));
+    ObjectNode visit = null;
+    PersonScope p = null;
+    for (UUID o : scopes.reachableOwners(caller)) {
+      var found = records.get("vita_visit", o, visitId).filter(r -> r.path("deletedAt").isNull());
+      if (found.isEmpty()) continue;
+      PersonScope s;
+      try {
+        s = scopes.person(caller, UUID.fromString(found.get().path("personId").asText()), VitaSection.VISITS, false);
+      } catch (NotFoundException notShared) {
+        continue;
+      }
+      if (!s.owner().equals(o) || VitaRecordsUseCase.hidden(s, found.get())) continue;
+      visit = found.get();
+      p = s;
+      break;
+    }
+    if (visit == null) throw new NotFoundException("Visit", visitId);
+    UUID owner = p.owner();
     LocalDate today = now.atZone(VitaRecordsUseCase.ZONE).toLocalDate();
     LocalDate visitDay = visit.hasNonNull("scheduledAt")
         ? Instant.parse(visit.get("scheduledAt").asText()).atZone(VitaRecordsUseCase.ZONE).toLocalDate() : today;
@@ -120,14 +135,17 @@ public class VitaVisitUseCase {
       String t = q.isObject() ? q.path("text").asText("") : q.asText("");
       if (!t.isBlank()) questions.add(t);
     }
-    out.set("readings", readings(caller, p, null));
-    out.set("medicines", currentMedicines(p, null, false));
+    // A helper sees only the parts of the page whose sections are shared with them.
+    out.set("readings", p.canView(VitaSection.VITALS) ? readings(caller, p, null) : Json.mapper().createArrayNode());
+    boolean meds = p.canView(VitaSection.MEDICINES);
+    out.set("medicines", meds ? currentMedicines(p, null, false) : Json.mapper().createArrayNode());
     if (since != null) out.put("changesSince", since.toString()).put("changesSinceLabel", "since the visit on " + DAY_YEAR.format(since));
     else out.put("changesSinceLabel", "in the last " + CHANGES_DAYS_WITHOUT_VISIT + " days");
     LocalDate from = since != null ? since : visitDay.minusDays(CHANGES_DAYS_WITHOUT_VISIT);
-    out.set("medicineChanges", changes(p, from, visitDay, null));
-    out.set("labs", latestLabs(p, visitDay, null));
-    out.set("adherence", doses.adherence(p, today.minusDays(DAYS), today.minusDays(1)).path("overall"));
+    out.set("medicineChanges", meds ? changes(p, from, visitDay, null) : Json.mapper().createArrayNode());
+    out.set("labs", p.canView(VitaSection.LABS) ? latestLabs(p, visitDay, null) : Json.mapper().createArrayNode());
+    if (meds) out.set("adherence", doses.adherence(p, today.minusDays(DAYS), today.minusDays(1)).path("overall"));
+    else out.putNull("adherence");
     out.put("note", NOTE).put("sent", false);
     audit.record(owner, ActorType.USER, caller, "vita.visit.prepared", visitId.toString(), null);
     return out;

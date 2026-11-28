@@ -110,6 +110,10 @@ public class DefaultAuthService implements com.jizza.engine.api.security.AuthSer
     var accountType = request.accountType() == null
         ? com.jizza.engine.api.enums.WorkspaceType.PERSONAL : request.accountType();
     if (email == null || !email.contains("@")) throw new ValidationException("A valid email is required");
+    // A Family is created from inside an Individual account, never at sign-up (spec 4.4).
+    if (accountType == com.jizza.engine.api.enums.WorkspaceType.FAMILY) {
+      throw new ValidationException("Sign up for an Individual account, then create your Family from the account menu.");
+    }
     String organizationName = null;
     if (accountType == com.jizza.engine.api.enums.WorkspaceType.ORGANIZATION) {
       organizationName = request.organizationName() == null ? "" : request.organizationName().trim();

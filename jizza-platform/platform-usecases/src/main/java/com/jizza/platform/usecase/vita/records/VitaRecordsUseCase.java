@@ -51,12 +51,26 @@ public class VitaRecordsUseCase {
 
   /** The person's live rows, oldest first (contacts by their order). */
   public List<ObjectNode> list(UUID caller, UUID personId, VitaTable t) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scope(caller, personId, t, false);
     return live(p, t);
+  }
+
+  /**
+   * The person for one form: the caller's own person, or a shared one when the share covers the
+   * form's section (Edit when {@code write}). A form with no section is the manager's only.
+   */
+  public PersonScope scope(UUID caller, UUID personId, VitaTable t, boolean write) {
+    return t.section() == null ? scopes.person(caller, personId) : scopes.person(caller, personId, t.section(), write);
+  }
+
+  /** A private item (a condition, a medicine or a document) is never shared (spec 5.10). */
+  public static boolean hidden(PersonScope p, JsonNode row) {
+    return p.shared() && row.path("private").asBoolean(false);
   }
 
   public List<ObjectNode> live(PersonScope p, VitaTable t) {
     List<ObjectNode> rows = records.list(t.table, p.owner(), livePerson(p.personId()));
+    if (p.shared()) rows = rows.stream().filter(r -> !hidden(p, r)).toList();
     if (t == VitaTable.CONTACT) {
       rows = rows.stream().sorted(java.util.Comparator.comparingInt(r -> r.path("sortOrder").asInt())).toList();
     } else if (t == VitaTable.VISIT) {
@@ -66,19 +80,20 @@ public class VitaRecordsUseCase {
   }
 
   public ObjectNode get(UUID caller, UUID personId, VitaTable t, UUID id) {
-    return get(scopes.person(caller, personId), t, id);
+    return get(scope(caller, personId, t, false), t, id);
   }
 
-  ObjectNode get(PersonScope p, VitaTable t, UUID id) {
+  public ObjectNode get(PersonScope p, VitaTable t, UUID id) {
     return records.get(t.table, p.owner(), id)
         .filter(r -> p.personId().toString().equals(r.path("personId").asText()))
         .filter(r -> r.path("deletedAt").isNull())
+        .filter(r -> !hidden(p, r))
         .orElseThrow(() -> new NotFoundException(t.label, id));
   }
 
   @Transactional
   public ObjectNode create(UUID caller, UUID personId, VitaTable t, JsonNode body, String source) {
-    return create(scopes.person(caller, personId).requireOpen(), t, body, source);
+    return create(scope(caller, personId, t, true).requireOpen(), t, body, source);
   }
 
   /** Adds a row for a person already resolved (Quick start, chat forms). */
@@ -104,9 +119,11 @@ public class VitaRecordsUseCase {
   /** Changes the fields sent; a field sent as null is cleared unless the form needs it. */
   @Transactional
   public ObjectNode update(UUID caller, UUID personId, VitaTable t, UUID id, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
-    get(p, t, id);
+    PersonScope p = scope(caller, personId, t, true).requireOpen();
+    requireOwnEntry(p, get(p, t, id), t.label, id);
     ObjectNode values = clean(t.fields, body, false);
+    // Only the manager marks an item private; a helper cannot hide something from them.
+    if (p.shared()) values.remove("private");
     checkRefs(p.owner(), t.fields, values);
     ObjectNode row = values.isEmpty() ? get(p, t, id)
         : records.update(t.table, p.owner(), id, values).orElseThrow(() -> new NotFoundException(t.label, id));
@@ -118,10 +135,20 @@ public class VitaRecordsUseCase {
   /** Soft delete: the row is kept with {@code deleted_at} and leaves every list. */
   @Transactional
   public void delete(UUID caller, UUID personId, VitaTable t, UUID id) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = scope(caller, personId, t, true).requireOpen().requireManager();
     removeRow(p, t.table, t.label, id);
     audit.record(p.owner(), ActorType.USER, caller, "vita." + t.name().toLowerCase() + ".removed",
         id.toString(), null);
+  }
+
+  /**
+   * Edit through a share means adding, and correcting one's own entries (spec 5.10): a helper or
+   * the person themself may change a row only when they wrote it.
+   */
+  public static void requireOwnEntry(PersonScope p, JsonNode row, String label, UUID id) {
+    if (p.shared() && !p.caller().toString().equals(row.path("createdByUserId").asText(null))) {
+      throw new NotFoundException(label, id);
+    }
   }
 
   /** Soft-deletes one of the person's rows in any Vita table. */

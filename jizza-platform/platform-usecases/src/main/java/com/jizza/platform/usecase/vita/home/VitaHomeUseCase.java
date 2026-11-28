@@ -83,7 +83,7 @@ public class VitaHomeUseCase {
 
   /** The trend of one kind over the last {@code days} days (1 to 365). */
   public ObjectNode trend(UUID caller, UUID personId, String kind, Integer days, String context) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS, false);
     return trend(p, targets.context(p), kind, days == null ? 30 : days, context);
   }
 
@@ -139,7 +139,7 @@ public class VitaHomeUseCase {
 
   /** The condition page's data (spec 5.6). */
   public ObjectNode conditionSummary(UUID caller, UUID personId, UUID conditionId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.CONDITIONS, false);
     ObjectNode c = forms.get(caller, personId, VitaTable.CONDITION, conditionId);
     var ctx = targets.context(p);
     String template = c.path("template").asText("generic");
@@ -182,6 +182,10 @@ public class VitaHomeUseCase {
         }
         out.putArray("checks");
       }
+    }
+    if (!p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS)) {
+      out.putArray("measures");
+      out.remove("lowReadings");
     }
     out.putArray("medicines");
     extras.orderedStream().forEach(x -> x.addToSummary(p, c, out));
@@ -261,17 +265,25 @@ public class VitaHomeUseCase {
 
   /** Home's cards for one person in one call. */
   public ObjectNode home(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = homeScope(caller, personId);
     var ctx = targets.context(p);
     ObjectNode out = Json.obj();
-    out.putObject("person").put("id", p.personId().toString()).put("name", p.person().displayName())
-        .put("recordOpen", p.open()).put("status", p.person().status());
-    out.set("quickStart", Json.toNode(quickStart.get(caller, personId).progress()));
+    ObjectNode person = out.putObject("person").put("id", p.personId().toString()).put("name", p.person().displayName())
+        .put("recordOpen", p.open()).put("status", p.person().status()).put("shared", p.shared());
+    if (p.shared()) {
+      // A shared record (spec 5.10): what the caller holds, and only those sections' cards.
+      person.put("asSelf", p.grant().asSelf());
+      ObjectNode sections = person.putObject("sections");
+      p.grant().sections().forEach((k, v) -> sections.put(k.key(), v));
+      out.putNull("quickStart");
+    } else {
+      out.set("quickStart", Json.toNode(quickStart.get(caller, personId).progress()));
+    }
     ArrayNode latest = out.putArray("latest");
     ArrayNode banners = out.putArray("redFlags");
     int hours = redFlagHours(p);
     Instant since = Instant.now().minus(Duration.ofHours(hours));
-    for (String kind : HOME_KINDS) {
+    for (String kind : p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.VITALS) ? HOME_KINDS : List.<String>of()) {
       readings.latest(p, kind).ifPresent(r -> {
         ObjectNode e = VitaMeasurementUseCase.withEvaluation(r, ctx);
         latest.add(e);
@@ -290,10 +302,10 @@ public class VitaHomeUseCase {
       });
     }
     ArrayNode conditions = out.putArray("conditions");
-    forms.live(p, VitaTable.CONDITION).stream().filter(c -> "active".equals(c.path("status").asText()))
+    (p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.CONDITIONS) ? forms.live(p, VitaTable.CONDITION) : List.<ObjectNode>of()).stream().filter(c -> "active".equals(c.path("status").asText()))
         .forEach(c -> conditions.addObject().put("id", c.path("id").asText()).put("name", c.path("name").asText())
             .put("template", c.path("template").asText()));
-    forms.live(p, VitaTable.VISIT).stream()
+    (p.canView(com.jizza.platform.usecase.vita.sharing.VitaSection.VISITS) ? forms.live(p, VitaTable.VISIT) : List.<ObjectNode>of()).stream()
         .filter(v -> "planned".equals(v.path("status").asText()) && v.hasNonNull("scheduledAt")
             && Instant.parse(v.get("scheduledAt").asText()).isAfter(Instant.now()))
         .min(Comparator.comparing(v -> v.get("scheduledAt").asText()))
@@ -302,6 +314,15 @@ public class VitaHomeUseCase {
     out.putArray("reminders");
     extras.orderedStream().forEach(x -> x.addToHome(p, out));
     return out;
+  }
+
+  /** The caller's own person, or a record shared with them in any section. */
+  private PersonScope homeScope(UUID caller, UUID personId) {
+    try {
+      return scopes.person(caller, personId);
+    } catch (NotFoundException notOwn) {
+      return scopes.sharedScope(caller, personId).orElseThrow(() -> notOwn);
+    }
   }
 
   private int redFlagHours(PersonScope p) {

@@ -35,6 +35,7 @@ class FixtureJTest extends E2eSupport {
   @Autowired private VitaReminderService reminders;
   @Autowired private VitaDoseStore store;
   @Autowired private VitaScopeResolver scopes;
+  @Autowired private com.jizza.engine.api.vita.VitaShares shares;
 
   private static Instant ist(String local) {
     return LocalDateTime.parse(local).atZone(INDIA).toInstant();
@@ -57,6 +58,17 @@ class FixtureJTest extends E2eSupport {
     api.post("/api/vita/people/" + father + "/reminders", Map.of("kind", "custom", "title", "Eye check", "dueAt", "2027-06-02T09:00"));
     assertThat(store.forPerson(owner, p.personId(), ist("2027-06-01T00:00"), ist("2027-06-04T00:00"))).hasSize(4);
 
+    // A share of his record (8a): it ends when the record closes.
+    ApiClient helper = new ApiClient(port);
+    helper.prime();
+    String helperEmail = "fixture-j-helper-" + UUID.randomUUID() + "@jizza.local";
+    assertThat(helper.post("/api/auth/register", Map.of("email", helperEmail, "password", "Correct-Horse-92")).ok()).isTrue();
+    UUID helperId = UUID.fromString(helper.post("/api/auth/login", Map.of("email", helperEmail, "password", "Correct-Horse-92"))
+        .json().path("userId").asText());
+    UUID workspace = UUID.fromString(api.get("/api/me/context").json().path("activeWorkspace").path("id").asText());
+    shares.grant(owner, workspace, p.personId(), helperId, false, "medicines", "view");
+    assertThat(shares.activeOf(owner, p.personId())).hasSize(1);
+
     var closed = api.patch("/api/people/" + father + "/status", Map.of("status", "deceased", "on", LocalDate.now(INDIA).toString()));
     assertThat(closed.ok()).as(closed.body()).isTrue();
     assertThat(store.forPerson(owner, p.personId(), ist("2027-06-01T00:00"), ist("2027-06-04T00:00")))
@@ -78,5 +90,14 @@ class FixtureJTest extends E2eSupport {
     var add = api.post("/api/vita/people/" + father + "/medicines", Map.of("name", "x", "asNeeded", true));
     assertThat(add.status()).isEqualTo(400);
     assertThat(add.body()).contains("This record is closed");
+
+    // Shares of his record ended, and his record can still be exported.
+    assertThat(shares.activeOf(owner, p.personId())).isEmpty();
+    assertThat(shares.allOf(owner, p.personId())).allMatch(s -> "record_closed".equals(s.endedReason()));
+    assertThat(api.post("/api/auth/step-up", Map.of("password", "Correct-Horse-92")).ok()).isTrue();
+    var export = api.get("/api/vita/people/" + father + "/export");
+    assertThat(export.ok()).as(export.body()).isTrue();
+    assertThat(export.json().path("person").path("status").asText()).isEqualTo("deceased");
+    assertThat(export.json().path("records").path("vita_medicine")).hasSize(1);
   }
 }

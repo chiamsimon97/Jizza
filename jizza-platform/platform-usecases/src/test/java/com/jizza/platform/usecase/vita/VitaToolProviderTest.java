@@ -40,7 +40,7 @@ class VitaToolProviderTest {
     when(people.people(user)).thenReturn(List.of(me));
     when(people.person(user, me.id())).thenReturn(Optional.of(me));
     ObjectProvider<VitaScopeResolver> scopes = mock(ObjectProvider.class);
-    when(scopes.getObject()).thenReturn(new VitaScopeResolver(people));
+    when(scopes.getObject()).thenReturn(new VitaScopeResolver(people, org.mockito.Mockito.mock(com.jizza.engine.api.vita.VitaShares.class), org.mockito.Mockito.mock(com.jizza.engine.api.workspace.WorkspaceDirectory.class)));
     return new VitaToolProvider(agents, scopes, mock(ObjectProvider.class), mock(ObjectProvider.class),
         mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
         mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),

@@ -113,7 +113,7 @@ public class VitaProfileUseCase {
 
   @Transactional
   public ProfileView get(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.PROFILE, false);
     return new ProfileView(PersonView.of(p.person()), profileRow(p));
   }
 
@@ -127,7 +127,9 @@ public class VitaProfileUseCase {
   /** Saves the fields sent; a field sent as null is cleared. */
   @Transactional
   public ProfileView put(UUID caller, UUID personId, JsonNode body) {
-    PersonScope p = scopes.person(caller, personId).requireOpen();
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.PROFILE, true).requireOpen();
+    // The date of birth is on the household's person and only the manager changes it.
+    if (p.shared() && body != null && body.has("dob")) throw new ValidationException("Only the record's manager can change the date of birth.");
     save(p, body, "manual");
     return get(caller, personId);
   }
@@ -181,7 +183,7 @@ public class VitaProfileUseCase {
   /** The emergency card's data (7.4); the client lays it out and prints it. */
   @Transactional
   public ObjectNode emergencyCard(UUID caller, UUID personId) {
-    PersonScope p = scopes.person(caller, personId);
+    PersonScope p = scopes.person(caller, personId, com.jizza.platform.usecase.vita.sharing.VitaSection.EMERGENCY, false);
     ObjectNode profile = profileRow(p);
     var n = JsonNodeFactory.instance;
     ObjectNode card = n.objectNode();
