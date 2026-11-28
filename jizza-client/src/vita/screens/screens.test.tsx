@@ -86,8 +86,8 @@ describe('HealthTab shell', () => {
   })
 
   it('shows what a later view will hold', async () => {
-    renderTab('&view=journal')
-    expect(await screen.findByText(/Journal comes with the journal and goals update/)).toBeInTheDocument()
+    renderTab('&view=activity')
+    expect(await screen.findByText(/Activity and sleep comes with the phone and watch update/)).toBeInTheDocument()
   })
 
   it('shows a closed record read-only', async () => {

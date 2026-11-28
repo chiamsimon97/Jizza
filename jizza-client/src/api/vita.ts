@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import type { JsonValue } from '@/types/finance'
 import type {
+  GoalCheckinInput, GoalContext, GoalInput, GoalKind, GoalPreview, HealthGoal, JournalEntry, JournalInput,
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
   MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
   ReadingKind, RedFlagAnswer, ClaimInput, HealthClaim, HealthPolicy, PolicyDetail, PolicyDetailInput, PolicyInput, AccessList, CareNote, HealthConsent, ShareInput, SharedWithMe, SharesView, HealthEvent, HealthEventInput, HealthSummary, MailCheckResult, MailSource, MailSourceInput, MailSourcesView, Vaccination, VaccinationInput, VisitPrep, CheckInput, LabReport, LabReportInput, LabReportView, LabTest, LabTrend, VitaCheck, DocumentDraft, DocumentInput, DraftView, VitaDocument, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
@@ -206,4 +207,24 @@ export const vitaApi = {
   addClaim: (personId: string, body: ClaimInput) => api.post<HealthClaim>(`${person(personId)}/claims`, body),
   updateClaim: (personId: string, id: string, body: ClaimInput) => api.put<HealthClaim>(`${person(personId)}/claims/${id}`, body),
   removeClaim: (personId: string, id: string) => api.delete<void>(`${person(personId)}/claims/${id}`),
+
+  // Journal and goals (8c): the journal is private unless its section is shared.
+  journal: (personId: string, from?: string, to?: string) => {
+    const q = new URLSearchParams()
+    if (from) q.set('from', from)
+    if (to) q.set('to', to)
+    const qs = q.toString()
+    return api.get<JournalEntry[]>(`${person(personId)}/journal${qs ? `?${qs}` : ''}`)
+  },
+  /** Adds or changes one day; a day still to come is refused. */
+  putJournal: (personId: string, date: string, body: JournalInput) => api.put<JournalEntry>(`${person(personId)}/journal/${date}`, body),
+  removeJournal: (personId: string, date: string) => api.delete<void>(`${person(personId)}/journal/${date}`),
+  goals: (personId: string) => api.get<HealthGoal[]>(`${person(personId)}/goals`),
+  addGoal: (personId: string, body: GoalInput) => api.post<HealthGoal>(`${person(personId)}/goals`, body),
+  updateGoal: (personId: string, id: string, body: GoalInput) => api.put<HealthGoal>(`${person(personId)}/goals/${id}`, body),
+  removeGoal: (personId: string, id: string) => api.delete<void>(`${person(personId)}/goals/${id}`),
+  checkIn: (personId: string, id: string, body: GoalCheckinInput) => api.post<HealthGoal>(`${person(personId)}/goals/${id}/checkins`, body),
+  /** The target a new goal would read, and whether it can be created. */
+  goalPreview: (personId: string, kind: GoalKind, context?: GoalContext | null) =>
+    api.post<GoalPreview>('/api/vita/goals/preview', { personId, kind, context: context ?? undefined }),
 }
