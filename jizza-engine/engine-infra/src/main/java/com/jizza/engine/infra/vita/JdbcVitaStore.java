@@ -65,6 +65,23 @@ public class JdbcVitaStore implements VitaStore {
         .stream().findFirst().orElseThrow(() -> new NotFoundException("Person", personId));
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<LabTestRow> labTests() {
+    return jdbc.query("""
+        select code, name, synonyms, canonical_unit, unit_aliases, display_decimals, conversions::text as conversions,
+               test_group, sort_order
+          from vita_lab_test order by sort_order, code""", (rs, n) -> new LabTestRow(rs.getString("code"),
+        rs.getString("name"), texts(rs, "synonyms"), rs.getString("canonical_unit"), texts(rs, "unit_aliases"),
+        rs.getInt("display_decimals"), Json.read(rs.getString("conversions")), rs.getString("test_group"),
+        rs.getInt("sort_order")));
+  }
+
+  private static List<String> texts(ResultSet rs, String col) throws SQLException {
+    java.sql.Array a = rs.getArray(col);
+    return a == null ? List.of() : List.of((String[]) a.getArray());
+  }
+
   private static ConfigRow row(ResultSet rs, int n) throws SQLException {
     Date to = rs.getDate("effective_to");
     Date verified = rs.getDate("verified_on");

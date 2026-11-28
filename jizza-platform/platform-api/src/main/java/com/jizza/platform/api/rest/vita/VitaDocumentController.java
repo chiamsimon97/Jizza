@@ -83,16 +83,28 @@ public class VitaDocumentController {
     return documents.get(CurrentUser.userId(), id);
   }
 
-  /** The stored file, shown beside the draft in the review. Never cached. */
+  /**
+   * The stored file, shown beside the draft in the review. Never cached. Only files whose first
+   * bytes proved them a PDF or an image were stored. The review shows it inside the app's own page,
+   * so it may be framed by the same origin only. A photo is served in a sandbox with nothing
+   * allowed; a PDF cannot be, because the browser's PDF viewer does not run in a sandboxed
+   * document, so a PDF gets the rest of the policy without the sandbox.
+   */
   @GetMapping("/documents/{id}/file")
   public ResponseEntity<byte[]> file(@PathVariable UUID id) {
     UUID caller = CurrentUser.userId();
     byte[] bytes = documents.file(caller, id);
+    String type = documents.contentType(caller, id);
+    String policy = MediaType.APPLICATION_PDF_VALUE.equals(type)
+        ? "default-src 'none'; frame-ancestors 'self'"
+        : "sandbox; default-src 'none'; frame-ancestors 'self'";
     return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(documents.contentType(caller, id)))
+        .contentType(MediaType.parseMediaType(type))
         .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename("document").build().toString())
         .cacheControl(CacheControl.noStore())
-        .header("Content-Security-Policy", "sandbox; default-src 'none'")
+        .header("Content-Security-Policy", policy)
+        .header("X-Frame-Options", "SAMEORIGIN")
+        .header("X-Content-Type-Options", "nosniff")
         .body(bytes);
   }
 
