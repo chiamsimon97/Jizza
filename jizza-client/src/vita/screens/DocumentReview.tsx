@@ -31,12 +31,13 @@ export function rowsToSave(d: DocumentDraft): number {
  * that press. A patient that does not match, a name Vita could not read and a locked PDF each have
  * their own state.
  */
-export function DocumentReview({ personId, documentId, readOnly, onBack, onOpen }: {
+export function DocumentReview({ personId, documentId, readOnly, onBack, onOpen, onOpenReport }: {
   personId: string
   documentId: string | null | undefined
   readOnly: boolean
   onBack: () => void
   onOpen: (view: string) => void
+  onOpenReport?: (id: string) => void
 }) {
   const qc = useQueryClient()
   const doc = useQuery({ queryKey: ['vita', personId, 'documents', documentId ?? '', 'doc'], queryFn: () => vitaApi.document(documentId as string), enabled: !!documentId })
@@ -50,6 +51,7 @@ export function DocumentReview({ personId, documentId, readOnly, onBack, onOpen 
   const [moving, setMoving] = useState(false)
   const [password, setPassword] = useState('')
   const [saved, setSaved] = useState<number | null>(null)
+  const [savedReport, setSavedReport] = useState<string | null>(null)
   useEffect(() => { if (view.data?.draft) setDraft(structuredClone(view.data.draft)) }, [view.data])
   const refresh = () => qc.invalidateQueries({ queryKey: vitaKeys.person(personId) })
 
@@ -59,7 +61,7 @@ export function DocumentReview({ personId, documentId, readOnly, onBack, onOpen 
   })
   const confirm = useMutation({
     mutationFn: () => vitaApi.confirmDraft(documentId as string, draft as DocumentDraft, { patientConfirmed, doctorId: d?.doctorId ?? null }),
-    onSuccess: out => { setSaved(out.saved.medicines.length); refresh() },
+    onSuccess: out => { setSaved(out.saved.medicines.length); setSavedReport(out.saved.labReport ?? null); refresh() },
   })
   const discard = useMutation({ mutationFn: () => vitaApi.discardDraft(documentId as string), onSuccess: () => { refresh(); onBack() } })
 
@@ -75,11 +77,12 @@ export function DocumentReview({ personId, documentId, readOnly, onBack, onOpen 
         <div>{back}</div>
         <Panel title={<><CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden />Saved to the record</>}>
           <p className="text-sm text-gray-700 dark:text-gray-200">
-            {saved ? `${saved} ${saved === 1 ? 'medicine was' : 'medicines were'} added with the times you checked. Reminders start from today.` : 'The document’s details were saved.'}
-            {draft && draft.tests.some(t => !t.skip) ? ' The test results are kept on the document; trends per test come with the lab results update.' : ''}
+            {saved ? `${saved} ${saved === 1 ? 'medicine was' : 'medicines were'} added with the times you checked. Reminders start from today.` : savedReport ? 'The report was saved.' : 'The document’s details were saved.'}
+            {savedReport ? ' The test results are now a lab report, each test with its lab flag and target.' : ''}
           </p>
           <div className="flex gap-2">
             {saved > 0 && <Button size="sm" onClick={() => onOpen('medicines')}>Open Medicines</Button>}
+            {savedReport && onOpenReport && <Button size="sm" onClick={() => onOpenReport(savedReport)}>Open the lab report</Button>}
             <Button size="sm" variant="secondary" onClick={onBack}>All documents</Button>
           </div>
         </Panel>

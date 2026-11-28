@@ -242,10 +242,10 @@ function MoveReading({ personId, reading, onDone }: { personId: string; reading:
 function Targets({ personId, kind, readOnly }: { personId: string; kind: ReadingKind; readOnly: boolean }) {
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.ranges(personId), queryFn: () => vitaApi.ranges(personId) })
-  const [editing, setEditing] = useState<{ slot: RangeView; setBy: 'user' | 'doctor' } | null>(null)
+  const [editing, setEditing] = useState<{ slot: ReadingSlot; setBy: 'user' | 'doctor' } | null>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: vitaKeys.person(personId) })
   const remove = useMutation({ mutationFn: (id: string) => vitaApi.removeRange(personId, id), onSuccess: refresh })
-  const slots = (data ?? []).filter(s => s.kind === kind)
+  const slots = (data ?? []).filter((s): s is ReadingSlot => s.kind === kind)
   if (kind === 'weight' && !isLoading) {
     return <Panel title="Target"><p className="text-sm text-gray-500 dark:text-gray-400">No target: weight has no range in Vita.</p></Panel>
   }
@@ -280,13 +280,16 @@ function Targets({ personId, kind, readOnly }: { personId: string; kind: Reading
   )
 }
 
-function slotName(s: RangeView): string {
+/** A target row of a reading kind (lab tests' rows carry labTestCode and no kind). */
+type ReadingSlot = RangeView & { kind: ReadingKind }
+
+function slotName(s: ReadingSlot): string {
   if (s.kind === 'bp') return s.setting === 'clinic' ? 'At the clinic' : 'At home'
   if (s.kind === 'glucose') return s.context === 'after_meal' ? 'After meals' : 'Before meals and fasting'
   return kindLabel(s.kind)
 }
 
-function RangeForm({ personId, slot, setBy, onDone }: { personId: string; slot: RangeView; setBy: 'user' | 'doctor'; onDone: () => void }) {
+function RangeForm({ personId, slot, setBy, onDone }: { personId: string; slot: ReadingSlot; setBy: 'user' | 'doctor'; onDone: () => void }) {
   const start = setBy === 'doctor' ? slot.doctorTarget : slot.own
   const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors, enabled: setBy === 'doctor' })
   const n = (v: number | null | undefined) => (v == null ? '' : String(v))
