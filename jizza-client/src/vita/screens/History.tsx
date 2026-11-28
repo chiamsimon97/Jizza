@@ -11,6 +11,7 @@ import type { HealthEvent, HealthEventInput, HealthEventKind, Vaccination, Vacci
 import { ViewTitle } from '../components/Common'
 import { errorText } from '../data'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -118,7 +119,7 @@ function nights(from: string, to: string | null): string | null {
 export function SurgeriesAndStays({ personId, readOnly }: { personId: string; readOnly: boolean }) {
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.events(personId), queryFn: () => vitaApi.events(personId) })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const [editing, setEditing] = useState<HealthEvent | 'new' | null>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: vitaKeys.person(personId) })
   const remove = useMutation({ mutationFn: (id: string) => vitaApi.removeEvent(personId, id), onSuccess: refresh })

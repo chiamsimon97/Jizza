@@ -17,6 +17,8 @@ import { errorText, formatWhen, useUnits, useVitaConfig, type Units } from '../d
 import { BLOOD_GROUPS } from '../labels'
 import { kindLabel, readingContext, showReading, showValue } from '../readings'
 import { vitaKeys } from '../queryKeys'
+import { canEdit, canSee, useShareScope } from '../share'
+import { CareNotes } from './CareNotes'
 
 /**
  * Home (7.2) for one person, from one server call: red flags first and full width, today's
@@ -33,8 +35,12 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
   addReading: ReadingKind | null
   onAddReadingDone: () => void
 }) {
+  const share = useShareScope()
   const home = useQuery({ queryKey: vitaKeys.home(personId), queryFn: () => vitaApi.home(personId) })
-  const card = useQuery({ queryKey: vitaKeys.card(personId), queryFn: () => vitaApi.emergencyCard(personId) })
+  const card = useQuery({ queryKey: vitaKeys.card(personId), queryFn: () => vitaApi.emergencyCard(personId), enabled: canSee(share, 'emergency') })
+  const see = (s: Parameters<typeof canSee>[1]) => canSee(share, s)
+  const medsReadOnly = readOnly || !canEdit(share, 'medicines')
+  const vitalsReadOnly = readOnly || !canEdit(share, 'vitals')
   const config = useVitaConfig()
   const units = useUnits()
   const [adding, setAdding] = useState(false)
@@ -71,18 +77,18 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
         </Panel>
       )}
 
-      <Panel title={<><PillIcon className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Today’s medicines</>}
+      {see('medicines') && <Panel title={<><PillIcon className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Today’s medicines</>}
         action={<Button size="sm" variant="secondary" onClick={() => onOpen('medicines')}>Medicines</Button>}>
         {!h.slots.length && <p className="text-sm text-gray-500 dark:text-gray-400">No doses due today. Add medicines with their times and each time of day gets a card here.</p>}
         {h.slots.length > 0 && (
           <div className="grid gap-2 md:grid-cols-2">
-            {h.slots.map(slot => <DoseSlotCard key={slot.dueAt} personId={personId} slot={slot} readOnly={readOnly} />)}
+            {h.slots.map(slot => <DoseSlotCard key={slot.dueAt} personId={personId} slot={slot} readOnly={medsReadOnly} />)}
           </div>
         )}
-      </Panel>
+      </Panel>}
 
-      <Panel title={<><Activity className="h-4 w-4 text-gray-400" aria-hidden />Latest readings</>}
-        action={!readOnly && !entryKind && <Button size="sm" variant="secondary" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" aria-hidden />Add reading</Button>}>
+      {see('vitals') && <Panel title={<><Activity className="h-4 w-4 text-gray-400" aria-hidden />Latest readings</>}
+        action={!vitalsReadOnly && !entryKind && <Button size="sm" variant="secondary" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" aria-hidden />Add reading</Button>}>
         {entryKind && <ReadingEntry key={entryKind} personId={personId} kind={entryKind} onDone={closeEntry} onOpenCard={() => onOpen('emergency')} />}
         {!h.latest.length && !entryKind && <p className="text-sm text-gray-500 dark:text-gray-400">No readings yet. Add blood pressure, sugar, weight, pulse, oxygen or temperature.</p>}
         {h.latest.length > 0 && (
@@ -91,7 +97,7 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
           </div>
         )}
         {h.latest.length > 0 && <div><Button size="sm" variant="ghost" onClick={() => onOpen('vitals')}>All readings and charts</Button></div>}
-        {h.lastLabReport && (
+        {h.lastLabReport && see('labs') && (
           <button type="button" onClick={() => onOpen('labs')}
             className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3 text-left text-sm hover:bg-gray-100 dark:bg-gray-800/60 dark:hover:bg-gray-800">
             <FlaskConical className="h-4 w-4 text-gray-400" aria-hidden />
@@ -99,13 +105,13 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
             <span className="text-xs text-gray-500 dark:text-gray-400">{[h.lastLabReport.labName, `${h.lastLabReport.rows} tests`, h.lastLabReport.labFlagged ? `${h.lastLabReport.labFlagged} flagged by the lab` : 'none flagged by the lab'].filter(Boolean).join(' · ')}</span>
           </button>
         )}
-      </Panel>
+      </Panel>}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Panel title={<><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden />Coming up</>} action={<Button size="sm" variant="secondary" onClick={() => onOpen('visits')}>Visits</Button>}>
+        {see('visits') && <Panel title={<><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden />Coming up</>} action={<Button size="sm" variant="secondary" onClick={() => onOpen('visits')}>Visits</Button>}>
           <ComingUp home={h} onOpen={onOpen} />
-        </Panel>
-        <Panel title="Conditions" action={<Button size="sm" variant="secondary" onClick={() => onOpen('conditions')}>Open</Button>}>
+        </Panel>}
+        {see('conditions') && <Panel title="Conditions" action={<Button size="sm" variant="secondary" onClick={() => onOpen('conditions')}>Open</Button>}>
           {!h.conditions.length && <p className="text-sm text-gray-500 dark:text-gray-400">No active conditions recorded.</p>}
           {h.conditions.length > 0 && (
             <ul className="flex flex-col gap-1.5">
@@ -114,10 +120,12 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
               ))}
             </ul>
           )}
-        </Panel>
+        </Panel>}
       </div>
 
-      <Panel title={<><IdCard className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Emergency card</>}
+      {see('visits') && <CareNotes personId={personId} readOnly={readOnly} />}
+
+      {see('emergency') && <Panel title={<><IdCard className="h-4 w-4 text-[rgb(var(--agent-health))]" aria-hidden />Emergency card</>}
         action={<Button size="sm" variant="secondary" onClick={() => onOpen('emergency')}>Open card</Button>}>
         {card.isLoading && <SkeletonRows rows={1} />}
         {card.error && <LoadFailed text="Could not load the emergency card." onRetry={() => card.refetch()} />}
@@ -128,7 +136,7 @@ export function Home({ personId, personName, readOnly, onOpen, onOpenCondition, 
             {' · '}{card.data.emergencyContacts.length ? `${card.data.emergencyContacts.length} ${card.data.emergencyContacts.length === 1 ? 'contact' : 'contacts'}` : 'no contacts yet'}
           </p>
         )}
-      </Panel>
+      </Panel>}
     </div>
   )
 }

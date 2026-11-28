@@ -12,6 +12,7 @@ import { ViewTitle } from '../components/Common'
 import { errorText, useVitaPeople } from '../data'
 import { splitPeople } from '../people'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 
 export const DOCUMENT_KINDS: Record<DocumentKind, string> = {
   prescription: 'Prescription', lab_report: 'Lab report', scan: 'Scan', discharge_summary: 'Discharge summary',
@@ -43,7 +44,7 @@ export function Documents({ personId, readOnly, onReview, uploading, onUploadDon
 }) {
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.documents(personId), queryFn: () => vitaApi.documents(personId) })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const conditions = useQuery({ queryKey: vitaKeys.conditions(personId), queryFn: () => vitaApi.conditions(personId) })
   const [filter, setFilter] = useState({ kind: '', doctorId: '', conditionId: '', year: '', q: '' })
   const [editing, setEditing] = useState<VitaDocument | null>(null)

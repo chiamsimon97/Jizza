@@ -6,6 +6,8 @@ import { JizzaLogo } from '@/components/brand/JizzaLogo'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import { useAuthorization } from '@/auth/useAuthorization'
 import { AccountMenu } from './AccountMenu'
+import { hasMembers } from '@/lib/account'
+import { useLinkedToOwnRecord } from '@/vita/useMyMedicines'
 import { menuFor, pathMatches, type NavHub } from './navigation'
 
 interface SidebarProps {
@@ -25,7 +27,8 @@ export function Sidebar({ collapsed, onToggleCollapsed, onClose }: SidebarProps)
   const { data: snapshot, isError } = useAuthorization()
   // Until the account is known, show nothing rather than the wrong account's menu. If it can't be
   // loaded at all, fall back to the personal menu; the server still checks every request.
-  const menu = snapshot || isError ? menuFor(snapshot) : { main: [], platform: null }
+  const myMedicines = useLinkedToOwnRecord(!!snapshot && !hasMembers(snapshot))
+  const menu = snapshot || isError ? menuFor(snapshot, { myMedicines }) : { main: [], platform: null }
   // What is waiting on the user shows on the Notifications item, red when any of it is urgent.
   const { data: inbox } = useQuery({
     queryKey: ['notifications', 'summary'],

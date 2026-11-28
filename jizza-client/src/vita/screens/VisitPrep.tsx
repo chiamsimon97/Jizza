@@ -19,7 +19,7 @@ import { vitaKeys } from '../queryKeys'
 import { adherenceWords } from './Medicines'
 
 /** Only the sheet is printed. */
-const PRINT_CSS = `@media print {
+export const PRINT_CSS = `@media print {
   body * { visibility: hidden !important; }
   #vita-sheet, #vita-sheet * { visibility: visible !important; }
   #vita-sheet { position: absolute; left: 0; top: 0; width: 100%; color: #000 !important; background: #fff !important; box-shadow: none !important; border: 0 !important; }

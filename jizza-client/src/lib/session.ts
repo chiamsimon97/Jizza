@@ -40,10 +40,12 @@ export interface SignInDestination {
 /**
  * Where to go once sign-in is complete. Pending membership requests are shown first, once per
  * sign-in (signing out clears the flag along with the rest of session storage); otherwise the page
- * the user was heading for, or the active account's home.
+ * the user was heading for, or the active account's home. A person linked to their own health
+ * record lands on "My medicines today" when /api/vita/status answers `openOn: my-medicines`.
  */
-export function postSignInDestination(context: AuthorizationSnapshot, from?: string): SignInDestination {
-  const next = from && from !== '/invitations' ? from : accountHome(context)
+export function postSignInDestination(context: AuthorizationSnapshot, from?: string, vitaOpenOn?: string | null): SignInDestination {
+  const home = vitaOpenOn === 'my-medicines' && context.activeWorkspace.type === 'PERSONAL' ? '/my-medicines' : accountHome(context)
+  const next = from && from !== '/invitations' && !(from === '/' && home === '/my-medicines') ? from : home
   if (context.pendingInvitationCount > 0 && !invitationsShown()) {
     markInvitationsShown()
     return { to: '/invitations', state: { next } }

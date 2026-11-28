@@ -12,6 +12,7 @@ import { ViewTitle } from '../components/Common'
 import { errorText, formatWhen, toLocalInput } from '../data'
 import { kindLabel } from '../readings'
 import { vitaKeys } from '../queryKeys'
+import { useDoctors } from '../share'
 import { Checks } from './Checks'
 
 export const DOCTOR_KINDS: Record<DoctorKind, string> = { doctor: 'Doctor', hospital: 'Hospital', clinic: 'Clinic', lab: 'Lab', pharmacy: 'Pharmacy' }
@@ -55,7 +56,7 @@ export function Visits({ personId, personName, readOnly, adding, onAddDone, onPr
 function VisitList({ personId, personName, readOnly, adding, onAddDone, onPrepare }: { personId: string; personName: string; readOnly: boolean; adding: boolean; onAddDone: () => void; onPrepare?: (visitId: string) => void }) {
   const qc = useQueryClient()
   const visits = useQuery({ queryKey: vitaKeys.visits(personId), queryFn: () => vitaApi.visits(personId) })
-  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const doctors = useDoctors()
   const [editing, setEditing] = useState<Visit | VisitInput | null>(null)
   const show = editing ?? (adding ? { status: 'planned' as const } : null)
   const refresh = () => { qc.invalidateQueries({ queryKey: vitaKeys.person(personId) }); qc.invalidateQueries({ queryKey: vitaKeys.doctors }) }
@@ -162,7 +163,7 @@ function VisitForm({ personId, start, doctors, onDone }: { personId: string; sta
 
 function Doctors({ readOnly }: { readOnly: boolean }) {
   const qc = useQueryClient()
-  const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
+  const { data, isLoading, error, refetch } = useDoctors()
   const [editing, setEditing] = useState<Doctor | DoctorInput | null>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: vitaKeys.all })
   const remove = useMutation({ mutationFn: (id: string) => vitaApi.removeDoctor(id), onSuccess: refresh })

@@ -1,3 +1,4 @@
+import { formatDay } from '@/portfolio/components/AsOf'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Hourglass, MessageSquare } from 'lucide-react'
@@ -68,10 +69,11 @@ export function Chip({ on, onClick, children }: { on: boolean; onClick: () => vo
 }
 
 /** The read-only banner on a closed record (7.19). */
-export function ClosedBanner({ name }: { name: string }) {
+export function ClosedBanner({ name, on, onExport }: { name: string; on?: string | null; onExport?: () => void }) {
   return (
-    <p role="status" className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-      {name}’s record is closed. It stays here to read under “Past records”, and nothing can be added to it.
+    <p role="status" className="flex flex-wrap items-center gap-x-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+      <span>{on ? `Record closed on ${formatDay(on.slice(0, 10))}. ` : ''}{name}’s record stays here to read under “Past records”, and nothing can be added to it.</span>
+      {onExport && <button type="button" onClick={onExport} className="text-sm text-brand-700 underline dark:text-brand-300">Export it from Profile</button>}
     </p>
   )
 }
