@@ -30,7 +30,7 @@ export function DoseSlotCard({ personId, slot, readOnly }: { personId: string; s
   const all = useMutation({ mutationFn: (body: DoseAction) => vitaApi.actSlot(personId, slot.dueAt, body), onSuccess: refresh })
   const one = useMutation({ mutationFn: ({ id, body }: { id: string; body: DoseAction }) => vitaApi.actDose(id, body), onSuccess: refresh })
   const open = slot.doses.some(d => d.status === 'due' || d.status === 'snoozed' || d.status === 'missed')
-  const who = slot.markedBy ? (slot.markedBy === me ? 'you' : 'someone else in the household') : null
+  const who = slot.markedBy ? (slot.markedByYou ?? slot.markedBy === me ? 'you' : 'someone else in the household') : null
   const error = all.error ?? one.error
 
   return (

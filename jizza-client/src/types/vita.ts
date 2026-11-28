@@ -517,6 +517,8 @@ export interface DoseSlot {
   status: DoseStatus
   snoozedUntil: string | null
   markedBy: string | null
+  /** Whether the caller made the last mark. */
+  markedByYou?: boolean
   markedAt: string | null
   missedAt: string
   doses: Dose[]
