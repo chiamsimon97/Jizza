@@ -113,13 +113,14 @@ class VitaProfileDbTest extends PostgresIntegrationTest {
     assertThat(count("select count(*) from vita_config where user_id is null and key like 'clinical.%' and verified_on is not null"))
         .as("verified on seeding").isZero();
     // Every seeded row that carries a number has its source recorded; only the chat-words list
-    // (no number) and the "as General" references (no number) have none.
+    // (no number), the "as General" references (no number) and the prescription shorthand (meanings,
+    // no number) have none.
     @SuppressWarnings("unchecked")
     List<String> withoutSource = em.createNativeQuery("""
         select key from vita_config where user_id is null and key like 'clinical.%' and source_url is null
          order by key""").getResultList();
     assertThat(withoutSource).containsExactly("clinical.ranges.hypertension.bp_clinic",
-        "clinical.ranges.hypertension.bp_home", "clinical.redflags.chat_words");
+        "clinical.ranges.hypertension.bp_home", "clinical.redflags.chat_words", "clinical.rx_shorthand");
     assertThat(count("""
         select count(*) from vita_config where user_id is null and key in (
           'clinical.redflags.high_sugar', 'clinical.redflags.spo2', 'clinical.redflags.temperature',

@@ -57,7 +57,17 @@ public enum VitaTable {
   REMINDER("vita_reminder", "Reminder", 500, List.of(
       oneOf("kind", "visit", "vaccination", "policy_renewal", "check_due", "custom").need(),
       text("title", 200), of("dueAt", Type.DATETIME).need(), text("recurrence", 200),
-      oneOf("status", "scheduled", "done", "dismissed", "cancelled")));
+      oneOf("status", "scheduled", "done", "dismissed", "cancelled"))),
+
+  /**
+   * A document's details as the user corrects them (spec 4.2). The file, the text read from it and
+   * the draft are written only by the upload and the review.
+   */
+  DOCUMENT("vita_document", "Document", 2000, List.of(
+      oneOf("kind", "prescription", "lab_report", "scan", "discharge_summary", "certificate", "bill",
+          "policy", "other"),
+      text("title", 200), of("documentDate", Type.PAST_DATE), ref("doctorId", "vita_doctor"),
+      ref("conditionId", "vita_condition"), of("private", Type.BOOL), text("notes", 1000)));
 
   public final String table;
   public final String label;
