@@ -62,4 +62,24 @@ class VitaWithoutFinanceE2eTest extends E2eSupport {
     assertThat(jdbc.queryForObject("select count(*) from fin_person where user_id = ?", Integer.class, userId))
         .isEqualTo(2);
   }
+
+  @Test
+  void healthCoverAndClaimsWorkWithFinanceOff() {
+    ApiClient api = new ApiClient(port);
+    api.prime();
+    String email = "vita-only-ins-" + UUID.randomUUID() + "@jizza.local";
+    assertThat(api.post("/api/auth/register", Map.of("email", email, "password", "Correct-Horse-92")).ok()).isTrue();
+    assertThat(api.post("/api/auth/login", Map.of("email", email, "password", "Correct-Horse-92")).ok()).isTrue();
+    String me = api.get("/api/people").json().get(0).path("id").asText();
+    var policy = api.post("/api/vita/policies", Map.of("kind", "health", "sumAssured", 500000, "renewalDate", "2027-03-31"));
+    assertThat(policy.ok()).as(policy.body()).isTrue();
+    String id = policy.json().path("id").asText();
+    assertThat(policy.json().path("coveredPersonIds").get(0).asText()).isEqualTo(me);
+    var claim = api.post("/api/vita/people/" + me + "/claims", Map.of("policyId", id, "admittedOn", "2026-06-10",
+        "amountClaimed", 20000, "amountPaid", 18000, "status", "settled"));
+    assertThat(claim.ok()).as(claim.body()).isTrue();
+    assertThat(api.get("/api/vita/policies/" + id).json().path("leftThisYear").decimalValue()).isEqualByComparingTo("482000");
+    assertThat(api.get("/api/finance/protection").status()).isEqualTo(404);
+    assertThat(api.get("/api/finance/policies").status()).isEqualTo(404);
+  }
 }

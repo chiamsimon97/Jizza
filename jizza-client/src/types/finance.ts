@@ -363,7 +363,10 @@ export interface FinLoanGiven {
 export type FinLoanGivenInput = Partial<Omit<FinLoanGiven, 'id'>>
 
 export type PolicyKind = 'term' | 'health' | 'super_topup' | 'personal_accident' | 'critical_illness'
-  | 'vehicle' | 'home' | 'endowment' | 'ulip'
+  | 'vehicle' | 'home' | 'endowment' | 'ulip' | 'government_scheme'
+
+/** The kinds Vita owns while the Health tab is on (Vita spec 4.3). */
+export const HEALTH_POLICY_KINDS: PolicyKind[] = ['health', 'super_topup', 'critical_illness', 'personal_accident', 'government_scheme']
 
 export interface FinPolicy {
   id: string
@@ -378,9 +381,13 @@ export interface FinPolicy {
   policyEndDate: string | null
   employerProvided: boolean
   coveredPersonIds: string[]
+  /** Settled claims paid in the policy year ending on the renewal date (from Vita); null when none applies. */
+  usedThisYear?: number | null
+  /** True while Vita owns this kind: Kai shows it and does not change it. */
+  editInVita?: boolean
 }
 
-export type FinPolicyInput = Partial<Omit<FinPolicy, 'id'>>
+export type FinPolicyInput = Partial<Omit<FinPolicy, 'id' | 'usedThisYear' | 'editInVita'>>
 
 export interface PersonCover {
   personId: string
@@ -409,6 +416,21 @@ export interface ProtectionView {
     healthFloor: number
   }
   names: Record<string, string>
+  /** Every policy once: a floater is one policy covering several people. */
+  policies?: {
+    id: string
+    kind: PolicyKind
+    personId: string
+    coveredPersonIds: string[]
+    floater: boolean
+    sumAssured: number
+    employerProvided: boolean
+    renewalDate: string | null
+    usedThisYear: number | null
+    leftThisYear: number | null
+  }[]
+  /** True while Vita owns health cover. */
+  healthInVita?: boolean
 }
 
 export interface FinEstate {

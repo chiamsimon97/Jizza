@@ -54,11 +54,14 @@ public class VitaReminderService {
   private final VitaReminderNotifier notifier;
   private final RecurrenceDays days;
   private final com.jizza.engine.api.finance.FinanceStore people;
+  private final com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance;
 
   public VitaReminderService(VitaDoseStore doses, VitaRecords records, VitaScopeResolver scopes,
                              VitaMedicineUseCase medicines, VitaReminderNotifier notifier, RecurrenceDays days,
-                             com.jizza.engine.api.finance.FinanceStore people) {
+                             com.jizza.engine.api.finance.FinanceStore people,
+                             com.jizza.platform.usecase.vita.insurance.VitaInsuranceUseCase insurance) {
     this.people = people;
+    this.insurance = insurance;
     this.doses = doses;
     this.records = records;
     this.scopes = scopes;
@@ -254,6 +257,9 @@ public class VitaReminderService {
         if ("visit".equals(kind) && r.hasNonNull("refId")) {
           about = records.get("vita_visit", d.userId(), UUID.fromString(r.path("refId").asText()))
               .map(v -> VitaMedicineUseCase.instant(v.path("scheduledAt").asText())).orElse(dueAt);
+        } else if ("policy_renewal".equals(kind) && r.hasNonNull("refId")) {
+          about = insurance.renewsOn(d.userId(), UUID.fromString(r.path("refId").asText()))
+              .map(day -> day.atTime(12, 0).atZone(zone).toInstant()).orElse(dueAt);
         }
         records.update("vita_reminder", d.userId(), d.id(), Json.obj().put("status", "sent").put("sentAt", now.toString()));
         notifier.other(p.get(), d.id(), kind, r.path("title").asText(null), about, zone);
@@ -300,6 +306,7 @@ public class VitaReminderService {
     int expanded = 0;
     int refills = 0;
     int visits = 0;
+    int renewals = 0;
     Set<UUID> owners = new LinkedHashSet<>(records.ownersWithRecords());
     owners.addAll(doses.ownersWithSchedules());
     if (only != null) owners.retainAll(only);
@@ -315,12 +322,13 @@ public class VitaReminderService {
           }
           visits += visitReminders(p, rs, now);
         }
+        renewals += insurance.renewals(owner, rs, now);
       } catch (RuntimeException e) {
         log.warn("Vita nightly run failed for user {}: {}", owner, e.getClass().getSimpleName());
       }
     }
-    log.info("Vita nightly: {} people, {} stopped, {} dose rows, {} refills, {} visit reminders",
-        people, stopped, expanded, refills, visits);
+    log.info("Vita nightly: {} people, {} stopped, {} dose rows, {} refills, {} visit reminders, {} renewal reminders",
+        people, stopped, expanded, refills, visits, renewals);
     return new NightRun(people, stopped, expanded, refills, visits);
   }
 

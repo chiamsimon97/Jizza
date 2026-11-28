@@ -5,6 +5,7 @@ import { financeApi } from '@/api/finance'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SlideOver } from '@/components/ui/SlideOver'
+import { HEALTH_POLICY_KINDS } from '@/types/finance'
 import type { FinEstate, FinPerson, FinPolicy, FinPolicyInput, PersonCover, PolicyKind, QuickStartStep } from '@/types/finance'
 import { AsOf, formatDay } from '../components/AsOf'
 import { Money } from '../components/Money'
@@ -90,13 +91,19 @@ export function Protection({ people, onOpen, onAnswer }: {
             { header: 'Cover', numeric: true, cell: r => <Money amount={r.sumAssured} short /> },
             { header: 'Premium', numeric: true, cell: r => (r.premium ? <><Money amount={r.premium} /> <span className="text-xs text-gray-500">{r.premiumFrequency ?? ''}</span></> : '—') },
             { header: 'Renews', cell: r => formatDay(r.renewalDate) },
-            ...(sample ? [] : [{ header: '', cell: (r: FinPolicy) => <Button size="sm" variant="ghost" onClick={() => setEditing(r)} aria-label={`Edit the ${POLICY_KINDS[r.kind]} policy`}><Pencil className="h-3.5 w-3.5" /></Button> }]),
+            { header: 'Used this policy year', numeric: true, cell: r => (r.usedThisYear == null ? '—' : <Money amount={r.usedThisYear} />) },
+            ...(sample ? [] : [{ header: '', cell: (r: FinPolicy) => r.editInVita
+              ? <span className="text-xs text-gray-500 dark:text-gray-400">Kept in Vita</span>
+              : <Button size="sm" variant="ghost" onClick={() => setEditing(r)} aria-label={`Edit the ${POLICY_KINDS[r.kind]} policy`}><Pencil className="h-3.5 w-3.5" /></Button> }]),
           ]} />
+        {data.healthInVita && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">Health cover and claims are kept in Vita's Insurance view; Kai reads them here.</p>
+        )}
       </section>
 
       {self && <WillCard personId={self.id} />}
 
-      {editing && <PolicyForm policy={editing === 'new' ? null : editing} people={people} onClose={() => setEditing(null)} />}
+      {editing && <PolicyForm policy={editing === 'new' ? null : editing} people={people} healthInVita={!!data.healthInVita} onClose={() => setEditing(null)} />}
     </div>
   )
 }
@@ -178,12 +185,12 @@ function WillCard({ personId }: { personId: string }) {
   )
 }
 
-function PolicyForm({ policy, people, onClose }: { policy: FinPolicy | null; people: FinPerson[]; onClose: () => void }) {
+function PolicyForm({ policy, people, healthInVita, onClose }: { policy: FinPolicy | null; people: FinPerson[]; healthInVita: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const active = people.filter(p => p.status === 'active')
   const self = active.find(p => p.kind === 'self')
   const [form, setForm] = useState<FinPolicyInput>({
-    kind: policy?.kind ?? 'health',
+    kind: policy?.kind ?? (healthInVita ? 'term' : 'health'),
     personId: policy?.personId ?? self?.id,
     providerName: policy?.providerName ?? '',
     sumAssured: policy?.sumAssured,
@@ -215,7 +222,8 @@ function PolicyForm({ policy, people, onClose }: { policy: FinPolicy | null; peo
       </>}>
       <div className="flex flex-col gap-4">
         <SelectField<PolicyKind> label="Kind" value={form.kind!} onChange={kind => set({ kind })}
-          options={(Object.keys(POLICY_KINDS) as PolicyKind[]).map(k => ({ value: k, label: POLICY_KINDS[k] }))} />
+          options={(Object.keys(POLICY_KINDS) as PolicyKind[]).filter(k => !healthInVita || !HEALTH_POLICY_KINDS.includes(k))
+            .map(k => ({ value: k, label: POLICY_KINDS[k] }))} />
         <AmountField label="Cover (sum assured)" value={form.sumAssured} onChange={v => set({ sumAssured: v ?? undefined })} />
         {health ? (
           <fieldset className="flex flex-col gap-1">
