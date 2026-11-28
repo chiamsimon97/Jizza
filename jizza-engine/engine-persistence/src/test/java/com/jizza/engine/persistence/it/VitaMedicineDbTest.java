@@ -142,7 +142,7 @@ class VitaMedicineDbTest extends PostgresIntegrationTest {
     UUID p = person(u);
     em.createNativeQuery("insert into vita_reminder (user_id, person_id, kind, due_at) values (:u, :p, 'visit', now())")
         .setParameter("u", u).setParameter("p", p).executeUpdate();
-    assertThat(count("select count(*) from vita_config where user_id is null and key like 'reminder.%'")).isEqualTo(5);
+    assertThat(count("select count(*) from vita_config where user_id is null and key like 'reminder.%'")).isEqualTo(6); // five from V68, slot times from V69
     assertThat(em.createNativeQuery("select value->>'minutes' from vita_config where key = 'reminder.missed_after_minutes' and user_id is null")
         .getSingleResult()).isEqualTo("60");
     assertThatThrownBy(() -> em.createNativeQuery("insert into vita_reminder (user_id, person_id, kind, due_at) values (:u, :p, 'birthday', now())")

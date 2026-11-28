@@ -28,6 +28,13 @@ public interface StatementFiles {
    */
   String pdfText(byte[] bytes, String password);
 
+  /**
+   * How many pages a PDF has, with the same password rules as {@link #pdfText}.
+   *
+   * @throws PdfLockedException when the PDF needs a password and none, or the wrong one, was given
+   */
+  int pdfPages(byte[] bytes, String password);
+
   /** A PDF that needs a password Kai does not have. */
   class PdfLockedException extends com.jizza.engine.api.error.ValidationException {
     private final boolean passwordGiven;
