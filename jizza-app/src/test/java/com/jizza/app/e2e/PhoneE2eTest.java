@@ -431,6 +431,154 @@ class PhoneE2eTest extends E2eSupport {
     assertThat(get("/agent/v1/me/vita/today?tz=Asia/Kolkata").statusCode()).isEqualTo(200);
   }
 
+
+  // ---- Vita health data from the phone (plan step 9a) ------------------------------------------
+
+  private JsonNode signedPost(String path, Object body) throws Exception {
+    String json = Json.write(body);
+    var r = post(path, json, signedHeaders("POST", path, json));
+    assertThat(r.statusCode()).as("%s: %s", path, r.body()).isEqualTo(200);
+    return Json.read(r.body());
+  }
+
+  private String me() {
+    return person(web, "Me");
+  }
+
+  private static String person(ApiClient account, String name) {
+    var made = account.post("/api/people", Map.of("displayName", name, "kind", "parent", "type", "individual"));
+    assertThat(made.ok()).as(made.body()).isTrue();
+    return made.json().path("id").asText();
+  }
+
+  private java.util.List<Map<String, Object>> batch() {
+    String day = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).minusDays(1).toString();
+    Instant woke = Instant.now().minus(java.time.Duration.ofHours(3)).truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+    return java.util.List.of(
+        Map.of("externalId", "hc-steps-" + day, "type", "steps", "date", day, "value", 8432),
+        Map.of("externalId", "hc-sleep-1", "type", "sleep", "startedAt", woke.minus(java.time.Duration.ofMinutes(450)).toString(),
+            "endedAt", woke.toString()),
+        Map.of("externalId", "hc-walk-1", "type", "workout", "workoutType", "walking",
+            "startedAt", woke.plus(java.time.Duration.ofMinutes(30)).toString(), "endedAt", woke.plus(java.time.Duration.ofMinutes(65)).toString()));
+  }
+
+  @Test
+  void aSignedBatchIsSavedOnceAndOnlyForTheTypesGranted() throws Exception {
+    pairPhone();
+    String me = me();
+    assertThat(me).isNotBlank();
+    // Unsigned grants and batches are refused.
+    String grantBody = Json.write(Map.of("personId", me, "source", "health_connect", "dataTypes",
+        java.util.List.of("steps", "sleep")));
+    assertThat(post("/agent/v1/me/vita/connectors", grantBody, null).statusCode()).isEqualTo(401);
+    JsonNode grant = signedPost("/agent/v1/me/vita/connectors", Map.of("personId", me, "source", "health_connect",
+        "dataTypes", java.util.List.of("steps", "sleep")));
+    String grantId = grant.path("id").asText();
+    assertThat(grant.path("deviceName").asText()).isEqualTo("Chiam's Pixel");
+    assertThat(grant.path("dataTypes")).hasSize(2);
+
+    JsonNode first = signedPost("/agent/v1/me/vita/ingest", Map.of("personId", me, "grantId", grantId, "records", batch()));
+    assertThat(first.path("added").asInt()).isEqualTo(2);
+    // Workouts were not turned on, so that record is refused on its own.
+    assertThat(first.path("refused").asInt()).isEqualTo(1);
+    assertThat(first.path("results").get(2).path("reason").asText()).contains("not turned on");
+
+    // The same batch again adds nothing.
+    JsonNode again = signedPost("/agent/v1/me/vita/ingest", Map.of("personId", me, "grantId", grantId, "records", batch()));
+    assertThat(again.path("added").asInt()).isZero();
+    assertThat(again.path("unchanged").asInt()).isEqualTo(2);
+    JsonNode steps = web.get("/api/vita/people/" + me + "/measurements?kind=steps").json();
+    assertThat(steps).hasSize(1);
+    assertThat(steps.get(0).path("source").asText()).isEqualTo("health_connect");
+    assertThat(steps.get(0).path("device").asText()).isEqualTo("Chiam's Pixel");
+    assertThat(steps.get(0).path("value").decimalValue()).isEqualByComparingTo("8432");
+
+    // The phone lists its connection with what it wrote.
+    JsonNode mine = Json.read(get("/agent/v1/me/vita/connectors").body());
+    assertThat(mine).hasSize(1);
+    assertThat(mine.get(0).path("rowsWritten").asInt()).isEqualTo(2);
+    assertThat(mine.get(0).path("lastSyncAt").isNull()).isFalse();
+  }
+
+  @Test
+  void anotherPhoneOrAccountCannotSendThroughAConnection() throws Exception {
+    pairPhone();
+    String me = me();
+    // A connection made on the web belongs to no phone, so the phone cannot use it.
+    String webGrant = web.post("/api/vita/connectors", Map.of("personId", me, "source", "health_connect",
+        "dataTypes", java.util.List.of("steps"))).json().path("id").asText();
+    String body = Json.write(Map.of("personId", me, "grantId", webGrant, "records", batch()));
+    String path = "/agent/v1/me/vita/ingest";
+    assertThat(post(path, body, signedHeaders("POST", path, body)).statusCode()).isEqualTo(404);
+
+    // Another account's person reads as missing.
+    ApiClient other = new ApiClient(port);
+    other.prime();
+    String otherEmail = "phone-other-" + UUID.randomUUID() + "@jizza.local";
+    assertThat(other.post("/api/auth/register", Map.of("email", otherEmail, "password", PASSWORD)).ok()).isTrue();
+    assertThat(other.post("/api/auth/login", Map.of("email", otherEmail, "password", PASSWORD)).ok()).isTrue();
+    String theirs = person(other, "Their mother");
+    String grant = Json.write(Map.of("personId", theirs, "source", "health_connect", "dataTypes", java.util.List.of("steps")));
+    String gp = "/agent/v1/me/vita/connectors";
+    assertThat(post(gp, grant, signedHeaders("POST", gp, grant)).statusCode()).isEqualTo(404);
+    String theirGrant = other.post("/api/vita/connectors", Map.of("personId", theirs, "source", "health_connect",
+        "dataTypes", java.util.List.of("steps"))).json().path("id").asText();
+    String theirBatch = Json.write(Map.of("personId", theirs, "grantId", theirGrant, "records", batch()));
+    assertThat(post(path, theirBatch, signedHeaders("POST", path, theirBatch)).statusCode()).isEqualTo(404);
+    assertThat(other.get("/api/vita/people/" + theirs + "/measurements?kind=steps").json()).isEmpty();
+  }
+
+  @Test
+  void revokingStopsSyncAndCanDeleteWhatThePhoneSent() throws Exception {
+    pairPhone();
+    String me = me();
+    String grantId = signedPost("/agent/v1/me/vita/connectors", Map.of("personId", me, "source", "health_connect",
+        "dataTypes", java.util.List.of("steps", "sleep", "workout"))).path("id").asText();
+    assertThat(signedPost("/agent/v1/me/vita/ingest", Map.of("personId", me, "grantId", grantId, "records", batch()))
+        .path("added").asInt()).isEqualTo(3);
+
+    // Turning sleep off keeps the connection for the rest and deletes only sleep.
+    String off = "/agent/v1/me/vita/connectors/" + grantId;
+    var narrowed = delete(off + "?personId=" + me + "&types=sleep&deleteData=true", signedHeaders("DELETE", off, ""));
+    assertThat(narrowed.statusCode()).as(narrowed.body()).isEqualTo(200);
+    JsonNode n = Json.read(narrowed.body());
+    assertThat(n.path("revokedAt").isNull()).isTrue();
+    assertThat(n.path("rowsDeleted").asInt()).isEqualTo(1);
+    assertThat(n.path("dataTypes")).hasSize(2);
+    assertThat(web.get("/api/vita/people/" + me + "/measurements?kind=sleep").json()).isEmpty();
+
+    // Revoking the rest stops sync; the answer says what is still there so the screen can offer to delete.
+    var revoked = delete(off + "?personId=" + me, signedHeaders("DELETE", off, ""));
+    assertThat(revoked.statusCode()).as(revoked.body()).isEqualTo(200);
+    assertThat(Json.read(revoked.body()).path("revokedAt").isNull()).isFalse();
+    assertThat(Json.read(revoked.body()).path("rowsWritten").asInt()).isEqualTo(2);
+    String body = Json.write(Map.of("personId", me, "grantId", grantId, "records", batch()));
+    String path = "/agent/v1/me/vita/ingest";
+    assertThat(post(path, body, signedHeaders("POST", path, body)).statusCode()).isEqualTo(409);
+    var deleted = delete(off + "?personId=" + me + "&deleteData=true", signedHeaders("DELETE", off, ""));
+    assertThat(Json.read(deleted.body()).path("rowsDeleted").asInt()).isEqualTo(2);
+    assertThat(web.get("/api/vita/people/" + me + "/measurements?kind=steps").json()).isEmpty();
+    assertThat(web.get("/api/vita/people/" + me + "/measurements?kind=workout").json()).isEmpty();
+  }
+
+  @Test
+  void aBloodPressureTypedAndThenSentByThePhoneIsOneRow() throws Exception {
+    pairPhone();
+    String me = me();
+    Instant at = Instant.now().minus(java.time.Duration.ofMinutes(10)).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+    var typed = web.post("/api/vita/people/" + me + "/measurements", Map.of("kind", "bp", "value", 128, "value2", 82,
+        "takenAt", at.toString()));
+    assertThat(typed.ok()).as(typed.body()).isTrue();
+    String grantId = signedPost("/agent/v1/me/vita/connectors", Map.of("personId", me, "source", "health_connect",
+        "dataTypes", java.util.List.of("bp"))).path("id").asText();
+    JsonNode sent = signedPost("/agent/v1/me/vita/ingest", Map.of("personId", me, "grantId", grantId, "records",
+        java.util.List.of(Map.of("externalId", "hc-bp-1", "type", "bp", "value", 128.0, "value2", 82.0,
+            "takenAt", at.plusSeconds(90).toString()))));
+    assertThat(sent.path("duplicate").asInt()).isEqualTo(1);
+    assertThat(sent.path("results").get(0).path("id").asText()).isEqualTo(typed.json().path("id").asText());
+    assertThat(web.get("/api/vita/people/" + me + "/measurements?kind=bp").json()).hasSize(1);
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------
 
   private UUID pairPhone() {
@@ -495,6 +643,14 @@ class PhoneE2eTest extends E2eSupport {
         .header("Authorization", "Bearer " + phone.token())
         .header("Content-Type", "application/json")
         .POST(HttpRequest.BodyPublishers.ofString(body));
+    if (headers != null) headers.forEach(b::header);
+    return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private HttpResponse<String> delete(String path, Map<String, String> headers) throws Exception {
+    var b = HttpRequest.newBuilder(uri(path))
+        .header("Authorization", "Bearer " + phone.token())
+        .DELETE();
     if (headers != null) headers.forEach(b::header);
     return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
   }

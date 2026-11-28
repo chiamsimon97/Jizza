@@ -13,6 +13,9 @@ import com.jizza.engine.api.util.PublicEndpoint;
 import com.jizza.engine.api.util.TimeBuckets;
 import com.jizza.engine.api.vita.VitaDoseStore;
 import com.jizza.platform.api.rest.PhoneRequests;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.jizza.platform.usecase.vita.devices.VitaConnectorUseCase;
+import com.jizza.platform.usecase.vita.devices.VitaConnectorUseCase.Phone;
 import com.jizza.platform.usecase.vita.medicine.VitaDoseUseCase;
 import com.jizza.platform.usecase.vita.medicine.VitaDoseUseCase.Act;
 import com.jizza.platform.usecase.vita.medicine.VitaMedicineUseCase;
@@ -30,6 +33,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -62,9 +66,12 @@ public class VitaPhoneController {
   private final VitaScopeResolver scopes;
   private final FinanceStore people;
   private final AuditLog audit;
+  private final VitaConnectorUseCase connectors;
 
   public VitaPhoneController(PhoneRequests phones, VitaDoseUseCase doses, VitaMedicineUseCase medicines,
-                             VitaDoseStore store, VitaScopeResolver scopes, FinanceStore people, AuditLog audit) {
+                             VitaDoseStore store, VitaScopeResolver scopes, FinanceStore people, AuditLog audit,
+                             VitaConnectorUseCase connectors) {
+    this.connectors = connectors;
     this.phones = phones;
     this.doses = doses;
     this.medicines = medicines;
@@ -164,6 +171,51 @@ public class VitaPhoneController {
     ObjectNode slot = doses.actDose(phone.userId(), id, act(body.action(), body.snoozeMinutes()), Instant.now(), names);
     record(phone, "device.phone.vita_dose", id.toString(), body.action());
     return slot;
+  }
+
+  // ── Health data from the phone (Phase 3) ───────────────────────────────────
+
+  /** This phone's connections, for every person it reaches. */
+  @PublicEndpoint
+  @GetMapping("/connectors")
+  public List<ObjectNode> connectors(HttpServletRequest http) {
+    Companion phone = phones.read(http);
+    return connectors.list(phone.userId(), null, phoneOf(phone));
+  }
+
+  /** {@code {"personId","source","dataTypes":[…]}}, signed: turns data types on for this phone. */
+  @PublicEndpoint
+  @PostMapping("/connectors")
+  public ObjectNode grant(@RequestBody(required = false) byte[] raw, HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
+    ObjectNode out = connectors.grant(phone.userId(), parse(raw, JsonNode.class), phoneOf(phone));
+    record(phone, "device.phone.vita_connector", out.path("id").asText(), "granted");
+    return out;
+  }
+
+  /** Signed: stops this phone's connection or some of its types; {@code deleteData} removes what it sent. */
+  @PublicEndpoint
+  @DeleteMapping("/connectors/{id}")
+  public ObjectNode revoke(@PathVariable UUID id, @RequestParam("personId") UUID personId,
+                           @RequestParam(value = "types", required = false) List<String> types,
+                           @RequestParam(value = "deleteData", defaultValue = "false") boolean deleteData,
+                           @RequestBody(required = false) byte[] raw, HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
+    ObjectNode out = connectors.revoke(phone.userId(), personId, id, types, deleteData, phoneOf(phone));
+    record(phone, "device.phone.vita_connector", id.toString(), deleteData ? "revoked_and_deleted" : "revoked");
+    return out;
+  }
+
+  /** Signed: a batch of health records through one of this phone's connections. */
+  @PublicEndpoint
+  @PostMapping("/ingest")
+  public ObjectNode ingest(@RequestBody(required = false) byte[] raw, HttpServletRequest http) {
+    Companion phone = phones.signed(http, raw, PhoneAccess.APPROVE);
+    return connectors.ingest(phone.userId(), parse(raw, JsonNode.class), phoneOf(phone));
+  }
+
+  private static Phone phoneOf(Companion phone) {
+    return new Phone(phone.deviceId(), phone.deviceName());
   }
 
   private static Act act(String action, Integer snoozeMinutes) {

@@ -56,6 +56,9 @@ public class VitaMeasurementUseCase {
   /** Every kind the table holds, for reading lists. */
   public static final Set<String> ALL_KINDS = Set.of("bp", "glucose", "weight", "heart_rate", "spo2",
       "temperature", "steps", "sleep", "resting_heart_rate", "workout");
+  /** Kinds read at one moment, which the duplicate check compares. */
+  static final Set<String> SPOT_KINDS = Set.of("bp", "glucose", "weight", "heart_rate", "spo2", "temperature",
+      "resting_heart_rate");
   public static final Set<String> CONTEXTS = Set.of("fasting", "before_meal", "after_meal", "random", "bedtime");
   public static final Set<String> MEALS = Set.of("breakfast", "lunch", "dinner");
   /** A pound by definition, in kilograms: a unit conversion, not a clinical figure. */
@@ -141,8 +144,34 @@ public class VitaMeasurementUseCase {
     p.requireOpen();
     ObjectNode values = clean(body, true);
     if (!values.hasNonNull("takenAt")) values.put("takenAt", Instant.now().toString());
+    return save(p, values, source, options);
+  }
+
+  /**
+   * A reading a connected phone sent (spec 5.11). A kind a person can type passes the same entry
+   * format, evaluator and duplicate check as a typed one; steps, sleep, workouts and resting heart
+   * rate come already shaped by the ingest. {@code extra} carries the external id, the grant and
+   * the phone. A device reading never asks "is this right?"; a red flag from it alerts at once.
+   */
+  @Transactional
+  public ObjectNode addFromDevice(PersonScope p, ObjectNode reading, ObjectNode extra, String source) {
+    p.requireOpen();
+    ObjectNode values = KINDS.contains(reading.path("kind").asText()) ? clean(reading, true) : reading.deepCopy();
+    if (!values.hasNonNull("takenAt")) throw new ValidationException("takenAt is needed.");
+    if (extra.has("detail") && values.path("detail").isObject()) {
+      ((ObjectNode) values.get("detail")).setAll((ObjectNode) extra.get("detail"));
+      ObjectNode rest = extra.deepCopy();
+      rest.remove("detail");
+      values.setAll(rest);
+    } else {
+      values.setAll(extra);
+    }
+    return save(p, values, source, Options.NONE);
+  }
+
+  private ObjectNode save(PersonScope p, ObjectNode values, String source, Options options) {
     String src = VitaRecordsUseCase.SOURCES.contains(source) ? source : "manual";
-    Optional<ObjectNode> twin = duplicate(p, values);
+    Optional<ObjectNode> twin = SPOT_KINDS.contains(values.path("kind").asText()) ? duplicate(p, values) : Optional.empty();
     if (twin.isPresent() && !options.confirmDuplicate()) {
       if (!"manual".equals(src) && !"chat".equals(src) && !"quick_start".equals(src)) {
         ObjectNode kept = twin.get().deepCopy();
