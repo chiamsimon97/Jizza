@@ -43,6 +43,8 @@ public final class StubMcpServer implements AutoCloseable {
   public volatile boolean kiteAreas;
   /** When set, the server answers as a mail server (Gmail's tools) with this one raw message. */
   public volatile String mailRaw;
+  /** When set with {@link #mailRaw}, every mail tool call answers as an error with this text. */
+  public volatile String mailError;
 
   public StubMcpServer() {
     try {
@@ -157,6 +159,11 @@ public final class StubMcpServer implements AutoCloseable {
         JsonNode params = request.path("params");
         calls.add(params.path("name").asText() + " " + params.path("arguments"));
         String name = params.path("name").asText();
+        if (mailRaw != null && mailError != null) {
+          result.putArray("content").addObject().put("type", "text").put("text", mailError);
+          result.put("isError", true);
+          break;
+        }
         if (mailRaw != null) {
           String text = name.equals("search_threads") ? "{\"threads\":[{\"id\":\"thread-1\",\"snippet\":\"Your statement\"}]}"
               : Json.obj().put("id", "thread-1").set("messages", Json.mapper().createArrayNode()

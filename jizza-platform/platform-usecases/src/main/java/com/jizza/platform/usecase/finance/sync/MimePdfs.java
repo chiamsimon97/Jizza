@@ -16,12 +16,12 @@ import java.util.regex.Pattern;
  * Kai reads the parts itself: multipart bodies by their boundary, any depth, and base64 or
  * quoted-printable content. Only PDFs are kept, and nothing is ever logged.
  */
-final class MimePdfs {
+public final class MimePdfs {
 
   private MimePdfs() {}
 
   /** One attached PDF. */
-  record Pdf(String filename, byte[] bytes) {}
+  public record Pdf(String filename, byte[] bytes) {}
 
   /** A mailed statement is a few hundred KB; anything far bigger is not one. */
   static final int MAX_BYTES = 15 * 1024 * 1024;
@@ -30,7 +30,7 @@ final class MimePdfs {
   private static final Pattern NAME = Pattern.compile("(?i)(?:file)?name\\*?\\s*=\\s*(\"([^\"]*)\"|([^;\\s]+))");
   private static final Pattern BASE64ISH = Pattern.compile("[A-Za-z0-9+/_=-]+");
 
-  static List<Pdf> extract(String raw) {
+  public static List<Pdf> extract(String raw) {
     List<Pdf> out = new ArrayList<>();
     if (raw == null || raw.isBlank()) return out;
     String message = raw;
