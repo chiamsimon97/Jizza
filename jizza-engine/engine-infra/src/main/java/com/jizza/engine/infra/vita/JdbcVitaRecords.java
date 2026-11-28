@@ -15,7 +15,8 @@ public class JdbcVitaRecords extends JdbcOwnedRecords implements VitaRecords {
   /** Vita's person-owned tables, in export order. Later phases add theirs here. */
   public static final List<String> TABLES_IN_ORDER = List.of(
       "vita_profile", "vita_emergency_contact", "vita_doctor", "vita_condition", "vita_allergy",
-      "vita_measurement", "vita_visit", "vita_usual_range");
+      "vita_measurement", "vita_visit", "vita_usual_range", "vita_medicine", "vita_medicine_schedule",
+      "vita_medicine_event", "vita_dose_log", "vita_reminder");
 
   public JdbcVitaRecords(JdbcTemplate jdbc) {
     super(jdbc, TABLES_IN_ORDER, "Vita");
@@ -29,6 +30,8 @@ public class JdbcVitaRecords extends JdbcOwnedRecords implements VitaRecords {
   @Override
   @Transactional(readOnly = true)
   public List<UUID> ownersWithRecords() {
-    return jdbc().queryForList("select distinct user_id from vita_profile order by user_id", UUID.class);
+    return jdbc().queryForList("""
+        select user_id from vita_profile union select user_id from vita_medicine
+        union select user_id from vita_visit union select user_id from vita_reminder order by 1""", UUID.class);
   }
 }

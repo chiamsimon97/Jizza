@@ -43,7 +43,7 @@ class VitaToolProviderTest {
     when(scopes.getObject()).thenReturn(new VitaScopeResolver(people));
     return new VitaToolProvider(agents, scopes, mock(ObjectProvider.class), mock(ObjectProvider.class),
         mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class),
-        mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
+        mock(ObjectProvider.class), mock(ObjectProvider.class), mock(ObjectProvider.class), enabled);
   }
 
   @Test

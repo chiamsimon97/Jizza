@@ -218,6 +218,13 @@ public class VitaRecordsUseCase {
       case DATETIME -> {
         return nodes.textNode(dateTime(name, v).toString());
       }
+      case DECIMAL -> {
+        if (!v.isNumber() || v.decimalValue().signum() < 0 || v.decimalValue().compareTo(java.math.BigDecimal.valueOf(f.max())) > 0
+            || v.decimalValue().stripTrailingZeros().scale() > 2) {
+          throw new ValidationException(name + " must be a number from 0 to " + f.max() + ", with at most two decimals.");
+        }
+        return nodes.numberNode(v.decimalValue());
+      }
       case REF -> {
         try {
           return nodes.textNode(UUID.fromString(v.asText()).toString());

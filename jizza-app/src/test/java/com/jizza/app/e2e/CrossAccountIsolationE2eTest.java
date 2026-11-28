@@ -187,6 +187,20 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       assertThat(row.ok()).as(row.body()).isTrue();
       vitaRows.put(form.getKey(), row.json().path("id").asText());
     }
+    // A medicine taken every two hours, so it has doses today and tomorrow; and another reminder.
+    var medicine = owner.post("/api/vita/people/" + personId + "/medicines", Map.of("name", "Owner's medicine",
+        "trackStock", true, "stockUnits", 60, "unitsPerPack", 30, "schedule", Map.of("times", List.of("00:00", "02:00",
+            "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"))));
+    assertThat(medicine.ok()).as(medicine.body()).isTrue();
+    vitaRows.put("medicines", medicine.json().path("id").asText());
+    var reminder = owner.post("/api/vita/people/" + personId + "/reminders", Map.of("kind", "custom",
+        "title", "Owner's reminder", "dueAt", "2030-01-01T09:00"));
+    assertThat(reminder.ok()).as(reminder.body()).isTrue();
+    vitaRows.put("reminders", reminder.json().path("id").asText());
+    var today = owner.get("/api/vita/people/" + personId + "/doses?from=" + java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+        + "&to=" + java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).plusDays(1));
+    assertThat(today.ok()).as(today.body()).isTrue();
+    owned.put("/api/vita/doses/", today.json().path("slots").get(0).path("doses").get(0).path("id").asText());
 
     owned.forEach((prefix, id) -> assertThat(id).as("owner's id under %s", prefix).isNotBlank());
   }
@@ -251,7 +265,18 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       tried++;
       var summary = other.send("GET", base + "/summary", null);
       if (summary.ok()) leaks.add("GET " + base + "/summary");
+      for (String step : List.of("change", "pause", "resume", "stop", "refill")) {
+        tried++;
+        var changed = other.send("POST", base + "/" + step, Map.of("units", 30, "strength", "x"));
+        if (changed.ok()) leaks.add("POST " + base + "/" + step);
+      }
+      tried++;
+      var events = other.send("GET", base + "/events", null);
+      if (events.ok()) leaks.add("GET " + base + "/events");
     }
+    tried++;
+    var dose = other.send("POST", "/api/vita/doses/" + owned.get("/api/vita/doses/") + "/act", Map.of("action", "taken"));
+    if (dose.ok()) leaks.add("POST /api/vita/doses/{owner's dose}/act");
     assertThat(tried).as("routes swept").isGreaterThan(60);
     assertThat(leaks).as("routes another account could use on the owner's data").isEmpty();
 
@@ -260,6 +285,7 @@ class CrossAccountIsolationE2eTest extends E2eSupport {
       String path = e.getKey() + e.getValue();
       if (e.getKey().equals("/api/memory/subjects/")) continue; // no single-subject GET
       if (e.getKey().equals("/api/vita/people/")) continue; // checked below, section by section
+      if (e.getKey().equals("/api/vita/doses/")) continue; // read through the dose list
       if (e.getKey().equals("/api/finance/consents/")) continue; // read through the person
       if (e.getKey().equals("/api/finance/actions/")) continue; // read through the list
       if (e.getKey().equals("/api/finance/transactions/")) continue; // read through the list

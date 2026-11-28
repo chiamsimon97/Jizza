@@ -1,5 +1,6 @@
 package com.jizza.platform.usecase.vita.records;
 
+import static com.jizza.platform.usecase.vita.records.VitaField.decimal;
 import static com.jizza.platform.usecase.vita.records.VitaField.integer;
 import static com.jizza.platform.usecase.vita.records.VitaField.of;
 import static com.jizza.platform.usecase.vita.records.VitaField.oneOf;
@@ -37,7 +38,26 @@ public enum VitaTable {
   VISIT("vita_visit", "Visit", 2000, List.of(
       ref("doctorId", "vita_doctor"), of("scheduledAt", Type.DATETIME).need(),
       oneOf("status", "planned", "done", "cancelled"), text("reason", 300), text("notes", 4000),
-      of("followUpOn", Type.DATE)));
+      of("followUpOn", Type.DATE))),
+
+  /**
+   * A medicine as the user wrote it (spec 4.2): the name is free text, never completed. Its status
+   * changes only through pause, resume and stop; its doses only through a change.
+   */
+  MEDICINE("vita_medicine", "Medicine", 200, List.of(
+      text("name", 120).need(), text("brandName", 120), text("genericName", 120), text("strength", 40),
+      oneOf("form", "tablet", "capsule", "syrup", "injection", "inhaler", "drops", "cream", "supply", "other"),
+      oneOf("system", "allopathy", "ayurveda", "homeopathy", "siddha", "unani", "supplement", "other"),
+      ref("conditionId", "vita_condition"), ref("prescribedBy", "vita_doctor"), of("startDate", Type.DATE),
+      of("endDate", Type.DATE), of("asNeeded", Type.BOOL), of("trackStock", Type.BOOL),
+      decimal("stockUnits", 100000), decimal("unitsPerPack", 10000), integer("refillLeadDays", 365),
+      of("private", Type.BOOL), text("notes", 1000))),
+
+  /** Visits, vaccinations, renewals, checks and the user's own reminders (spec 5.2, "Other reminders"). */
+  REMINDER("vita_reminder", "Reminder", 500, List.of(
+      oneOf("kind", "visit", "vaccination", "policy_renewal", "check_due", "custom").need(),
+      text("title", 200), of("dueAt", Type.DATETIME).need(), text("recurrence", 200),
+      oneOf("status", "scheduled", "done", "dismissed", "cancelled")));
 
   public final String table;
   public final String label;

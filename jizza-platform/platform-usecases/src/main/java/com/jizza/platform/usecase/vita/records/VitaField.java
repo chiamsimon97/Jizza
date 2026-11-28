@@ -28,7 +28,9 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
     /** A date and time: an instant, or a local date-time in the person's zone. */
     DATETIME,
     /** The id of one of the owner's own rows ({@code doctorId} names a doctor). */
-    REF
+    REF,
+    /** A number from 0 to {@code max} with at most two decimals (a stock count, a pack size). */
+    DECIMAL
   }
 
   public static VitaField text(String name, int max) {
@@ -54,6 +56,10 @@ public record VitaField(String name, Type type, boolean required, int max, Set<S
   /** The id of one of the owner's rows of {@code table}, checked by the use case. */
   public static VitaField ref(String name, String table) {
     return new VitaField(name, Type.REF, false, 0, Set.of(table));
+  }
+
+  public static VitaField decimal(String name, int max) {
+    return new VitaField(name, Type.DECIMAL, false, max, Set.of());
   }
 
   public VitaField need() {
