@@ -50,7 +50,7 @@ export function TextField({ label, value, onChange, hint, className, placeholder
   className?: string
   placeholder?: string
   maxLength?: number
-  type?: 'text' | 'date' | 'number' | 'password'
+  type?: 'text' | 'date' | 'datetime-local' | 'number' | 'password'
 }) {
   const id = useId()
   return (
