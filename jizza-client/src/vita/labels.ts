@@ -43,7 +43,7 @@ export const QUICK_START_TITLES: Record<QuickStartStep, { title: string; why: st
   blood_group: { title: 'Blood group', why: 'Shown large on the emergency card.' },
   conditions: { title: 'Known conditions', why: 'Each long-term condition gets its own page.' },
   allergies: { title: 'Allergies', why: 'Shown first on the emergency card, most severe first.' },
-  medicines: { title: 'Current medicines', why: 'Medicines and their reminders come with the next update.' },
+  medicines: { title: 'Current medicines', why: 'Each medicine gets a card on Home at its times, with a reminder.' },
   contact: { title: 'Emergency contact', why: 'Who a hospital should call.' },
 }
 export const QUICK_START_ORDER: QuickStartStep[] = ['dob', 'sex', 'height_weight', 'blood_group', 'conditions', 'allergies', 'medicines', 'contact']

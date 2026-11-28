@@ -2,7 +2,8 @@ import { api } from '@/lib/api'
 import type { JsonValue } from '@/types/finance'
 import type {
   Allergy, AllergyInput, Condition, ConditionInput, EmergencyCard, EmergencyContact, EmergencyContactInput, Measurement,
-  MeasurementInput, QuickStartStep, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
+  MeasurementInput, QuickStartStep, ConditionSummary, Doctor, DoctorInput, HomeView, RangeInput, RangeView, Reading, ReadingInput,
+  ReadingKind, RedFlagAnswer, Adherence, DoseAction, DoseSlot, Medicine, MedicineChange, MedicineEvent, MedicineInput, ReminderInput, VitaReminder, TrendView, UsualRange, Visit, VisitInput, VitaConfigItem, VitaPerson, VitaPersonInput, VitaProfileInput, VitaProfileView, VitaQuickStartView,
 } from '@/types/vita'
 
 const person = (id: string) => `/api/vita/people/${encodeURIComponent(id)}`
@@ -55,4 +56,66 @@ export const vitaApi = {
   removeMeasurement: (personId: string, id: string) => api.delete<void>(`${person(personId)}/measurements/${id}`),
   moveMeasurement: (personId: string, id: string, toPersonId: string) =>
     api.post<Measurement>(`${person(personId)}/measurements/${id}/move`, { toPersonId }),
+
+  /** Any kind of reading. A 409 says "Already saved. Add anyway?"; `confirmDuplicate` adds it anyway. */
+  readings: (personId: string, kind: ReadingKind) => api.get<Reading[]>(`${person(personId)}/measurements?kind=${kind}`),
+  addReading: (personId: string, body: ReadingInput, opts: { secondOf?: string; confirmDuplicate?: boolean } = {}) => {
+    const q = new URLSearchParams()
+    if (opts.secondOf) q.set('secondOf', opts.secondOf)
+    if (opts.confirmDuplicate) q.set('confirmDuplicate', 'true')
+    const qs = q.toString()
+    return api.post<Reading>(`${person(personId)}/measurements${qs ? `?${qs}` : ''}`, body)
+  },
+  updateReading: (personId: string, id: string, body: Partial<ReadingInput>) => api.put<Reading>(`${person(personId)}/measurements/${id}`, body),
+  /** "Is 182/112 right?" and the rule's question; a yes alerts the manager. */
+  answerRedFlag: (personId: string, id: string, right: boolean, signsNow?: boolean | null) =>
+    api.post<RedFlagAnswer>(`${person(personId)}/measurements/${id}/red-flag`, { right, signsNow: signsNow ?? null }),
+  trend: (personId: string, kind: ReadingKind, days: number, context?: string | null) =>
+    api.get<TrendView>(`${person(personId)}/measurements/trend?kind=${kind}&days=${days}${context ? `&context=${context}` : ''}`),
+
+  home: (personId: string) => api.get<HomeView>(`${person(personId)}/home`),
+  ranges: (personId: string) => api.get<RangeView[]>(`${person(personId)}/ranges`),
+  putRange: (personId: string, body: RangeInput) => api.put<UsualRange>(`${person(personId)}/ranges`, body),
+  removeRange: (personId: string, id: string) => api.delete<void>(`${person(personId)}/ranges/${id}`),
+  conditionSummary: (personId: string, id: string) => api.get<ConditionSummary>(`${person(personId)}/conditions/${id}/summary`),
+
+  doctors: () => api.get<Doctor[]>('/api/vita/doctors'),
+  addDoctor: (body: DoctorInput) => api.post<Doctor>('/api/vita/doctors', body),
+  updateDoctor: (id: string, body: DoctorInput) => api.put<Doctor>(`/api/vita/doctors/${id}`, body),
+  removeDoctor: (id: string) => api.delete<void>(`/api/vita/doctors/${id}`),
+
+  visits: (personId: string) => api.get<Visit[]>(`${person(personId)}/visits`),
+  addVisit: (personId: string, body: VisitInput) => api.post<Visit>(`${person(personId)}/visits`, body),
+  updateVisit: (personId: string, id: string, body: VisitInput) => api.put<Visit>(`${person(personId)}/visits/${id}`, body),
+  removeVisit: (personId: string, id: string) => api.delete<void>(`${person(personId)}/visits/${id}`),
+
+  medicines: (personId: string) => api.get<Medicine[]>(`${person(personId)}/medicines`),
+  addMedicine: (personId: string, body: MedicineInput) => api.post<Medicine>(`${person(personId)}/medicines`, body),
+  /** Corrects details; the dose and times change only through `changeMedicine`. */
+  updateMedicine: (personId: string, id: string, body: MedicineInput) => api.put<Medicine>(`${person(personId)}/medicines/${id}`, body),
+  changeMedicine: (personId: string, id: string, body: MedicineChange) => api.post<Medicine>(`${person(personId)}/medicines/${id}/change`, body),
+  pauseMedicine: (personId: string, id: string, reason?: string | null) => api.post<Medicine>(`${person(personId)}/medicines/${id}/pause`, { reason: reason ?? null }),
+  resumeMedicine: (personId: string, id: string) => api.post<Medicine>(`${person(personId)}/medicines/${id}/resume`, {}),
+  stopMedicine: (personId: string, id: string, reason?: string | null) => api.post<Medicine>(`${person(personId)}/medicines/${id}/stop`, { reason: reason ?? null }),
+  refillMedicine: (personId: string, id: string, units?: number | null) =>
+    api.post<Medicine>(`${person(personId)}/medicines/${id}/refill`, units == null ? {} : { units }),
+  medicineEvents: (personId: string, id: string) => api.get<MedicineEvent[]>(`${person(personId)}/medicines/${id}/events`),
+
+  /** Time slots from `from` to `to` (local dates; default today). */
+  doses: (personId: string, from?: string, to?: string) => {
+    const q = new URLSearchParams()
+    if (from) q.set('from', from)
+    if (to) q.set('to', to)
+    const qs = q.toString()
+    return api.get<{ zone: string; slots: DoseSlot[] }>(`${person(personId)}/doses${qs ? `?${qs}` : ''}`)
+  },
+  actSlot: (personId: string, dueAt: string, body: DoseAction) =>
+    api.post<DoseSlot>(`${person(personId)}/slots/${encodeURIComponent(dueAt)}/act`, body),
+  actDose: (doseId: string, body: DoseAction) => api.post<DoseSlot>(`/api/vita/doses/${doseId}/act`, body),
+  adherence: (personId: string, from: string, to: string) => api.get<Adherence>(`${person(personId)}/adherence?from=${from}&to=${to}`),
+
+  reminders: (personId: string) => api.get<VitaReminder[]>(`${person(personId)}/reminders`),
+  addReminder: (personId: string, body: ReminderInput) => api.post<VitaReminder>(`${person(personId)}/reminders`, body),
+  updateReminder: (personId: string, id: string, body: ReminderInput) => api.put<VitaReminder>(`${person(personId)}/reminders/${id}`, body),
+  removeReminder: (personId: string, id: string) => api.delete<void>(`${person(personId)}/reminders/${id}`),
 }

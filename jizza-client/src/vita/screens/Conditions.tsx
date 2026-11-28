@@ -32,8 +32,8 @@ export function NoneKnown({ marked, disabled, onMark, onUnmark, pending }: {
     : <Button size="sm" variant="secondary" disabled={disabled} loading={pending} onClick={onMark}>Mark “None known”</Button>
 }
 
-/** Conditions (7.5): the list with status chips, "None known", and quick picks. Condition pages arrive in 1a. */
-export function Conditions({ personId, readOnly }: { personId: string; readOnly: boolean }) {
+/** Conditions (7.5): the list with status chips, "None known", and quick picks; each opens its page. */
+export function Conditions({ personId, readOnly, onOpenCondition }: { personId: string; readOnly: boolean; onOpenCondition: (id: string) => void }) {
   const qc = useQueryClient()
   const { data, isLoading, error, refetch } = useQuery({ queryKey: vitaKeys.conditions(personId), queryFn: () => vitaApi.conditions(personId) })
   const profile = useQuery({ queryKey: vitaKeys.profile(personId), queryFn: () => vitaApi.profile(personId) })
@@ -46,7 +46,7 @@ export function Conditions({ personId, readOnly }: { personId: string; readOnly:
 
   return (
     <div className="flex flex-col gap-4">
-      <ViewTitle title="Conditions" sub="Each long-term condition gets a page of its own with the next update">
+      <ViewTitle title="Conditions" sub="Each long-term condition has a page of its own">
         {!readOnly && <Button size="sm" onClick={() => setEditing({ status: 'active', template: 'generic' })}><Plus className="h-3.5 w-3.5" aria-hidden />Add condition</Button>}
       </ViewTitle>
       {editing && <ConditionForm personId={personId} start={editing} onDone={() => { setEditing(null); refresh() }} />}
@@ -70,16 +70,19 @@ export function Conditions({ personId, readOnly }: { personId: string; readOnly:
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {c.since ? `Since ${formatDay(c.since)}` : 'Since: not recorded'}
-                    {c.template && c.template !== 'generic' ? ` · ${TEMPLATES[c.template]} page with the next update` : ''}
+                    {c.template && c.template !== 'generic' ? ` · ${TEMPLATES[c.template]} page` : ''}
                   </p>
                   {c.notes && <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{c.notes}</p>}
                 </div>
-                {!readOnly && (
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="h-3.5 w-3.5" aria-hidden /></Button>
-                    <Button size="sm" variant="ghost" aria-label={`Remove ${c.name}`} onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" aria-hidden /></Button>
-                  </div>
-                )}
+                <div className="flex gap-1">
+                  <Button size="sm" variant="secondary" onClick={() => onOpenCondition(c.id)}>Open page</Button>
+                  {!readOnly && (
+                    <>
+                      <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="h-3.5 w-3.5" aria-hidden /></Button>
+                      <Button size="sm" variant="ghost" aria-label={`Remove ${c.name}`} onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" aria-hidden /></Button>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -100,15 +103,18 @@ export function Conditions({ personId, readOnly }: { personId: string; readOnly:
   )
 }
 
-function ConditionForm({ personId, start, onDone }: { personId: string; start: Condition | ConditionInput; onDone: () => void }) {
+export function ConditionForm({ personId, start, onDone }: { personId: string; start: Condition | ConditionInput; onDone: () => void }) {
   const id = 'id' in start ? start.id : null
   const [v, setV] = useState<ConditionInput>({
     name: start.name ?? '', template: start.template ?? 'generic', status: start.status ?? 'active', since: start.since ?? '',
-    private: start.private ?? false, notes: start.notes ?? '',
+    private: start.private ?? false, notes: start.notes ?? '', doctorId: start.doctorId ?? '', advice: start.advice ?? '',
   })
+  const doctors = useQuery({ queryKey: vitaKeys.doctors, queryFn: vitaApi.doctors })
   const save = useMutation({
     mutationFn: () => {
-      const body: ConditionInput = { ...v, name: v.name?.trim(), since: v.since || null, notes: v.notes?.trim() || null }
+      const body: ConditionInput = {
+        ...v, name: v.name?.trim(), since: v.since || null, notes: v.notes?.trim() || null, doctorId: v.doctorId || null, advice: v.advice?.trim() || null,
+      }
       return id ? vitaApi.updateCondition(personId, id, body) : vitaApi.addCondition(personId, body)
     },
     onSuccess: onDone,
@@ -120,10 +126,14 @@ function ConditionForm({ personId, start, onDone }: { personId: string; start: C
           <TextField label="Name" value={v.name} maxLength={120} onChange={name => setV({ ...v, name })} placeholder="Thyroid" />
           <SelectField label="Page" value={(v.template ?? 'generic') as ConditionTemplate} onChange={template => setV({ ...v, template })}
             options={Object.entries(TEMPLATES).map(([value, label]) => ({ value: value as ConditionTemplate, label }))}
-            hint="Diabetes and blood pressure get their own pages with the next update." />
+            hint="Diabetes and blood pressure pages show their readings and checks." />
           <SelectField label="Status" value={(v.status ?? 'active') as ConditionStatus} onChange={status => setV({ ...v, status })}
             options={Object.entries(CONDITION_STATUS).map(([value, label]) => ({ value: value as ConditionStatus, label }))} />
           <TextField label="Since (optional)" type="date" value={v.since ?? ''} onChange={since => setV({ ...v, since })} />
+          <SelectField label="Doctor (optional)" value={v.doctorId ?? ''} onChange={doctorId => setV({ ...v, doctorId })}
+            hint={doctors.data && !doctors.data.length ? 'Add doctors under Doctors and visits.' : undefined}
+            options={[{ value: '', label: 'Not said' }, ...(doctors.data ?? []).map(d => ({ value: d.id, label: d.name }))]} />
+          <TextField label="The doctor’s standing advice (optional)" value={v.advice ?? ''} maxLength={2000} onChange={advice => setV({ ...v, advice })} />
           <TextField className="sm:col-span-2" label="Notes (optional)" value={v.notes ?? ''} maxLength={2000} onChange={notes => setV({ ...v, notes })} />
         </div>
         <CheckField label="Keep it off the emergency card" checked={v.private === true} onChange={p => setV({ ...v, private: p })} />

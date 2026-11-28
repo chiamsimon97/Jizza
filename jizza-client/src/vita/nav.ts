@@ -36,6 +36,7 @@ export const HEALTH_VIEWS: HealthView[] = [
   { id: 'connect', label: 'Connect', phase: '1b', about: 'Upload reports, and pull them from your mailbox.', ask: 'About connecting: ' },
   { id: 'settings', label: 'Settings', phase: '0', about: 'Units, emergency numbers and the figures Vita uses, with where each comes from.', ask: 'About settings: ' },
   { id: 'profile', label: 'Profile', phase: '0', hidden: true, about: 'Date of birth, blood group, height, hospital and reminder mode.', ask: 'About this profile: ' },
+  { id: 'condition', label: 'Condition', phase: '1a', hidden: true, about: 'One condition with its readings, checks and medicines.', ask: 'About this condition: ' },
   { id: 'quick-start', label: 'Quick start', phase: '0', hidden: true, about: 'Eight short questions that set up the record and the emergency card.', ask: 'Helping me through Quick start: ' },
 ]
 
@@ -46,12 +47,11 @@ export function findView(id: string | null | undefined): HealthView {
 }
 
 /** Views built in this release; the rest show what they will hold. */
-export const BUILT_VIEWS = new Set(['home', 'conditions', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
+export const BUILT_VIEWS = new Set(['home', 'conditions', 'condition', 'medicines', 'vitals', 'visits', 'allergies', 'emergency', 'settings', 'profile', 'quick-start'])
 
 /** The update that brings each later phase, in plain words. */
 export const PHASE_WORDS: Record<string, string> = {
-  '1a': 'the next update, with medicines and readings',
-  '1b': 'the update after, with documents and lab reports',
+  '1b': 'the next update, with documents and lab reports',
   '2a': 'the Family update',
   '2b': 'the insurance update',
   '2c': 'the journal and goals update',

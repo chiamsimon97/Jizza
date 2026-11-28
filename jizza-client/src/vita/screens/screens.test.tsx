@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { vitaApi } from '@/api/vita'
 import type { AgentDto } from '@/types'
-import type { EmergencyCard, VitaConfigItem, VitaPerson, VitaProfileView, VitaQuickStartView } from '@/types/vita'
+import type { EmergencyCard, HomeView, VitaConfigItem, VitaPerson, VitaProfileView, VitaQuickStartView } from '@/types/vita'
 import { HealthTab, splitPeople } from '../HealthTab'
 
 const me: VitaPerson = { id: 'p-me', displayName: 'Me', kind: 'self', type: 'individual', dob: null, status: 'active', sortOrder: 0 }
@@ -38,6 +38,11 @@ const config: VitaConfigItem[] = [
   item('clinical.ranges.general.spo2', { source: 'none', effectiveFrom: null, state: 'not_set', label: 'Not set: ask your doctor' }),
 ]
 
+const emptyHome: HomeView = {
+  person: { id: 'p-me', name: 'Me', recordOpen: true, status: 'active' }, quickStart: fresh.progress, latest: [], redFlags: [],
+  conditions: [], nextVisit: null, slots: [], reminders: [],
+}
+
 function mockApi() {
   vi.spyOn(vitaApi, 'people').mockResolvedValue([me, mother, grandpa])
   vi.spyOn(vitaApi, 'quickStart').mockResolvedValue(fresh)
@@ -48,6 +53,7 @@ function mockApi() {
   vi.spyOn(vitaApi, 'emergencyCard').mockResolvedValue(emptyCard)
   vi.spyOn(vitaApi, 'profile').mockResolvedValue(profileView)
   vi.spyOn(vitaApi, 'config').mockResolvedValue(config)
+  vi.spyOn(vitaApi, 'home').mockResolvedValue(emptyHome)
 }
 
 function renderTab(search = '') {
@@ -80,8 +86,8 @@ describe('HealthTab shell', () => {
   })
 
   it('shows what a later view will hold', async () => {
-    renderTab('&view=medicines')
-    expect(await screen.findByText(/Medicines comes with the next update/)).toBeInTheDocument()
+    renderTab('&view=labs')
+    expect(await screen.findByText(/Lab results comes with the next update/)).toBeInTheDocument()
   })
 
   it('shows a closed record read-only', async () => {

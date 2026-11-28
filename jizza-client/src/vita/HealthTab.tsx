@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, BedDouble, ChevronDown, ClipboardList, FileText, FlaskConical, FolderInput, HeartPulse, Home as HomeIcon, IdCard, MessageSquare, NotebookPen,
+  Activity, BedDouble, ChevronDown, Droplet, ClipboardList, FileText, FlaskConical, FolderInput, HeartPulse, Home as HomeIcon, IdCard, MessageSquare, NotebookPen,
   Pill, Plus, Scale, Settings as SettingsIcon, Share2, ShieldPlus, Stethoscope, Syringe, Target, TriangleAlert, UserPlus, type LucideIcon,
 } from 'lucide-react'
 import { vitaApi } from '@/api/vita'
@@ -15,20 +15,26 @@ import { SkeletonRows } from '@/portfolio/components/SkeletonRows'
 import { setChatDraft } from '@/jizza/chatDraft'
 import { useAssistantStore } from '@/jizza/assistantStore'
 import type { AgentDto } from '@/types'
-import type { VitaPerson, VitaPersonInput } from '@/types/vita'
+import type { ReadingKind, VitaPersonInput } from '@/types/vita'
 import { AskBox, ClosedBanner, Disclaimer, NotYet } from './components/Common'
 import { errorText, useVitaPeople } from './data'
 import { PERSON_KINDS, personName } from './labels'
 import { BUILT_VIEWS, HEALTH_VIEWS, findView } from './nav'
 import { vitaKeys } from './queryKeys'
 import { Allergies } from './screens/Allergies'
+import { ConditionPage } from './screens/ConditionPage'
 import { Conditions } from './screens/Conditions'
 import { EmergencyCard } from './screens/EmergencyCard'
 import { Home } from './screens/Home'
 import { Profile } from './screens/Profile'
 import { QuickStart } from './screens/QuickStart'
 import { Settings } from './screens/Settings'
+import { Medicines } from './screens/Medicines'
+import { Visits } from './screens/Visits'
+import { Vitals } from './screens/Vitals'
+import { isReadingKind } from './readings'
 import { useHealthScope } from './useHealthScope'
+import { splitPeople } from './people'
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   home: HomeIcon, conditions: HeartPulse, medicines: Pill, vitals: Activity, visits: Stethoscope, labs: FlaskConical, documents: FileText,
@@ -36,11 +42,7 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
   goals: Target, activity: Activity, emergency: IdCard, connect: FolderInput, settings: SettingsIcon,
 }
 
-/** People whose record is open, "You" first; closed records go under "Past records". */
-export function splitPeople(people: VitaPerson[]) {
-  const ordered = [...people].filter(p => p.kind !== 'huf').sort((a, b) => (a.kind === 'self' ? -1 : b.kind === 'self' ? 1 : (a.sortOrder ?? 0) - (b.sortOrder ?? 0)))
-  return { open: ordered.filter(p => p.status === 'active'), past: ordered.filter(p => p.status !== 'active') }
-}
+export { splitPeople }
 
 /**
  * Vita's Health tab (7.1): a sticky bar with the person switcher, the Add menu and "Ask Vita", the
@@ -51,7 +53,9 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const [scope, setScope] = useHealthScope()
   const { data: people, isLoading, error, refetch } = useVitaPeople()
   const [adding, setAdding] = useState(false)
-  const [addWeight, setAddWeight] = useState(false)
+  const [addReading, setAddReading] = useState<ReadingKind | null>(null)
+  const [addVisit, setAddVisit] = useState(false)
+  const [addMedicine, setAddMedicine] = useState(false)
   const navigate = useNavigate()
 
   if (isLoading) return <SkeletonRows rows={4} />
@@ -66,7 +70,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
   const name = personName(person)
   const closed = person.status !== 'active'
   const view = findView(scope.view)
-  const go = (id: string) => setScope({ view: id })
+  const go = (id: string) => setScope({ view: id, condition: null })
+  const openCondition = (id: string) => setScope({ view: 'condition', condition: id })
   const askVita = () => {
     setChatDraft(`@${agent.name} ${view.ask}`)
     useAssistantStore.getState().newConversation()
@@ -90,7 +95,8 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           </select>
         </label>
         <span className="ml-auto flex items-center gap-1">
-          {!closed && <AddMenu onWeight={() => { setScope({ view: 'home' }); setAddWeight(true) }} onCondition={() => go('conditions')} onAllergy={() => go('allergies')} />}
+          {!closed && <AddMenu onReading={k => { go('vitals'); setAddReading(k) }} onVisit={() => { go('visits'); setAddVisit(true) }} onMedicine={() => { go('medicines'); setAddMedicine(true) }}
+            onCondition={() => go('conditions')} onAllergy={() => go('allergies')} />}
           <button type="button" onClick={askVita} title={`Ask ${agent.name} about this screen`}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
             <MessageSquare className="h-3.5 w-3.5" aria-hidden /> Ask {agent.name}
@@ -105,7 +111,7 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
           className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-14 md:mx-0 md:w-48 md:shrink-0 md:flex-col md:overflow-visible md:px-0">
           {HEALTH_VIEWS.filter(v => !v.hidden).map(v => {
             const Icon = VIEW_ICONS[v.id]
-            const active = view.id === v.id || (view.hidden && v.id === (view.id === 'profile' ? 'emergency' : 'home'))
+            const active = view.id === v.id || (view.hidden && v.id === ({ profile: 'emergency', condition: 'conditions' } as Record<string, string>)[view.id]) || (view.hidden && !['profile', 'condition'].includes(view.id) && v.id === 'home')
             return (
               <span key={v.id} className="contents">
                 {v.groupStart && <span aria-hidden className="hidden md:my-1 md:block md:border-t md:border-gray-200 dark:md:border-gray-800" />}
@@ -125,10 +131,18 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
         <div key={`${view.id}-${person.id}`} className="flex min-w-0 flex-1 flex-col gap-4 motion-safe:animate-fade-in-up">
           {closed && <ClosedBanner name={person.displayName} />}
           <ErrorBoundary>
-            {view.id === 'home' && <Home personId={person.id} personName={name} readOnly={closed} onOpen={go} addWeight={addWeight} onAddWeightDone={() => setAddWeight(false)} />}
-            {view.id === 'quick-start' && (closed ? <Home personId={person.id} personName={name} readOnly onOpen={go} addWeight={false} onAddWeightDone={() => undefined} />
-              : <QuickStart personId={person.id} personName={name} onDone={() => go('home')} />)}
-            {view.id === 'conditions' && <Conditions personId={person.id} readOnly={closed} />}
+            {(view.id === 'home' || (view.id === 'quick-start' && closed)) && (
+              <Home personId={person.id} personName={name} readOnly={closed} onOpen={go} onOpenCondition={openCondition} addReading={null} onAddReadingDone={() => undefined} />
+            )}
+            {view.id === 'quick-start' && !closed && <QuickStart personId={person.id} personName={name} onDone={() => go('home')} />}
+            {view.id === 'conditions' && <Conditions personId={person.id} readOnly={closed} onOpenCondition={openCondition} />}
+            {view.id === 'condition' && <ConditionPage personId={person.id} conditionId={scope.condition} readOnly={closed} onBack={() => go('conditions')} onOpen={go} />}
+            {view.id === 'vitals' && (
+              <Vitals personId={person.id} readOnly={closed} adding={addReading} onAddDone={() => setAddReading(null)} onOpenCard={() => go('emergency')}
+                initialKind={isReadingKind(scope.kind) ? scope.kind : undefined} />
+            )}
+            {view.id === 'medicines' && <Medicines personId={person.id} readOnly={closed} adding={addMedicine} onAddDone={() => setAddMedicine(false)} />}
+            {view.id === 'visits' && <Visits personId={person.id} personName={name} readOnly={closed} adding={addVisit} onAddDone={() => setAddVisit(false)} />}
             {view.id === 'allergies' && <Allergies personId={person.id} readOnly={closed} />}
             {view.id === 'emergency' && <EmergencyCard personId={person.id} readOnly={closed} onOpen={go} />}
             {view.id === 'profile' && <Profile personId={person.id} readOnly={closed} onOpen={go} />}
@@ -144,7 +158,9 @@ export function HealthTab({ agent }: { agent: AgentDto }) {
 }
 
 /** "Add": what can be added today, and what comes later, never a dead end. */
-function AddMenu({ onWeight, onCondition, onAllergy }: { onWeight: () => void; onCondition: () => void; onAllergy: () => void }) {
+function AddMenu({ onReading, onVisit, onMedicine, onCondition, onAllergy }: {
+  onReading: (kind: ReadingKind) => void; onVisit: () => void; onMedicine: () => void; onCondition: () => void; onAllergy: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -167,12 +183,14 @@ function AddMenu({ onWeight, onCondition, onAllergy }: { onWeight: () => void; o
       </button>
       {open && (
         <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-          {item('Weight', Scale, onWeight)}
+          {item('Medicine', Pill, onMedicine)}
+          {item('Blood pressure', HeartPulse, () => onReading('bp'))}
+          {item('Sugar', Droplet, () => onReading('glucose'))}
+          {item('Weight', Scale, () => onReading('weight'))}
+          {item('Other reading', Activity, () => onReading('heart_rate'))}
+          {item('Visit', Stethoscope, onVisit)}
           {item('Condition', HeartPulse, onCondition)}
           {item('Allergy', TriangleAlert, onAllergy)}
-          {item('Other readings', Activity, undefined, 'Next update')}
-          {item('Dose or medicine', Pill, undefined, 'Next update')}
-          {item('Visit', Stethoscope, undefined, 'Next update')}
           {item('Document', ClipboardList, undefined, 'Later')}
         </div>
       )}
