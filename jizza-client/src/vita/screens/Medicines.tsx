@@ -181,7 +181,7 @@ function MedicineDetail({ personId, m, doctors }: { personId: string; m: Medicin
 }
 
 /** Times as a list of HH:mm boxes, one to twelve. */
-function TimesField({ times, onChange }: { times: string[]; onChange: (t: string[]) => void }) {
+export function TimesField({ times, onChange }: { times: string[]; onChange: (t: string[]) => void }) {
   return (
     <fieldset className="flex flex-col gap-1">
       <legend className="mb-1 text-xs font-medium text-gray-700 dark:text-gray-300">Times</legend>
@@ -201,7 +201,7 @@ function TimesField({ times, onChange }: { times: string[]; onChange: (t: string
 
 const WEEKDAYS = [['MO', 'Mon'], ['TU', 'Tue'], ['WE', 'Wed'], ['TH', 'Thu'], ['FR', 'Fri'], ['SA', 'Sat'], ['SU', 'Sun']] as const
 
-function DaysField({ rule, onChange }: { rule: string; onChange: (r: string) => void }) {
+export function DaysField({ rule, onChange }: { rule: string; onChange: (r: string) => void }) {
   const picked = rule.match(/BYDAY=([A-Z,]+)/)?.[1].split(',') ?? []
   const daily = !picked.length
   const set = (days: string[]) => onChange(days.length ? `FREQ=WEEKLY;BYDAY=${WEEKDAYS.map(([d]) => d).filter(d => days.includes(d)).join(',')}` : 'FREQ=DAILY')
