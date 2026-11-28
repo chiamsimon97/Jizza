@@ -8,6 +8,7 @@ import com.jizza.engine.api.notification.NotificationBus;
 import com.jizza.engine.api.notification.NotificationContext;
 import com.jizza.engine.api.orchestrator.AgentDirectory;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.vita.VitaRecords;
 import com.jizza.platform.usecase.finance.cashflow.FinCashFlowUseCase;
 import com.jizza.platform.usecase.finance.debt.DebtPlanner;
 import com.jizza.platform.usecase.finance.health.FinHealthUseCase;
@@ -61,10 +62,12 @@ public class AlertService {
   private final AgentDirectory agents;
   private final FinHealthUseCase health;
   private final FinCashFlowUseCase cashFlow;
+  private final VitaRecords vita;
 
   public AlertService(HouseholdLoader loader, FinanceStore store, FinanceRecords records,
                       NotificationBus bus, AgentDirectory agents, FinHealthUseCase health,
-                      FinCashFlowUseCase cashFlow) {
+                      FinCashFlowUseCase cashFlow, VitaRecords vita) {
+    this.vita = vita;
     this.loader = loader;
     this.store = store;
     this.records = records;
@@ -79,10 +82,19 @@ public class AlertService {
 
   /** The alerts due for an owner today, before muting and repeat checks. Pure over the data. */
   public static List<Alert> due(Household h, KaiConfig cfg, Map<String, Boolean> verification) {
+    return due(h, cfg, verification, Set.of());
+  }
+
+  /**
+   * As above, leaving out the renewal of each policy in {@code remindedByVita}: Vita already keeps
+   * a renewal reminder for it, and one reminder per renewal is enough.
+   */
+  public static List<Alert> due(Household h, KaiConfig cfg, Map<String, Boolean> verification,
+                                Set<String> remindedByVita) {
     LocalDate today = h.asOf();
     List<Alert> out = new ArrayList<>();
     for (var p : h.policies()) {
-      if (p.renewalDate() == null) continue;
+      if (p.renewalDate() == null || remindedByVita.contains(p.id())) continue;
       long days = ChronoUnit.DAYS.between(today, p.renewalDate());
       if (days >= 0 && days <= RENEWAL_DAYS) {
         out.add(new Alert(RENEWAL, "A " + p.kind().replace('_', ' ') + " policy renews on "
@@ -138,7 +150,7 @@ public class AlertService {
     UUID kai = agents.byKey(owner, FinanceToolProvider.AGENT_KEY).map(a -> a.id()).orElse(null);
     int sent = 0;
     Instant since = Instant.now().minus(REPEAT_WINDOW);
-    for (Alert a : due(loaded.household(), loaded.config(), loaded.verification())) {
+    for (Alert a : due(loaded.household(), loaded.config(), loaded.verification(), remindedByVita(owner))) {
       if (muted.contains(a.kind())) continue;
       if (bus.raisedSince(owner, kai, NotificationKind.INFO, a.body(), since)) continue;
       var detail = Json.obj().put("source", "kai_portfolio").put("alert", a.kind()).put("view", a.view());
@@ -147,6 +159,29 @@ public class AlertService {
       sent++;
     }
     return sent;
+  }
+
+  /**
+   * The policies whose renewal Vita reminds about: a live renewal reminder of this policy year
+   * (scheduled, sent or dismissed; not cancelled). Empty while health is off, as Vita adds none.
+   */
+  Set<String> remindedByVita(UUID owner) {
+    Map<String, Object> where = new java.util.LinkedHashMap<>();
+    where.put("kind", "policy_renewal");
+    where.put("deletedAt", null);
+    Instant yearAgo = Instant.now().minus(Duration.ofDays(366));
+    Set<String> out = new HashSet<>();
+    for (var r : vita.list("vita_reminder", owner, where)) {
+      if ("cancelled".equals(r.path("status").asText()) || !r.hasNonNull("refId")) continue;
+      Instant due;
+      try {
+        due = java.time.OffsetDateTime.parse(r.path("dueAt").asText()).toInstant();
+      } catch (RuntimeException e) {
+        continue;
+      }
+      if (due.isAfter(yearAgo)) out.add(r.get("refId").asText());
+    }
+    return out;
   }
 
   /** The monthly job's work for one owner: net-worth snapshot, health check, monthly review. */

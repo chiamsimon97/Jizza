@@ -9,6 +9,7 @@ import com.jizza.engine.api.error.ValidationException;
 import com.jizza.engine.api.finance.FinanceRecords;
 import com.jizza.engine.api.finance.FinanceStore;
 import com.jizza.engine.api.util.Json;
+import com.jizza.engine.api.vita.VitaRecords;
 import com.jizza.platform.usecase.finance.cashflow.FinCashFlowUseCase;
 import com.jizza.platform.usecase.finance.debt.FinLoansUseCase;
 import com.jizza.platform.usecase.finance.goal.FinGoalUseCase;
@@ -56,11 +57,13 @@ public class QuickStartUseCase {
   private final FinRiskUseCase risk;
   private final FinScopeResolver scopes;
   private final AuditLog audit;
+  private final VitaRecords vita;
 
   public QuickStartUseCase(FinanceStore store, FinanceRecords records, FinRecordsUseCase forms,
                            FinPersonUseCase people, FinCashFlowUseCase cashFlow,
                            FinLoansUseCase loans, FinGoalUseCase goals, FinRiskUseCase risk,
-                           FinScopeResolver scopes, AuditLog audit) {
+                           FinScopeResolver scopes, AuditLog audit, VitaRecords vita) {
+    this.vita = vita;
     this.store = store;
     this.records = records;
     this.forms = forms;
@@ -223,13 +226,37 @@ public class QuickStartUseCase {
     JsonNode list = a.path("policies");
     if (!list.isArray()) throw new ValidationException("policies must be a list (it can be empty).");
     if (list.size() > MAX_ITEMS) throw new ValidationException("Add at most " + MAX_ITEMS + " policies here.");
-    before.forEach(id -> records.delete("fin_insurance_policy", owner, UUID.fromString(id)));
+    // The policies this step wrote before, still there. A policy answered again (same holder and
+    // kind) is changed in place, so what Vita keeps on it (claims, card, policy number) stays.
+    List<ObjectNode> prior = new ArrayList<>();
+    for (String id : before) records.get("fin_insurance_policy", owner, UUID.fromString(id)).ifPresent(prior::add);
     List<String> out = new ArrayList<>();
     for (JsonNode p : list) {
       ObjectNode body = Json.obj();
       copy(p, body, "personId", "kind", "sumAssured", "premium", "premiumFrequency",
           "employerProvided", "coveredPersonIds", "renewalDate");
-      out.add(forms.create(caller, FinTable.POLICY, body, null).path("id").asText());
+      ObjectNode same = null;
+      for (ObjectNode r : prior) {
+        if (r.path("kind").asText().equals(body.path("kind").asText())
+            && (!body.hasNonNull("personId") || r.path("personId").asText().equals(body.path("personId").asText()))) {
+          same = r;
+          break;
+        }
+      }
+      if (same != null) {
+        prior.remove(same);
+        out.add(forms.update(caller, FinTable.POLICY, UUID.fromString(same.path("id").asText()), body).path("id").asText());
+      } else {
+        out.add(forms.create(caller, FinTable.POLICY, body, null).path("id").asText());
+      }
+    }
+    // A policy left out of the new answers goes, unless Vita holds claims or details on it: then it
+    // stays as an ordinary policy, no longer this step's, to be removed where those are kept.
+    for (ObjectNode r : prior) {
+      UUID id = UUID.fromString(r.path("id").asText());
+      boolean inVita = !vita.list("vita_claim", owner, Map.of("policyId", id)).isEmpty()
+          || !vita.list("vita_policy_detail", owner, Map.of("policyId", id)).isEmpty();
+      if (!inVita) records.delete("fin_insurance_policy", owner, id);
     }
     return out;
   }

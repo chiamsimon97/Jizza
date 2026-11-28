@@ -41,6 +41,20 @@ class AlertServiceTest {
   }
 
   @Test
+  void aRenewalVitaRemindsAboutIsNotRaisedAgain() {
+    var h = new Household(TODAY, List.of(new Person("me", "Me", "self", null, true, false)),
+        List.of(), List.of(), List.of(),
+        List.of(new Policy("health1", "me", "health", bd(500_000), bd(12_000), "yearly", false, List.of(),
+                TODAY.plusDays(10)),
+            new Policy("life1", "me", "term_life", bd(5_000_000), bd(9_000), "yearly", false, List.of(),
+                TODAY.plusDays(12))),
+        List.of(), List.of(), List.of(), false, null, Set.of());
+    var alerts = AlertService.due(h, KaiDefaults.config(), Map.of(), Set.of("health1"));
+    assertThat(alerts).filteredOn(a -> a.kind().equals(AlertService.RENEWAL)).extracting(AlertService.Alert::body)
+        .containsExactly("A term life policy renews on 22 Apr 2027.");
+  }
+
+  @Test
   void everyAlertKindCanBeMutedInSettings() {
     assertThat(new HashSet<>(AlertService.KINDS)).isEqualTo(FinProfileUseCase.ALERT_KINDS);
   }

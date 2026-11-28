@@ -27,6 +27,7 @@ class VitaInsuranceE2eTest extends E2eSupport {
 
   @LocalServerPort private int port;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private com.jizza.platform.usecase.finance.review.AlertService alerts;
 
   private ApiClient signUp(String who) {
     ApiClient c = new ApiClient(port);
@@ -216,5 +217,46 @@ class VitaInsuranceE2eTest extends E2eSupport {
     assertThat(other.post("/api/vita/policies", Map.of("kind", "health", "sumAssured", 1,
         "coveredPersonIds", List.of(h.father()))).status()).isEqualTo(404);
     assertThat(ok(other.get("/api/vita/policies"))).isEmpty();
+  }
+
+  @Test
+  void quickStartAgainKeepsVitaClaimsAndKaiLeavesTheRenewalToVita() {
+    ApiClient api = new ApiClient(port);
+    api.prime();
+    String email = "vita-ins-qs-" + UUID.randomUUID() + "@jizza.local";
+    assertThat(api.post("/api/auth/register", Map.of("email", email, "password", PASSWORD)).ok()).isTrue();
+    var login = api.post("/api/auth/login", Map.of("email", email, "password", PASSWORD));
+    UUID owner = UUID.fromString(login.json().path("userId").asText());
+    String me = ok(api.get("/api/people")).get(0).path("id").asText();
+    String renews = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).plusDays(10).toString();
+
+    ok(api.post("/api/finance/quick-start", Map.of("step", "insurance", "answers", Map.of("policies", List.of(
+        Map.of("kind", "health", "sumAssured", 500000, "premium", 12000, "premiumFrequency", "yearly",
+            "renewalDate", renews))))));
+    String id = jdbc.queryForObject("select id::text from fin_insurance_policy where user_id = ? and kind = 'health'",
+        String.class, owner);
+    ok(api.post("/api/vita/people/" + me + "/claims", Map.of("policyId", id, "admittedOn", "2026-08-02",
+        "amountClaimed", 40000, "status", "filed")));
+
+    // Answering the step again changes the same policy: the claim stays on it.
+    ok(api.post("/api/finance/quick-start", Map.of("step", "insurance", "answers", Map.of("policies", List.of(
+        Map.of("kind", "health", "sumAssured", 500000, "premium", 13500, "premiumFrequency", "yearly",
+            "renewalDate", renews))))));
+    assertThat(jdbc.queryForList("select id::text from fin_insurance_policy where user_id = ? and kind = 'health'",
+        String.class, owner)).containsExactly(id);
+    assertThat(ok(api.get("/api/vita/policies/" + id)).path("premium").decimalValue()).isEqualByComparingTo("13500");
+    assertThat(ok(api.get("/api/vita/people/" + me + "/claims"))).hasSize(1);
+
+    // Left out of the answers, a policy with claims stays; the claim is never lost.
+    ok(api.post("/api/finance/quick-start", Map.of("step", "insurance", "answers", Map.of("policies", List.of()))));
+    assertThat(jdbc.queryForObject("select count(*) from vita_claim where policy_id = ?::uuid", Integer.class, id)).isEqualTo(1);
+    assertThat(jdbc.queryForObject("select count(*) from fin_insurance_policy where id = ?::uuid", Integer.class, id)).isEqualTo(1);
+
+    // Vita keeps the renewal reminder for the health policy, so Kai raises no second one.
+    ok(api.put("/api/vita/policies/" + id, Map.of("renewalDate", renews)));
+    assertThat(jdbc.queryForObject("select count(*) from vita_reminder where ref_id = ?::uuid and kind = 'policy_renewal'",
+        Integer.class, id)).isEqualTo(1);
+    alerts.sendAlerts(owner);
+    assertThat(api.get("/api/notifications").json().toString()).doesNotContain("policy renews on");
   }
 }

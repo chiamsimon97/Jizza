@@ -119,9 +119,8 @@ class VitaJournalGoalsE2eTest extends E2eSupport {
     assertThat(goal.path("weeklyPlan")).hasSize(1);
     String goalId = goal.path("id").asText();
 
-    // A doctor's target replaces the default on the goal, with no change to the goal itself.
-    // (Only one live range per measure and setting is kept, so the person's own one goes first.)
-    assertThat(api.delete("/api/vita/people/" + me + "/ranges/" + ownRange).status()).isBetween(200, 204);
+    // A doctor's target replaces the default on the goal, with no change to the goal itself. The
+    // person's own range for the same measure stays beside it.
     String doctor = ok(api.post("/api/vita/doctors", Map.of("name", "Meera Rao"))).path("id").asText();
     ok(api.put("/api/vita/people/" + me + "/ranges", Map.of("kind", "bp", "setting", "home", "high", 130,
         "high2", 80, "highInclusive", false, "setBy", "doctor", "doctorId", doctor, "setOn", "2026-10-01")));
@@ -131,6 +130,13 @@ class VitaJournalGoalsE2eTest extends E2eSupport {
     assertThat(goal.path("target").path("text").asText()).isEqualTo("below 130/80");
     assertThat(goal.path("target").path("needsVerification").asBoolean()).isFalse();
     assertThat(api.put(goals + "/" + goalId, Map.of("target", 110)).status()).isEqualTo(400);
+    JsonNode bpHome = null;
+    for (JsonNode r : ok(api.get("/api/vita/people/" + me + "/ranges"))) {
+      if ("bp".equals(r.path("kind").asText()) && "home".equals(r.path("setting").asText())) bpHome = r;
+    }
+    assertThat(bpHome).isNotNull();
+    assertThat(bpHome.path("source").asText()).isEqualTo("doctor");
+    assertThat(bpHome.path("own").path("id").asText()).isEqualTo(ownRange);
 
     // The doctor's HbA1c target makes an HbA1c goal possible.
     ok(api.put("/api/vita/people/" + me + "/ranges", Map.of("labTestCode", "hba1c", "high", 7.5,
